@@ -29,9 +29,19 @@ android {
         }
     }
 
+    signingConfigs {
+        create("release") {
+            storeFile = file("${rootProject.projectDir}/keystore.jks")
+            storePassword = "sleipner"
+            keyAlias = "sleipner"
+            keyPassword = "sleipner"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 

@@ -95,6 +95,11 @@ do_apk() {
     echo "=== apk ==="
     mkdir -p build/android/arm64-v8a
     run bash -c "$android_conan_setup \
+        && [ -f android/keystore.jks ] || keytool -genkeypair -v \
+            -keystore android/keystore.jks -keyalg RSA -keysize 2048 \
+            -validity 10000 -alias sleipner \
+            -storepass sleipner -keypass sleipner \
+            -dname 'CN=Sleipner,O=Sleipner' \
         && cd android \
         && gradle wrapper --gradle-version 8.11.1 \
         && ./gradlew assembleRelease"
