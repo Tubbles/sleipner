@@ -27,6 +27,7 @@ void project_corners(const Vector2 *corners, int count, Vector2 axis, float *out
     }
 }
 
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 void obb_corners(Vector2 center, float angle_deg, float half_w, float half_h, Vector2 *out)
 {
     float radians = angle_deg * DEG2RAD;
@@ -114,6 +115,7 @@ Vector2 resolve_circle_circle(Vector2 pos_a, float r_a, Vector2 pos_b, float r_b
     return (Vector2){normal_x * overlap, normal_y * overlap};
 }
 
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 Vector2 resolve_rect_circle(Vector2 rect_pos, float angle, float half_w, float half_h, Vector2 circ_pos, float radius)
 {
     /* Transform circle center into OBB local space */
@@ -426,6 +428,7 @@ Vector2 resolve_composite_wall(const CollisionShape *shape, Vector2 pos, float a
     return resolve_composite(shape, pos, angle, &wall_shape, wall_center, 0);
 }
 
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 static bool is_in_corner_quadrant(int corner, float delta_x, float delta_y)
 {
     switch (corner) {
@@ -442,6 +445,7 @@ static bool is_in_corner_quadrant(int corner, float delta_x, float delta_y)
     }
 }
 
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 static void push_point_out_of_arc(Vector2 *pos, Vector2 center, Vector2 point, float radius, int corner)
 {
     float delta_x = point.x - center.x;
@@ -474,11 +478,10 @@ static void resolve_arena_corner_rect(const CollisionPrimitive *prim,
     }
 }
 
-static void resolve_arena_corner_circle(const CollisionPrimitive *prim,
-                                        Vector2 world_pos,
-                                        Vector2 *pos,
-                                        Vector2 center,
-                                        float radius,                                        int corner)
+// NOLINTBEGIN(bugprone-easily-swappable-parameters)
+static void resolve_arena_corner_circle(
+    const CollisionPrimitive *prim, Vector2 world_pos, Vector2 *pos, Vector2 center, float radius, int corner)
+// NOLINTEND(bugprone-easily-swappable-parameters)
 {
     float effective_radius = radius - prim->circle.radius;
     push_point_out_of_arc(pos, center, world_pos, effective_radius, corner);
@@ -511,8 +514,8 @@ static void resolve_arena_edges(const CollisionShape *shape, Vector2 *pos, float
     }
 }
 
-static void resolve_arena_corners(const CollisionShape *shape, Vector2 *pos, float angle, RectU32 arena,
-                                  float corner_radius)
+static void
+resolve_arena_corners(const CollisionShape *shape, Vector2 *pos, float angle, RectU32 arena, float corner_radius)
 {
     float width = (float)arena.width;
     float height = (float)arena.height;

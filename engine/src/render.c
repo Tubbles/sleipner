@@ -27,6 +27,7 @@ void render_background(RectU32 bounds)
     DrawRectangleRounded(arena, ARENA_ROUND, ARENA_SEGMENTS, arena_color);
 }
 
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 static void draw_star(Vector2 pos, float size, float rotation, Color color)
 {
     float outer = size;
@@ -46,6 +47,7 @@ static void draw_star(Vector2 pos, float size, float rotation, Color color)
     }
 }
 
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 static void draw_rotated_square(Vector2 pos, float size, float rotation, Color color)
 {
     Vector2 corners[4];
@@ -60,6 +62,7 @@ static void draw_rotated_square(Vector2 pos, float size, float rotation, Color c
     DrawTriangle(corners[3], corners[2], corners[0], color);
 }
 
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 static void draw_rotated_triangle(Vector2 pos, float size, float rotation, Color color)
 {
     Vector2 verts[3];
@@ -70,6 +73,7 @@ static void draw_rotated_triangle(Vector2 pos, float size, float rotation, Color
     DrawTriangle(verts[2], verts[1], verts[0], color);
 }
 
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 void render_shape(ShapeKind kind, Vector2 pos, float rotation, float scale, Color color)
 {
     float size = SHAPE_BASE_SIZE * scale;
