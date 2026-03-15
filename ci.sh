@@ -8,6 +8,7 @@
 #   ./ci.sh test        # Run unit tests (builds first if needed)
 #   ./ci.sh lint        # Run clang-tidy (builds first if needed)
 #   ./ci.sh all         # check + build + test + lint
+#   ./ci.sh android     # Build Android arm64 shared library
 #
 # The toolchain image is built automatically if missing.
 
@@ -68,17 +69,39 @@ do_all() {
         && cd build/Release && clang-tidy -p . ../../src/*.c ../../engine/src/*.c"
 }
 
+android_conan_setup='conan install . --output-folder=build/android/arm64-v8a --build=missing \
+    -s os=Android -s os.api_level=27 -s arch=armv8 \
+    -s compiler=clang -s compiler.version=18 -s compiler.libcxx=c++_static -s compiler.cppstd=17 \
+    -s build_type=Release \
+    -c tools.android:ndk_path=${ANDROID_HOME}/ndk/28.0.13004108'
+
+do_android() {
+    echo "=== android ==="
+    mkdir -p build/android/arm64-v8a
+    run bash -c "$android_conan_setup \
+        && cmake -S android/app/src/main/cpp -B build/android/arm64-v8a/build \
+            -DCMAKE_TOOLCHAIN_FILE=\${ANDROID_HOME}/ndk/28.0.13004108/build/cmake/android.toolchain.cmake \
+            -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH \
+            -Draylib_DIR=\$(pwd)/build/android/arm64-v8a/build/Release/generators \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-27 \
+            -DANDROID_NDK=\${ANDROID_HOME}/ndk/28.0.13004108 \
+            -DCMAKE_BUILD_TYPE=Release \
+        && cmake --build build/android/arm64-v8a/build"
+}
+
 ensure_image
 
 case "${1:-all}" in
-    format) do_format ;;
-    check)  do_check ;;
-    build)  do_build ;;
-    test)   do_test ;;
-    lint)   do_lint ;;
-    all)    do_all ;;
+    format)  do_format ;;
+    check)   do_check ;;
+    build)   do_build ;;
+    test)    do_test ;;
+    lint)    do_lint ;;
+    all)     do_all ;;
+    android) do_android ;;
     *)
-        echo "Usage: $0 {format|check|build|test|lint|all}"
+        echo "Usage: $0 {format|check|build|test|lint|all|android}"
         exit 1
         ;;
 esac

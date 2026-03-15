@@ -172,6 +172,7 @@ static void draw_grass(Texture2D texture, RectU32 bounds)
 
 int main(void)
 {
+#ifndef __ANDROID__
     /* Init zlog from embedded config string */
     {
         char zlog_conf[sizeof(asset_zlog_conf) + 1];
@@ -182,6 +183,9 @@ int main(void)
         zlog_init_from_string(zlog_conf);
         dzlog_set_category("sleipner");
     }
+#else
+    dzlog_set_category("sleipner");
+#endif
 
     InitWindow(SCREEN_WIDTH_DEFAULT, SCREEN_HEIGHT_DEFAULT, "Sleipner");
     HideCursor();
@@ -195,18 +199,27 @@ int main(void)
         screen_height = mon_height;
         SetWindowSize(screen_width, screen_height);
     }
+#ifndef __ANDROID__
     ToggleBorderlessWindowed();
+#endif
     dzlog_info("screen_width=%d screen_height=%d", screen_width, screen_height);
 
+#ifndef __ANDROID__
     input_load_mappings((const char *)asset_gamecontrollerdb, sizeof(asset_gamecontrollerdb));
+#endif
     SetTargetFPS(TARGET_FPS);
     audio_init();
 
     srand((unsigned)time(NULL));
 
-    /* Load textures from embedded data */
+    /* Load textures */
+#ifdef __ANDROID__
+    Texture2D tex_player = LoadTexture("sprites/player.png");
+    Texture2D tex_grass = LoadTexture("sprites/grass.png");
+#else
     Texture2D tex_player = load_embedded_texture(asset_player_png, sizeof(asset_player_png));
     Texture2D tex_grass = load_embedded_texture(asset_grass_png, sizeof(asset_grass_png));
+#endif
 
     /* Render target at game resolution for pixel-perfect scaling */
     RectU32 game_bounds = {(uint32_t)screen_width / PIXEL_SCALE, (uint32_t)screen_height / PIXEL_SCALE};
@@ -276,6 +289,8 @@ quit:
     UnloadTexture(tex_grass);
     audio_shutdown();
     CloseWindow();
+#ifndef __ANDROID__
     zlog_fini();
+#endif
     return 0;
 }

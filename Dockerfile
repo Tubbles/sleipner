@@ -1,5 +1,6 @@
 # Toolchain image: reproducible build environment for Sleipner.
-# Contains clang-22, clang-format, clang-tidy, conan, cmake, and all X11/GL dev libs.
+# Contains clang-22, clang-format, clang-tidy, conan, cmake, X11/GL dev libs,
+# JDK 17, and Android SDK/NDK for cross-compilation.
 #
 # Build the image:
 #   podman build -t sleipner-toolchain .
@@ -40,6 +41,22 @@ RUN wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh \
     && update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-22 100 \
     && update-alternatives --install /usr/bin/clang-format clang-format /usr/bin/clang-format-22 100 \
     && update-alternatives --install /usr/bin/clang-tidy clang-tidy /usr/bin/clang-tidy-22 100
+
+# Install JDK 21 and Android SDK/NDK for Android builds
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    openjdk-17-jdk-headless unzip \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV ANDROID_HOME=/opt/android-sdk
+ENV PATH="${ANDROID_HOME}/cmdline-tools/latest/bin:${ANDROID_HOME}/platform-tools:${PATH}"
+
+RUN mkdir -p "${ANDROID_HOME}/cmdline-tools" \
+    && wget -qO /tmp/cmdline-tools.zip https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip \
+    && unzip -q /tmp/cmdline-tools.zip -d "${ANDROID_HOME}/cmdline-tools" \
+    && mv "${ANDROID_HOME}/cmdline-tools/cmdline-tools" "${ANDROID_HOME}/cmdline-tools/latest" \
+    && rm /tmp/cmdline-tools.zip \
+    && yes | sdkmanager --licenses > /dev/null 2>&1 \
+    && sdkmanager "platform-tools" "platforms;android-35" "ndk;28.0.13004108" "cmake;3.22.1"
 
 WORKDIR /src
 
