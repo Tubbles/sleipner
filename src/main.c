@@ -2,6 +2,7 @@
 
 #include "audio.h"
 #include "input.h"
+#include "rect.h"
 #include "screen.h"
 
 #include "assets.h"
@@ -76,9 +77,7 @@ static Texture2D load_embedded_texture(const unsigned char *data, int size)
     return texture;
 }
 
-// NOLINTBEGIN(bugprone-easily-swappable-parameters)
-static void update_player(Player *player, InputState input, float delta_time, int game_width, int game_height)
-// NOLINTEND(bugprone-easily-swappable-parameters)
+static void update_player(Player *player, InputState input, float delta_time, RectU32 bounds)
 {
     player->moving = false;
 
@@ -105,11 +104,11 @@ static void update_player(Player *player, InputState input, float delta_time, in
     if (player->position.y < half) {
         player->position.y = half;
     }
-    if (player->position.x > (float)game_width - half) {
-        player->position.x = (float)game_width - half;
+    if (player->position.x > (float)bounds.width - half) {
+        player->position.x = (float)bounds.width - half;
     }
-    if (player->position.y > (float)game_height - half) {
-        player->position.y = (float)game_height - half;
+    if (player->position.y > (float)bounds.height - half) {
+        player->position.y = (float)bounds.height - half;
     }
 
     /* Animate walk cycle */
@@ -162,12 +161,11 @@ static bool any_gamepad_exit_requested(void)
     return false;
 }
 
-// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
-static void draw_grass(Texture2D texture, int game_width, int game_height)
+static void draw_grass(Texture2D texture, RectU32 bounds)
 {
-    for (int tile_y = 0; tile_y < game_height; tile_y += TILE_SIZE) {
-        for (int tile_x = 0; tile_x < game_width; tile_x += TILE_SIZE) {
-            DrawTexture(texture, tile_x, tile_y, WHITE);
+    for (uint32_t tile_y = 0; tile_y < bounds.height; tile_y += TILE_SIZE) {
+        for (uint32_t tile_x = 0; tile_x < bounds.width; tile_x += TILE_SIZE) {
+            DrawTexture(texture, (int)tile_x, (int)tile_y, WHITE);
         }
     }
 }
@@ -211,12 +209,11 @@ int main(void)
     Texture2D tex_grass = load_embedded_texture(asset_grass_png, sizeof(asset_grass_png));
 
     /* Render target at game resolution for pixel-perfect scaling */
-    int game_width = screen_width / PIXEL_SCALE;
-    int game_height = screen_height / PIXEL_SCALE;
-    RenderTexture2D target = LoadRenderTexture(game_width, game_height);
+    RectU32 game_bounds = {(uint32_t)screen_width / PIXEL_SCALE, (uint32_t)screen_height / PIXEL_SCALE};
+    RenderTexture2D target = LoadRenderTexture((int)game_bounds.width, (int)game_bounds.height);
 
     Player player = {
-        .position = {(float)game_width / 2.0F, (float)game_height / 2.0F},
+        .position = {(float)game_bounds.width / 2.0F, (float)game_bounds.height / 2.0F},
         .anim_row = ANIM_IDLE_DOWN,
         .flip = false,
         .frame_timer = 0.0F,
@@ -228,7 +225,7 @@ int main(void)
     float elapsed = 0.0F;
     int prev_gamepads = -1;
 
-    dzlog_info("entering game loop (game_res=%dx%d scale=%d)", game_width, game_height, PIXEL_SCALE);
+    dzlog_info("entering game loop (game_res=%ux%u scale=%d)", game_bounds.width, game_bounds.height, PIXEL_SCALE);
 
     while (!WindowShouldClose()) {
         float delta_time = GetFrameTime();
@@ -252,13 +249,13 @@ int main(void)
             input = merge_input(input, input_read(0));
         }
 
-        update_player(&player, input, delta_time, game_width, game_height);
+        update_player(&player, input, delta_time, game_bounds);
 
         /* Render at game resolution */
         BeginTextureMode(target);
         ClearBackground(BLACK);
 
-        draw_grass(tex_grass, game_width, game_height);
+        draw_grass(tex_grass, game_bounds);
 
         draw_player(&player, tex_player);
 
@@ -266,7 +263,7 @@ int main(void)
 
         /* Scale game render to screen */
         BeginDrawing();
-        DrawTexturePro(target.texture, (Rectangle){0, 0, (float)game_width, -(float)game_height},
+        DrawTexturePro(target.texture, (Rectangle){0, 0, (float)game_bounds.width, -(float)game_bounds.height},
                        (Rectangle){0, 0, (float)screen_width, (float)screen_height}, (Vector2){0, 0}, 0.0F, WHITE);
         EndDrawing();
     }

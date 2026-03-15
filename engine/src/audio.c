@@ -19,7 +19,6 @@
 
 static Sound sounds[SOUND_COUNT];
 
-// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 static Wave generate_tone(float freq, float duration, float volume)
 {
     int sample_count = (int)(SAMPLE_RATE * duration);
@@ -42,7 +41,6 @@ static Wave generate_tone(float freq, float duration, float volume)
     return wave;
 }
 
-// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 static Wave generate_bubble_pop(float duration, float volume)
 {
     int sample_count = (int)(SAMPLE_RATE * duration);

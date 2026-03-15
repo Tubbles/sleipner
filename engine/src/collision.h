@@ -2,6 +2,7 @@
 #define COLLISION_H
 
 #include "raylib.h"
+#include "rect.h"
 #include <stdbool.h>
 
 #define MAX_COLLISION_PRIMITIVES 8
@@ -67,7 +68,7 @@ bool composite_overlap(const CollisionShape *shape_a,
                        Vector2 pos_b,
                        float angle_b);
 Vector2 resolve_composite_wall(const CollisionShape *shape, Vector2 pos, float angle, Rectangle wall);
-void resolve_arena_composite(const CollisionShape *shape, Vector2 *pos, float angle, int arena_w, int arena_h);
+void resolve_arena_composite(const CollisionShape *shape, Vector2 *pos, float angle, RectU32 arena);
 
 /* Utility functions used by resolvers */
 void obb_corners(Vector2 center, float angle_deg, float half_w, float half_h, Vector2 *out);

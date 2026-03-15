@@ -27,7 +27,6 @@ void project_corners(const Vector2 *corners, int count, Vector2 axis, float *out
     }
 }
 
-// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 void obb_corners(Vector2 center, float angle_deg, float half_w, float half_h, Vector2 *out)
 {
     float radians = angle_deg * DEG2RAD;
@@ -78,7 +77,6 @@ static Vector2 sat_resolve_corners(
     return (Vector2){push_axis.x * min_overlap, push_axis.y * min_overlap};
 }
 
-// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 Vector2 resolve_rect_rect(
     Vector2 pos_a, float angle_a, float hw_a, float hh_a, Vector2 pos_b, float angle_b, float hw_b, float hh_b)
 {
@@ -116,7 +114,6 @@ Vector2 resolve_circle_circle(Vector2 pos_a, float r_a, Vector2 pos_b, float r_b
     return (Vector2){normal_x * overlap, normal_y * overlap};
 }
 
-// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 Vector2 resolve_rect_circle(Vector2 rect_pos, float angle, float half_w, float half_h, Vector2 circ_pos, float radius)
 {
     /* Transform circle center into OBB local space */
@@ -217,7 +214,6 @@ Vector2 resolve_tri_tri(Vector2 pos_a, const Vector2 *verts_a, Vector2 pos_b, co
     return sat_resolve_corners(world_a, 3, world_b, 3, axes, TRI_TRI_AXES);
 }
 
-// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 Vector2
 resolve_tri_rect(Vector2 tri_pos, const Vector2 *verts, Vector2 rect_pos, float angle, float half_w, float half_h)
 {
@@ -325,7 +321,6 @@ Vector2 prim_world_pos(Vector2 entity_pos, float entity_angle, Vector2 offset)
     };
 }
 
-// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 Vector2 resolve_prim_pair(const CollisionPrimitive *prim_a,
                           Vector2 world_pos_a,
                           float angle_a,
@@ -431,7 +426,6 @@ Vector2 resolve_composite_wall(const CollisionShape *shape, Vector2 pos, float a
     return resolve_composite(shape, pos, angle, &wall_shape, wall_center, 0);
 }
 
-// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 static bool is_in_corner_quadrant(int corner, float delta_x, float delta_y)
 {
     switch (corner) {
@@ -448,7 +442,6 @@ static bool is_in_corner_quadrant(int corner, float delta_x, float delta_y)
     }
 }
 
-// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 static void push_point_out_of_arc(Vector2 *pos, Vector2 center, Vector2 point, float radius, int corner)
 {
     float delta_x = point.x - center.x;
@@ -485,8 +478,7 @@ static void resolve_arena_corner_circle(const CollisionPrimitive *prim,
                                         Vector2 world_pos,
                                         Vector2 *pos,
                                         Vector2 center,
-                                        float radius, // NOLINT(bugprone-easily-swappable-parameters)
-                                        int corner)
+                                        float radius,                                        int corner)
 {
     float effective_radius = radius - prim->circle.radius;
     push_point_out_of_arc(pos, center, world_pos, effective_radius, corner);
@@ -502,9 +494,10 @@ static void resolve_arena_corner_tri(
     }
 }
 
-// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
-static void resolve_arena_edges(const CollisionShape *shape, Vector2 *pos, float angle, float width, float height)
+static void resolve_arena_edges(const CollisionShape *shape, Vector2 *pos, float angle, RectU32 arena)
 {
+    float width = (float)arena.width;
+    float height = (float)arena.height;
     Rectangle edge_walls[4] = {
         {ARENA_PAD - WALL_THICKNESS, ARENA_PAD, WALL_THICKNESS, height - (2 * ARENA_PAD)},
         {width - ARENA_PAD, ARENA_PAD, WALL_THICKNESS, height - (2 * ARENA_PAD)},
@@ -518,11 +511,11 @@ static void resolve_arena_edges(const CollisionShape *shape, Vector2 *pos, float
     }
 }
 
-// NOLINTBEGIN(bugprone-easily-swappable-parameters)
-static void resolve_arena_corners(
-    const CollisionShape *shape, Vector2 *pos, float angle, float width, float height, float corner_radius)
-// NOLINTEND(bugprone-easily-swappable-parameters)
+static void resolve_arena_corners(const CollisionShape *shape, Vector2 *pos, float angle, RectU32 arena,
+                                  float corner_radius)
 {
+    float width = (float)arena.width;
+    float height = (float)arena.height;
     Vector2 corner_centers[4] = {
         {ARENA_PAD + corner_radius, ARENA_PAD + corner_radius},
         {width - ARENA_PAD - corner_radius, ARENA_PAD + corner_radius},
@@ -548,15 +541,12 @@ static void resolve_arena_corners(
     }
 }
 
-// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
-void resolve_arena_composite(const CollisionShape *shape, Vector2 *pos, float angle, int arena_w, int arena_h)
+void resolve_arena_composite(const CollisionShape *shape, Vector2 *pos, float angle, RectU32 arena)
 {
-    float width = (float)arena_w;
-    float height = (float)arena_h;
-    float arena_width = width - (2 * ARENA_PAD);
-    float arena_height = height - (2 * ARENA_PAD);
+    float arena_width = (float)arena.width - (2 * ARENA_PAD);
+    float arena_height = (float)arena.height - (2 * ARENA_PAD);
     float corner_radius = fminf(arena_width, arena_height) * ARENA_ROUNDNESS * 0.5F;
 
-    resolve_arena_edges(shape, pos, angle, width, height);
-    resolve_arena_corners(shape, pos, angle, width, height, corner_radius);
+    resolve_arena_edges(shape, pos, angle, arena);
+    resolve_arena_corners(shape, pos, angle, arena, corner_radius);
 }
