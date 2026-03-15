@@ -346,10 +346,9 @@ int main(void)
 
 #ifdef __ANDROID__
     SetConfigFlags(FLAG_FULLSCREEN_MODE);
-    InitWindow(0, 0, "Sleipner");
-    screen_width = GetRenderWidth();
-    screen_height = GetRenderHeight();
-    dzlog_info("android render=%dx%d screen=%dx%d", screen_width, screen_height, GetScreenWidth(), GetScreenHeight());
+    InitWindow(1920, 1080, "Sleipner");
+    screen_width = 1920;
+    screen_height = 1080;
 #else
     InitWindow(SCREEN_WIDTH_DEFAULT, SCREEN_HEIGHT_DEFAULT, "Sleipner");
 #endif
