@@ -16,7 +16,7 @@ cd "$(dirname "$0")"
 
 IMAGE="sleipner-toolchain"
 CONTAINER_CMD="${CONTAINER_CMD:-podman}"
-SOURCES="src/*.c src/*.h test/*.c"
+SOURCES="src/*.c src/*.h engine/src/*.c engine/src/*.h engine/test/*.c"
 
 run() {
     "$CONTAINER_CMD" run --rm -v "$(pwd)":"$(pwd)":Z -w "$(pwd)" "$IMAGE" "$@"
@@ -50,22 +50,22 @@ do_build() {
 do_test() {
     echo "=== test ==="
     mkdir -p build/Release
-    run bash -c "$conan_setup && conan build . && ./build/Release/test/sleipner_tests"
+    run bash -c "$conan_setup && conan build . && ./build/Release/engine/test/engine_tests"
 }
 
 do_lint() {
     echo "=== lint ==="
     mkdir -p build/Release
-    run bash -c "$conan_setup && conan build . && cd build/Release && clang-tidy -p . ../../src/*.c"
+    run bash -c "$conan_setup && conan build . && cd build/Release && clang-tidy -p . ../../src/*.c ../../engine/src/*.c"
 }
 
 do_all() {
     echo "=== all ==="
     mkdir -p build/Release
     run bash -c "$conan_setup && conan build . \
-        && ./build/Release/test/sleipner_tests \
+        && ./build/Release/engine/test/engine_tests \
         && clang-format --dry-run --Werror $SOURCES \
-        && cd build/Release && clang-tidy -p . ../../src/*.c"
+        && cd build/Release && clang-tidy -p . ../../src/*.c ../../engine/src/*.c"
 }
 
 ensure_image

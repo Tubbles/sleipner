@@ -13,15 +13,10 @@ add_library(zlog STATIC ${ZLOG_SOURCES})
 target_include_directories(zlog PUBLIC vendor/zlog)
 target_link_libraries(zlog PRIVATE pthread)
 
-add_executable(sleipner
-    src/main.c
-    src/shape.c
-    src/render.c
-    src/input.c
-    src/particle.c
-    src/collision.c
-    src/audio.c
-)
-target_link_libraries(sleipner PRIVATE raylib zlog)
+add_library(unity STATIC vendor/unity/unity.c)
+target_include_directories(unity PUBLIC vendor/unity)
 
-add_subdirectory(test)
+add_subdirectory(engine)
+
+add_executable(sleipner src/main.c)
+target_link_libraries(sleipner PRIVATE engine zlog)
