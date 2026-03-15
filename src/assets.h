@@ -17,6 +17,7 @@ static const unsigned char asset_tree_png[] = {0};
 static const unsigned char asset_chest_png[] = {0};
 static const unsigned char asset_house_png[] = {0};
 static const unsigned char asset_fence_png[] = {0};
+static const unsigned char asset_bgm_mp3[] = {0};
 
 #else
 
@@ -50,6 +51,10 @@ static const unsigned char asset_house_png[] = {
 
 static const unsigned char asset_fence_png[] = {
 #embed "../assets/sprites/fence.png"
+};
+
+static const unsigned char asset_bgm_mp3[] = {
+#embed "../assets/music/bgm.mp3"
 };
 
 #endif /* __ANDROID__ */

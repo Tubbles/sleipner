@@ -286,6 +286,7 @@ int main(void)
     Texture2D tex_chest = LoadTexture("sprites/chest.png");
     Texture2D tex_house = LoadTexture("sprites/house.png");
     Texture2D tex_fence = LoadTexture("sprites/fence.png");
+    Music bgm = LoadMusicStream("music/bgm.mp3");
 #else
     Texture2D tex_player = load_embedded_texture(asset_player_png, sizeof(asset_player_png));
     Texture2D tex_grass = load_embedded_texture(asset_grass_png, sizeof(asset_grass_png));
@@ -293,7 +294,10 @@ int main(void)
     Texture2D tex_chest = load_embedded_texture(asset_chest_png, sizeof(asset_chest_png));
     Texture2D tex_house = load_embedded_texture(asset_house_png, sizeof(asset_house_png));
     Texture2D tex_fence = load_embedded_texture(asset_fence_png, sizeof(asset_fence_png));
+    Music bgm = LoadMusicStreamFromMemory(".mp3", asset_bgm_mp3, sizeof(asset_bgm_mp3));
 #endif
+    bgm.looping = true;
+    PlayMusicStream(bgm);
 
     /* Render target at game resolution for pixel-perfect scaling */
     RectU32 game_bounds = {(uint32_t)screen_width / PIXEL_SCALE, (uint32_t)screen_height / PIXEL_SCALE};
@@ -344,6 +348,7 @@ int main(void)
             dzlog_debug("frame=%d t=%.1fs dt=%.4f fps=%d", frame, elapsed, delta_time, GetFPS());
         }
 
+        UpdateMusicStream(bgm);
         log_gamepad_changes(&prev_gamepads, frame);
 
         if (any_gamepad_exit_requested()) {
@@ -394,6 +399,7 @@ int main(void)
 quit:
     dzlog_info("exiting game loop (frame=%d t=%.1fs)", frame, elapsed);
 
+    UnloadMusicStream(bgm);
     UnloadRenderTexture(target);
     UnloadTexture(tex_player);
     UnloadTexture(tex_grass);
