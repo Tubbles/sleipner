@@ -248,6 +248,13 @@ int main(void)
     InitWindow(SCREEN_WIDTH_DEFAULT, SCREEN_HEIGHT_DEFAULT, "Sleipner");
     HideCursor();
 
+#ifdef __ANDROID__
+    /* On Android the window is always fullscreen; GetMonitorWidth/Height
+     * returns 0 so we read the actual surface size after InitWindow. */
+    screen_width = GetScreenWidth();
+    screen_height = GetScreenHeight();
+    dzlog_info("android screen=%dx%d", screen_width, screen_height);
+#else
     int monitor = GetCurrentMonitor();
     int mon_width = GetMonitorWidth(monitor);
     int mon_height = GetMonitorHeight(monitor);
@@ -257,6 +264,7 @@ int main(void)
         screen_height = mon_height;
         SetWindowSize(screen_width, screen_height);
     }
+#endif
 #ifndef __ANDROID__
     ToggleBorderlessWindowed();
 #endif
