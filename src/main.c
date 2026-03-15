@@ -22,6 +22,7 @@
 #define PLAYER_SPEED 80.0F
 #define WALK_FRAMES 6
 #define ANIM_SPEED 10.0F
+#define MAX_OBSTACLES 32
 
 enum {
     ANIM_IDLE_DOWN = 0,
@@ -39,6 +40,13 @@ typedef struct {
     int frame_index;
     bool moving;
 } Player;
+
+typedef struct {
+    Vector2 position;
+    Texture2D *texture;
+    Rectangle source;
+    Rectangle collision;
+} Obstacle;
 
 int screen_width = SCREEN_WIDTH_DEFAULT;
 int screen_height = SCREEN_HEIGHT_DEFAULT;
@@ -137,6 +145,56 @@ static void draw_player(const Player *player, Texture2D texture)
     DrawTexturePro(texture, source, dest, (Vector2){0, 0}, 0.0F, WHITE);
 }
 
+static Rectangle player_hitbox(const Player *player)
+{
+    return (Rectangle){player->position.x - 5, player->position.y + 6, 10, 10};
+}
+
+static void resolve_player_obstacles(Player *player, const Obstacle *obstacles, int count)
+{
+    for (int index = 0; index < count; index++) {
+        Rectangle hitbox = player_hitbox(player);
+        Rectangle obstacle = obstacles[index].collision;
+        if (!CheckCollisionRecs(hitbox, obstacle)) {
+            continue;
+        }
+        float push_left = (hitbox.x + hitbox.width) - obstacle.x;
+        float push_right = (obstacle.x + obstacle.width) - hitbox.x;
+        float push_up = (hitbox.y + hitbox.height) - obstacle.y;
+        float push_down = (obstacle.y + obstacle.height) - hitbox.y;
+
+        float min_push = push_left;
+        int direction = 0;
+        if (push_right < min_push) {
+            min_push = push_right;
+            direction = 1;
+        }
+        if (push_up < min_push) {
+            min_push = push_up;
+            direction = 2;
+        }
+        if (push_down < min_push) {
+            min_push = push_down;
+            direction = 3;
+        }
+
+        if (direction == 0) {
+            player->position.x -= push_left;
+        } else if (direction == 1) {
+            player->position.x += push_right;
+        } else if (direction == 2) {
+            player->position.y -= push_up;
+        } else {
+            player->position.y += push_down;
+        }
+    }
+}
+
+static void draw_obstacle(const Obstacle *obstacle)
+{
+    DrawTextureRec(*obstacle->texture, obstacle->source, obstacle->position, WHITE);
+}
+
 static void log_gamepad_changes(int *prev_gamepads, int frame)
 {
     int gamepads = input_count_gamepads();
@@ -216,9 +274,17 @@ int main(void)
 #ifdef __ANDROID__
     Texture2D tex_player = LoadTexture("sprites/player.png");
     Texture2D tex_grass = LoadTexture("sprites/grass.png");
+    Texture2D tex_tree = LoadTexture("sprites/tree.png");
+    Texture2D tex_chest = LoadTexture("sprites/chest.png");
+    Texture2D tex_house = LoadTexture("sprites/house.png");
+    Texture2D tex_fence = LoadTexture("sprites/fence.png");
 #else
     Texture2D tex_player = load_embedded_texture(asset_player_png, sizeof(asset_player_png));
     Texture2D tex_grass = load_embedded_texture(asset_grass_png, sizeof(asset_grass_png));
+    Texture2D tex_tree = load_embedded_texture(asset_tree_png, sizeof(asset_tree_png));
+    Texture2D tex_chest = load_embedded_texture(asset_chest_png, sizeof(asset_chest_png));
+    Texture2D tex_house = load_embedded_texture(asset_house_png, sizeof(asset_house_png));
+    Texture2D tex_fence = load_embedded_texture(asset_fence_png, sizeof(asset_fence_png));
 #endif
 
     /* Render target at game resolution for pixel-perfect scaling */
@@ -233,6 +299,26 @@ int main(void)
         .frame_index = 0,
         .moving = false,
     };
+
+    /* Place obstacles — collision rects are in world space */
+    /* Fence source rects: top-left 16x48 vertical segment from 64x64 sheet */
+    Obstacle obstacles[] = {
+        /* House */
+        {.position = {40, 20}, .texture = &tex_house, .source = {0, 0, 96, 128}, .collision = {40, 84, 96, 64}},
+        /* Trees */
+        {.position = {200, 60}, .texture = &tex_tree, .source = {0, 0, 64, 80}, .collision = {220, 120, 24, 16}},
+        {.position = {350, 150}, .texture = &tex_tree, .source = {0, 0, 64, 80}, .collision = {370, 210, 24, 16}},
+        {.position = {80, 200}, .texture = &tex_tree, .source = {0, 0, 64, 80}, .collision = {100, 260, 24, 16}},
+        {.position = {450, 40}, .texture = &tex_tree, .source = {0, 0, 64, 80}, .collision = {470, 100, 24, 16}},
+        {.position = {500, 220}, .texture = &tex_tree, .source = {0, 0, 64, 80}, .collision = {520, 280, 24, 16}},
+        /* Chests */
+        {.position = {300, 100}, .texture = &tex_chest, .source = {0, 0, 16, 16}, .collision = {300, 100, 16, 16}},
+        {.position = {160, 280}, .texture = &tex_chest, .source = {0, 0, 16, 16}, .collision = {160, 280, 16, 16}},
+        /* Fences (vertical segment, 16x48 from top-left of sheet) */
+        {.position = {260, 50}, .texture = &tex_fence, .source = {0, 0, 16, 48}, .collision = {260, 50, 16, 48}},
+        {.position = {260, 98}, .texture = &tex_fence, .source = {0, 0, 16, 48}, .collision = {260, 98, 16, 48}},
+    };
+    int obstacle_count = sizeof(obstacles) / sizeof(obstacles[0]);
 
     int frame = 0;
     float elapsed = 0.0F;
@@ -263,14 +349,30 @@ int main(void)
         }
 
         update_player(&player, input, delta_time, game_bounds);
+        resolve_player_obstacles(&player, obstacles, obstacle_count);
 
-        /* Render at game resolution */
+        /* Render at game resolution with depth sorting */
         BeginTextureMode(target);
         ClearBackground(BLACK);
 
         draw_grass(tex_grass, game_bounds);
 
+        float player_sort_y = player.position.y + 16;
+        /* Draw obstacles behind player */
+        for (int index = 0; index < obstacle_count; index++) {
+            float obstacle_sort_y = obstacles[index].collision.y + obstacles[index].collision.height;
+            if (obstacle_sort_y <= player_sort_y) {
+                draw_obstacle(&obstacles[index]);
+            }
+        }
         draw_player(&player, tex_player);
+        /* Draw obstacles in front of player */
+        for (int index = 0; index < obstacle_count; index++) {
+            float obstacle_sort_y = obstacles[index].collision.y + obstacles[index].collision.height;
+            if (obstacle_sort_y > player_sort_y) {
+                draw_obstacle(&obstacles[index]);
+            }
+        }
 
         EndTextureMode();
 
@@ -287,6 +389,10 @@ quit:
     UnloadRenderTexture(target);
     UnloadTexture(tex_player);
     UnloadTexture(tex_grass);
+    UnloadTexture(tex_tree);
+    UnloadTexture(tex_chest);
+    UnloadTexture(tex_house);
+    UnloadTexture(tex_fence);
     audio_shutdown();
     CloseWindow();
 #ifndef __ANDROID__

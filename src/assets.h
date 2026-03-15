@@ -13,6 +13,10 @@ static const unsigned char asset_gamecontrollerdb[] = {0};
 static const unsigned char asset_zlog_conf[] = {0};
 static const unsigned char asset_player_png[] = {0};
 static const unsigned char asset_grass_png[] = {0};
+static const unsigned char asset_tree_png[] = {0};
+static const unsigned char asset_chest_png[] = {0};
+static const unsigned char asset_house_png[] = {0};
+static const unsigned char asset_fence_png[] = {0};
 
 #else
 
@@ -30,6 +34,22 @@ static const unsigned char asset_player_png[] = {
 
 static const unsigned char asset_grass_png[] = {
 #embed "../assets/sprites/grass.png"
+};
+
+static const unsigned char asset_tree_png[] = {
+#embed "../assets/sprites/tree.png"
+};
+
+static const unsigned char asset_chest_png[] = {
+#embed "../assets/sprites/chest.png"
+};
+
+static const unsigned char asset_house_png[] = {
+#embed "../assets/sprites/house.png"
+};
+
+static const unsigned char asset_fence_png[] = {
+#embed "../assets/sprites/fence.png"
 };
 
 #endif /* __ANDROID__ */
