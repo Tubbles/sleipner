@@ -30,14 +30,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxcb-util-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Install LLVM 22 from apt.llvm.org
-RUN wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc \
-    && echo "deb http://apt.llvm.org/bookworm/ llvm-toolchain-bookworm-22 main" > /etc/apt/sources.list.d/llvm.list \
-    && apt-get update && apt-get install -y --no-install-recommends clang-22 clang-format-22 clang-tidy-22 \
-    && rm -rf /var/lib/apt/lists/*
-
-# Set clang-22 as default clang
-RUN update-alternatives --install /usr/bin/clang clang /usr/bin/clang-22 100 \
+# Install LLVM 22 via llvm.sh (sets up repo + installs clang)
+RUN wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh \
+    && chmod +x /tmp/llvm.sh \
+    && /tmp/llvm.sh 22 \
+    && apt-get install -y --no-install-recommends clang-format-22 clang-tidy-22 \
+    && rm -rf /tmp/llvm.sh /var/lib/apt/lists/* \
+    && update-alternatives --install /usr/bin/clang clang /usr/bin/clang-22 100 \
     && update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-22 100 \
     && update-alternatives --install /usr/bin/clang-format clang-format /usr/bin/clang-format-22 100 \
     && update-alternatives --install /usr/bin/clang-tidy clang-tidy /usr/bin/clang-tidy-22 100
