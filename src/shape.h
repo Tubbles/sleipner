@@ -1,7 +1,7 @@
 #ifndef SHAPE_H
 #define SHAPE_H
 
-#include "raylib.h" // IWYU pragma: export
+#include "raylib.h"
 
 typedef enum { SHAPE_CIRCLE, SHAPE_SQUARE, SHAPE_TRIANGLE, SHAPE_STAR, SHAPE_COUNT } ShapeKind;
 

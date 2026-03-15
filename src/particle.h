@@ -1,7 +1,7 @@
 #ifndef PARTICLE_H
 #define PARTICLE_H
 
-#include "raylib.h" // IWYU pragma: export
+#include "raylib.h"
 
 #define PARTICLE_INITIAL_CAPACITY 256
 

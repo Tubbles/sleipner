@@ -1,4 +1,5 @@
 #include "shape.h"
+#include "raylib.h"
 #include <stdbool.h>
 
 Rectangle shape_bounds(ShapeKind kind, Vector2 pos, float scale)

@@ -8,9 +8,9 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 find_package(raylib REQUIRED)
 
-file(GLOB ZLOG_SOURCES src/vendor/zlog/*.c)
+file(GLOB ZLOG_SOURCES vendor/zlog/*.c)
 add_library(zlog STATIC ${ZLOG_SOURCES})
-target_include_directories(zlog PUBLIC src/vendor/zlog)
+target_include_directories(zlog PUBLIC vendor/zlog)
 target_link_libraries(zlog PRIVATE pthread)
 
 add_executable(sleipner

@@ -1,5 +1,5 @@
-add_library(unity STATIC vendor/unity/unity.c)
-target_include_directories(unity PUBLIC vendor/unity)
+add_library(unity STATIC ${CMAKE_SOURCE_DIR}/vendor/unity/unity.c)
+target_include_directories(unity PUBLIC ${CMAKE_SOURCE_DIR}/vendor/unity)
 
 add_executable(sleipner_tests
     test_main.c

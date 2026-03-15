@@ -1,7 +1,7 @@
 #ifndef COLLISION_H
 #define COLLISION_H
 
-#include "raylib.h" // IWYU pragma: export
+#include "raylib.h"
 #include <stdbool.h>
 
 #define MAX_COLLISION_PRIMITIVES 8
@@ -48,16 +48,24 @@ Vector2 resolve_circle_tri(Vector2 circ_pos, float radius, Vector2 tri_pos, cons
 
 /* Composite shape resolution */
 Vector2 prim_world_pos(Vector2 entity_pos, float entity_angle, Vector2 offset);
-Vector2 resolve_prim_pair(const CollisionPrimitive *a,
+Vector2 resolve_prim_pair(const CollisionPrimitive *prim_a,
                           Vector2 world_pos_a,
                           float angle_a,
-                          const CollisionPrimitive *b,
+                          const CollisionPrimitive *prim_b,
                           Vector2 world_pos_b,
                           float angle_b);
-Vector2 resolve_composite(
-    const CollisionShape *a, Vector2 pos_a, float angle_a, const CollisionShape *b, Vector2 pos_b, float angle_b);
-bool composite_overlap(
-    const CollisionShape *a, Vector2 pos_a, float angle_a, const CollisionShape *b, Vector2 pos_b, float angle_b);
+Vector2 resolve_composite(const CollisionShape *shape_a,
+                          Vector2 pos_a,
+                          float angle_a,
+                          const CollisionShape *shape_b,
+                          Vector2 pos_b,
+                          float angle_b);
+bool composite_overlap(const CollisionShape *shape_a,
+                       Vector2 pos_a,
+                       float angle_a,
+                       const CollisionShape *shape_b,
+                       Vector2 pos_b,
+                       float angle_b);
 Vector2 resolve_composite_wall(const CollisionShape *shape, Vector2 pos, float angle, Rectangle wall);
 void resolve_arena_composite(const CollisionShape *shape, Vector2 *pos, float angle, int arena_w, int arena_h);
 

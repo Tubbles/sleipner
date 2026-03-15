@@ -1,4 +1,5 @@
 #include "input.h"
+#include "raylib.h"
 
 #include "zlog.h"
 

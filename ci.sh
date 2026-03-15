@@ -19,7 +19,7 @@ CONTAINER_CMD="${CONTAINER_CMD:-podman}"
 SOURCES="src/*.c src/*.h test/*.c"
 
 run() {
-    "$CONTAINER_CMD" run --rm -v .:/src:Z "$IMAGE" "$@"
+    "$CONTAINER_CMD" run --rm -v "$(pwd)":"$(pwd)":Z -w "$(pwd)" "$IMAGE" "$@"
 }
 
 ensure_image() {

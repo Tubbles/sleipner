@@ -1,4 +1,5 @@
 #include "collision.h"
+#include "raylib.h"
 
 #include <float.h>
 #include <math.h>
