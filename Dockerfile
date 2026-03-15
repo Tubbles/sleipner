@@ -58,6 +58,12 @@ RUN mkdir -p "${ANDROID_HOME}/cmdline-tools" \
     && yes | sdkmanager --licenses > /dev/null 2>&1 \
     && sdkmanager "platform-tools" "platforms;android-35" "ndk;28.0.13004108" "cmake;3.22.1"
 
+# Install Gradle
+RUN wget -qO /tmp/gradle.zip https://services.gradle.org/distributions/gradle-8.11.1-bin.zip \
+    && unzip -q /tmp/gradle.zip -d /opt \
+    && rm /tmp/gradle.zip
+ENV PATH="/opt/gradle-8.11.1/bin:${PATH}"
+
 WORKDIR /src
 
 # Install conan in a venv

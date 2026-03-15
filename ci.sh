@@ -9,6 +9,7 @@
 #   ./ci.sh lint        # Run clang-tidy (builds first if needed)
 #   ./ci.sh all         # check + build + test + lint
 #   ./ci.sh android     # Build Android arm64 shared library
+#   ./ci.sh apk         # Build Android APK (includes conan + gradle)
 #
 # The toolchain image is built automatically if missing.
 
@@ -90,6 +91,15 @@ do_android() {
         && cmake --build build/android/arm64-v8a/build"
 }
 
+do_apk() {
+    echo "=== apk ==="
+    mkdir -p build/android/arm64-v8a
+    run bash -c "$android_conan_setup \
+        && cd android \
+        && gradle wrapper --gradle-version 8.11.1 \
+        && ./gradlew assembleRelease"
+}
+
 ensure_image
 
 case "${1:-all}" in
@@ -100,8 +110,9 @@ case "${1:-all}" in
     lint)    do_lint ;;
     all)     do_all ;;
     android) do_android ;;
+    apk)     do_apk ;;
     *)
-        echo "Usage: $0 {format|check|build|test|lint|all|android}"
+        echo "Usage: $0 {format|check|build|test|lint|all|android|apk}"
         exit 1
         ;;
 esac

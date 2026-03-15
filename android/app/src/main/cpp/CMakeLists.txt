@@ -5,10 +5,15 @@ set(CMAKE_C_STANDARD 23)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
 
-find_package(raylib REQUIRED)
-
 # Project root (5 levels up from this CMakeLists.txt)
 set(PROJECT_ROOT "${CMAKE_SOURCE_DIR}/../../../../..")
+
+# Find Conan-generated raylib from ci.sh output
+set(CONAN_GENERATORS "${PROJECT_ROOT}/build/android/arm64-v8a/build/Release/generators")
+list(PREPEND CMAKE_PREFIX_PATH "${CONAN_GENERATORS}")
+set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE BOTH)
+
+find_package(raylib REQUIRED)
 
 # native_app_glue from NDK
 set(NATIVE_APP_GLUE_DIR "${ANDROID_NDK}/sources/android/native_app_glue")

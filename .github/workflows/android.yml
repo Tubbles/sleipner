@@ -16,11 +16,11 @@ jobs:
       - name: Build toolchain image
         run: docker build -t sleipner-toolchain .
 
-      - name: Build Android arm64
-        run: CONTAINER_CMD=docker ./ci.sh android
+      - name: Build APK
+        run: CONTAINER_CMD=docker ./ci.sh apk
 
-      - name: Upload shared library
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: sleipner-android-arm64
-          path: build/android/arm64-v8a/build/libsleipner.so
+          path: android/app/build/outputs/apk/release/*.apk

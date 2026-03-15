@@ -1,18 +1,5 @@
-import org.gradle.process.ExecOperations
-import javax.inject.Inject
-
 plugins {
     id("com.android.application")
-}
-
-val ndkDir = android.ndkDirectory.absolutePath
-
-fun abiToConanArch(abi: String): String = when (abi) {
-    "arm64-v8a" -> "armv8"
-    "armeabi-v7a" -> "armv7"
-    "x86_64" -> "x86_64"
-    "x86" -> "x86"
-    else -> error("Unsupported ABI: $abi")
 }
 
 android {
@@ -30,6 +17,16 @@ android {
         ndk {
             abiFilters += listOf("arm64-v8a")
         }
+
+        externalNativeBuild {
+            cmake {
+                arguments += listOf(
+                    "-DCMAKE_BUILD_TYPE=Release",
+                    "-DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH",
+                    "-Draylib_DIR=${rootProject.projectDir.parentFile}/build/android/arm64-v8a/build/Release/generators"
+                )
+            }
+        }
     }
 
     buildTypes {
@@ -44,55 +41,4 @@ android {
             version = "3.22.1"
         }
     }
-}
-
-abstract class ConanInstallTask @Inject constructor(
-    private val execOps: ExecOperations
-) : DefaultTask() {
-
-    @get:Input
-    abstract val projectRoot: org.gradle.api.provider.Property<String>
-
-    @get:Input
-    abstract val ndkPath: org.gradle.api.provider.Property<String>
-
-    @get:OutputDirectory
-    abstract val conanDir: org.gradle.api.file.DirectoryProperty
-
-    @TaskAction
-    fun run() {
-        for (abi in listOf("arm64-v8a")) {
-            val arch = abiToConanArch(abi)
-            val outDir = File(conanDir.get().asFile, abi)
-            outDir.mkdirs()
-
-            execOps.exec {
-                workingDir = File(projectRoot.get())
-                commandLine(
-                    "conan", "install", ".",
-                    "--output-folder=${outDir.absolutePath}",
-                    "--build=missing",
-                    "-s", "os=Android",
-                    "-s", "os.api_level=27",
-                    "-s", "arch=$arch",
-                    "-s", "compiler=clang",
-                    "-s", "compiler.version=18",
-                    "-s", "compiler.libcxx=c++_static",
-                    "-s", "compiler.cppstd=17",
-                    "-s", "build_type=Release",
-                    "-c", "tools.android:ndk_path=${ndkPath.get()}"
-                )
-            }
-        }
-    }
-}
-
-tasks.register<ConanInstallTask>("conanInstall") {
-    projectRoot.set(rootProject.projectDir.parentFile.absolutePath)
-    ndkPath.set(ndkDir)
-    conanDir.set(layout.buildDirectory.dir("conan"))
-}
-
-tasks.matching { it.name.startsWith("configureCMake") || it.name.startsWith("buildCMake") }.configureEach {
-    dependsOn("conanInstall")
 }
