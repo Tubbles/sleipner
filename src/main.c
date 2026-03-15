@@ -344,16 +344,18 @@ int main(void)
     dzlog_set_category("sleipner");
 #endif
 
+#ifdef __ANDROID__
+    SetConfigFlags(FLAG_FULLSCREEN_MODE);
+    InitWindow(0, 0, "Sleipner");
+    screen_width = GetRenderWidth();
+    screen_height = GetRenderHeight();
+    dzlog_info("android render=%dx%d screen=%dx%d", screen_width, screen_height, GetScreenWidth(), GetScreenHeight());
+#else
     InitWindow(SCREEN_WIDTH_DEFAULT, SCREEN_HEIGHT_DEFAULT, "Sleipner");
+#endif
     HideCursor();
 
-#ifdef __ANDROID__
-    /* On Android the window is always fullscreen; GetMonitorWidth/Height
-     * returns 0 so we read the actual surface size after InitWindow. */
-    screen_width = GetScreenWidth();
-    screen_height = GetScreenHeight();
-    dzlog_info("android screen=%dx%d", screen_width, screen_height);
-#else
+#ifndef __ANDROID__
     int monitor = GetCurrentMonitor();
     int mon_width = GetMonitorWidth(monitor);
     int mon_height = GetMonitorHeight(monitor);
