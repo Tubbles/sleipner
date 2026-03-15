@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build toolchain image
+        run: docker build -t sleipner-toolchain .
+
+      - name: Check formatting
+        run: CONTAINER_CMD=docker ./ci.sh check
+
+      - name: Build
+        run: CONTAINER_CMD=docker ./ci.sh build
+
+      - name: Test
+        run: CONTAINER_CMD=docker ./ci.sh test
+
+      - name: Lint
+        run: CONTAINER_CMD=docker ./ci.sh lint
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: sleipner-linux-x86_64
+          path: build/Release/sleipner
