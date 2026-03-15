@@ -1,0 +1,32 @@
+Checks: >
+  clang-analyzer-*,
+  bugprone-*,
+  -bugprone-random-generator-seed,
+  cert-*,
+  -cert-msc30-c,
+  -cert-msc32-c,
+  -cert-msc50-cpp,
+  -cert-msc51-cpp,
+  concurrency-*,
+  -concurrency-mt-unsafe,
+  misc-*,
+  -misc-predictable-rand,
+  performance-*,
+  portability-*,
+  readability-*,
+
+CheckOptions:
+  readability-identifier-naming.FunctionCase: lower_case
+  readability-identifier-naming.VariableCase: lower_case
+  readability-identifier-naming.MacroDefinitionCase: UPPER_CASE
+  readability-identifier-naming.EnumConstantCase: UPPER_CASE
+  readability-identifier-naming.TypedefCase: CamelCase
+  readability-identifier-naming.StructCase: CamelCase
+  readability-function-cognitive-complexity.Threshold: 25
+  readability-implicit-bool-conversion.AllowIntegerConditions: true
+  readability-implicit-bool-conversion.AllowPointerConditions: true
+  readability-magic-numbers.IgnoredFloatingPointValues: '0.0;0.5;1.0;2.0;3.0;-1.0;-0.5'
+  readability-magic-numbers.IgnoredIntegerValues: '0;1;2;3;4;8;16;255'
+
+HeaderFilterRegex: 'src/(?!vendor/).*\.h$'
+WarningsAsErrors: ''
