@@ -248,7 +248,7 @@ static void draw_grass(Texture2D texture, RectU32 bounds)
 
 /* --- Debug overlay --- */
 
-static bool debug_enabled = false;
+static bool debug_enabled = true;
 static char debug_log_lines[DEBUG_LOG_LINES][DEBUG_LOG_LINE_LEN];
 static int debug_log_head = 0;
 static int debug_log_count = 0;
