@@ -333,6 +333,8 @@ static void draw_debug_info(const Player *player, RectU32 game_bounds, int frame
     }
 }
 
+static bool gamedata_loaded = false;
+
 static void load_gamedata(void)
 {
     FILE *file = fopen(GAMEDATA_PATH, "r");
@@ -385,6 +387,7 @@ static void load_gamedata(void)
     }
 
     toml_free(root);
+    gamedata_loaded = true;
 }
 
 int main(void)
@@ -512,6 +515,11 @@ int main(void)
         }
 
         UpdateMusicStream(bgm);
+
+        /* Retry loading gamedata if permission wasn't granted yet */
+        if (!gamedata_loaded && frame % 60 == 0) {
+            load_gamedata();
+        }
 
         /* Toggle debug overlay: F3 or gamepad Select */
         if (IsKeyPressed(KEY_F3) || IsGamepadButtonPressed(0, GAMEPAD_BUTTON_MIDDLE_LEFT)) {
