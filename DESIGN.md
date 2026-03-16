@@ -16,14 +16,18 @@ The editor is a mode within the game, not a separate tool. Toggle between play m
 - **Gamepad-first.** Every editor action is reachable from a controller. No mouse/keyboard required (though keyboard shortcuts are fine as secondary input).
 - **Always show the controls.** Every editor screen displays the current button mappings on-screen — what each button does in the current context. The user should never have to memorize or guess. Button hints update dynamically as the context changes (e.g. different hints when an entity is selected vs when nothing is selected).
 - **Data, not code.** Levels, entity blueprints, collision shapes, and behavior parameters are data that the editor reads and writes. Game logic consumes this data at runtime.
+- **The editor is the only tool.** Every single aspect of game data — without exception — must be editable from within the editor. If it's in `gamedata.toml`, it has an editor mode. There is no workflow that requires hand-editing the TOML file. The editor is the complete authoring environment for the game.
 - **Round-trip.** Play, pause, edit, resume. The editor and the game share the same world state.
 
 ### Editor Modes
 
-1. **Browse mode** — Free camera, select entities, inspect properties.
-2. **Place mode** — Pick from a blueprint palette, place instances in the world.
-3. **Edit mode** — Modify the selected entity: move, resize collision box, change sprite, tweak parameters.
-4. **Tile mode** — Paint terrain tiles on the grid.
+1. **Scene mode** — The main level editing mode. Free camera, select/place/move/delete entity instances, inspect properties, compose scenes.
+2. **Blueprint mode** — Create and modify entity blueprints. Set texture, source rect, collision box, behavior, attributes, rules, children. All blueprints are listed and searchable. Changes propagate to all instances (unless overridden).
+3. **Tile mode** — Paint terrain tiles on the grid. Ground and overlay layers. Tile palette with preview. Autotile placement.
+4. **Atlas mode** — Set up sprite atlases. View the full texture, define named regions (source rects), preview individual sprites. This is how you tell the engine which rectangle of a sprite sheet corresponds to which sprite.
+5. **Animation mode** — Define and preview animations. Set frame count, frame size, speed, row. Scrub through frames with the gamepad. Preview the animation playing on the entity. Link animation states (idle, walk, attack) to directional rows.
+6. **Rule mode** — Build and test game logic. Visual rule editor with trigger/condition/action pickers. Test rules by switching to play mode and back.
+7. **Level mode** — Manage levels. Create new levels, set level size, music, spawn points, transitions between levels. View all levels as a list or map.
 
 ### Editor UI
 
@@ -587,8 +591,13 @@ pos = [320, 180]
 - [ ] Free camera with cursor
 - [ ] Browse mode: select entities, inspect attributes
 - [ ] Edit mode: move entities, resize collision boxes with visual handles
-- [ ] Place mode: blueprint palette, place instances
-- [ ] Tile mode: paint ground and overlay layers
+- [ ] Scene mode: place/move/delete entities, inspect properties
+- [ ] Blueprint mode: create/edit blueprints (texture, collision, behavior, attributes, rules, children)
+- [ ] Tile mode: paint ground and overlay layers, tile palette
+- [ ] Atlas mode: view textures, define named source rects, preview sprites
+- [ ] Animation mode: define frame sequences, preview playback, link directional states
+- [ ] Rule mode: visual trigger/condition/action editor, test by switching to play
+- [ ] Level mode: create levels, set size/music/spawn/transitions
 - [ ] Radial picker widget
 - [ ] Scroll picker widget
 - [ ] Word builder (seeded vocabulary + gamedata vocabulary)
@@ -596,7 +605,6 @@ pos = [320, 180]
 - [ ] Value adjuster with visual feedback
 - [ ] Gamepad keyboard (last resort)
 - [ ] Attribute editor (built-in + custom, with diff view)
-- [ ] Rule editor (trigger/condition/action builder with pickers)
 - [ ] Child entity editor (composition, tags)
 - [ ] Undo (snapshot-based, arena memcpy)
 - [ ] Save to gamedata.toml (TOML emitter, atomic write)
