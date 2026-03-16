@@ -766,7 +766,7 @@ pos = [320, 180]
 - [ ] Split game loop into update (pure logic) and render (side effects)
 - [ ] Integration test harness (load gamedata, feed inputs, assert state)
 - [x] Arena allocator for gamedata memory
-- [ ] Load blueprints into blueprint lookup table
+- [x] Load blueprints into blueprint lookup table
 - [ ] Instantiate level entities from gamedata (replace hardcoded obstacles)
 - [ ] Remove hardcoded obstacle data from main.c
 - [ ] Hot-reload: poll mtime in play mode, reload on change
