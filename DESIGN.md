@@ -358,6 +358,52 @@ The C side has one function per action type. The rule engine loops: check trigge
 - **Restart level**: reload from gamedata, reset all runtime state.
 - **Attribute watcher**: pin attributes to the debug overlay — see them update in real time during play. Pick entities, pick attributes, they display as a live HUD.
 
+## Multiplayer
+
+### Network Model
+
+- **LAN-based** — optimized for couch co-op on the same WiFi/subnet. Low latency assumed.
+- **Host-authoritative** — one player hosts, others join. The host runs the simulation. Clients send inputs, receive state.
+- **UDP** for frequent state updates (positions, attribute changes). Reliable channel (TCP or reliable UDP) for important events (rule triggers, item pickups, editor operations).
+- **LAN discovery** — host broadcasts presence on the local network. Clients see available games and join without entering an IP address.
+
+### Player Model
+
+- Each player has their own device, own screen, own camera.
+- **No player cap** — protocol designed for N players, optimized for 2–4.
+- Players can be in the same level or different levels simultaneously.
+- Each player entity is **owned by its player** — only that player's inputs move it.
+- NPCs and world entities are owned by the host.
+
+### Input Abstraction
+
+- Entity attribute `input_source` identifies where input comes from: `local:0` (gamepad 0), `local:1`, `network:player_id`.
+- The player behavior reads from the input source, not a hardcoded gamepad index.
+- Adding a new player = spawn a player entity with a new input source. No code changes needed.
+
+### State Sync
+
+- Host sends **attribute deltas** (only what changed since last tick) to all clients.
+- Clients send their **input state** each tick to host.
+- On join: host sends a **full state snapshot**, client catches up.
+- Entity composition trees sync as a unit — parent + all tagged children.
+- Rules execute on the host only — clients see the results via attribute deltas.
+
+### Camera
+
+- Each client runs its own camera following its own player entity.
+- Camera logic is entirely local — not synced over the network.
+- All clients render from the same world state but from their own viewpoint.
+
+### Collaborative Editor
+
+- **Multiple cursors** — each player has their own cursor, colored and labeled with their name.
+- **Entity locking** — selecting an entity claims it. Others see it highlighted in the owner's color and cannot modify it until released.
+- **Live sync** — edit operations are synced as they happen. All players see changes in real time.
+- **Per-player undo** — each player has their own snapshot stack. Undoing only affects that player's changes.
+- **Save is host-only** — the host writes `gamedata.toml`. Any player can request a save, but the host executes it.
+- All editor widgets (radial picker, word builder, fuzzy finder) work identically for every player.
+
 ## Data Architecture
 
 Game data is split into two concerns with separate storage:
@@ -556,12 +602,25 @@ pos = [320, 180]
 - [ ] Save to gamedata.toml (TOML emitter, atomic write)
 - [ ] Attribute watcher (pin to debug overlay, live values during play)
 
-### Phase 6 — Distribution
+### Phase 6 — Multiplayer
+- [ ] Input source abstraction (decouple player behavior from hardcoded gamepad)
+- [ ] Multiple player entities with independent input sources
+- [ ] Per-player camera (each client follows own player)
+- [ ] Host-authoritative game loop (host simulates, clients send inputs)
+- [ ] State sync: attribute deltas over UDP
+- [ ] Reliable channel for events (rule triggers, item pickups)
+- [ ] Full state snapshot on player join
+- [ ] LAN discovery (broadcast/listen)
+- [ ] Collaborative editor: multiple cursors, entity locking, live sync
+- [ ] Per-player undo in editor
+- [ ] Host-only save with save requests from clients
+
+### Phase 7 — Distribution
 - [ ] Embed `gamedata.toml` in binary for release builds (desktop)
 - [ ] Bundle `gamedata.toml` in APK assets for release (Android)
 - [ ] Dev mode flag to load from filesystem instead of embedded
 
-### Phase 7 — Gameplay Systems
+### Phase 8 — Gameplay Systems
 - [ ] Camera system (follow, bounds, transitions)
 - [ ] Combat (hitboxes, damage, knockback, i-frames)
 - [ ] Inventory & items
