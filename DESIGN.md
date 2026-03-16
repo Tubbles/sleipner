@@ -67,16 +67,82 @@ A blueprint is a named template that defines which components an entity has and 
 
 ### Behaviors
 
-Behaviors are coded in C and referenced by ID. They implement the "what happens" part that can't be pure data. Examples:
+Behaviors are coded in C and referenced by ID. They implement runtime logic that can't be pure data — physics, input, animation state machines. Examples:
 
-- `BEHAVIOR_STATIC` — Does nothing (trees, rocks, decorations).
-- `BEHAVIOR_PLAYER` — Reads input, moves, animates.
-- `BEHAVIOR_NPC_WALK` — Walks a patrol path, stops, turns.
-- `BEHAVIOR_CHEST` — Opens on interaction, grants item.
-- `BEHAVIOR_DOOR` — Transitions to another level/area.
-- `BEHAVIOR_TRIGGER` — Fires an event when the player enters a zone.
+- `static` — Does nothing (trees, rocks, decorations).
+- `player` — Reads input, moves, animates.
+- `npc_walk` — Walks a patrol path, stops, turns.
 
-The behavior params array holds floats that the behavior interprets (e.g. patrol speed, interaction radius, target level ID). The editor exposes these as named fields based on the behavior_id.
+The behavior params array holds floats that the behavior interprets (e.g. patrol speed, interaction radius). The editor exposes these as named fields based on the behavior_id.
+
+Most game logic that used to require dedicated behaviors (chests, doors, triggers) is now handled by the rule system instead.
+
+### Rules (Triggers / Conditions / Actions)
+
+Rules make game logic data-driven. Each entity can have zero or more rules. A rule is: one **trigger**, zero or more **conditions** (all must be true), and a list of **actions** (executed in order).
+
+**Triggers** — what fires the rule:
+
+| Trigger | Fires when |
+|---|---|
+| `interact` | Player presses A near the entity |
+| `enter` | Player steps into the entity's zone |
+| `collide` | Entity touches another entity |
+| `defeat` | Entity health reaches 0 |
+| `timer:N` | N seconds after level load or after another event |
+
+**Conditions** — optional gates:
+
+| Condition | True when |
+|---|---|
+| `has_item:X` | Player has item X |
+| `flag:X` | Global flag X is set |
+| `not_flag:X` | Global flag X is not set |
+| `health_below:N` | Player health < N |
+
+**Actions** — what happens:
+
+| Action | Effect |
+|---|---|
+| `give_item:X` | Add item to inventory |
+| `remove_item:X` | Consume item from inventory |
+| `set_flag:X` | Set a global flag |
+| `clear_flag:X` | Unset a global flag |
+| `change_sprite:x,y,w,h` | Swap source rect (e.g. open chest) |
+| `play_sound:file` | Play a sound effect |
+| `dialogue:text` | Show dialogue box |
+| `transition:level,x,y` | Go to level at position |
+| `spawn:blueprint,x,y` | Create entity at position |
+| `destroy` | Remove the entity |
+| `camera_pan:x,y,duration` | Pan camera over time |
+
+**TOML example:**
+
+```toml
+[[blueprint]]
+name = "locked_chest"
+texture = "chest.png"
+src = [0, 0, 16, 16]
+collision_offset = [0, 0]
+collision_size = [16, 16]
+behavior = "static"
+
+[[blueprint.rule]]
+trigger = "interact"
+conditions = ["has_item:key"]
+actions = [
+  "remove_item:key",
+  "set_flag:chest_1_opened",
+  "change_sprite:16,0,16,16",
+  "give_item:sword",
+  "play_sound:chest_open.wav",
+  "dialogue:You found a sword!",
+]
+```
+
+The C side has one function per action type. The rule engine loops: check trigger → check conditions → execute actions. Adding a new trigger/condition/action type is one C function — automatically available in the editor.
+
+**Flags** are a global string set that persists with save data. They gate progression (e.g. "boss_defeated", "bridge_repaired") and allow rules to respond to world state.
 
 ## Data Architecture
 
