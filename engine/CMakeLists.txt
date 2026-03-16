@@ -12,6 +12,7 @@ target_include_directories(tomlc99 PUBLIC vendor/tomlc99)
 add_library(engine STATIC
     src/arena.c
     src/audio.c
+    src/blueprint.c
     src/collision.c
     src/input.c
     src/particle.c

@@ -14,6 +14,13 @@ void test_arena_alloc_returns_null_when_full(void);
 void test_arena_reset(void);
 void test_arena_snapshot_restore(void);
 
+/* test_blueprint.c */
+void test_blueprint_load_single(void);
+void test_blueprint_load_multiple(void);
+void test_blueprint_find(void);
+void test_blueprint_skip_nameless(void);
+void test_blueprint_no_blueprints_section(void);
+
 /* test_shape.c */
 void test_circle_bounds_centered(void);
 void test_square_bounds_same_as_circle(void);
@@ -57,6 +64,12 @@ int main(void)
     RUN_TEST(test_arena_alloc_returns_null_when_full);
     RUN_TEST(test_arena_reset);
     RUN_TEST(test_arena_snapshot_restore);
+
+    RUN_TEST(test_blueprint_load_single);
+    RUN_TEST(test_blueprint_load_multiple);
+    RUN_TEST(test_blueprint_find);
+    RUN_TEST(test_blueprint_skip_nameless);
+    RUN_TEST(test_blueprint_no_blueprints_section);
 
     RUN_TEST(test_circle_bounds_centered);
     RUN_TEST(test_square_bounds_same_as_circle);
