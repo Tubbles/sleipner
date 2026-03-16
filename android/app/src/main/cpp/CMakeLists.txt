@@ -22,6 +22,7 @@ set(NATIVE_APP_GLUE_DIR "${ANDROID_NDK}/sources/android/native_app_glue")
 add_library(sleipner SHARED
     ${NATIVE_APP_GLUE_DIR}/android_native_app_glue.c
     ${PROJECT_ROOT}/vendor/zlog/zlog_android.c
+    ${PROJECT_ROOT}/engine/vendor/tomlc99/toml.c
     ${PROJECT_ROOT}/engine/src/audio.c
     ${PROJECT_ROOT}/engine/src/collision.c
     ${PROJECT_ROOT}/engine/src/input.c
@@ -35,6 +36,7 @@ target_include_directories(sleipner PRIVATE
     ${NATIVE_APP_GLUE_DIR}
     ${PROJECT_ROOT}/vendor/zlog
     ${PROJECT_ROOT}/vendor/unity
+    ${PROJECT_ROOT}/engine/vendor/tomlc99
     ${PROJECT_ROOT}/engine/src
     ${PROJECT_ROOT}/src
 )
