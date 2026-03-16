@@ -46,6 +46,34 @@ conan build .
 - **Data-oriented design.** Game state is plain structs. Logic operates on that data. Data flow is one-directional: input -> state -> render.
 - **Test everything with Unity + fff.h.** Every non-trivial pure function should have corresponding tests in `test/`. If a function is hard to test, it probably does too much.
 
+## Testing Strategy
+
+Two levels of testing, both run in CI:
+
+### Unit Tests (`test/unit/`)
+- Test individual pure functions in isolation.
+- Use Unity + fff.h for mocking.
+- Fast, no engine initialization needed.
+- Example: test collision resolution, attribute lookup, TOML parsing helpers.
+
+### Integration Tests (`test/integration/`)
+- Run the full engine in **headless mode** — no window, no rendering, no audio.
+- Load real gamedata.toml files (test fixtures in `test/fixtures/`).
+- Feed synthetic inputs, advance N frames, assert on game state.
+- Exercise subsystem interactions: gamedata loading → entity instantiation → rule evaluation → attribute changes → collision → state transitions.
+- Use Unity for assertions, but the setup is a real engine init/teardown cycle.
+- Example: load a level with a locked chest, simulate player walking to it, simulate interact input, assert flag is set and item is in inventory.
+
+### Headless Engine Mode
+- The engine must support initialization without creating a window or audio device.
+- The game loop splits cleanly into `update(state, input, delta_time)` and `render(state)`. Tests only call update.
+- Every new subsystem must be testable headlessly. If adding a feature requires a screen to test, the architecture is wrong — refactor until the logic is separable from the rendering.
+
+### Testing Discipline
+- **Every new feature ships with tests.** Unit tests for the pure logic, integration tests for the subsystem interaction. A feature is not done until its tests are written.
+- **Tests document behavior.** Integration test scenarios serve as executable documentation of how the game systems work together.
+- **Test the interesting cases.** Don't test trivial getters. Test state transitions, edge cases, rule interactions, and anything that has broken before.
+
 ## Game Design Notes
 
 - **Genre:** Top-down action RPG in the style of classic Zelda (Link to the Past / Link's Awakening).
