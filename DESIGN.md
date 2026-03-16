@@ -493,49 +493,83 @@ pos = [320, 180]
 
 ## Roadmap
 
-### Phase 1 — Foundation (Current)
+### Phase 1 — Foundation (DONE)
 - [x] Tiled grass background
 - [x] Player avatar with animation and gamepad control
-- [x] Static obstacles with AABB collision
-- [x] Depth-sorted rendering
-- [x] Background music
-- [x] Debug overlay (F3)
-- [x] Android APK build
+- [x] Static obstacles with AABB collision (hardcoded in main.c)
+- [x] Depth-sorted rendering (by collision bottom edge Y)
+- [x] Background music (embedded mp3)
+- [x] Debug overlay (F3 / gamepad Select — collision boxes, info panel, scrolling log)
+- [x] Android APK build (signed, sensorLandscape, 1920x1080)
+- [x] GitHub Actions CI (format, build, test, lint + Android APK artifact)
 
-### Phase 2 — Data Pipeline
-- [ ] Create `data/gamedata.toml` with current level as TOML data
-- [ ] Load blueprints and level from `gamedata.toml` at startup (tomlc99)
-- [ ] Remove hardcoded obstacles from main.c
-- [ ] TOML emitter for editor save (tomlc99 is read-only)
-- [ ] Hard-link `data/gamedata.toml` into Syncthing share
-- [ ] Game reads gamedata path (repo-relative on desktop, Syncthing folder on Android)
+### Phase 2 — Data Pipeline (IN PROGRESS)
+- [x] Create `data/gamedata.toml` with blueprint and level data
+- [x] Vendor tomlc99 in `engine/vendor/tomlc99/`
+- [x] Parse and log gamedata.toml on startup
+- [x] Platform-conditional gamedata path (repo-relative on desktop, Syncthing on Android)
+- [x] Retry gamedata load until Android storage permission is granted
+- [ ] Arena allocator for gamedata memory
+- [ ] Load blueprints into blueprint lookup table
+- [ ] Instantiate level entities from gamedata (replace hardcoded obstacles)
+- [ ] Remove hardcoded obstacle data from main.c
+- [ ] Hot-reload: poll mtime in play mode, reload on change
+- [ ] TOML emitter for editor save
 
 ### Phase 3 — Entity System
-- [ ] Component structs (Transform, Sprite, Collision)
-- [ ] Entity storage (flat array or slot map)
-- [ ] Convert existing Player and Obstacle to entity instances
-- [ ] Instantiate entities from blueprint data
+- [ ] Attribute system (built-in + custom, typed key-value pairs)
+- [ ] Blueprint/instance scoping (instance overrides, blueprint fallback)
+- [ ] Blueprint inheritance (extends)
+- [ ] Entity storage (flat array in arena)
+- [ ] Convert Player and Obstacle to entity instances with attributes
+- [ ] Entity composition (children with relative positioning)
+- [ ] Tag system (named references within composition trees)
 
-### Phase 4 — Editor Mode
-- [ ] Toggle play/editor mode
+### Phase 4 — Rule Engine
+- [ ] Rule struct (trigger + conditions + actions)
+- [ ] Trigger evaluation (interact, enter, collide, defeat, timer)
+- [ ] Condition evaluation (has_item, flag, attr checks, tag references)
+- [ ] Action execution (one C function per action type)
+- [ ] Flag storage (global string set, persists with save)
+
+### Phase 5 — Editor Mode
+- [ ] Toggle play/editor mode (instant, shared world state)
+- [ ] On-screen button hints (context-sensitive, always visible)
 - [ ] Free camera with cursor
-- [ ] Select entities, show properties
-- [ ] Move entities with gamepad
-- [ ] Resize collision boxes visually
-- [ ] Place new entities from blueprint palette
-- [ ] Save level back to text file
+- [ ] Browse mode: select entities, inspect attributes
+- [ ] Edit mode: move entities, resize collision boxes with visual handles
+- [ ] Place mode: blueprint palette, place instances
+- [ ] Tile mode: paint ground and overlay layers
+- [ ] Radial picker widget
+- [ ] Scroll picker widget
+- [ ] Word builder (seeded vocabulary + gamedata vocabulary)
+- [ ] Fuzzy finder for existing names
+- [ ] Value adjuster with visual feedback
+- [ ] Gamepad keyboard (last resort)
+- [ ] Attribute editor (built-in + custom, with diff view)
+- [ ] Rule editor (trigger/condition/action builder with pickers)
+- [ ] Child entity editor (composition, tags)
+- [ ] Undo (snapshot-based, arena memcpy)
+- [ ] Save to gamedata.toml (TOML emitter, atomic write)
+- [ ] Attribute watcher (pin to debug overlay, live values during play)
 
-### Phase 5 — Distribution
+### Phase 6 — Distribution
 - [ ] Embed `gamedata.toml` in binary for release builds (desktop)
 - [ ] Bundle `gamedata.toml` in APK assets for release (Android)
 - [ ] Dev mode flag to load from filesystem instead of embedded
 
-### Phase 6 — Gameplay
+### Phase 7 — Gameplay Systems
+- [ ] Camera system (follow, bounds, transitions)
+- [ ] Combat (hitboxes, damage, knockback, i-frames)
+- [ ] Inventory & items
+- [ ] Dialogue system
+- [ ] Level transitions
+- [ ] Animation state machine (directional, idle/walk/attack/hurt)
+- [ ] HUD (health, inventory screen, pause menu)
+- [ ] AI & pathfinding (patrol, aggro, chase)
+- [ ] Audio (music crossfade, spatial sound, ambient layers)
 - [ ] NPC behaviors (patrol, dialogue)
-- [ ] Player interaction (chests, doors)
-- [ ] Multiple levels with transitions
-- [ ] Combat system
-- [ ] Inventory
+- [ ] Save/load system
 
 ## Resolved Decisions
 
