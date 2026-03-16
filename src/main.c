@@ -1,6 +1,5 @@
 #include "raylib.h"
 
-#include "audio.h"
 #include "input.h"
 #include "rect.h"
 #include "screen.h"
@@ -12,8 +11,6 @@
 #include <math.h>
 #include <stdarg.h>
 #include <stdio.h>
-#include <stdlib.h>
-#include <time.h>
 
 #define HEARTBEAT_INTERVAL 300
 #define TARGET_FPS 60
@@ -24,7 +21,6 @@
 #define PLAYER_SPEED 80.0F
 #define WALK_FRAMES 6
 #define ANIM_SPEED 10.0F
-#define MAX_OBSTACLES 32
 #define DEBUG_LOG_LINES 20
 #define DEBUG_LOG_LINE_LEN 128
 #define DEBUG_FONT_SIZE 16
@@ -374,9 +370,7 @@ int main(void)
     input_load_mappings((const char *)asset_gamecontrollerdb, sizeof(asset_gamecontrollerdb));
 #endif
     SetTargetFPS(TARGET_FPS);
-    audio_init();
-
-    srand((unsigned)time(NULL));
+    InitAudioDevice();
 
     /* Load textures */
 #ifdef __ANDROID__
@@ -526,7 +520,7 @@ quit:
     UnloadTexture(tex_chest);
     UnloadTexture(tex_house);
     UnloadTexture(tex_fence);
-    audio_shutdown();
+    CloseAudioDevice();
     CloseWindow();
 #ifndef __ANDROID__
     zlog_fini();
