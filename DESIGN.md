@@ -279,11 +279,11 @@ The behavior params array holds floats that the behavior interprets (e.g. patrol
 
 Most game logic that used to require dedicated behaviors (chests, doors, triggers) is now handled by the rule system instead.
 
-### Rules (Triggers / Conditions / Actions)
+### Rules (Visual Scripting System)
 
-Rules make game logic data-driven. Each entity can have zero or more rules. A rule is: one **trigger**, zero or more **conditions** (all must be true), and a list of **actions** (executed in order).
+Rules are the data-driven scripting system — inspired by the Warcraft 3 World Editor trigger system. Each entity can have zero or more rules. Simple rules stay simple (flat string lists). Complex rules use structured control flow, variables, and entity queries. The goal is that rules should never feel limiting — anything you'd want game logic to do should be expressible without writing C.
 
-**Triggers** — what fires the rule:
+#### Triggers
 
 | Trigger | Fires when |
 |---|---|
@@ -291,9 +291,16 @@ Rules make game logic data-driven. Each entity can have zero or more rules. A ru
 | `enter` | Player steps into the entity's zone |
 | `collide` | Entity touches another entity |
 | `defeat` | Entity health reaches 0 |
-| `timer:N` | N seconds after level load or after another event |
+| `timer:N` | N seconds elapsed (one-shot) |
+| `timer_periodic:N` | Every N seconds (repeating) |
+| `event:name` | A custom named event is fired (by another rule) |
+| `on_spawn` | Entity is created/instantiated |
+| `on_destroy` | Entity is about to be destroyed |
+| `attr_changed:X` | Attribute X on self changes value |
 
-**Conditions** — optional gates:
+#### Conditions
+
+Conditions support AND/OR/NOT grouping. A flat list is implicit AND (backwards compatible). For complex logic, use `{ or = [...] }` and `{ not = "..." }`.
 
 | Condition | True when |
 |---|---|
@@ -301,11 +308,17 @@ Rules make game logic data-driven. Each entity can have zero or more rules. A ru
 | `flag:X` | Global flag X is set |
 | `not_flag:X` | Global flag X is not set |
 | `attr:X` | Attribute X on self is truthy |
-| `attr:X<N` | Numeric attribute comparison |
+| `attr:X<N` / `attr:X>N` / `attr:X==N` | Numeric comparison |
 | `not_attr:X` | Attribute X on self is falsy |
-| `tag.attr:X` | Attribute X on tagged family member is truthy |
+| `tag.attr:X` | Attribute on tagged family member |
+| `var:X` | Variable X is truthy |
+| `var:X<N` / `var:X>N` / `var:X==N` | Variable comparison |
+| `entity_count:blueprint<N` | Count of active entities of a blueprint type |
+| `{ or = [...] }` | Any sub-condition is true |
+| `{ and = [...] }` | All sub-conditions are true (explicit) |
+| `{ not = "..." }` | Sub-condition is false |
 
-**Actions** — what happens:
+#### Actions
 
 | Action | Effect |
 |---|---|
@@ -323,35 +336,137 @@ Rules make game logic data-driven. Each entity can have zero or more rules. A ru
 | `spawn:blueprint,x,y` | Create entity at position |
 | `destroy` | Remove the entity |
 | `camera_pan:x,y,duration` | Pan camera over time |
+| `camera_shake:duration` | Screen shake effect |
+| `fire_event:name` | Fire a custom named event (other rules can trigger on it) |
+| `call:subroutine_name` | Execute a named subroutine |
+| `set_var:name,value` | Set a local or global variable |
+| `wait:seconds` | Pause execution for N seconds (async, doesn't block the game) |
+| `create_timer:name,seconds` | Create and start a named timer |
+| `destroy_timer:name` | Stop and remove a named timer |
 
-**TOML example:**
+#### Variables
 
+Variables store typed values (int, float, bool, string, entity reference). Two scopes:
+
+- **Local variables** — scoped to a single rule execution. Created with `set_var`, vanish when the rule finishes. Used for intermediate calculations, loop counters, temporary references.
+- **Global variables** — persist across rule executions and save/load. Accessed with `global.var_name`. More powerful than flags (which are just boolean globals) — globals can store numbers, strings, entity references.
+
+Variables can be used as action parameters via `$` prefix: `add_attr:$.health,-$damage`.
+
+#### Control Flow
+
+Actions can include structured control flow, turning the action list into a visual program:
+
+**If/else:**
 ```toml
-[[blueprint]]
-name = "locked_chest"
-texture = "chest.png"
-src = [0, 0, 16, 16]
-collision_offset = [0, 0]
-collision_size = [16, 16]
-behavior = "static"
-is_locked = true
-
-[[blueprint.rule]]
-trigger = "interact"
-conditions = ["self.attr:is_locked", "has_item:key"]
 actions = [
-  "remove_item:key",
-  "set_attr:self.is_locked,false",
-  "change_sprite:16,0,16,16",
-  "give_item:sword",
-  "play_sound:chest_open.wav",
-  "dialogue:You found a sword!",
+  { if = "has_item:key", then = [
+    "remove_item:key",
+    "call:unlock_door",
+  ], else = [
+    "dialogue:It's locked.",
+  ]},
 ]
 ```
 
-The C side has one function per action type. The rule engine loops: check trigger → check conditions → execute actions. Adding a new trigger/condition/action type is one C function — automatically available in the editor.
+**Loops:**
+```toml
+actions = [
+  # Repeat N times
+  { repeat = 3, do = [
+    "spawn:enemy_bat,$random_x,$random_y",
+  ]},
+]
+```
 
-**Flags** are a global string set that persists with save data. They gate progression (e.g. "boss_defeated", "bridge_repaired") and allow rules to respond to world state.
+**For-each (entity queries):**
+```toml
+actions = [
+  # For each entity matching a condition within a radius
+  { for_each = "entity_in_radius:100", condition = "attr:is_destructible", do = [
+    "add_attr:$.health,-$damage",
+    "spawn:smoke_particle,$.position",
+  ]},
+]
+```
+
+The `$` inside a for-each body refers to the current entity being iterated. `$.health` is that entity's health, `$.position` is its position.
+
+#### Subroutines
+
+Named, reusable action sequences — callable from any rule via `call:name`. Avoids duplicating logic across rules. Defined at the top level of gamedata:
+
+```toml
+[[subroutine]]
+name = "unlock_door"
+actions = [
+  "play_sound:door_unlock.wav",
+  "set_attr:self.is_locked,false",
+  "change_sprite:16,0,16,16",
+  "dialogue:The door opens.",
+]
+```
+
+#### Custom Events
+
+Events decouple complex interactions across entities. One rule fires an event, any number of rules in any entities can trigger on it:
+
+```toml
+# Boss entity fires event on defeat
+[[blueprint.rule]]
+trigger = "defeat"
+actions = ["fire_event:boss_defeated"]
+
+# Gate entity in a different part of the level reacts
+[[blueprint.rule]]
+trigger = "event:boss_defeated"
+actions = [
+  "set_attr:self.solid,false",
+  "change_sprite:0,16,32,32",
+  "play_sound:gate_open.wav",
+]
+
+# Music entity reacts too
+[[blueprint.rule]]
+trigger = "event:boss_defeated"
+actions = ["play_sound:victory_fanfare.wav"]
+```
+
+#### Complete Example
+
+```toml
+# Explosion trap with area damage, hard mode scaling, and cleanup
+[[blueprint]]
+name = "explosion_trap"
+behavior = "static"
+damage = 50
+
+[[blueprint.rule]]
+name = "explode_on_enter"
+trigger = "enter"
+actions = [
+  "set_var:damage,50",
+  { if = "flag:hard_mode", then = [
+    "set_var:damage,100",
+  ]},
+  "play_sound:explosion.wav",
+  "camera_shake:0.5",
+  { for_each = "entity_in_radius:100", condition = "attr:is_destructible", do = [
+    "add_attr:$.health,-$damage",
+  ]},
+  "spawn:fire_zone,self.position",
+  "set_flag:trap_triggered",
+  "destroy",
+]
+```
+
+#### Implementation
+
+The C side has one function per action type and one per condition type. The rule engine walks the action tree: flat strings are simple actions, inline tables are control flow nodes. Adding a new action/condition/trigger type is one C function — automatically available in the editor.
+
+The editor renders rules as a visual tree (like WC3's trigger view), navigated with the gamepad. Each node is selectable, expandable, and editable with radial pickers and the word builder.
+
+**Flags** are syntactic sugar for boolean global variables. `set_flag:X` is equivalent to `set_var:global.X,true`. They persist with save data and gate progression.
 
 ### Live Edit/Play Flow
 
@@ -579,11 +694,16 @@ pos = [320, 180]
 - [ ] Tag system (named references within composition trees)
 
 ### Phase 4 — Rule Engine
-- [ ] Rule struct (trigger + conditions + actions)
-- [ ] Trigger evaluation (interact, enter, collide, defeat, timer)
-- [ ] Condition evaluation (has_item, flag, attr checks, tag references)
+- [ ] Rule struct (trigger + conditions + action tree)
+- [ ] Trigger evaluation (interact, enter, collide, defeat, timer, event, on_spawn, attr_changed)
+- [ ] Condition evaluation (has_item, flag, attr, var, entity_count, AND/OR/NOT grouping)
 - [ ] Action execution (one C function per action type)
-- [ ] Flag storage (global string set, persists with save)
+- [ ] Control flow nodes (if/else, repeat, for-each with entity queries)
+- [ ] Variable system (local per-execution, global persistent, $ references in parameters)
+- [ ] Subroutines (named reusable action sequences, callable via `call:`)
+- [ ] Custom events (fire_event / event trigger, cross-entity decoupling)
+- [ ] Timer management (create, destroy named timers)
+- [ ] Flag storage (syntactic sugar over boolean global variables)
 
 ### Phase 5 — Editor Mode
 - [ ] Toggle play/editor mode (instant, shared world state)
