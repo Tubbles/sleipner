@@ -126,65 +126,90 @@ Both sides edit the same file. Syncthing syncs to the phone. Git versions the re
 
 Note: hard links break when either side does a delete+recreate instead of in-place write. Syncthing and most text editors preserve inodes on save, but this is worth keeping in mind.
 
-### Game Data Format
+### Game Data Format (TOML)
 
-Plain text, section-based, one statement per line. `#` comments. `[section]` headers separate blueprints and levels. Each entity is a single line — clean one-line diffs.
+TOML via [tomlc99](https://github.com/cktan/tomlc99) (vendored at `engine/vendor/tomlc99/`). Human-readable, supports comments, clean diffs — each `[[blueprint]]` or `[[level.entity]]` block is a self-contained addition/removal in git.
 
-```
+```toml
 # === Blueprints ===
 
-[blueprint: tree]
-sprite: texture=tree.png src=0,0,64,80
-collision: offset=20,60 size=24,16
-behavior: static
+[[blueprint]]
+name = "tree"
+texture = "tree.png"
+src = [0, 0, 64, 80]
+collision_offset = [20, 60]
+collision_size = [24, 16]
+behavior = "static"
 
-[blueprint: chest]
-sprite: texture=chest.png src=0,0,16,16
-collision: offset=0,0 size=16,16
-behavior: chest
+[[blueprint]]
+name = "chest"
+texture = "chest.png"
+src = [0, 0, 16, 16]
+collision_offset = [0, 0]
+collision_size = [16, 16]
+behavior = "chest"
 
-[blueprint: house]
-sprite: texture=house.png src=0,0,96,128
-collision: offset=0,64 size=96,64
-behavior: static
+[[blueprint]]
+name = "house"
+texture = "house.png"
+src = [0, 0, 96, 128]
+collision_offset = [0, 64]
+collision_size = [96, 64]
+behavior = "static"
 
-[blueprint: fence_v]
-sprite: texture=fence.png src=0,0,16,48
-collision: offset=0,0 size=16,48
-behavior: static
+[[blueprint]]
+name = "fence_v"
+texture = "fence.png"
+src = [0, 0, 16, 48]
+collision_offset = [0, 0]
+collision_size = [16, 48]
+behavior = "static"
 
-[blueprint: player]
-sprite: texture=player.png src=0,0,32,32
-animation: frames=6 size=32 speed=10 row=0
-collision: offset=11,22 size=10,10
-behavior: player speed=80
+[[blueprint]]
+name = "player"
+texture = "player.png"
+src = [0, 0, 32, 32]
+collision_offset = [11, 22]
+collision_size = [10, 10]
+behavior = "player"
+speed = 80.0
+animation = { frames = 6, size = 32, speed = 10, row = 0 }
 
 # === Levels ===
 
-[level: overworld]
-size: 640,360
-music: bgm.mp3
+[[level]]
+name = "overworld"
+size = [640, 360]
+music = "bgm.mp3"
 
-entity: blueprint=house pos=40,20
-entity: blueprint=tree pos=200,60
-entity: blueprint=tree pos=350,150
-entity: blueprint=tree pos=80,200
-entity: blueprint=tree pos=450,40
-entity: blueprint=tree pos=500,220
-entity: blueprint=chest pos=300,100
-entity: blueprint=chest pos=160,280
-entity: blueprint=fence_v pos=260,50
-entity: blueprint=fence_v pos=260,98
-entity: blueprint=player pos=320,180
+[[level.entity]]
+blueprint = "house"
+pos = [40, 20]
+
+[[level.entity]]
+blueprint = "tree"
+pos = [200, 60]
+
+[[level.entity]]
+blueprint = "tree"
+pos = [350, 150]
+
+[[level.entity]]
+blueprint = "chest"
+pos = [300, 100]
+
+[[level.entity]]
+blueprint = "player"
+pos = [320, 180]
 ```
 
 ### Runtime Loading
 
-- On startup, the game reads `gamedata.txt` and parses all `[blueprint:]` and `[level:]` sections.
-- Blueprints are registered in a lookup table (name → component defaults).
-- The active level's entities are instantiated from their blueprints with per-instance overrides.
-- The editor modifies in-memory state and writes the entire file back on save.
-- Parser is hand-rolled C — the format is trivial to parse (read lines, split on spaces, split on `=`).
+- On startup, the game reads `gamedata.toml` via tomlc99.
+- `[[blueprint]]` entries are registered in a lookup table (name → component defaults).
+- The active `[[level]]` is selected and its `[[level.entity]]` entries are instantiated from their blueprints. Per-instance fields override blueprint defaults.
+- The editor modifies in-memory state and writes the entire file back on save via a TOML serializer (tomlc99 is read-only, so we write a simple emitter ourselves).
+- Hot-reload: optionally watch the file's mtime and reload when it changes (useful when editing on phone while running on desktop, or vice versa).
 
 ## Roadmap
 
@@ -198,11 +223,11 @@ entity: blueprint=player pos=320,180
 - [x] Android APK build
 
 ### Phase 2 — Data Pipeline
-- [ ] Create `data/gamedata.txt` with current level as data
-- [ ] Text parser for `[blueprint:]` and `[level:]` sections
-- [ ] Load blueprints and level from `gamedata.txt` at startup
+- [ ] Create `data/gamedata.toml` with current level as TOML data
+- [ ] Load blueprints and level from `gamedata.toml` at startup (tomlc99)
 - [ ] Remove hardcoded obstacles from main.c
-- [ ] Hard-link `data/gamedata.txt` into Syncthing share
+- [ ] TOML emitter for editor save (tomlc99 is read-only)
+- [ ] Hard-link `data/gamedata.toml` into Syncthing share
 - [ ] Game reads gamedata path (repo-relative on desktop, Syncthing folder on Android)
 
 ### Phase 3 — Entity System
@@ -221,8 +246,8 @@ entity: blueprint=player pos=320,180
 - [ ] Save level back to text file
 
 ### Phase 5 — Distribution
-- [ ] Embed `gamedata.txt` in binary for release builds (desktop)
-- [ ] Bundle `gamedata.txt` in APK assets for release (Android)
+- [ ] Embed `gamedata.toml` in binary for release builds (desktop)
+- [ ] Bundle `gamedata.toml` in APK assets for release (Android)
 - [ ] Dev mode flag to load from filesystem instead of embedded
 
 ### Phase 6 — Gameplay
@@ -232,13 +257,19 @@ entity: blueprint=player pos=320,180
 - [ ] Combat system
 - [ ] Inventory
 
+## Resolved Decisions
+
+- **Data format:** TOML via tomlc99 (vendored in `engine/vendor/tomlc99/`). Single file `data/gamedata.toml`.
+- **Sync mechanism:** Hard link from `data/gamedata.toml` into Syncthing share. Same inode — git and Syncthing both see real changes.
+- **Safe save:** Write to temp file, rename onto the original. Atomic on same filesystem, preserves hard link inode (rename replaces directory entry, not inode). Prevents corrupt partial writes from Syncthing races.
+- **Android data path:** Syncthing folder, e.g. `/storage/emulated/0/Sync/sleipner/gamedata.toml`. Hardcode for now, make configurable later if needed.
+- **Release distribution:** Embed `gamedata.toml` via `#embed` (desktop) / APK assets (Android). Dev builds load from filesystem path instead.
+- **Engine grows organically.** Don't build engine features speculatively — add them when the game needs them.
+
 ## Open Questions
 
 - Tile map format: fixed grid size? Multiple layers? Autotiling?
-- Undo system: command pattern with history stack? Snapshot-based?
-- How many behavior params are enough? Fixed array vs dynamic allocation?
-- Hot-reload: detect file changes and reload blueprints/levels live?
-- Android Syncthing path: hardcode or make configurable?
-- Conflict resolution: what if Syncthing syncs while the editor is saving? (Syncthing does in-place writes so hard link survives, but partial writes could corrupt. Write to temp + rename?)
-- Release builds: embed gamedata.txt, or ship alongside binary?
-- Hard link maintenance: document the `ln` setup step, detect broken links?
+- Undo system: command pattern with history stack, or snapshot the entire TOML and diff?
+- How many behavior params per entity? TOML makes this flexible (arbitrary key/value pairs per blueprint), but in-memory struct needs a cap or dynamic allocation.
+- Hot-reload: poll mtime on `gamedata.toml` each frame, or only reload on explicit action?
+- Should the TOML emitter try to preserve comments and formatting, or just regenerate cleanly?
