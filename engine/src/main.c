@@ -1,6 +1,9 @@
 #include "raylib.h"
 
+#include "arena.h"
+#include "blueprint.h"
 #include "input.h"
+#include "level.h"
 #include "rect.h"
 #include "screen.h"
 
@@ -55,15 +58,48 @@ typedef struct {
     bool moving;
 } Player;
 
-typedef struct {
-    Vector2 position;
-    Texture2D *texture;
-    Rectangle source;
-    Rectangle collision;
-} Obstacle;
-
 int screen_width = SCREEN_WIDTH_DEFAULT;
 int screen_height = SCREEN_HEIGHT_DEFAULT;
+
+/* Texture registry — maps texture filenames to loaded Texture2D handles */
+#define MAX_TEXTURES 64
+#define MAX_TEXTURE_FILENAME 64
+
+typedef struct {
+    char filename[MAX_TEXTURE_FILENAME];
+    Texture2D texture;
+} TextureEntry;
+
+static TextureEntry texture_registry[MAX_TEXTURES];
+static int texture_registry_count = 0;
+
+static void texture_registry_add(const char *filename, Texture2D texture)
+{
+    if (texture_registry_count >= MAX_TEXTURES) {
+        return;
+    }
+    TextureEntry *entry = &texture_registry[texture_registry_count];
+    strncpy(entry->filename, filename, MAX_TEXTURE_FILENAME - 1);
+    entry->filename[MAX_TEXTURE_FILENAME - 1] = '\0';
+    entry->texture = texture;
+    texture_registry_count++;
+}
+
+static Texture2D *texture_registry_lookup(const char *filename, void *user_data)
+{
+    (void)user_data;
+    for (int index = 0; index < texture_registry_count; index++) {
+        if (strcmp(texture_registry[index].filename, filename) == 0) {
+            return &texture_registry[index].texture;
+        }
+    }
+    return NULL;
+}
+
+/* Game state loaded from gamedata */
+static Arena gamedata_arena;
+static BlueprintTable blueprint_table;
+static Level current_level;
 
 static void debug_log(const char *format, ...) __attribute__((format(printf, 1, 2)));
 
@@ -166,7 +202,7 @@ static Rectangle player_hitbox(const Player *player)
     return (Rectangle){player->position.x - 5, player->position.y + 6, 10, 10};
 }
 
-static void resolve_player_obstacles(Player *player, const Obstacle *obstacles, int count)
+static void resolve_player_obstacles(Player *player, const LevelEntity *obstacles, int count)
 {
     for (int index = 0; index < count; index++) {
         Rectangle hitbox = player_hitbox(player);
@@ -206,7 +242,7 @@ static void resolve_player_obstacles(Player *player, const Obstacle *obstacles, 
     }
 }
 
-static void draw_obstacle(const Obstacle *obstacle)
+static void draw_obstacle(const LevelEntity *obstacle)
 {
     DrawTextureRec(*obstacle->texture, obstacle->source, obstacle->position, WHITE);
 }
@@ -265,7 +301,7 @@ static void debug_log(const char *format, ...)
     }
 }
 
-static void draw_debug_collision_boxes(const Player *player, const Obstacle *obstacles, int obstacle_count)
+static void draw_debug_collision_boxes(const Player *player, const LevelEntity *obstacles, int obstacle_count)
 {
     /* Player hitbox (green) */
     Rectangle hitbox = player_hitbox(player);
@@ -354,36 +390,20 @@ static void load_gamedata(void)
         return;
     }
 
-    debug_log("gamedata: loaded %s", GAMEDATA_PATH);
+    arena_reset(&gamedata_arena);
 
-    toml_array_t *blueprints = toml_array_in(root, "blueprint");
-    if (blueprints) {
-        int count = toml_array_nelem(blueprints);
-        debug_log("gamedata: %d blueprints", count);
-        for (int index = 0; index < count; index++) {
-            toml_table_t *blueprint = toml_table_at(blueprints, index);
-            toml_datum_t name = toml_string_in(blueprint, "name");
-            if (name.ok) {
-                debug_log("  blueprint: %s", name.u.s);
-                free(name.u.s);
-            }
-        }
+    int blueprint_count = blueprints_load(&blueprint_table, root, &gamedata_arena);
+    debug_log("gamedata: %d blueprints", blueprint_count);
+    for (int index = 0; index < blueprint_table.count; index++) {
+        debug_log("  blueprint: %s", blueprint_table.entries[index].name);
     }
 
-    toml_array_t *levels = toml_array_in(root, "level");
-    if (levels) {
-        int count = toml_array_nelem(levels);
-        debug_log("gamedata: %d levels", count);
-        for (int index = 0; index < count; index++) {
-            toml_table_t *level = toml_table_at(levels, index);
-            toml_datum_t name = toml_string_in(level, "name");
-            toml_array_t *entities = toml_array_in(level, "entity");
-            int entity_count = entities ? toml_array_nelem(entities) : 0;
-            if (name.ok) {
-                debug_log("  level: %s (%d entities)", name.u.s, entity_count);
-                free(name.u.s);
-            }
-        }
+    bool level_ok = level_load(&current_level, root, NULL, &blueprint_table, texture_registry_lookup, NULL);
+    if (level_ok) {
+        debug_log("gamedata: level '%s' (%dx%d, %d entities)", current_level.name, current_level.width,
+                  current_level.height, current_level.entity_count);
+    } else {
+        debug_log("gamedata: no level found");
     }
 
     toml_free(root);
@@ -439,26 +459,29 @@ int main(void)
     SetTargetFPS(TARGET_FPS);
     InitAudioDevice();
 
-    /* Load textures */
+    /* Load textures and register them by filename */
 #ifdef __ANDROID__
-    Texture2D tex_player = LoadTexture("sprites/player.png");
-    Texture2D tex_grass = LoadTexture("sprites/grass.png");
-    Texture2D tex_tree = LoadTexture("sprites/tree.png");
-    Texture2D tex_chest = LoadTexture("sprites/chest.png");
-    Texture2D tex_house = LoadTexture("sprites/house.png");
-    Texture2D tex_fence = LoadTexture("sprites/fence.png");
+    texture_registry_add("player.png", LoadTexture("sprites/player.png"));
+    texture_registry_add("grass.png", LoadTexture("sprites/grass.png"));
+    texture_registry_add("tree.png", LoadTexture("sprites/tree.png"));
+    texture_registry_add("chest.png", LoadTexture("sprites/chest.png"));
+    texture_registry_add("house.png", LoadTexture("sprites/house.png"));
+    texture_registry_add("fence.png", LoadTexture("sprites/fence.png"));
     Music bgm = LoadMusicStream("music/bgm.mp3");
 #else
-    Texture2D tex_player = load_embedded_texture(asset_player_png, sizeof(asset_player_png));
-    Texture2D tex_grass = load_embedded_texture(asset_grass_png, sizeof(asset_grass_png));
-    Texture2D tex_tree = load_embedded_texture(asset_tree_png, sizeof(asset_tree_png));
-    Texture2D tex_chest = load_embedded_texture(asset_chest_png, sizeof(asset_chest_png));
-    Texture2D tex_house = load_embedded_texture(asset_house_png, sizeof(asset_house_png));
-    Texture2D tex_fence = load_embedded_texture(asset_fence_png, sizeof(asset_fence_png));
+    texture_registry_add("player.png", load_embedded_texture(asset_player_png, sizeof(asset_player_png)));
+    texture_registry_add("grass.png", load_embedded_texture(asset_grass_png, sizeof(asset_grass_png)));
+    texture_registry_add("tree.png", load_embedded_texture(asset_tree_png, sizeof(asset_tree_png)));
+    texture_registry_add("chest.png", load_embedded_texture(asset_chest_png, sizeof(asset_chest_png)));
+    texture_registry_add("house.png", load_embedded_texture(asset_house_png, sizeof(asset_house_png)));
+    texture_registry_add("fence.png", load_embedded_texture(asset_fence_png, sizeof(asset_fence_png)));
     Music bgm = LoadMusicStreamFromMemory(".mp3", asset_bgm_mp3, sizeof(asset_bgm_mp3));
 #endif
     bgm.looping = true;
     PlayMusicStream(bgm);
+
+    /* Init gamedata arena */
+    arena_init(&gamedata_arena, 64 * 1024);
 
     /* Render target at game resolution for pixel-perfect scaling */
     RectU32 game_bounds = {(uint32_t)screen_width / PIXEL_SCALE, (uint32_t)screen_height / PIXEL_SCALE};
@@ -472,26 +495,6 @@ int main(void)
         .frame_index = 0,
         .moving = false,
     };
-
-    /* Place obstacles — collision rects are in world space */
-    /* Fence source rects: top-left 16x48 vertical segment from 64x64 sheet */
-    Obstacle obstacles[] = {
-        /* House */
-        {.position = {40, 20}, .texture = &tex_house, .source = {0, 0, 96, 128}, .collision = {40, 84, 96, 64}},
-        /* Trees */
-        {.position = {200, 60}, .texture = &tex_tree, .source = {0, 0, 64, 80}, .collision = {220, 120, 24, 16}},
-        {.position = {350, 150}, .texture = &tex_tree, .source = {0, 0, 64, 80}, .collision = {370, 210, 24, 16}},
-        {.position = {80, 200}, .texture = &tex_tree, .source = {0, 0, 64, 80}, .collision = {100, 260, 24, 16}},
-        {.position = {450, 40}, .texture = &tex_tree, .source = {0, 0, 64, 80}, .collision = {470, 100, 24, 16}},
-        {.position = {500, 220}, .texture = &tex_tree, .source = {0, 0, 64, 80}, .collision = {520, 280, 24, 16}},
-        /* Chests */
-        {.position = {300, 100}, .texture = &tex_chest, .source = {0, 0, 16, 16}, .collision = {300, 100, 16, 16}},
-        {.position = {160, 280}, .texture = &tex_chest, .source = {0, 0, 16, 16}, .collision = {160, 280, 16, 16}},
-        /* Fences (vertical segment, 16x48 from top-left of sheet) */
-        {.position = {260, 50}, .texture = &tex_fence, .source = {0, 0, 16, 48}, .collision = {260, 50, 16, 48}},
-        {.position = {260, 98}, .texture = &tex_fence, .source = {0, 0, 16, 48}, .collision = {260, 98, 16, 48}},
-    };
-    int obstacle_count = sizeof(obstacles) / sizeof(obstacles[0]);
 
     int frame = 0;
     float elapsed = 0.0F;
@@ -540,33 +543,35 @@ int main(void)
         }
 
         update_player(&player, input, delta_time, game_bounds);
-        resolve_player_obstacles(&player, obstacles, obstacle_count);
+        resolve_player_obstacles(&player, current_level.entities, current_level.entity_count);
 
         /* Render at game resolution with depth sorting */
         BeginTextureMode(target);
         ClearBackground(BLACK);
 
-        draw_grass(tex_grass, game_bounds);
+        draw_grass(*texture_registry_lookup("grass.png", NULL), game_bounds);
 
         float player_sort_y = player.position.y + 16;
-        /* Draw obstacles behind player */
-        for (int index = 0; index < obstacle_count; index++) {
-            float obstacle_sort_y = obstacles[index].collision.y + obstacles[index].collision.height;
-            if (obstacle_sort_y <= player_sort_y) {
-                draw_obstacle(&obstacles[index]);
+        /* Draw entities behind player */
+        for (int index = 0; index < current_level.entity_count; index++) {
+            float entity_sort_y =
+                current_level.entities[index].collision.y + current_level.entities[index].collision.height;
+            if (entity_sort_y <= player_sort_y) {
+                draw_obstacle(&current_level.entities[index]);
             }
         }
-        draw_player(&player, tex_player);
-        /* Draw obstacles in front of player */
-        for (int index = 0; index < obstacle_count; index++) {
-            float obstacle_sort_y = obstacles[index].collision.y + obstacles[index].collision.height;
-            if (obstacle_sort_y > player_sort_y) {
-                draw_obstacle(&obstacles[index]);
+        draw_player(&player, *texture_registry_lookup("player.png", NULL));
+        /* Draw entities in front of player */
+        for (int index = 0; index < current_level.entity_count; index++) {
+            float entity_sort_y =
+                current_level.entities[index].collision.y + current_level.entities[index].collision.height;
+            if (entity_sort_y > player_sort_y) {
+                draw_obstacle(&current_level.entities[index]);
             }
         }
 
         if (debug_enabled) {
-            draw_debug_collision_boxes(&player, obstacles, obstacle_count);
+            draw_debug_collision_boxes(&player, current_level.entities, current_level.entity_count);
         }
 
         EndTextureMode();
@@ -587,12 +592,10 @@ quit:
 
     UnloadMusicStream(bgm);
     UnloadRenderTexture(target);
-    UnloadTexture(tex_player);
-    UnloadTexture(tex_grass);
-    UnloadTexture(tex_tree);
-    UnloadTexture(tex_chest);
-    UnloadTexture(tex_house);
-    UnloadTexture(tex_fence);
+    for (int index = 0; index < texture_registry_count; index++) {
+        UnloadTexture(texture_registry[index].texture);
+    }
+    arena_free(&gamedata_arena);
     CloseAudioDevice();
     CloseWindow();
 #ifndef __ANDROID__

@@ -28,6 +28,7 @@ add_library(sleipner SHARED
     ${PROJECT_ROOT}/engine/src/blueprint.c
     ${PROJECT_ROOT}/engine/src/collision.c
     ${PROJECT_ROOT}/engine/src/input.c
+    ${PROJECT_ROOT}/engine/src/level.c
     ${PROJECT_ROOT}/engine/src/particle.c
     ${PROJECT_ROOT}/engine/src/render.c
     ${PROJECT_ROOT}/engine/src/shape.c

@@ -21,6 +21,13 @@ void test_blueprint_find(void);
 void test_blueprint_skip_nameless(void);
 void test_blueprint_no_blueprints_section(void);
 
+/* test_level.c */
+void test_level_load_first(void);
+void test_level_load_by_name(void);
+void test_level_load_nonexistent(void);
+void test_level_entity_positions(void);
+void test_level_entity_source_rects(void);
+
 /* test_shape.c */
 void test_circle_bounds_centered(void);
 void test_square_bounds_same_as_circle(void);
@@ -70,6 +77,12 @@ int main(void)
     RUN_TEST(test_blueprint_find);
     RUN_TEST(test_blueprint_skip_nameless);
     RUN_TEST(test_blueprint_no_blueprints_section);
+
+    RUN_TEST(test_level_load_first);
+    RUN_TEST(test_level_load_by_name);
+    RUN_TEST(test_level_load_nonexistent);
+    RUN_TEST(test_level_entity_positions);
+    RUN_TEST(test_level_entity_source_rects);
 
     RUN_TEST(test_circle_bounds_centered);
     RUN_TEST(test_square_bounds_same_as_circle);
