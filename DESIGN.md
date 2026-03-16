@@ -27,10 +27,76 @@ The editor is a mode within the game, not a separate tool. Toggle between play m
 ### Editor UI
 
 - Cursor controlled by left stick, snaps to grid (toggle-able).
-- Radial menus or scrollable palettes for selecting blueprints / tools.
-- Property panel overlay for the selected entity (cycle fields with D-pad, adjust values with sticks/bumpers).
-- Visual handles on collision boxes (drag corners/edges to resize).
-- Color-coded overlays: collision boxes, spawn points, trigger zones.
+- Color-coded overlays: collision boxes (green), spawn points (blue), trigger zones (yellow), rule indicators (orange).
+- All input flows through the widget system described below — no raw text entry during normal editing.
+
+### Gamepad Input Widgets
+
+**Radial picker** — primary selection widget (4-12 items per ring):
+- Tilt left stick to highlight, A to confirm, B to cancel.
+- Nested rings for subcategories (e.g. action type → outer ring = category, inner ring = specific action).
+- Used for: mode switching, tool selection, trigger/condition/action type picking, behavior type, etc.
+
+**Scroll picker** — for longer lists:
+- D-pad up/down to scroll, bumpers to page jump.
+- Live fuzzy filter via the word builder — list narrows as you compose.
+- Visual previews where applicable (texture thumbnails, sprite previews).
+- Used for: blueprint palette, texture selection, flag/item references, level selection.
+
+**Word builder** — composing names without a keyboard:
+- Picks words one at a time from a vocabulary via scroll picker.
+- Vocabulary is seeded from: (1) a built-in dictionary of common RPG words, (2) every name/flag/item/blueprint in the current gamedata.
+- Most recently used and most frequent words bubble to the top.
+- Underscore separator is automatic between words.
+- "Done" (A) confirms, "Back" (B) removes last word.
+- Built-in seed vocabulary includes: `chest`, `locked`, `magic`, `key`, `door`, `open`, `closed`, `hidden`, `secret`, `boss`, `enemy`, `spawn`, `trigger`, `zone`, `north`, `south`, `east`, `west`, `bridge`, `gate`, `switch`, `lever`, `fire`, `ice`, `water`, `stone`, `wood`, `gold`, `silver`, `sword`, `shield`, `bow`, `arrow`, `heart`, `potion`, `fairy`, `dark`, `light`, `cave`, `forest`, `dungeon`, `castle`, `village`, `temple`, `tower`, `path`, `wall`, `floor`, `roof`, `big`, `small`, `red`, `blue`, `green`, and more.
+
+**Fuzzy finder** — for referencing existing things:
+- When a field expects a blueprint name, flag, item, or level name, shows a fuzzy-matched list of everything that already exists in the gamedata.
+- Stick navigates, matches re-rank in real time.
+- 90% of the time the user is referencing something that already exists — this avoids typing entirely.
+
+**Value adjuster** — for numbers:
+- D-pad left/right for ±1, triggers for ±10, bumpers for ±100.
+- Hold for auto-repeat with acceleration.
+- Visual feedback: collision box edges move live, position updates in real time.
+
+**Gamepad keyboard** — last resort for truly novel words:
+- Radial character groups (vowels in one wedge, common consonants clustered).
+- Predictive suggestions from the vocabulary as letters are entered.
+- Only surfaces when the word builder can't find what you need.
+
+### What You Can Edit
+
+The editor provides full control over every aspect of the game data:
+
+**Blueprint editing** — create and modify entity blueprints:
+- Texture and source rect (visual sprite picker with preview).
+- Collision box offset and size (drag handles, live visualization).
+- Behavior type and params (radial picker + value adjusters).
+- Animation settings (frames, size, speed, row).
+- Rules: add/remove/edit triggers, conditions, and actions.
+- Duplicate an existing blueprint as a starting point.
+
+**Entity instance editing** — modify placed entities in the level:
+- Position (left stick to drag, with optional grid snap).
+- Per-instance overrides of any blueprint field.
+- Collision box nudging with visual handles (corners and edges).
+- Rule overrides (add instance-specific rules beyond the blueprint).
+
+**Scene composition** — design entire levels:
+- Place entities from the blueprint palette.
+- Multi-select and group move.
+- Copy/paste entities and groups.
+- Level size adjustment.
+- Tile painting (ground and overlay layers).
+- Set level music, spawn point, transitions.
+
+**Rule authoring** — build game logic visually:
+- Pick trigger type (radial picker).
+- Add conditions (fuzzy finder for existing flags/items).
+- Chain actions (scroll through action types, fill params with pickers).
+- Test rules immediately by switching to play mode.
 
 ### Editor Controls (Draft)
 
@@ -46,6 +112,9 @@ The editor is a mode within the game, not a separate tool. Toggle between play m
 | Delete selected | X (west) | Delete |
 | Save level | Start (in editor) | Ctrl+S |
 | Undo | LB + B | Ctrl+Z |
+| Duplicate selected | RB + A | Ctrl+D |
+| Multi-select toggle | LT (hold) | Shift (hold) |
+| Grid snap toggle | RT + D-pad up | G |
 
 ## Entity System
 
