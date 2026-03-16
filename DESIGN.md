@@ -767,8 +767,8 @@ pos = [320, 180]
 - [ ] Integration test harness (load gamedata, feed inputs, assert state)
 - [x] Arena allocator for gamedata memory
 - [x] Load blueprints into blueprint lookup table
-- [ ] Instantiate level entities from gamedata (replace hardcoded obstacles)
-- [ ] Remove hardcoded obstacle data from main.c
+- [x] Instantiate level entities from gamedata (replace hardcoded obstacles)
+- [x] Remove hardcoded obstacle data from main.c
 - [ ] Hot-reload: poll mtime in play mode, reload on change
 - [ ] TOML emitter for editor save
 
