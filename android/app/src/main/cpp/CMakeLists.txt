@@ -23,6 +23,7 @@ add_library(sleipner SHARED
     ${NATIVE_APP_GLUE_DIR}/android_native_app_glue.c
     ${PROJECT_ROOT}/engine/vendor/zlog/zlog_android.c
     ${PROJECT_ROOT}/engine/vendor/tomlc99/toml.c
+    ${PROJECT_ROOT}/engine/src/arena.c
     ${PROJECT_ROOT}/engine/src/audio.c
     ${PROJECT_ROOT}/engine/src/collision.c
     ${PROJECT_ROOT}/engine/src/input.c

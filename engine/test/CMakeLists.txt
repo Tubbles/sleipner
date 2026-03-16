@@ -1,6 +1,7 @@
 add_executable(engine_tests
     test_main.c
     test_stub.c
+    test_arena.c
     test_shape.c
     test_particle.c
     test_collision.c

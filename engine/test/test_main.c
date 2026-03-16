@@ -6,6 +6,14 @@ void tearDown(void) {}
 /* test_stub.c */
 void test_stub_passes(void);
 
+/* test_arena.c */
+void test_arena_init_and_free(void);
+void test_arena_alloc_basic(void);
+void test_arena_alloc_alignment(void);
+void test_arena_alloc_returns_null_when_full(void);
+void test_arena_reset(void);
+void test_arena_snapshot_restore(void);
+
 /* test_shape.c */
 void test_circle_bounds_centered(void);
 void test_square_bounds_same_as_circle(void);
@@ -42,6 +50,13 @@ int main(void)
     UNITY_BEGIN();
 
     RUN_TEST(test_stub_passes);
+
+    RUN_TEST(test_arena_init_and_free);
+    RUN_TEST(test_arena_alloc_basic);
+    RUN_TEST(test_arena_alloc_alignment);
+    RUN_TEST(test_arena_alloc_returns_null_when_full);
+    RUN_TEST(test_arena_reset);
+    RUN_TEST(test_arena_snapshot_restore);
 
     RUN_TEST(test_circle_bounds_centered);
     RUN_TEST(test_square_bounds_same_as_circle);

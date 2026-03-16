@@ -10,6 +10,7 @@ add_library(tomlc99 STATIC vendor/tomlc99/toml.c)
 target_include_directories(tomlc99 PUBLIC vendor/tomlc99)
 
 add_library(engine STATIC
+    src/arena.c
     src/audio.c
     src/collision.c
     src/input.c
