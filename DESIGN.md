@@ -118,21 +118,149 @@ The editor provides full control over every aspect of the game data:
 
 ## Entity System
 
-Composition over inheritance. An entity is an ID plus a bag of components.
+Composition over inheritance. An entity is an ID plus a bag of attributes.
 
-### Entity Blueprint
+### Attributes
 
-A blueprint is a named template that defines which components an entity has and their default values. Blueprints are data (not code). The editor creates and modifies blueprints. Instances in the world reference a blueprint but can override individual values.
+Every entity has **attributes** — typed key-value pairs. Some are built-in (the engine knows about them), others are custom (user-defined per blueprint). All attributes participate in the same system — rules can read/write any of them.
 
-### Components (Initial Set)
+**Built-in attributes** (always present on every entity):
 
-| Component | Fields | Purpose |
+| Attribute | Type | Purpose |
 |---|---|---|
-| Transform | position, rotation | Where it is |
-| Sprite | texture, source_rect, z_order | How it looks |
-| Animation | frame_count, frame_size, speed, row | Animated sprites |
-| Collision | rect (relative to transform) | Physical presence |
-| Behavior | behavior_id, params[] | What it does (references coded behavior) |
+| `position` | vec2 | World position (or offset from parent) |
+| `health` | int, int | Current and max health |
+| `visible` | bool | Whether the entity renders |
+| `active` | bool | Whether rules and behavior run |
+| `solid` | bool | Whether collision is enabled |
+| `opacity` | float | Render opacity (0.0–1.0) |
+
+**Custom attributes** — defined freely per blueprint, any name and type:
+- Types: float, int, bool, string.
+- Examples: `speed = 80.0`, `patrol_radius = 50`, `is_locked = true`, `loot_table = "common"`.
+- No fixed cap — stored in the arena, variable count per blueprint.
+
+### Attribute Scoping (Blueprint vs Instance)
+
+Blueprints define default attribute values. Instances override only what differs. Reading an attribute checks the instance first, then falls back to the blueprint.
+
+```toml
+[[blueprint]]
+name = "chest"
+texture = "chest.png"
+src = [0, 0, 16, 16]
+collision_offset = [0, 0]
+collision_size = [16, 16]
+behavior = "static"
+health = [1, 1]
+is_locked = true
+loot_table = "common"
+
+[[level.entity]]
+blueprint = "chest"
+pos = [300, 100]
+# inherits is_locked = true, loot_table = "common"
+
+[[level.entity]]
+blueprint = "chest"
+pos = [160, 280]
+is_locked = false          # override: this one is unlocked
+loot_table = "rare"        # override: better loot
+```
+
+The editor shows overridden attributes highlighted differently from inherited ones (attribute diff view).
+
+### Blueprint Inheritance
+
+A blueprint can extend another blueprint, inheriting all its attributes and rules. The child blueprint overrides or adds what differs.
+
+```toml
+[[blueprint]]
+name = "locked_chest"
+extends = "chest"
+is_locked = true
+
+[[blueprint.rule]]
+trigger = "interact"
+conditions = ["self.attr:is_locked", "has_item:key"]
+actions = [
+  "remove_item:key",
+  "set_attr:self.is_locked,false",
+  "dialogue:Unlocked!",
+]
+```
+
+### Entity Composition and Children
+
+An entity can contain child entities. Children are positioned relative to their parent and have their own attributes, rules, and behaviors.
+
+```toml
+[[blueprint]]
+name = "wagon"
+texture = "wagon_body.png"
+src = [0, 0, 64, 32]
+speed = 30.0
+
+[[blueprint.child]]
+blueprint = "lantern"
+tag = "lantern"
+offset = [56, -8]
+
+[[blueprint.child]]
+blueprint = "wheel"
+tag = "front_wheel"
+offset = [8, 28]
+
+[[blueprint.child]]
+blueprint = "wheel"
+tag = "rear_wheel"
+offset = [48, 28]
+```
+
+Use cases:
+- NPC with equipment slots (child entities with own sprites and stats).
+- Complex objects assembled from parts.
+- A boss with independently targetable limbs.
+- Particle emitters attached to entities.
+
+Children inherit parent `visible` and `active` state but can override. Destroying the parent destroys all children.
+
+### Tags
+
+Tags let any entity in a composition tree reference any other entity in the same tree by name, regardless of nesting depth.
+
+**Implicit tags** (always available):
+
+| Tag | Refers to |
+|---|---|
+| `self` | This entity |
+| `parent` | Immediate parent |
+| `root` | Top-level entity in the tree |
+
+**Custom tags** — assigned to children via the `tag` field. Must be unique within a tree. The editor enforces uniqueness and the fuzzy finder shows existing tags.
+
+**Referencing attributes across the tree:**
+
+```
+main_weapon.attr:damage       # tagged child's attribute
+parent.attr:health            # parent's attribute
+root.attr:active              # root entity's attribute
+shield.attr:defense           # any tagged family member
+```
+
+**Example — cursed sword that drains the wielder:**
+
+```toml
+[[blueprint]]
+name = "cursed_sword"
+damage = 15
+drain = 2
+
+[[blueprint.rule]]
+trigger = "timer:1"
+conditions = ["self.attr:equipped"]
+actions = ["add_attr:root.health,-2"]
+```
 
 ### Behaviors
 
@@ -167,7 +295,10 @@ Rules make game logic data-driven. Each entity can have zero or more rules. A ru
 | `has_item:X` | Player has item X |
 | `flag:X` | Global flag X is set |
 | `not_flag:X` | Global flag X is not set |
-| `health_below:N` | Player health < N |
+| `attr:X` | Attribute X on self is truthy |
+| `attr:X<N` | Numeric attribute comparison |
+| `not_attr:X` | Attribute X on self is falsy |
+| `tag.attr:X` | Attribute X on tagged family member is truthy |
 
 **Actions** — what happens:
 
@@ -177,6 +308,9 @@ Rules make game logic data-driven. Each entity can have zero or more rules. A ru
 | `remove_item:X` | Consume item from inventory |
 | `set_flag:X` | Set a global flag |
 | `clear_flag:X` | Unset a global flag |
+| `set_attr:target.X,V` | Set attribute on self or tagged entity |
+| `add_attr:target.X,V` | Add to numeric attribute |
+| `toggle_attr:target.X` | Flip a boolean attribute |
 | `change_sprite:x,y,w,h` | Swap source rect (e.g. open chest) |
 | `play_sound:file` | Play a sound effect |
 | `dialogue:text` | Show dialogue box |
@@ -195,13 +329,14 @@ src = [0, 0, 16, 16]
 collision_offset = [0, 0]
 collision_size = [16, 16]
 behavior = "static"
+is_locked = true
 
 [[blueprint.rule]]
 trigger = "interact"
-conditions = ["has_item:key"]
+conditions = ["self.attr:is_locked", "has_item:key"]
 actions = [
   "remove_item:key",
-  "set_flag:chest_1_opened",
+  "set_attr:self.is_locked,false",
   "change_sprite:16,0,16,16",
   "give_item:sword",
   "play_sound:chest_open.wav",
@@ -212,6 +347,15 @@ actions = [
 The C side has one function per action type. The rule engine loops: check trigger → check conditions → execute actions. Adding a new trigger/condition/action type is one C function — automatically available in the editor.
 
 **Flags** are a global string set that persists with save data. They gate progression (e.g. "boss_defeated", "bridge_repaired") and allow rules to respond to world state.
+
+### Live Edit/Play Flow
+
+- **Toggle is instant** — shared world state, no reload delay.
+- **Edit mode**: game paused, free camera, select and modify attributes. Changes are visible immediately — move a collision box and see it update live.
+- **Play mode**: game runs with current state. Changes made in edit mode are in effect.
+- **Play-from-here**: resume without resetting state (test a specific scenario mid-action).
+- **Restart level**: reload from gamedata, reset all runtime state.
+- **Attribute watcher**: pin attributes to the debug overlay — see them update in real time during play. Pick entities, pick attributes, they display as a live HUD.
 
 ## Data Architecture
 
