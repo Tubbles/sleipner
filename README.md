@@ -22,7 +22,7 @@ Requires [Podman](https://podman.io/) or Docker. All build steps run inside a co
 ./ci.sh test      # run unit tests
 ./ci.sh lint      # run clang-tidy
 
-./build/Release/sleipner   # run the game
+./build/Release/engine/sleipner   # run the game
 ```
 
 Native build (without a container runtime):

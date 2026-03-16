@@ -26,7 +26,7 @@ conan install . --output-folder=build --build=missing
 conan build .
 
 # Run
-./build/Release/sleipner
+./build/Release/engine/sleipner
 ```
 
 ## Dependencies
@@ -80,6 +80,7 @@ Two levels of testing, both run in CI:
 - **Input:** Controller-first. Gamepad is the primary input method; keyboard fallback for development.
 - **Mobile target:** The game runs on Android via Game Native (FEX + Proton). This means we build a normal Linux x86_64 binary — no Android-specific code. Keep performance reasonable for emulated execution (avoid heavy compute, prefer simple draw calls).
 - **Assets:** Embedded in the binary via C23 `#embed` for portability — single-binary distribution with no external asset files.
+- **Architecture:** All C code lives in `engine/`. There is no separate "game code" — the game is defined entirely by `data/gamedata.toml` and `assets/`. The engine interprets the game data at runtime.
 
 ## Development Discipline
 

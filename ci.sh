@@ -18,7 +18,7 @@ cd "$(dirname "$0")"
 
 IMAGE="sleipner-toolchain"
 CONTAINER_CMD="${CONTAINER_CMD:-podman}"
-SOURCES="src/*.c src/*.h engine/src/*.c engine/src/*.h engine/test/*.c"
+SOURCES="engine/src/*.c engine/src/*.h engine/test/*.c"
 
 run() {
     "$CONTAINER_CMD" run --rm -v "$(pwd)":"$(pwd)":Z -w "$(pwd)" "$IMAGE" "$@"
@@ -58,7 +58,7 @@ do_test() {
 do_lint() {
     echo "=== lint ==="
     mkdir -p build/Release
-    run bash -c "$conan_setup && conan build . && cd build/Release && clang-tidy -p . ../../src/*.c ../../engine/src/*.c"
+    run bash -c "$conan_setup && conan build . && cd build/Release && clang-tidy -p . ../../engine/src/*.c"
 }
 
 do_all() {
@@ -67,7 +67,7 @@ do_all() {
     run bash -c "$conan_setup && conan build . \
         && ./build/Release/engine/test/engine_tests \
         && clang-format --dry-run --Werror $SOURCES \
-        && cd build/Release && clang-tidy -p . ../../src/*.c ../../engine/src/*.c"
+        && cd build/Release && clang-tidy -p . ../../engine/src/*.c"
 }
 
 android_conan_setup='conan install . --output-folder=build/android/arm64-v8a --build=missing \

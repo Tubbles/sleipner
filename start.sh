@@ -76,9 +76,9 @@ install_deps() {
 
 # Only build if binary is missing or sources are newer
 needs_build() {
-    [ ! -f ./build/Release/sleipner ] && return 0
-    for f in src/*.c src/*.h CMakeLists.txt conanfile.py Dockerfile; do
-        [ "$f" -nt ./build/Release/sleipner ] && return 0
+    [ ! -f ./build/Release/engine/sleipner ] && return 0
+    for f in engine/src/*.c engine/src/*.h CMakeLists.txt conanfile.py Dockerfile; do
+        [ "$f" -nt ./build/Release/engine/sleipner ] && return 0
     done
     return 1
 }
@@ -142,4 +142,4 @@ export LD_PRELOAD="${SAVED_LD_PRELOAD}"
 export LD_LIBRARY_PATH="${SAVED_LD_LIBRARY_PATH}"
 
 echo "LOG: launching sleipner at +$(echo "$(ts) - $T_START" | bc)s"
-exec ./build/Release/sleipner
+exec ./build/Release/engine/sleipner

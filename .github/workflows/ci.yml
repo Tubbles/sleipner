@@ -32,4 +32,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: sleipner-linux-x86_64
-          path: build/Release/sleipner
+          path: build/Release/engine/sleipner
