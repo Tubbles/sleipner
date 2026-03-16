@@ -39,6 +39,13 @@ void test_level_load_nonexistent(void);
 void test_level_entity_positions(void);
 void test_level_entity_source_rects(void);
 
+/* test_integration.c */
+void test_integration_load_gamedata(void);
+void test_integration_load_specific_level(void);
+void test_integration_walk_and_collide(void);
+void test_integration_walk_freely(void);
+void test_integration_boundary_all_directions(void);
+
 /* test_shape.c */
 void test_circle_bounds_centered(void);
 void test_square_bounds_same_as_circle(void);
@@ -98,6 +105,12 @@ int main(void)
     RUN_TEST(test_game_player_clamps_to_bounds);
     RUN_TEST(test_game_player_hitbox_position);
     RUN_TEST(test_game_update_resolves_obstacle_collision);
+
+    RUN_TEST(test_integration_load_gamedata);
+    RUN_TEST(test_integration_load_specific_level);
+    RUN_TEST(test_integration_walk_and_collide);
+    RUN_TEST(test_integration_walk_freely);
+    RUN_TEST(test_integration_boundary_all_directions);
 
     RUN_TEST(test_level_load_first);
     RUN_TEST(test_level_load_by_name);

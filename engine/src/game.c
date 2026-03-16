@@ -1,8 +1,10 @@
 #include "game.h"
 
 #include "raylib.h"
+#include "toml.h"
 
 #include <math.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define GAMEDATA_ARENA_SIZE (64 * 1024)
@@ -15,6 +17,38 @@ void game_init(GameState *state, RectU32 game_bounds)
     state->player.anim_row = ANIM_IDLE_DOWN;
     state->debug_enabled = true;
     arena_init(&state->gamedata_arena, GAMEDATA_ARENA_SIZE);
+}
+
+bool game_load_gamedata(GameState *state,
+                        const char *toml_string,
+                        const char *level_name,
+                        TextureLookupFn texture_lookup,
+                        void *texture_user_data)
+{
+    size_t length = strlen(toml_string);
+    char *buffer = malloc(length + 1);
+    if (!buffer) {
+        return false;
+    }
+    memcpy(buffer, toml_string, length + 1);
+
+    char errbuf[200];
+    toml_table_t *root = toml_parse(buffer, errbuf, (int)sizeof(errbuf));
+    free(buffer);
+
+    if (!root) {
+        return false;
+    }
+
+    arena_reset(&state->gamedata_arena);
+    blueprints_load(&state->blueprints, root, &state->gamedata_arena);
+
+    bool level_ok = level_load(&state->current_level, root, level_name,
+                               &state->blueprints, texture_lookup, texture_user_data);
+
+    toml_free(root);
+    state->gamedata_loaded = level_ok;
+    return level_ok;
 }
 
 Rectangle game_player_hitbox(const Player *player)

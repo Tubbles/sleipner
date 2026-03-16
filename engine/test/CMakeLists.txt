@@ -4,6 +4,7 @@ add_executable(engine_tests
     test_arena.c
     test_blueprint.c
     test_game.c
+    test_integration.c
     test_level.c
     test_shape.c
     test_particle.c

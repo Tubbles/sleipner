@@ -44,6 +44,11 @@ typedef struct {
 } GameState;
 
 void game_init(GameState *state, RectU32 game_bounds);
+bool game_load_gamedata(GameState *state,
+                        const char *toml_string,
+                        const char *level_name,
+                        TextureLookupFn texture_lookup,
+                        void *texture_user_data);
 void game_update(GameState *state, InputState input, float delta_time);
 Rectangle game_player_hitbox(const Player *player);
 void game_free(GameState *state);
