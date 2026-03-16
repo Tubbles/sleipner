@@ -769,7 +769,7 @@ pos = [320, 180]
 - [x] Load blueprints into blueprint lookup table
 - [x] Instantiate level entities from gamedata (replace hardcoded obstacles)
 - [x] Remove hardcoded obstacle data from main.c
-- [ ] Hot-reload: poll mtime in play mode, reload on change
+- [x] Hot-reload: poll mtime in play mode, reload on change
 - [ ] TOML emitter for editor save
 
 ### Phase 3 — Entity System

@@ -14,6 +14,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <time.h>
 
 #ifdef __ANDROID__
 #define SYNCTHING_PATH "/storage/emulated/0/Sync"
@@ -24,6 +26,7 @@
 
 #define HEARTBEAT_INTERVAL 300
 #define TARGET_FPS 60
+#define HOT_RELOAD_POLL_FRAMES 30
 
 #define PIXEL_SCALE 3
 #define TILE_SIZE 16
@@ -247,6 +250,17 @@ static void draw_debug_info(const Player *player, RectU32 game_bounds, int frame
     }
 }
 
+static time_t gamedata_mtime = 0;
+
+static time_t get_file_mtime(const char *path)
+{
+    struct stat file_stat;
+    if (stat(path, &file_stat) != 0) {
+        return 0;
+    }
+    return file_stat.st_mtime;
+}
+
 static void load_gamedata(GameState *state)
 {
     FILE *file = fopen(GAMEDATA_PATH, "r");
@@ -284,6 +298,7 @@ static void load_gamedata(GameState *state)
 
     toml_free(root);
     state->gamedata_loaded = true;
+    gamedata_mtime = get_file_mtime(GAMEDATA_PATH);
 }
 
 int main(void)
@@ -377,9 +392,18 @@ int main(void)
 
         UpdateMusicStream(bgm);
 
-        /* Retry loading gamedata if permission wasn't granted yet */
-        if (!state.gamedata_loaded && state.frame % 60 == 0) {
-            load_gamedata(&state);
+        /* Hot-reload: poll mtime and reload if gamedata changed */
+        if (state.frame % HOT_RELOAD_POLL_FRAMES == 0) {
+            if (!state.gamedata_loaded) {
+                load_gamedata(&state);
+            } else {
+                time_t current_mtime = get_file_mtime(GAMEDATA_PATH);
+                if (current_mtime > 0 && current_mtime != gamedata_mtime) {
+                    dzlog_info("gamedata: file changed, reloading");
+                    debug_log("gamedata: hot-reload triggered");
+                    load_gamedata(&state);
+                }
+            }
         }
 
         /* Toggle debug overlay: F3 or gamepad Select */
