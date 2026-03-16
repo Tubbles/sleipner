@@ -21,6 +21,17 @@ void test_blueprint_find(void);
 void test_blueprint_skip_nameless(void);
 void test_blueprint_no_blueprints_section(void);
 
+/* test_game.c */
+void test_game_init_defaults(void);
+void test_game_update_increments_frame(void);
+void test_game_update_accumulates_elapsed(void);
+void test_game_update_player_moves_right(void);
+void test_game_update_player_moves_left(void);
+void test_game_update_no_input_no_movement(void);
+void test_game_player_clamps_to_bounds(void);
+void test_game_player_hitbox_position(void);
+void test_game_update_resolves_obstacle_collision(void);
+
 /* test_level.c */
 void test_level_load_first(void);
 void test_level_load_by_name(void);
@@ -77,6 +88,16 @@ int main(void)
     RUN_TEST(test_blueprint_find);
     RUN_TEST(test_blueprint_skip_nameless);
     RUN_TEST(test_blueprint_no_blueprints_section);
+
+    RUN_TEST(test_game_init_defaults);
+    RUN_TEST(test_game_update_increments_frame);
+    RUN_TEST(test_game_update_accumulates_elapsed);
+    RUN_TEST(test_game_update_player_moves_right);
+    RUN_TEST(test_game_update_player_moves_left);
+    RUN_TEST(test_game_update_no_input_no_movement);
+    RUN_TEST(test_game_player_clamps_to_bounds);
+    RUN_TEST(test_game_player_hitbox_position);
+    RUN_TEST(test_game_update_resolves_obstacle_collision);
 
     RUN_TEST(test_level_load_first);
     RUN_TEST(test_level_load_by_name);

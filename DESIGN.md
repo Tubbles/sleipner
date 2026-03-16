@@ -762,8 +762,8 @@ pos = [320, 180]
 - [x] Parse and log gamedata.toml on startup
 - [x] Platform-conditional gamedata path (repo-relative on desktop, Syncthing on Android)
 - [x] Retry gamedata load until Android storage permission is granted
-- [ ] Headless engine mode (init without window/audio for testing)
-- [ ] Split game loop into update (pure logic) and render (side effects)
+- [x] Headless engine mode (init without window/audio for testing)
+- [x] Split game loop into update (pure logic) and render (side effects)
 - [ ] Integration test harness (load gamedata, feed inputs, assert state)
 - [x] Arena allocator for gamedata memory
 - [x] Load blueprints into blueprint lookup table
