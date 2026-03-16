@@ -523,6 +523,94 @@ The editor renders rules as a visual tree (like WC3's trigger view), navigated w
 - **Save is host-only** — the host writes `gamedata.toml`. Any player can request a save, but the host executes it.
 - All editor widgets (radial picker, word builder, fuzzy finder) work identically for every player.
 
+## Save System
+
+### Two Files, Two Concerns
+
+- **`gamedata.toml`** = the game (level design, blueprints, rules). Shared via Syncthing, versioned in git. Never contains player progress.
+- **Save file** = runtime world state. One save captures the complete host state — all players, all global variables, all entity modifications. It's the world, not a character sheet.
+
+### Storage Location
+
+Save files live in app-local storage, **not** Syncthing. Syncthing is for creative data (gamedata.toml). Saves are runtime state — syncing them would cause conflicts if two devices play simultaneously.
+
+- Desktop: `~/.local/share/sleipner/saves/`
+- Android: app internal storage
+
+### Persistent World State
+
+The world has one persistent state. Everything persists by default:
+- Kill an enemy → it stays dead.
+- Open a chest → it stays open.
+- Move an object → it stays moved.
+
+Respawning is explicit — a timer rule, a `fire_event:respawn_enemies` trigger, or a design decision in the rules. The game designer decides what resets, not the engine.
+
+### Save Format
+
+TOML, same parser/emitter as gamedata. The save stores the **delta from the gamedata baseline** — only what changed. Anything not in the save is at its blueprint/level default. This keeps saves small.
+
+```toml
+[meta]
+timestamp = 2026-03-16T19:30:00
+playtime = 3600
+
+# All players in this world
+[[player]]
+name = "player_1"
+level = "overworld"
+position = [320, 180]
+health = [7, 10]
+direction = "down"
+items = ["sword", "key", "potion"]
+equipment = { main_weapon = "iron_sword", shield = "wooden_shield" }
+
+[[player]]
+name = "player_2"
+level = "overworld"
+position = [340, 180]
+health = [10, 10]
+items = ["bow", "arrow", "arrow"]
+
+[globals]
+chest_1_opened = true
+boss_defeated = false
+bridge_repaired = true
+
+# Entities modified from their gamedata baseline
+# Only stores the delta — what changed from blueprint/level defaults
+[[entity_state]]
+level = "overworld"
+entity_id = 6
+destroyed = true
+
+[[entity_state]]
+level = "dungeon_1"
+entity_id = 3
+attrs = { health = [2, 5] }
+```
+
+### Loading
+
+1. Load `gamedata.toml` — the designed world (blueprints, levels, rules).
+2. Apply `entity_state` deltas from the save file on top — destroyed entities are removed, modified attributes are overridden.
+3. Restore player positions, inventories, equipment.
+4. Restore global variables.
+
+### Save Slots
+
+Multiple numbered files: `save_1.toml`, `save_2.toml`, etc. Each stores a timestamp and current level name for the slot selection screen. Auto-save goes to a dedicated `autosave.toml` that doesn't overwrite manual saves.
+
+### Auto-Save
+
+- On every level transition.
+- On quit.
+- Manual save via pause menu.
+
+### Multiplayer
+
+The host owns the save. All players are stored in the same save file. When a player joins, their character section is created. When they leave, their state persists in the save for when they rejoin.
+
 ## Data Architecture
 
 Game data is split into two concerns with separate storage:
@@ -759,7 +847,7 @@ pos = [320, 180]
 - [ ] AI & pathfinding (patrol, aggro, chase)
 - [ ] Audio (music crossfade, spatial sound, ambient layers)
 - [ ] NPC behaviors (patrol, dialogue)
-- [ ] Save/load system
+- [ ] Save/load system (persistent world state, delta from gamedata, auto-save, slots)
 
 ## Resolved Decisions
 
@@ -774,15 +862,9 @@ pos = [320, 180]
 - **Hot-reload:** Poll mtime on `gamedata.toml` (~once per second) in play mode — auto-reload when the file changes (Syncthing edits from phone appear live). In editor mode, no auto-reload — reload is explicit only, to avoid blowing away unsaved in-memory changes.
 - **Tile map:** 16x16 pixel tiles, 2 layers (ground + overlay). Ground is terrain (grass, dirt, water, paths). Overlay renders on top of ground but under entities (flowers, puddles, shadows). Stored as arrays of integer tile IDs in TOML, row by row. Autotiling (automatic edge/corner sprite selection) is an editor feature — the file stores concrete tile IDs, the editor computes them on placement.
 - **TOML emitter:** Clean regeneration, no comment/formatting preservation. The in-game editor is the primary editing interface — comments aren't useful. Keeps the emitter dead simple.
+- **Save system:** One save = one world (all players, all state). Saves in app-local storage (not Syncthing). Persistent world — everything persists by default, respawning is explicit via rules. Save stores delta from gamedata baseline. TOML format. Auto-save on level transitions and quit. Multiple numbered slots + autosave.
 
 ## Open Questions
-
-### Save System
-- What persists? Player position, inventory, flags, level state?
-- Separate save file from `gamedata.toml` (level design data vs player progress)?
-- Save format — TOML as well, or something simpler?
-- Multiple save slots?
-- Auto-save on level transition, or manual only?
 
 ### Camera System
 - Zelda-style screen-by-screen (snap to room boundaries) or smooth follow?
