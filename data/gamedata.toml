@@ -1,0 +1,79 @@
+# Sleipner game data
+# This file is shared via Syncthing between desktop and Android.
+
+[[blueprint]]
+name = "tree"
+texture = "tree.png"
+src = [0, 0, 64, 80]
+collision_offset = [20, 60]
+collision_size = [24, 16]
+behavior = "static"
+
+[[blueprint]]
+name = "chest"
+texture = "chest.png"
+src = [0, 0, 16, 16]
+collision_offset = [0, 0]
+collision_size = [16, 16]
+behavior = "static"
+
+[[blueprint]]
+name = "house"
+texture = "house.png"
+src = [0, 0, 96, 128]
+collision_offset = [0, 64]
+collision_size = [96, 64]
+behavior = "static"
+
+[[blueprint]]
+name = "fence_v"
+texture = "fence.png"
+src = [0, 0, 16, 48]
+collision_offset = [0, 0]
+collision_size = [16, 48]
+behavior = "static"
+
+[[level]]
+name = "overworld"
+size = [640, 360]
+music = "bgm.mp3"
+
+[[level.entity]]
+blueprint = "house"
+pos = [40, 20]
+
+[[level.entity]]
+blueprint = "tree"
+pos = [200, 60]
+
+[[level.entity]]
+blueprint = "tree"
+pos = [350, 150]
+
+[[level.entity]]
+blueprint = "tree"
+pos = [80, 200]
+
+[[level.entity]]
+blueprint = "tree"
+pos = [450, 40]
+
+[[level.entity]]
+blueprint = "tree"
+pos = [500, 220]
+
+[[level.entity]]
+blueprint = "chest"
+pos = [300, 100]
+
+[[level.entity]]
+blueprint = "chest"
+pos = [160, 280]
+
+[[level.entity]]
+blueprint = "fence_v"
+pos = [260, 50]
+
+[[level.entity]]
+blueprint = "fence_v"
+pos = [260, 98]

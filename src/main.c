@@ -6,11 +6,14 @@
 
 #include "assets.h"
 
+#include "toml.h"
 #include "zlog.h"
 
 #include <math.h>
 #include <stdarg.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #ifdef __ANDROID__
 #define SYNCTHING_PATH "/storage/emulated/0/Sync"
@@ -330,6 +333,60 @@ static void draw_debug_info(const Player *player, RectU32 game_bounds, int frame
     }
 }
 
+static void load_gamedata(void)
+{
+    FILE *file = fopen(GAMEDATA_PATH, "r");
+    if (!file) {
+        dzlog_warn("gamedata: could not open %s", GAMEDATA_PATH);
+        debug_log("gamedata: FAILED to open %s", GAMEDATA_PATH);
+        return;
+    }
+
+    char errbuf[200];
+    toml_table_t *root = toml_parse_file(file, errbuf, sizeof(errbuf));
+    fclose(file);
+
+    if (!root) {
+        dzlog_warn("gamedata: parse error: %s", errbuf);
+        debug_log("gamedata: parse error: %s", errbuf);
+        return;
+    }
+
+    debug_log("gamedata: loaded %s", GAMEDATA_PATH);
+
+    toml_array_t *blueprints = toml_array_in(root, "blueprint");
+    if (blueprints) {
+        int count = toml_array_nelem(blueprints);
+        debug_log("gamedata: %d blueprints", count);
+        for (int index = 0; index < count; index++) {
+            toml_table_t *blueprint = toml_table_at(blueprints, index);
+            toml_datum_t name = toml_string_in(blueprint, "name");
+            if (name.ok) {
+                debug_log("  blueprint: %s", name.u.s);
+                free(name.u.s);
+            }
+        }
+    }
+
+    toml_array_t *levels = toml_array_in(root, "level");
+    if (levels) {
+        int count = toml_array_nelem(levels);
+        debug_log("gamedata: %d levels", count);
+        for (int index = 0; index < count; index++) {
+            toml_table_t *level = toml_table_at(levels, index);
+            toml_datum_t name = toml_string_in(level, "name");
+            toml_array_t *entities = toml_array_in(level, "entity");
+            int entity_count = entities ? toml_array_nelem(entities) : 0;
+            if (name.ok) {
+                debug_log("  level: %s (%d entities)", name.u.s, entity_count);
+                free(name.u.s);
+            }
+        }
+    }
+
+    toml_free(root);
+}
+
 int main(void)
 {
 #ifndef __ANDROID__
@@ -442,6 +499,7 @@ int main(void)
               PIXEL_SCALE);
     debug_log("GetScreen %dx%d  GetRender %dx%d", GetScreenWidth(), GetScreenHeight(), GetRenderWidth(),
               GetRenderHeight());
+    load_gamedata();
 
     while (!WindowShouldClose()) {
         float delta_time = GetFrameTime();
