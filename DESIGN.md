@@ -770,7 +770,7 @@ pos = [320, 180]
 - [x] Instantiate level entities from gamedata (replace hardcoded obstacles)
 - [x] Remove hardcoded obstacle data from main.c
 - [x] Hot-reload: poll mtime in play mode, reload on change
-- [ ] TOML emitter for editor save
+- [x] TOML emitter for editor save
 
 ### Phase 3 — Entity System
 - [ ] Attribute system (built-in + custom, typed key-value pairs)

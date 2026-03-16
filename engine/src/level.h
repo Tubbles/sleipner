@@ -11,7 +11,10 @@
 #define MAX_MUSIC_NAME 64
 #define MAX_LEVEL_ENTITIES 512
 
+#define MAX_BLUEPRINT_NAME 64
+
 typedef struct {
+    char blueprint_name[MAX_BLUEPRINT_NAME];
     Vector2 position;
     Texture2D *texture;
     Rectangle source;

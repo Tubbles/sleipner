@@ -84,13 +84,13 @@ bool level_load(Level *level,
         }
 
         /* Look up blueprint */
-        toml_datum_t blueprint_name = toml_string_in(entity_table, "blueprint");
-        if (!blueprint_name.ok) {
+        toml_datum_t bp_name = toml_string_in(entity_table, "blueprint");
+        if (!bp_name.ok) {
             continue;
         }
-        const Blueprint *blueprint = blueprint_find(blueprints, blueprint_name.u.s);
-        free(blueprint_name.u.s);
+        const Blueprint *blueprint = blueprint_find(blueprints, bp_name.u.s);
         if (!blueprint) {
+            free(bp_name.u.s);
             continue;
         }
 
@@ -118,6 +118,9 @@ bool level_load(Level *level,
 
         /* Build entity */
         LevelEntity *entity = &level->entities[level->entity_count];
+        strncpy(entity->blueprint_name, bp_name.u.s, MAX_BLUEPRINT_NAME - 1);
+        entity->blueprint_name[MAX_BLUEPRINT_NAME - 1] = '\0';
+        free(bp_name.u.s);
         entity->position = (Vector2){position_x, position_y};
         entity->texture = texture;
         entity->source = blueprint->source;

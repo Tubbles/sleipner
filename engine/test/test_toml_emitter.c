@@ -1,0 +1,194 @@
+#include "unity.h"
+#include "toml_emitter.h"
+#include "arena.h"
+#include "toml.h"
+
+#include <string.h>
+
+static Texture2D dummy_texture;
+
+static Texture2D *dummy_lookup(const char *texture_name, void *user_data)
+{
+    (void)texture_name;
+    (void)user_data;
+    return &dummy_texture;
+}
+
+/* Helper: parse TOML, load blueprints and level, emit, re-parse, verify round-trip */
+static const char *fixture_gamedata =
+    "[[blueprint]]\n"
+    "name = \"tree\"\n"
+    "texture = \"tree.png\"\n"
+    "src = [0, 0, 64, 80]\n"
+    "collision_offset = [20, 60]\n"
+    "collision_size = [24, 16]\n"
+    "\n"
+    "[[blueprint]]\n"
+    "name = \"chest\"\n"
+    "texture = \"chest.png\"\n"
+    "src = [0, 0, 16, 16]\n"
+    "collision_offset = [0, 0]\n"
+    "collision_size = [16, 16]\n"
+    "\n"
+    "[[level]]\n"
+    "name = \"overworld\"\n"
+    "size = [640, 360]\n"
+    "music = \"bgm.mp3\"\n"
+    "\n"
+    "[[level.entity]]\n"
+    "blueprint = \"tree\"\n"
+    "pos = [200, 60]\n"
+    "\n"
+    "[[level.entity]]\n"
+    "blueprint = \"chest\"\n"
+    "pos = [300, 100]\n";
+
+static toml_table_t *parse_toml(const char *input)
+{
+    char buffer[8192];
+    strncpy(buffer, input, sizeof(buffer) - 1);
+    buffer[sizeof(buffer) - 1] = '\0';
+    char errbuf[200];
+    return toml_parse(buffer, errbuf, (int)sizeof(errbuf));
+}
+
+void test_toml_emit_blueprints(void)
+{
+    Arena arena;
+    arena_init(&arena, 4096);
+    BlueprintTable blueprints;
+
+    toml_table_t *root = parse_toml(fixture_gamedata);
+    TEST_ASSERT_NOT_NULL(root);
+    blueprints_load(&blueprints, root, &arena);
+    toml_free(root);
+
+    char output[4096];
+    Level empty_level = {0};
+    int written = toml_emit_gamedata(output, (int)sizeof(output), &blueprints, &empty_level, 0);
+    TEST_ASSERT_TRUE(written > 0);
+
+    /* Verify the output contains the blueprint data */
+    TEST_ASSERT_NOT_NULL(strstr(output, "[[blueprint]]"));
+    TEST_ASSERT_NOT_NULL(strstr(output, "name = \"tree\""));
+    TEST_ASSERT_NOT_NULL(strstr(output, "texture = \"chest.png\""));
+    TEST_ASSERT_NOT_NULL(strstr(output, "src = [0, 0, 64, 80]"));
+    TEST_ASSERT_NOT_NULL(strstr(output, "collision_offset = [20, 60]"));
+    TEST_ASSERT_NOT_NULL(strstr(output, "collision_size = [24, 16]"));
+
+    arena_free(&arena);
+}
+
+void test_toml_emit_level_with_entities(void)
+{
+    Arena arena;
+    arena_init(&arena, 4096);
+    BlueprintTable blueprints;
+    Level level;
+
+    toml_table_t *root = parse_toml(fixture_gamedata);
+    TEST_ASSERT_NOT_NULL(root);
+    blueprints_load(&blueprints, root, &arena);
+    level_load(&level, root, NULL, &blueprints, dummy_lookup, NULL);
+    toml_free(root);
+
+    char output[4096];
+    int written = toml_emit_gamedata(output, (int)sizeof(output), &blueprints, &level, 1);
+    TEST_ASSERT_TRUE(written > 0);
+
+    TEST_ASSERT_NOT_NULL(strstr(output, "[[level]]"));
+    TEST_ASSERT_NOT_NULL(strstr(output, "name = \"overworld\""));
+    TEST_ASSERT_NOT_NULL(strstr(output, "size = [640, 360]"));
+    TEST_ASSERT_NOT_NULL(strstr(output, "music = \"bgm.mp3\""));
+    TEST_ASSERT_NOT_NULL(strstr(output, "[[level.entity]]"));
+    TEST_ASSERT_NOT_NULL(strstr(output, "blueprint = \"tree\""));
+    TEST_ASSERT_NOT_NULL(strstr(output, "pos = [200, 60]"));
+    TEST_ASSERT_NOT_NULL(strstr(output, "blueprint = \"chest\""));
+    TEST_ASSERT_NOT_NULL(strstr(output, "pos = [300, 100]"));
+
+    arena_free(&arena);
+}
+
+void test_toml_emit_round_trip(void)
+{
+    Arena arena;
+    arena_init(&arena, 4096);
+    BlueprintTable blueprints;
+    Level level;
+
+    /* Parse original */
+    toml_table_t *root = parse_toml(fixture_gamedata);
+    TEST_ASSERT_NOT_NULL(root);
+    blueprints_load(&blueprints, root, &arena);
+    level_load(&level, root, NULL, &blueprints, dummy_lookup, NULL);
+    toml_free(root);
+
+    /* Emit */
+    char output[8192];
+    int written = toml_emit_gamedata(output, (int)sizeof(output), &blueprints, &level, 1);
+    TEST_ASSERT_TRUE(written > 0);
+
+    /* Re-parse the emitted output */
+    Arena arena2;
+    arena_init(&arena2, 4096);
+    BlueprintTable blueprints2;
+    Level level2;
+
+    toml_table_t *root2 = parse_toml(output);
+    TEST_ASSERT_NOT_NULL(root2);
+    blueprints_load(&blueprints2, root2, &arena2);
+    level_load(&level2, root2, NULL, &blueprints2, dummy_lookup, NULL);
+    toml_free(root2);
+
+    /* Verify round-trip preserves data */
+    TEST_ASSERT_EQUAL_INT(blueprints.count, blueprints2.count);
+    for (int index = 0; index < blueprints.count; index++) {
+        TEST_ASSERT_EQUAL_STRING(blueprints.entries[index].name, blueprints2.entries[index].name);
+        TEST_ASSERT_EQUAL_STRING(blueprints.entries[index].texture_name, blueprints2.entries[index].texture_name);
+        TEST_ASSERT_FLOAT_WITHIN(0.1F, blueprints.entries[index].source.width, blueprints2.entries[index].source.width);
+    }
+
+    TEST_ASSERT_EQUAL_STRING(level.name, level2.name);
+    TEST_ASSERT_EQUAL_STRING(level.music_name, level2.music_name);
+    TEST_ASSERT_EQUAL_INT(level.width, level2.width);
+    TEST_ASSERT_EQUAL_INT(level.height, level2.height);
+    TEST_ASSERT_EQUAL_INT(level.entity_count, level2.entity_count);
+
+    for (int index = 0; index < level.entity_count; index++) {
+        TEST_ASSERT_FLOAT_WITHIN(0.1F, level.entities[index].position.x, level2.entities[index].position.x);
+        TEST_ASSERT_FLOAT_WITHIN(0.1F, level.entities[index].position.y, level2.entities[index].position.y);
+        TEST_ASSERT_EQUAL_STRING(level.entities[index].blueprint_name, level2.entities[index].blueprint_name);
+    }
+
+    arena_free(&arena);
+    arena_free(&arena2);
+}
+
+void test_toml_emit_buffer_too_small(void)
+{
+    BlueprintTable blueprints = {0};
+    strncpy(blueprints.entries[0].name, "test", 64);
+    strncpy(blueprints.entries[0].texture_name, "test.png", 64);
+    blueprints.count = 1;
+
+    char tiny[10];
+    int written = toml_emit_gamedata(tiny, (int)sizeof(tiny), &blueprints, NULL, 0);
+    TEST_ASSERT_EQUAL_INT(-1, written);
+}
+
+void test_toml_emit_no_music(void)
+{
+    Level level = {0};
+    strncpy(level.name, "silent", MAX_LEVEL_NAME);
+    level.width = 100;
+    level.height = 100;
+
+    BlueprintTable empty = {0};
+    char output[1024];
+    int written = toml_emit_gamedata(output, (int)sizeof(output), &empty, &level, 1);
+    TEST_ASSERT_TRUE(written > 0);
+
+    /* Should not contain music line */
+    TEST_ASSERT_NULL(strstr(output, "music"));
+    TEST_ASSERT_NOT_NULL(strstr(output, "name = \"silent\""));
+}

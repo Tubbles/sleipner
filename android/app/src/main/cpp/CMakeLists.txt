@@ -33,6 +33,7 @@ add_library(sleipner SHARED
     ${PROJECT_ROOT}/engine/src/particle.c
     ${PROJECT_ROOT}/engine/src/render.c
     ${PROJECT_ROOT}/engine/src/shape.c
+    ${PROJECT_ROOT}/engine/src/toml_emitter.c
     ${PROJECT_ROOT}/engine/src/main.c
 )
 

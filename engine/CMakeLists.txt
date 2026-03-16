@@ -20,6 +20,7 @@ add_library(engine STATIC
     src/particle.c
     src/render.c
     src/shape.c
+    src/toml_emitter.c
 )
 target_include_directories(engine PUBLIC src)
 target_link_libraries(engine PUBLIC raylib zlog tomlc99)

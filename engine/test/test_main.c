@@ -60,6 +60,13 @@ void test_particle_position_updates(void);
 void test_particle_capacity_grows(void);
 void test_particle_free_cleans_up(void);
 
+/* test_toml_emitter.c */
+void test_toml_emit_blueprints(void);
+void test_toml_emit_level_with_entities(void);
+void test_toml_emit_round_trip(void);
+void test_toml_emit_buffer_too_small(void);
+void test_toml_emit_no_music(void);
+
 /* test_collision.c */
 void test_rect_rect_overlap(void);
 void test_rect_rect_no_overlap(void);
@@ -145,6 +152,12 @@ int main(void)
     RUN_TEST(test_tri_tri_no_overlap);
     RUN_TEST(test_tri_circle_overlap);
     RUN_TEST(test_tri_rect_overlap);
+
+    RUN_TEST(test_toml_emit_blueprints);
+    RUN_TEST(test_toml_emit_level_with_entities);
+    RUN_TEST(test_toml_emit_round_trip);
+    RUN_TEST(test_toml_emit_buffer_too_small);
+    RUN_TEST(test_toml_emit_no_music);
 
     return UNITY_END();
 }
