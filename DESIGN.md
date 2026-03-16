@@ -267,9 +267,9 @@ pos = [320, 180]
 - **Engine grows organically.** Don't build engine features speculatively — add them when the game needs them.
 - **Undo system:** Snapshot-based. Before each editor operation, snapshot the entire in-memory gamedata and push onto a history stack. Undo = pop and restore. Simple, every operation is automatically undoable, no need to define inverse operations. Gamedata is small enough that even 100+ snapshots are negligible memory. If gamedata ever grows to megabytes, migrate to command pattern — undo is internal to the editor so refactoring is cheap.
 - **Memory allocation:** Arena allocator for all gamedata. All data loaded from TOML lives in one arena — reload or undo = reset the arena. Behavior params per blueprint are variable-length (pointer + count into the arena), no fixed cap. Undo snapshots are just `memcpy` of the arena.
+- **Hot-reload:** Poll mtime on `gamedata.toml` (~once per second) in play mode — auto-reload when the file changes (Syncthing edits from phone appear live). In editor mode, no auto-reload — reload is explicit only, to avoid blowing away unsaved in-memory changes.
 
 ## Open Questions
 
 - Tile map format: fixed grid size? Multiple layers? Autotiling?
-- Hot-reload: poll mtime on `gamedata.toml` each frame, or only reload on explicit action?
 - Should the TOML emitter try to preserve comments and formatting, or just regenerate cleanly?
