@@ -269,7 +269,8 @@ pos = [320, 180]
 - **Memory allocation:** Arena allocator for all gamedata. All data loaded from TOML lives in one arena — reload or undo = reset the arena. Behavior params per blueprint are variable-length (pointer + count into the arena), no fixed cap. Undo snapshots are just `memcpy` of the arena.
 - **Hot-reload:** Poll mtime on `gamedata.toml` (~once per second) in play mode — auto-reload when the file changes (Syncthing edits from phone appear live). In editor mode, no auto-reload — reload is explicit only, to avoid blowing away unsaved in-memory changes.
 - **Tile map:** 16x16 pixel tiles, 2 layers (ground + overlay). Ground is terrain (grass, dirt, water, paths). Overlay renders on top of ground but under entities (flowers, puddles, shadows). Stored as arrays of integer tile IDs in TOML, row by row. Autotiling (automatic edge/corner sprite selection) is an editor feature — the file stores concrete tile IDs, the editor computes them on placement.
+- **TOML emitter:** Clean regeneration, no comment/formatting preservation. The in-game editor is the primary editing interface — comments aren't useful. Keeps the emitter dead simple.
 
 ## Open Questions
 
-- Should the TOML emitter try to preserve comments and formatting, or just regenerate cleanly?
+(None currently — all resolved.)
