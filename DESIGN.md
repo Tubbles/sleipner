@@ -931,3 +931,22 @@ pos = [320, 180]
 - Spatial sound — volume based on distance to entity?
 - Sound priority — what happens when too many sounds play at once?
 - Music and SFX volume as separate settings?
+
+### Asset Pipeline
+- `#embed` compiles all assets into the binary — does this scale to hundreds of sprites?
+- Compile time impact as asset count grows?
+- Atlas packing — manual or automated as part of the build?
+- Should large assets (music, tilesets) use a different strategy than small ones (icons, UI)?
+
+### Collision System Evolution
+- Current system is AABB-based — will slopes or angled surfaces be needed?
+- One-way platforms (e.g. jump-down ledges)?
+- Trigger volumes of arbitrary shape (circles, polygons)?
+- How do trigger zones interact with the rule system?
+
+### Modding
+- The data-driven architecture makes modding nearly free — worth designing for explicitly?
+- Mod loading — override gamedata.toml entries, or separate mod files merged at load?
+- Asset overrides — can mods replace textures/sounds?
+- Mod conflicts — what happens when two mods modify the same entity?
+- Should the editor support exporting mods as standalone packages?
