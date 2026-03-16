@@ -14,6 +14,7 @@ The editor is a mode within the game, not a separate tool. Toggle between play m
 
 - **Edit what you see.** The editor operates on the live game world. Changes are immediately visible.
 - **Gamepad-first.** Every editor action is reachable from a controller. No mouse/keyboard required (though keyboard shortcuts are fine as secondary input).
+- **Always show the controls.** Every editor screen displays the current button mappings on-screen — what each button does in the current context. The user should never have to memorize or guess. Button hints update dynamically as the context changes (e.g. different hints when an entity is selected vs when nothing is selected).
 - **Data, not code.** Levels, entity blueprints, collision shapes, and behavior parameters are data that the editor reads and writes. Game logic consumes this data at runtime.
 - **Round-trip.** Play, pause, edit, resume. The editor and the game share the same world state.
 
@@ -552,4 +553,75 @@ pos = [320, 180]
 
 ## Open Questions
 
-(None currently — all resolved.)
+### Save System
+- What persists? Player position, inventory, flags, level state?
+- Separate save file from `gamedata.toml` (level design data vs player progress)?
+- Save format — TOML as well, or something simpler?
+- Multiple save slots?
+- Auto-save on level transition, or manual only?
+
+### Camera System
+- Zelda-style screen-by-screen (snap to room boundaries) or smooth follow?
+- Bounds clamping — camera stops at level edges?
+- How does `camera_pan` interact with the follow camera?
+- Transition effect when moving between rooms/areas?
+- Zoom levels — fixed or adjustable?
+
+### Combat
+- Melee hitbox — separate from collision box? Active only during attack frames?
+- Damage model — how do attack power, defense, and attributes interact?
+- Knockback direction and distance — attribute-driven?
+- Invincibility frames after taking damage — how many?
+- Ranged attacks — projectile entities spawned by rules?
+- How does combat interact with the rule system (e.g. `defeat` trigger)?
+
+### Inventory & Items
+- How many slots? Fixed grid, or unlimited list?
+- Equipment vs consumables vs key items — different categories?
+- Visual inventory screen layout — gamepad-navigable grid?
+- How does `give_item`/`has_item`/`remove_item` work in memory — string set, or item entities with attributes?
+- Stackable items?
+- Equipment that modifies attributes (e.g. sword child entity with `damage` attribute)?
+
+### Dialogue System
+- Multi-page text with A to advance?
+- NPC portraits/names alongside text?
+- Branching choices — player picks from options?
+- How does dialogue interact with rules (e.g. set flag after conversation)?
+- Text speed — instant or typewriter?
+- Localization considerations?
+
+### Level Transitions
+- Transition effect — fade to black, wipe, instant cut?
+- Door animations before transition?
+- Spawn position — defined per-door, or level-wide default?
+- Entering from different directions — multiple spawn points per level?
+- Do entities/state persist when leaving and returning to a level?
+
+### Animation State Machine
+- Directional sprites — 4-way (UDLR) or 8-way?
+- States: idle, walk, attack, hurt, death — how do they chain?
+- How do animations tie into attributes (e.g. `state` attribute)?
+- Attack animation frames — which frames have active hitboxes?
+- Per-entity animation overrides vs blueprint defaults?
+
+### HUD & Menus
+- Health display — hearts, bar, or numeric?
+- Inventory screen — overlay or full-screen?
+- Pause menu — resume, save, settings, quit?
+- Minimap or full map screen?
+- All menus gamepad-navigable with on-screen button hints.
+
+### AI & Pathfinding
+- Enemy behaviors beyond static — chase, patrol, flee, guard?
+- Aggro range — attribute-driven? Line of sight or radius?
+- Pathfinding — grid-based A*, or simple steering?
+- Patrol routes — defined as waypoint lists in TOML?
+- Group behavior — enemies coordinating, flanking?
+
+### Audio Design
+- Music crossfade on level transition — duration, curve?
+- Ambient sound layers — per-level, per-area?
+- Spatial sound — volume based on distance to entity?
+- Sound priority — what happens when too many sounds play at once?
+- Music and SFX volume as separate settings?
