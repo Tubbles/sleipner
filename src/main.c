@@ -12,6 +12,13 @@
 #include <stdarg.h>
 #include <stdio.h>
 
+#ifdef __ANDROID__
+#define SYNCTHING_PATH "/storage/emulated/0/Sync"
+#define GAMEDATA_PATH SYNCTHING_PATH "/sleipner/gamedata.toml"
+#else
+#define GAMEDATA_PATH "data/gamedata.toml"
+#endif
+
 #define HEARTBEAT_INTERVAL 300
 #define TARGET_FPS 60
 

@@ -262,7 +262,7 @@ pos = [320, 180]
 - **Data format:** TOML via tomlc99 (vendored in `engine/vendor/tomlc99/`). Single file `data/gamedata.toml`.
 - **Sync mechanism:** Hard link from `data/gamedata.toml` into Syncthing share. Same inode — git and Syncthing both see real changes.
 - **Safe save:** Write to temp file, rename onto the original. Atomic on same filesystem, preserves hard link inode (rename replaces directory entry, not inode). Prevents corrupt partial writes from Syncthing races.
-- **Android data path:** Syncthing folder, e.g. `/storage/emulated/0/Sync/sleipner/gamedata.toml`. Hardcode for now, make configurable later if needed.
+- **Android data path:** `/storage/emulated/0/Sync/sleipner/gamedata.toml` (hardcoded). Desktop: `data/gamedata.toml` (repo-relative).
 - **Release distribution:** Embed `gamedata.toml` via `#embed` (desktop) / APK assets (Android). Dev builds load from filesystem path instead.
 - **Engine grows organically.** Don't build engine features speculatively — add them when the game needs them.
 
