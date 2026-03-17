@@ -25,11 +25,11 @@ typedef struct {
 /* Parse the first [[level]] (or the one matching `level_name` if non-NULL)
  * from a tomlc99 root table. Instantiates entities from blueprints.
  * Returns true on success. */
-bool level_load(Level *level,
-                void *toml_root,
-                const char *level_name,
-                const BlueprintTable *blueprints,
-                TextureLookupFn texture_lookup,
-                void *texture_user_data);
+[[nodiscard]] bool level_load(Level *level,
+                              void *toml_root,
+                              const char *level_name,
+                              const BlueprintTable *blueprints,
+                              TextureLookupFn texture_lookup,
+                              void *texture_user_data);
 
 #endif

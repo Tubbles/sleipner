@@ -9,7 +9,7 @@
 
 static void with_arena(Arena *arena)
 {
-    arena_init(arena, 4096);
+    TEST_ASSERT_TRUE(arena_init(arena, 4096));
 }
 
 static toml_table_t *parse_toml(const char *input)

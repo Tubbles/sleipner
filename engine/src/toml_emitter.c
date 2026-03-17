@@ -1,6 +1,7 @@
 #include "toml_emitter.h"
 #include "blueprint.h"
 #include "entity.h"
+#include "error.h"
 #include "level.h"
 
 #include <stdarg.h>
@@ -83,5 +84,8 @@ int toml_emit_gamedata(
     offset = emit_blueprints(buffer, capacity, offset, blueprints);
     offset = emit_levels(buffer, capacity, offset, levels, level_count);
 
+    if (offset < 0) {
+        error_set("buffer too small (capacity %d)", capacity);
+    }
     return offset;
 }

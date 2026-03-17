@@ -1,7 +1,7 @@
 #include "game.h"
 #include "arena.h"
 #include "blueprint.h"
-#include "debug.h"
+#include "error.h"
 #include "entity.h"
 #include "input.h"
 #include "level.h"
@@ -17,13 +17,17 @@
 #define GAMEDATA_ARENA_SIZE (64UL * 1024)
 #define TOML_ERRBUF_SIZE 200
 
-void game_init(GameState *state, RectU32 game_bounds)
+bool game_init(GameState *state, RectU32 game_bounds)
 {
     memset(state, 0, sizeof(*state));
     state->game_bounds = game_bounds;
     state->player_index = -1;
     state->debug_enabled = true;
-    arena_init(&state->gamedata_arena, GAMEDATA_ARENA_SIZE);
+    if (!arena_init(&state->gamedata_arena, GAMEDATA_ARENA_SIZE)) {
+        error_wrap("game_init");
+        return false;
+    }
+    return true;
 }
 
 static int find_player_entity(const Level *level)
@@ -42,6 +46,8 @@ bool game_load_gamedata(GameState *state, GamedataParams params)
     size_t length = strlen(params.toml_string);
     char *buffer = malloc(length + 1);
     if (!buffer) {
+        error_set("malloc failed for TOML buffer (%zu bytes)", length + 1);
+        error_wrap("game_load_gamedata");
         return false;
     }
     memcpy(buffer, params.toml_string, length + 1);
@@ -51,7 +57,8 @@ bool game_load_gamedata(GameState *state, GamedataParams params)
     free(buffer);
 
     if (!root) {
-        debug_log("toml_parse FAILED: %s", errbuf);
+        error_set("toml_parse: %s", errbuf);
+        error_wrap("game_load_gamedata");
         return false;
     }
 
@@ -66,6 +73,8 @@ bool game_load_gamedata(GameState *state, GamedataParams params)
 
     if (level_ok) {
         state->player_index = find_player_entity(&state->current_level);
+    } else {
+        error_wrap("game_load_gamedata");
     }
 
     return level_ok;

@@ -37,15 +37,15 @@ const Attribute *attr_get(const AttrSet *set, const char *name);
 
 /* Set an attribute. Overwrites if name exists, appends if new.
  * Returns true on success, false if the set is full. */
-bool attr_set_float(AttrSet *set, const char *name, float value);
-bool attr_set_int(AttrSet *set, const char *name, int value);
-bool attr_set_bool(AttrSet *set, const char *name, bool value);
+[[nodiscard]] bool attr_set_float(AttrSet *set, const char *name, float value);
+[[nodiscard]] bool attr_set_int(AttrSet *set, const char *name, int value);
+[[nodiscard]] bool attr_set_bool(AttrSet *set, const char *name, bool value);
 typedef struct {
     const char *name;
     const char *value;
 } AttrStringPair;
 
-bool attr_set_string(AttrSet *set, AttrStringPair pair);
+[[nodiscard]] bool attr_set_string(AttrSet *set, AttrStringPair pair);
 
 /* Convenience getters with fallback defaults. */
 float attr_get_float(const AttrSet *set, const char *name, float fallback);

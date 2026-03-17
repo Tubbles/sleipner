@@ -17,11 +17,11 @@ typedef struct {
 } AllocRequest;
 
 /* Create an arena with the given capacity. Returns false on allocation failure. */
-bool arena_init(Arena *arena, size_t capacity);
+[[nodiscard]] bool arena_init(Arena *arena, size_t capacity);
 
 /* Allocate from the arena per the given request.
  * Returns NULL if the arena is full. */
-void *arena_alloc(Arena *arena, AllocRequest request);
+[[nodiscard]] void *arena_alloc(Arena *arena, AllocRequest request);
 
 /* Reset the arena — all previous allocations become invalid. */
 void arena_reset(Arena *arena);

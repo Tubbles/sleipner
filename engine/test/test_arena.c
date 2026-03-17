@@ -17,7 +17,7 @@ void test_arena_init_and_free(void)
 void test_arena_alloc_basic(void)
 {
     Arena arena;
-    arena_init(&arena, 256);
+    TEST_ASSERT_TRUE(arena_init(&arena, 256));
 
     void *first = arena_alloc(&arena, (AllocRequest){.size = 32, .alignment = 1});
     TEST_ASSERT_NOT_NULL(first);
@@ -37,10 +37,10 @@ void test_arena_alloc_basic(void)
 void test_arena_alloc_alignment(void)
 {
     Arena arena;
-    arena_init(&arena, 256);
+    TEST_ASSERT_TRUE(arena_init(&arena, 256));
 
     /* Allocate 1 byte to misalign */
-    arena_alloc(&arena, (AllocRequest){.size = 1, .alignment = 1});
+    (void)arena_alloc(&arena, (AllocRequest){.size = 1, .alignment = 1});
 
     /* Next allocation with 8-byte alignment */
     void *aligned = arena_alloc(&arena, (AllocRequest){.size = 16, .alignment = 8});
@@ -53,7 +53,7 @@ void test_arena_alloc_alignment(void)
 void test_arena_alloc_returns_null_when_full(void)
 {
     Arena arena;
-    arena_init(&arena, 64);
+    TEST_ASSERT_TRUE(arena_init(&arena, 64));
 
     void *first = arena_alloc(&arena, (AllocRequest){.size = 48, .alignment = 1});
     TEST_ASSERT_NOT_NULL(first);
@@ -72,9 +72,9 @@ void test_arena_alloc_returns_null_when_full(void)
 void test_arena_reset(void)
 {
     Arena arena;
-    arena_init(&arena, 128);
+    TEST_ASSERT_TRUE(arena_init(&arena, 128));
 
-    arena_alloc(&arena, (AllocRequest){.size = 100, .alignment = 1});
+    (void)arena_alloc(&arena, (AllocRequest){.size = 100, .alignment = 1});
     TEST_ASSERT_EQUAL_size_t(100, arena_used(&arena));
 
     arena_reset(&arena);
@@ -91,7 +91,7 @@ void test_arena_reset(void)
 void test_arena_snapshot_restore(void)
 {
     Arena arena;
-    arena_init(&arena, 256);
+    TEST_ASSERT_TRUE(arena_init(&arena, 256));
 
     /* Write some data */
     int *values = arena_alloc(&arena, (AllocRequest){.size = 4 * sizeof(int), .alignment = _Alignof(int)});
@@ -110,7 +110,7 @@ void test_arena_snapshot_restore(void)
     values[2] = 888;
 
     /* Allocate more stuff */
-    arena_alloc(&arena, (AllocRequest){.size = 64, .alignment = 1});
+    (void)arena_alloc(&arena, (AllocRequest){.size = 64, .alignment = 1});
 
     /* Restore snapshot */
     memcpy(arena.buffer, snapshot, snapshot_offset);

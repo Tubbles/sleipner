@@ -59,7 +59,7 @@ void test_game_init_defaults(void)
 {
     GameState state;
     RectU32 bounds = {320, 240};
-    game_init(&state, bounds);
+    TEST_ASSERT_TRUE(game_init(&state, bounds));
 
     TEST_ASSERT_EQUAL_INT(320, state.game_bounds.width);
     TEST_ASSERT_EQUAL_INT(240, state.game_bounds.height);
@@ -74,7 +74,7 @@ void test_game_init_defaults(void)
 void test_game_update_increments_frame(void)
 {
     GameState state;
-    game_init(&state, (RectU32){320, 240});
+    TEST_ASSERT_TRUE(game_init(&state, (RectU32){320, 240}));
 
     InputState input = {0};
     game_update(&state, input, 1.0F / 60.0F);
@@ -89,7 +89,7 @@ void test_game_update_increments_frame(void)
 void test_game_update_accumulates_elapsed(void)
 {
     GameState state;
-    game_init(&state, (RectU32){320, 240});
+    TEST_ASSERT_TRUE(game_init(&state, (RectU32){320, 240}));
 
     InputState input = {0};
     game_update(&state, input, 0.5F);
@@ -103,8 +103,9 @@ void test_game_update_accumulates_elapsed(void)
 void test_game_update_player_moves_right(void)
 {
     GameState state;
-    game_init(&state, (RectU32){320, 240});
-    game_load_gamedata(&state, (GamedataParams){.toml_string = game_test_gamedata, .texture_lookup = dummy_lookup});
+    TEST_ASSERT_TRUE(game_init(&state, (RectU32){320, 240}));
+    TEST_ASSERT_TRUE(game_load_gamedata(
+        &state, (GamedataParams){.toml_string = game_test_gamedata, .texture_lookup = dummy_lookup}));
 
     const Entity *player = game_get_player_const(&state);
     TEST_ASSERT_NOT_NULL(player);
@@ -127,8 +128,9 @@ void test_game_update_player_moves_right(void)
 void test_game_update_player_moves_left(void)
 {
     GameState state;
-    game_init(&state, (RectU32){320, 240});
-    game_load_gamedata(&state, (GamedataParams){.toml_string = game_test_gamedata, .texture_lookup = dummy_lookup});
+    TEST_ASSERT_TRUE(game_init(&state, (RectU32){320, 240}));
+    TEST_ASSERT_TRUE(game_load_gamedata(
+        &state, (GamedataParams){.toml_string = game_test_gamedata, .texture_lookup = dummy_lookup}));
 
     InputState input = {0};
     input.left_stick.x = -1.0F;
@@ -147,8 +149,9 @@ void test_game_update_player_moves_left(void)
 void test_game_update_no_input_no_movement(void)
 {
     GameState state;
-    game_init(&state, (RectU32){320, 240});
-    game_load_gamedata(&state, (GamedataParams){.toml_string = game_test_gamedata, .texture_lookup = dummy_lookup});
+    TEST_ASSERT_TRUE(game_init(&state, (RectU32){320, 240}));
+    TEST_ASSERT_TRUE(game_load_gamedata(
+        &state, (GamedataParams){.toml_string = game_test_gamedata, .texture_lookup = dummy_lookup}));
 
     const Entity *player = game_get_player_const(&state);
     TEST_ASSERT_NOT_NULL(player);
@@ -169,8 +172,9 @@ void test_game_update_no_input_no_movement(void)
 void test_game_player_clamps_to_bounds(void)
 {
     GameState state;
-    game_init(&state, (RectU32){320, 240});
-    game_load_gamedata(&state, (GamedataParams){.toml_string = game_test_gamedata, .texture_lookup = dummy_lookup});
+    TEST_ASSERT_TRUE(game_init(&state, (RectU32){320, 240}));
+    TEST_ASSERT_TRUE(game_load_gamedata(
+        &state, (GamedataParams){.toml_string = game_test_gamedata, .texture_lookup = dummy_lookup}));
 
     InputState input = {0};
     input.left_stick.x = -1.0F;
@@ -189,8 +193,9 @@ void test_game_player_clamps_to_bounds(void)
 void test_game_player_collision_from_blueprint(void)
 {
     GameState state;
-    game_init(&state, (RectU32){320, 240});
-    game_load_gamedata(&state, (GamedataParams){.toml_string = game_test_gamedata, .texture_lookup = dummy_lookup});
+    TEST_ASSERT_TRUE(game_init(&state, (RectU32){320, 240}));
+    TEST_ASSERT_TRUE(game_load_gamedata(
+        &state, (GamedataParams){.toml_string = game_test_gamedata, .texture_lookup = dummy_lookup}));
 
     const Entity *player = game_get_player_const(&state);
     TEST_ASSERT_NOT_NULL(player);
@@ -207,9 +212,9 @@ void test_game_player_collision_from_blueprint(void)
 void test_game_update_resolves_obstacle_collision(void)
 {
     GameState state;
-    game_init(&state, (RectU32){320, 240});
-    game_load_gamedata(
-        &state, (GamedataParams){.toml_string = game_test_gamedata_with_obstacle, .texture_lookup = dummy_lookup});
+    TEST_ASSERT_TRUE(game_init(&state, (RectU32){320, 240}));
+    TEST_ASSERT_TRUE(game_load_gamedata(
+        &state, (GamedataParams){.toml_string = game_test_gamedata_with_obstacle, .texture_lookup = dummy_lookup}));
 
     /* Push player into the obstacle */
     InputState input = {0};

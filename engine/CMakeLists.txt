@@ -12,6 +12,7 @@ add_library(engine STATIC
     src/collision.c
     src/debug.c
     src/entity.c
+    src/error.c
     src/game.c
     src/level.c
     src/input.c

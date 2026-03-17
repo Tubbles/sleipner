@@ -37,6 +37,15 @@ void test_blueprint_health_parsed(void);
 void test_blueprint_extends(void);
 void test_blueprint_extends_chain(void);
 
+/* test_error.c */
+void test_error_initially_null(void);
+void test_error_set_and_get(void);
+void test_error_set_with_format(void);
+void test_error_wrap_prepends_context(void);
+void test_error_wrap_on_empty_is_noop(void);
+void test_error_clear_resets(void);
+void test_error_set_overwrites_previous(void);
+
 /* test_entity.c */
 void test_entity_init_from_blueprint(void);
 void test_entity_get_attr_from_blueprint(void);
@@ -143,6 +152,14 @@ int main(void)
     RUN_TEST(test_blueprint_health_parsed);
     RUN_TEST(test_blueprint_extends);
     RUN_TEST(test_blueprint_extends_chain);
+
+    RUN_TEST(test_error_initially_null);
+    RUN_TEST(test_error_set_and_get);
+    RUN_TEST(test_error_set_with_format);
+    RUN_TEST(test_error_wrap_prepends_context);
+    RUN_TEST(test_error_wrap_on_empty_is_noop);
+    RUN_TEST(test_error_clear_resets);
+    RUN_TEST(test_error_set_overwrites_previous);
 
     RUN_TEST(test_entity_init_from_blueprint);
     RUN_TEST(test_entity_get_attr_from_blueprint);

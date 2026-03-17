@@ -1,4 +1,5 @@
 #include "attribute.h"
+#include "error.h"
 
 #include <string.h>
 
@@ -20,6 +21,7 @@ static Attribute *find_or_append(AttrSet *set, const char *name)
         }
     }
     if (set->count >= MAX_ATTRS) {
+        error_set("attribute set full (max %d), cannot add '%s'", MAX_ATTRS, name);
         return NULL;
     }
     Attribute *entry = &set->entries[set->count];

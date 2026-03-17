@@ -43,31 +43,30 @@ static bool is_known_key(const char *key)
     return false;
 }
 
-static void parse_custom_attr(AttrSet *attrs, toml_table_t *table, const char *key)
+static bool parse_custom_attr(AttrSet *attrs, toml_table_t *table, const char *key)
 {
     toml_datum_t bool_value = toml_bool_in(table, key);
     if (bool_value.ok) {
-        attr_set_bool(attrs, key, (bool)bool_value.u.b);
-        return;
+        return attr_set_bool(attrs, key, (bool)bool_value.u.b);
     }
 
     toml_datum_t int_value = toml_int_in(table, key);
     if (int_value.ok) {
-        attr_set_int(attrs, key, (int)int_value.u.i);
-        return;
+        return attr_set_int(attrs, key, (int)int_value.u.i);
     }
 
     toml_datum_t double_value = toml_double_in(table, key);
     if (double_value.ok) {
-        attr_set_float(attrs, key, (float)double_value.u.d);
-        return;
+        return attr_set_float(attrs, key, (float)double_value.u.d);
     }
 
     toml_datum_t string_value = toml_string_in(table, key);
     if (string_value.ok) {
-        attr_set_string(attrs, (AttrStringPair){.name = key, .value = string_value.u.s});
+        bool result = attr_set_string(attrs, (AttrStringPair){.name = key, .value = string_value.u.s});
         free(string_value.u.s);
+        return result;
     }
+    return true;
 }
 
 static bool inherit_rendering_fields(Blueprint *child, const Blueprint *parent)
@@ -176,22 +175,23 @@ static void parse_geometry(Blueprint *blueprint, toml_table_t *entry)
     }
 }
 
-static void parse_health(Blueprint *blueprint, toml_table_t *entry)
+static bool parse_health(Blueprint *blueprint, toml_table_t *entry)
 {
     toml_array_t *health = toml_array_in(entry, "health");
     if (health && toml_array_nelem(health) == 2) {
         toml_datum_t current = toml_int_at(health, 0);
         toml_datum_t max = toml_int_at(health, 1);
-        if (current.ok) {
-            attr_set_int(&blueprint->attrs, "health", (int)current.u.i);
+        if (current.ok && !attr_set_int(&blueprint->attrs, "health", (int)current.u.i)) {
+            return false;
         }
-        if (max.ok) {
-            attr_set_int(&blueprint->attrs, "max_health", (int)max.u.i);
+        if (max.ok && !attr_set_int(&blueprint->attrs, "max_health", (int)max.u.i)) {
+            return false;
         }
     }
+    return true;
 }
 
-static void parse_custom_attrs(Blueprint *blueprint, toml_table_t *entry)
+static bool parse_custom_attrs(Blueprint *blueprint, toml_table_t *entry)
 {
     int key_count = toml_table_nkval(entry);
     for (int key_index = 0; key_index < key_count; key_index++) {
@@ -199,8 +199,11 @@ static void parse_custom_attrs(Blueprint *blueprint, toml_table_t *entry)
         if (!key || is_known_key(key)) {
             continue;
         }
-        parse_custom_attr(&blueprint->attrs, entry, key);
+        if (!parse_custom_attr(&blueprint->attrs, entry, key)) {
+            return false;
+        }
     }
+    return true;
 }
 
 static bool parse_single_blueprint(Blueprint *blueprint, toml_table_t *entry)
@@ -216,10 +219,10 @@ static bool parse_single_blueprint(Blueprint *blueprint, toml_table_t *entry)
 
     parse_optional_strings(blueprint, entry);
     parse_geometry(blueprint, entry);
-    parse_health(blueprint, entry);
-    parse_custom_attrs(blueprint, entry);
-
-    return true;
+    if (!parse_health(blueprint, entry)) {
+        return false;
+    }
+    return parse_custom_attrs(blueprint, entry);
 }
 
 int blueprints_load(BlueprintTable *table, void *toml_root, Arena *arena)

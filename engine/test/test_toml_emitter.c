@@ -54,7 +54,7 @@ static toml_table_t *parse_toml(const char *input)
 void test_toml_emit_blueprints(void)
 {
     Arena arena;
-    arena_init(&arena, 4096);
+    TEST_ASSERT_TRUE(arena_init(&arena, 4096));
     BlueprintTable blueprints;
 
     toml_table_t *root = parse_toml(fixture_gamedata);
@@ -81,14 +81,14 @@ void test_toml_emit_blueprints(void)
 void test_toml_emit_level_with_entities(void)
 {
     Arena arena;
-    arena_init(&arena, 4096);
+    TEST_ASSERT_TRUE(arena_init(&arena, 4096));
     BlueprintTable blueprints;
     Level level;
 
     toml_table_t *root = parse_toml(fixture_gamedata);
     TEST_ASSERT_NOT_NULL(root);
     blueprints_load(&blueprints, root, &arena);
-    level_load(&level, root, NULL, &blueprints, dummy_lookup, NULL);
+    TEST_ASSERT_TRUE(level_load(&level, root, NULL, &blueprints, dummy_lookup, NULL));
     toml_free(root);
 
     char output[4096];
@@ -111,7 +111,7 @@ void test_toml_emit_level_with_entities(void)
 void test_toml_emit_round_trip(void)
 {
     Arena arena;
-    arena_init(&arena, 4096);
+    TEST_ASSERT_TRUE(arena_init(&arena, 4096));
     BlueprintTable blueprints;
     Level level;
 
@@ -119,7 +119,7 @@ void test_toml_emit_round_trip(void)
     toml_table_t *root = parse_toml(fixture_gamedata);
     TEST_ASSERT_NOT_NULL(root);
     blueprints_load(&blueprints, root, &arena);
-    level_load(&level, root, NULL, &blueprints, dummy_lookup, NULL);
+    TEST_ASSERT_TRUE(level_load(&level, root, NULL, &blueprints, dummy_lookup, NULL));
     toml_free(root);
 
     /* Emit */
@@ -129,14 +129,14 @@ void test_toml_emit_round_trip(void)
 
     /* Re-parse the emitted output */
     Arena arena2;
-    arena_init(&arena2, 4096);
+    TEST_ASSERT_TRUE(arena_init(&arena2, 4096));
     BlueprintTable blueprints2;
     Level level2;
 
     toml_table_t *root2 = parse_toml(output);
     TEST_ASSERT_NOT_NULL(root2);
     blueprints_load(&blueprints2, root2, &arena2);
-    level_load(&level2, root2, NULL, &blueprints2, dummy_lookup, NULL);
+    TEST_ASSERT_TRUE(level_load(&level2, root2, NULL, &blueprints2, dummy_lookup, NULL));
     toml_free(root2);
 
     /* Verify round-trip preserves data */

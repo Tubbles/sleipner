@@ -65,7 +65,7 @@ static Texture2D *dummy_lookup(const char *texture_name, void *user_data)
 void test_integration_load_gamedata(void)
 {
     GameState state;
-    game_init(&state, (RectU32){320, 240});
+    TEST_ASSERT_TRUE(game_init(&state, (RectU32){320, 240}));
 
     bool loaded =
         game_load_gamedata(&state, (GamedataParams){.toml_string = fixture_gamedata, .texture_lookup = dummy_lookup});
@@ -82,7 +82,7 @@ void test_integration_load_gamedata(void)
 void test_integration_load_specific_level(void)
 {
     GameState state;
-    game_init(&state, (RectU32){160, 120});
+    TEST_ASSERT_TRUE(game_init(&state, (RectU32){160, 120}));
 
     bool loaded = game_load_gamedata(
         &state,
@@ -98,8 +98,9 @@ void test_integration_load_specific_level(void)
 void test_integration_walk_and_collide(void)
 {
     GameState state;
-    game_init(&state, (RectU32){320, 240});
-    game_load_gamedata(&state, (GamedataParams){.toml_string = fixture_gamedata, .texture_lookup = dummy_lookup});
+    TEST_ASSERT_TRUE(game_init(&state, (RectU32){320, 240}));
+    TEST_ASSERT_TRUE(
+        game_load_gamedata(&state, (GamedataParams){.toml_string = fixture_gamedata, .texture_lookup = dummy_lookup}));
 
     /* Player starts at (160, 120), rock at (200, 120) with 16x16 collision.
      * Walk right into the rock. */
@@ -122,8 +123,9 @@ void test_integration_walk_and_collide(void)
 void test_integration_walk_freely(void)
 {
     GameState state;
-    game_init(&state, (RectU32){320, 240});
-    game_load_gamedata(&state, (GamedataParams){.toml_string = fixture_gamedata, .texture_lookup = dummy_lookup});
+    TEST_ASSERT_TRUE(game_init(&state, (RectU32){320, 240}));
+    TEST_ASSERT_TRUE(
+        game_load_gamedata(&state, (GamedataParams){.toml_string = fixture_gamedata, .texture_lookup = dummy_lookup}));
 
     const Entity *player = game_get_player_const(&state);
     float start_x = player->position.x;
@@ -149,8 +151,9 @@ void test_integration_walk_freely(void)
 void test_integration_boundary_all_directions(void)
 {
     GameState state;
-    game_init(&state, (RectU32){320, 240});
-    game_load_gamedata(&state, (GamedataParams){.toml_string = fixture_gamedata, .texture_lookup = dummy_lookup});
+    TEST_ASSERT_TRUE(game_init(&state, (RectU32){320, 240}));
+    TEST_ASSERT_TRUE(
+        game_load_gamedata(&state, (GamedataParams){.toml_string = fixture_gamedata, .texture_lookup = dummy_lookup}));
 
     float half = FRAME_SIZE / 2.0F;
     InputState input = {0};
@@ -190,8 +193,9 @@ void test_integration_boundary_all_directions(void)
 void test_integration_player_entity_spawns(void)
 {
     GameState state;
-    game_init(&state, (RectU32){640, 360});
-    game_load_gamedata(&state, (GamedataParams){.toml_string = fixture_gamedata, .texture_lookup = dummy_lookup});
+    TEST_ASSERT_TRUE(game_init(&state, (RectU32){640, 360}));
+    TEST_ASSERT_TRUE(
+        game_load_gamedata(&state, (GamedataParams){.toml_string = fixture_gamedata, .texture_lookup = dummy_lookup}));
 
     /* Player entity must exist */
     TEST_ASSERT_TRUE(state.player_index >= 0);

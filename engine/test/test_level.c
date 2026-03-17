@@ -70,7 +70,7 @@ static toml_table_t *parse_toml(const char *input)
 void test_level_load_first(void)
 {
     Arena arena;
-    arena_init(&arena, 4096);
+    TEST_ASSERT_TRUE(arena_init(&arena, 4096));
     BlueprintTable blueprints;
     Level level;
 
@@ -94,7 +94,7 @@ void test_level_load_first(void)
 void test_level_load_by_name(void)
 {
     Arena arena;
-    arena_init(&arena, 4096);
+    TEST_ASSERT_TRUE(arena_init(&arena, 4096));
     BlueprintTable blueprints;
     Level level;
 
@@ -117,7 +117,7 @@ void test_level_load_by_name(void)
 void test_level_load_nonexistent(void)
 {
     Arena arena;
-    arena_init(&arena, 4096);
+    TEST_ASSERT_TRUE(arena_init(&arena, 4096));
     BlueprintTable blueprints;
     Level level;
 
@@ -136,7 +136,7 @@ void test_level_load_nonexistent(void)
 void test_level_entity_positions(void)
 {
     Arena arena;
-    arena_init(&arena, 4096);
+    TEST_ASSERT_TRUE(arena_init(&arena, 4096));
     BlueprintTable blueprints;
     Level level;
 
@@ -144,7 +144,7 @@ void test_level_entity_positions(void)
     TEST_ASSERT_NOT_NULL(root);
 
     blueprints_load(&blueprints, root, &arena);
-    level_load(&level, root, "overworld", &blueprints, test_texture_lookup, NULL);
+    TEST_ASSERT_TRUE(level_load(&level, root, "overworld", &blueprints, test_texture_lookup, NULL));
 
     /* Tree at (200, 60) with collision_offset (20, 60) and collision_size (24, 16) */
     TEST_ASSERT_FLOAT_WITHIN(0.1f, 200.0f, level.entities[0].position.x);
@@ -169,7 +169,7 @@ void test_level_entity_positions(void)
 void test_level_entity_source_rects(void)
 {
     Arena arena;
-    arena_init(&arena, 4096);
+    TEST_ASSERT_TRUE(arena_init(&arena, 4096));
     BlueprintTable blueprints;
     Level level;
 
@@ -177,7 +177,7 @@ void test_level_entity_source_rects(void)
     TEST_ASSERT_NOT_NULL(root);
 
     blueprints_load(&blueprints, root, &arena);
-    level_load(&level, root, "overworld", &blueprints, test_texture_lookup, NULL);
+    TEST_ASSERT_TRUE(level_load(&level, root, "overworld", &blueprints, test_texture_lookup, NULL));
 
     /* Tree source rect from blueprint */
     TEST_ASSERT_FLOAT_WITHIN(0.1f, 0.0f, level.entities[0].source.x);

@@ -9,6 +9,8 @@
 #include "rect.h"
 #include "screen.h"
 
+#include "error.h"
+
 #include <errno.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -246,7 +248,7 @@ static char *read_file_text(const char *path)
     /* Stat the file first for diagnostics */
     struct stat file_stat;
     if (stat(path, &file_stat) != 0) {
-        debug_log("gamedata: stat(%s) failed: %s", path, strerror(errno));
+        error_set("stat(%s): %s", path, strerror(errno));
         return NULL;
     }
     debug_log("gamedata: stat(%s): size=%ld mode=%o uid=%d gid=%d", path, (long)file_stat.st_size,
@@ -254,20 +256,20 @@ static char *read_file_text(const char *path)
 
     FILE *file = fopen(path, "re");
     if (!file) {
-        debug_log("gamedata: fopen(%s) failed: %s", path, strerror(errno));
+        error_set("fopen(%s): %s", path, strerror(errno));
         return NULL;
     }
 
     char *buffer = malloc(MAX_GAMEDATA_SIZE + 1);
     if (!buffer) {
-        debug_log("gamedata: malloc failed: %s", strerror(errno));
+        error_set("malloc(%lu): %s", MAX_GAMEDATA_SIZE + 1, strerror(errno));
         (void)fclose(file);
         return NULL;
     }
 
     size_t bytes_read = fread(buffer, 1, MAX_GAMEDATA_SIZE, file);
     if (ferror(file)) {
-        debug_log("gamedata: fread failed: %s", strerror(errno));
+        error_set("fread(%s): %s", path, strerror(errno));
         free(buffer);
         (void)fclose(file);
         return NULL;
@@ -275,7 +277,7 @@ static char *read_file_text(const char *path)
     (void)fclose(file);
 
     if (bytes_read > MAX_GAMEDATA_SIZE) {
-        debug_log("gamedata: bytes_read %zu exceeds max %lu", bytes_read, MAX_GAMEDATA_SIZE);
+        error_set("file too large: %zu bytes (max %lu)", bytes_read, MAX_GAMEDATA_SIZE);
         free(buffer);
         return NULL;
     }
@@ -288,6 +290,9 @@ static void load_gamedata(GameState *state)
 {
     char *content = read_file_text(GAMEDATA_PATH);
     if (!content) {
+        error_wrap("load_gamedata");
+        debug_log("error: %s", error_get());
+        error_clear();
         return;
     }
 
@@ -326,7 +331,8 @@ static void load_gamedata(GameState *state)
             debug_log("gamedata: WARNING player not found!");
         }
     } else {
-        debug_log("gamedata: no level found");
+        debug_log("error: %s", error_get());
+        error_clear();
     }
 
     gamedata_mtime = GetFileModTime(GAMEDATA_PATH);
@@ -439,7 +445,11 @@ int main(void)
     RenderTexture2D target = LoadRenderTexture((int)game_bounds.width, (int)game_bounds.height);
 
     GameState state;
-    game_init(&state, game_bounds);
+    if (!game_init(&state, game_bounds)) {
+        debug_log("error: %s", error_get());
+        error_clear();
+        return 1;
+    }
 
     int prev_gamepads = -1;
 

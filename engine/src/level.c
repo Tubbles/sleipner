@@ -2,6 +2,7 @@
 #include "attribute.h"
 #include "blueprint.h"
 #include "debug.h"
+#include "error.h"
 #include "entity.h"
 
 #include "raylib.h"
@@ -10,31 +11,30 @@
 #include <stdlib.h>
 #include <string.h>
 
-static void parse_instance_attr(AttrSet *attrs, toml_table_t *table, const char *key)
+static bool parse_instance_attr(AttrSet *attrs, toml_table_t *table, const char *key)
 {
     toml_datum_t bool_value = toml_bool_in(table, key);
     if (bool_value.ok) {
-        attr_set_bool(attrs, key, (bool)bool_value.u.b);
-        return;
+        return attr_set_bool(attrs, key, (bool)bool_value.u.b);
     }
 
     toml_datum_t int_value = toml_int_in(table, key);
     if (int_value.ok) {
-        attr_set_int(attrs, key, (int)int_value.u.i);
-        return;
+        return attr_set_int(attrs, key, (int)int_value.u.i);
     }
 
     toml_datum_t double_value = toml_double_in(table, key);
     if (double_value.ok) {
-        attr_set_float(attrs, key, (float)double_value.u.d);
-        return;
+        return attr_set_float(attrs, key, (float)double_value.u.d);
     }
 
     toml_datum_t string_value = toml_string_in(table, key);
     if (string_value.ok) {
-        attr_set_string(attrs, (AttrStringPair){.name = key, .value = string_value.u.s});
+        bool result = attr_set_string(attrs, (AttrStringPair){.name = key, .value = string_value.u.s});
         free(string_value.u.s);
+        return result;
     }
+    return true;
 }
 
 static void parse_instance_overrides(Entity *entity, toml_table_t *entity_table)
@@ -45,7 +45,10 @@ static void parse_instance_overrides(Entity *entity, toml_table_t *entity_table)
         if (!key || strcmp(key, "blueprint") == 0) {
             continue;
         }
-        parse_instance_attr(&entity->attrs, entity_table, key);
+        if (!parse_instance_attr(&entity->attrs, entity_table, key)) {
+            debug_log("ent: attr '%s' failed to set (set full)", key);
+            break;
+        }
     }
 }
 
@@ -97,6 +100,26 @@ static void parse_entity(Level *level,
     level->entity_count++;
 }
 
+static toml_table_t *find_level_table(toml_array_t *levels, const char *level_name)
+{
+    int level_count = toml_array_nelem(levels);
+    for (int index = 0; index < level_count; index++) {
+        toml_table_t *candidate = toml_table_at(levels, index);
+        if (!level_name) {
+            return candidate;
+        }
+        toml_datum_t name = toml_string_in(candidate, "name");
+        if (name.ok) {
+            bool match = strcmp(name.u.s, level_name) == 0;
+            free(name.u.s);
+            if (match) {
+                return candidate;
+            }
+        }
+    }
+    return NULL;
+}
+
 bool level_load(Level *level,
                 void *toml_root,
                 const char *level_name,
@@ -108,30 +131,13 @@ bool level_load(Level *level,
 
     toml_array_t *levels = toml_array_in(toml_root, "level");
     if (!levels) {
+        error_set("no [[level]] array in TOML");
         return false;
     }
 
-    /* Find the matching level (or take the first one if level_name is NULL) */
-    toml_table_t *level_table = NULL;
-    int level_count = toml_array_nelem(levels);
-    for (int index = 0; index < level_count; index++) {
-        toml_table_t *candidate = toml_table_at(levels, index);
-        if (!level_name) {
-            level_table = candidate;
-            break;
-        }
-        toml_datum_t name = toml_string_in(candidate, "name");
-        if (name.ok) {
-            bool match = strcmp(name.u.s, level_name) == 0;
-            free(name.u.s);
-            if (match) {
-                level_table = candidate;
-                break;
-            }
-        }
-    }
-
+    toml_table_t *level_table = find_level_table(levels, level_name);
     if (!level_table) {
+        error_set("level '%s' not found", level_name ? level_name : "(first)");
         return false;
     }
 
