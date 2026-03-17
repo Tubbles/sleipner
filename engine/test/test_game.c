@@ -208,7 +208,8 @@ void test_game_update_resolves_obstacle_collision(void)
 {
     GameState state;
     game_init(&state, (RectU32){320, 240});
-    game_load_gamedata(&state, (GamedataParams){.toml_string = game_test_gamedata_with_obstacle, .texture_lookup = dummy_lookup});
+    game_load_gamedata(
+        &state, (GamedataParams){.toml_string = game_test_gamedata_with_obstacle, .texture_lookup = dummy_lookup});
 
     /* Push player into the obstacle */
     InputState input = {0};

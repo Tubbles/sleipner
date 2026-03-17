@@ -49,10 +49,10 @@ static void parse_instance_overrides(Entity *entity, toml_table_t *entity_table)
 }
 
 static void parse_entity(Level *level,
-                          toml_table_t *entity_table,
-                          const BlueprintTable *blueprints,
-                          TextureLookupFn texture_lookup,
-                          void *texture_user_data)
+                         toml_table_t *entity_table,
+                         const BlueprintTable *blueprints,
+                         TextureLookupFn texture_lookup,
+                         void *texture_user_data)
 {
     toml_datum_t bp_name = toml_string_in(entity_table, "blueprint");
     if (!bp_name.ok) {

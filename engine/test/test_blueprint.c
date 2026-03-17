@@ -185,9 +185,9 @@ void test_blueprint_custom_attrs(void)
     const Blueprint *chest = blueprint_find(&table, "chest");
     TEST_ASSERT_NOT_NULL(chest);
 
-    TEST_ASSERT_EQUAL_STRING("static", attr_get_string(&chest->attrs, "behavior", ""));
+    TEST_ASSERT_EQUAL_STRING("static", attr_get_string(&chest->attrs, "behavior"));
     TEST_ASSERT_TRUE(attr_get_bool(&chest->attrs, "is_locked", false));
-    TEST_ASSERT_EQUAL_STRING("common", attr_get_string(&chest->attrs, "loot_table", ""));
+    TEST_ASSERT_EQUAL_STRING("common", attr_get_string(&chest->attrs, "loot_table"));
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 80.0F, attr_get_float(&chest->attrs, "speed", 0));
     TEST_ASSERT_EQUAL_INT(5, attr_get_int(&chest->attrs, "weight", 0));
 
@@ -250,10 +250,10 @@ void test_blueprint_extends(void)
 
     /* Overridden attrs */
     TEST_ASSERT_TRUE(attr_get_bool(&locked->attrs, "is_locked", false));
-    TEST_ASSERT_EQUAL_STRING("rare", attr_get_string(&locked->attrs, "loot_table", ""));
+    TEST_ASSERT_EQUAL_STRING("rare", attr_get_string(&locked->attrs, "loot_table"));
 
     /* Inherited from parent */
-    TEST_ASSERT_EQUAL_STRING("static", attr_get_string(&locked->attrs, "behavior", ""));
+    TEST_ASSERT_EQUAL_STRING("static", attr_get_string(&locked->attrs, "behavior"));
     TEST_ASSERT_EQUAL_STRING("chest.png", locked->texture_name);
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 16.0F, locked->source.width);
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 16.0F, locked->collision_size.x);
@@ -296,7 +296,7 @@ void test_blueprint_extends_chain(void)
     TEST_ASSERT_EQUAL_INT(3, attr_get_int(&top->attrs, "tier", 0));
 
     /* Inherited through chain */
-    TEST_ASSERT_EQUAL_STRING("static", attr_get_string(&top->attrs, "behavior", ""));
+    TEST_ASSERT_EQUAL_STRING("static", attr_get_string(&top->attrs, "behavior"));
     TEST_ASSERT_EQUAL_STRING("base.png", top->texture_name);
 
     toml_free(root);

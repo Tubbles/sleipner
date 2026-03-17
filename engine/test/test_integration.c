@@ -66,7 +66,8 @@ void test_integration_load_gamedata(void)
     GameState state;
     game_init(&state, (RectU32){320, 240});
 
-    bool loaded = game_load_gamedata(&state, (GamedataParams){.toml_string = fixture_gamedata, .texture_lookup = dummy_lookup});
+    bool loaded =
+        game_load_gamedata(&state, (GamedataParams){.toml_string = fixture_gamedata, .texture_lookup = dummy_lookup});
     TEST_ASSERT_TRUE(loaded);
     TEST_ASSERT_TRUE(state.gamedata_loaded);
     TEST_ASSERT_EQUAL_STRING("field", state.current_level.name);
@@ -82,7 +83,9 @@ void test_integration_load_specific_level(void)
     GameState state;
     game_init(&state, (RectU32){160, 120});
 
-    bool loaded = game_load_gamedata(&state, (GamedataParams){.toml_string = fixture_gamedata, .level_name = "cave", .texture_lookup = dummy_lookup});
+    bool loaded = game_load_gamedata(
+        &state,
+        (GamedataParams){.toml_string = fixture_gamedata, .level_name = "cave", .texture_lookup = dummy_lookup});
     TEST_ASSERT_TRUE(loaded);
     TEST_ASSERT_EQUAL_STRING("cave", state.current_level.name);
     TEST_ASSERT_EQUAL_INT(2, state.current_level.entity_count);

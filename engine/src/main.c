@@ -165,7 +165,8 @@ static void debug_log(const char *format, ...)
 {
     va_list args;
     va_start(args, format);
-    (void)vsnprintf(debug_log_lines[debug_log_head], DEBUG_LOG_LINE_LEN, format, args); // NOLINT(clang-analyzer-security.VAList) false positive, LLVM #40656
+    (void)vsnprintf(debug_log_lines[debug_log_head], DEBUG_LOG_LINE_LEN, format,
+                    args); // NOLINT(clang-analyzer-security.VAList) false positive, LLVM #40656
     va_end(args);
 
     va_start(args, format);
@@ -264,8 +265,8 @@ static void load_gamedata(GameState *state)
         return;
     }
 
-    bool loaded = game_load_gamedata(
-        state, (GamedataParams){.toml_string = content, .texture_lookup = texture_registry_lookup});
+    bool loaded =
+        game_load_gamedata(state, (GamedataParams){.toml_string = content, .texture_lookup = texture_registry_lookup});
     UnloadFileText(content);
 
     if (loaded) {
