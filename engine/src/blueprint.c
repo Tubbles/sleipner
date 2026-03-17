@@ -1,6 +1,7 @@
 #include "blueprint.h"
 #include "arena.h"
 #include "attribute.h"
+#include "debug.h"
 
 #include "toml.h"
 
@@ -228,18 +229,42 @@ int blueprints_load(BlueprintTable *table, void *toml_root, Arena *arena)
 
     toml_array_t *blueprints = toml_array_in(toml_root, "blueprint");
     if (!blueprints) {
+        debug_log("bp: no [[blueprint]] array in TOML root");
         return 0;
     }
 
     int count = toml_array_nelem(blueprints);
+    debug_log("bp: found %d blueprint entries in TOML", count);
+
     for (int index = 0; index < count && table->count < MAX_BLUEPRINTS; index++) {
         toml_table_t *entry = toml_table_at(blueprints, index);
         if (!entry) {
+            debug_log("bp[%d]: toml_table_at returned NULL", index);
             continue;
         }
 
+        int nkval = toml_table_nkval(entry);
+        int narr = toml_table_narr(entry);
+        int ntab = toml_table_ntab(entry);
+        debug_log("bp[%d]: keys=%d arrays=%d tables=%d", index, nkval, narr, ntab);
+
+        /* Log all keys in this entry for debugging */
+        int total_keys = nkval + narr + ntab;
+        for (int key_index = 0; key_index < total_keys; key_index++) {
+            const char *key = toml_key_in(entry, key_index);
+            debug_log("bp[%d]: key[%d]='%s'", index, key_index, key ? key : "(null)");
+        }
+
         if (parse_single_blueprint(&table->entries[table->count], entry)) {
+            debug_log("bp[%d]: parsed '%s' tex='%s'", index, table->entries[table->count].name,
+                      table->entries[table->count].texture_name);
             table->count++;
+        } else {
+            toml_datum_t name = toml_string_in(entry, "name");
+            debug_log("bp[%d]: FAILED to parse (name=%s)", index, name.ok ? name.u.s : "missing");
+            if (name.ok) {
+                free(name.u.s);
+            }
         }
     }
 

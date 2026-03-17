@@ -31,6 +31,11 @@ void debug_init(const char *trace_path)
 
     if (trace_path) {
         trace_file = fopen(trace_path, "we");
+        if (trace_file) {
+            debug_log("trace file opened: %s", trace_path);
+        } else {
+            debug_log("trace file FAILED to open: %s", trace_path);
+        }
     }
 }
 

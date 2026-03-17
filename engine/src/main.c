@@ -10,6 +10,7 @@
 #include "screen.h"
 
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 
 #ifdef __ANDROID__
@@ -243,8 +244,17 @@ static void load_gamedata(GameState *state)
         return;
     }
 
-    debug_log("gamedata: loaded %s (%d bytes, first=0x%02x)", GAMEDATA_PATH, (int)strlen(content),
-              (unsigned char)content[0]);
+    int content_length = (int)strlen(content);
+    debug_log("gamedata: loaded %s (%d bytes)", GAMEDATA_PATH, content_length);
+
+    /* Log first 16 bytes as hex for BOM/encoding diagnosis */
+    char hexbuf[(16 * 3) + 1] = {0};
+    int hex_count = content_length < 16 ? content_length : 16;
+    for (int index = 0; index < hex_count; index++) {
+        int offset = index * 3;
+        (void)snprintf(&hexbuf[offset], 4, "%02x ", (unsigned char)content[index]);
+    }
+    debug_log("gamedata: hex[0..%d]: %s", hex_count - 1, hexbuf);
 
     bool loaded =
         game_load_gamedata(state, (GamedataParams){.toml_string = content, .texture_lookup = texture_registry_lookup});

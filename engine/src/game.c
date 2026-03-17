@@ -1,6 +1,7 @@
 #include "game.h"
 #include "arena.h"
 #include "blueprint.h"
+#include "debug.h"
 #include "entity.h"
 #include "input.h"
 #include "level.h"
@@ -50,6 +51,7 @@ bool game_load_gamedata(GameState *state, GamedataParams params)
     free(buffer);
 
     if (!root) {
+        debug_log("toml_parse FAILED: %s", errbuf);
         return false;
     }
 

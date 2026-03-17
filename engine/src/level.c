@@ -1,6 +1,7 @@
 #include "level.h"
 #include "attribute.h"
 #include "blueprint.h"
+#include "debug.h"
 #include "entity.h"
 
 #include "raylib.h"
@@ -49,6 +50,7 @@ static void parse_instance_overrides(Entity *entity, toml_table_t *entity_table)
 }
 
 static void parse_entity(Level *level,
+                         int entity_index,
                          toml_table_t *entity_table,
                          const BlueprintTable *blueprints,
                          TextureLookupFn texture_lookup,
@@ -56,10 +58,12 @@ static void parse_entity(Level *level,
 {
     toml_datum_t bp_name = toml_string_in(entity_table, "blueprint");
     if (!bp_name.ok) {
+        debug_log("ent[%d]: no 'blueprint' key", entity_index);
         return;
     }
     const Blueprint *blueprint = blueprint_find(blueprints, bp_name.u.s);
     if (!blueprint) {
+        debug_log("ent[%d]: blueprint '%s' not found", entity_index, bp_name.u.s);
         free(bp_name.u.s);
         return;
     }
@@ -67,6 +71,7 @@ static void parse_entity(Level *level,
 
     toml_array_t *pos = toml_array_in(entity_table, "pos");
     if (!pos || toml_array_nelem(pos) != 2) {
+        debug_log("ent[%d]: missing or bad 'pos' array", entity_index);
         return;
     }
     float position_x = 0;
@@ -82,6 +87,7 @@ static void parse_entity(Level *level,
 
     Texture2D *texture = texture_lookup(blueprint->texture_name, texture_user_data);
     if (!texture) {
+        debug_log("ent[%d]: texture '%s' not found", entity_index, blueprint->texture_name);
         return;
     }
 
@@ -163,10 +169,13 @@ bool level_load(Level *level,
     }
 
     int entity_count = toml_array_nelem(entities);
+    debug_log("level: %d entity entries in TOML", entity_count);
     for (int index = 0; index < entity_count && level->entity_count < MAX_LEVEL_ENTITIES; index++) {
         toml_table_t *entity_table = toml_table_at(entities, index);
         if (entity_table) {
-            parse_entity(level, entity_table, blueprints, texture_lookup, texture_user_data);
+            parse_entity(level, index, entity_table, blueprints, texture_lookup, texture_user_data);
+        } else {
+            debug_log("ent[%d]: toml_table_at returned NULL", index);
         }
     }
 
