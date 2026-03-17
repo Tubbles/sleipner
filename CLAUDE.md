@@ -74,6 +74,64 @@ Two levels of testing, both run in CI:
 - **Tests document behavior.** Integration test scenarios serve as executable documentation of how the game systems work together.
 - **Test the interesting cases.** Don't test trivial getters. Test state transitions, edge cases, rule interactions, and anything that has broken before.
 
+## Diagnostics: Logging and Error Handling
+
+Two separate concerns, one header (`debug.h`):
+
+- **Logging** — observational output for humans. "What happened." Fire-and-forget, no return value.
+- **Errors** — values that propagate through the call stack for code to act on. "What went wrong and why."
+
+### Logging (`debug_log`)
+
+For events worth observing: `debug_log("loaded %d blueprints", count)`. Goes to stdout (timestamped), the in-game debug overlay (ring buffer), and the trace file. Not for errors — use the error system for failures.
+
+### Error Handling
+
+Go-style error propagation: every function that can fail must report *why* it failed, and callers must not be able to silently ignore errors.
+
+**Principles:**
+
+1. **Errors are values, not side effects.** A function that can fail communicates failure through its return value, not by logging and returning void.
+2. **Callers must handle errors.** It should be a compile error to ignore a fallible return value.
+3. **Errors carry context.** When propagating an error up the call stack, each layer adds context — like Go's `fmt.Errorf("load level: %w", err)`. The final error message reads as a chain: `load_gamedata: level_load: blueprint 'player' not found`.
+4. **Log at the boundary, not at the source.** The function that *detects* the error sets it. Intermediate callers wrap it. Only the top-level caller (game loop, test harness) logs it via `debug_log`. This avoids duplicate log spam and keeps inner functions pure.
+
+**`[[nodiscard]]` on all fallible functions.** C23's `[[nodiscard]]` attribute makes clang emit a warning (promoted to error by our `WarningsAsErrors: '*'` config) when a caller discards the return value. This is the enforcement mechanism — equivalent to Go's "unused variable" error on the `err` return.
+
+```c
+[[nodiscard]] bool level_load(Level *level, ...);
+```
+
+To intentionally discard an error (rare, must be justified), use an explicit `(void)` cast — the same pattern we already use for stdio functions. This makes the decision visible in code review.
+
+**Global error context module (`error.h`).** A singleton that holds the current error chain. Since the engine is single-threaded, a static buffer is sufficient. If multi-threading is added later, this extends naturally to an error context handle that callers pass around — the call-site API shape stays the same.
+
+```c
+// At the point of failure — set the root cause:
+error_set("fopen(%s): %s", path, strerror(errno));
+return false;
+
+// Intermediate caller — wrap with context:
+if (!level_load(&level, ...)) {
+    error_wrap("load_gamedata");
+    return false;
+}
+
+// Top-level caller — log the full chain:
+if (!game_load_gamedata(&state, params)) {
+    debug_log("error: %s", error_get());
+    // prints: "load_gamedata: level_load: fopen(/path): Permission denied"
+}
+```
+
+**API surface:**
+- `error_set(format, ...)` — set the root error (clears any previous chain).
+- `error_wrap(format, ...)` — prepend context to the existing error.
+- `error_get()` — return the full error chain as a string.
+- `error_clear()` — explicitly clear the error state.
+
+**Migration:** existing functions are migrated incrementally. When touching a function that returns `bool` or a pointer, add `[[nodiscard]]` to its declaration, replace `debug_log` + `return false` with `error_set` + `return false`, and update callers to wrap with `error_wrap` instead of logging directly.
+
 ## Game Design Notes
 
 - **Genre:** Top-down action RPG in the style of classic Zelda (Link to the Past / Link's Awakening).
