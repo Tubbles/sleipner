@@ -9,7 +9,7 @@
 
 #include <stdbool.h>
 
-#define PLAYER_SPEED 80.0F
+#define DEFAULT_PLAYER_SPEED 80.0F
 #define FRAME_SIZE 32
 #define WALK_FRAMES 6
 #define ANIM_SPEED 10.0F
@@ -23,16 +23,7 @@ enum {
 };
 
 typedef struct {
-    Vector2 position;
-    int anim_row;
-    bool flip;
-    float frame_timer;
-    int frame_index;
-    bool moving;
-} Player;
-
-typedef struct {
-    Player player;
+    int player_index;
     Arena gamedata_arena;
     BlueprintTable blueprints;
     Level current_level;
@@ -50,7 +41,8 @@ bool game_load_gamedata(GameState *state,
                         TextureLookupFn texture_lookup,
                         void *texture_user_data);
 void game_update(GameState *state, InputState input, float delta_time);
-Rectangle game_player_hitbox(const Player *player);
+Entity *game_get_player(GameState *state);
+const Entity *game_get_player_const(const GameState *state);
 void game_free(GameState *state);
 
 #endif

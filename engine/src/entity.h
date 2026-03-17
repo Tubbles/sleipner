@@ -31,6 +31,13 @@ typedef struct {
     Rectangle source;
     Rectangle collision;
 
+    /* Animation (runtime state, not persisted) */
+    int anim_row;
+    bool flip;
+    float frame_timer;
+    int frame_index;
+    bool moving;
+
     /* Custom attributes (instance overrides) */
     AttrSet attrs;
 
@@ -51,5 +58,9 @@ const char *entity_get_string(const Entity *entity, const char *name, const char
 /* Initialize an entity from a blueprint. Sets built-in attributes
  * from blueprint defaults and copies rendering fields. */
 void entity_init_from_blueprint(Entity *entity, const Blueprint *blueprint, Vector2 position, Texture2D *texture);
+
+/* Recompute collision rect from position + blueprint offsets.
+ * Call after moving an entity. */
+void entity_update_collision(Entity *entity);
 
 #endif

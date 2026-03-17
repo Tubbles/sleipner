@@ -2,6 +2,15 @@
 #include "game.h"
 
 static const char *fixture_gamedata = "[[blueprint]]\n"
+                                      "name = \"player\"\n"
+                                      "texture = \"player.png\"\n"
+                                      "src = [0, 0, 32, 32]\n"
+                                      "collision_offset = [-5, 6]\n"
+                                      "collision_size = [10, 10]\n"
+                                      "behavior = \"player\"\n"
+                                      "speed = 80\n"
+                                      "\n"
+                                      "[[blueprint]]\n"
                                       "name = \"rock\"\n"
                                       "texture = \"rock.png\"\n"
                                       "src = [0, 0, 16, 16]\n"
@@ -20,6 +29,10 @@ static const char *fixture_gamedata = "[[blueprint]]\n"
                                       "size = [320, 240]\n"
                                       "\n"
                                       "[[level.entity]]\n"
+                                      "blueprint = \"player\"\n"
+                                      "pos = [160, 120]\n"
+                                      "\n"
+                                      "[[level.entity]]\n"
                                       "blueprint = \"rock\"\n"
                                       "pos = [200, 120]\n"
                                       "\n"
@@ -30,6 +43,10 @@ static const char *fixture_gamedata = "[[blueprint]]\n"
                                       "[[level]]\n"
                                       "name = \"cave\"\n"
                                       "size = [160, 120]\n"
+                                      "\n"
+                                      "[[level.entity]]\n"
+                                      "blueprint = \"player\"\n"
+                                      "pos = [80, 60]\n"
                                       "\n"
                                       "[[level.entity]]\n"
                                       "blueprint = \"rock\"\n"
@@ -53,8 +70,9 @@ void test_integration_load_gamedata(void)
     TEST_ASSERT_TRUE(loaded);
     TEST_ASSERT_TRUE(state.gamedata_loaded);
     TEST_ASSERT_EQUAL_STRING("field", state.current_level.name);
-    TEST_ASSERT_EQUAL_INT(2, state.current_level.entity_count);
-    TEST_ASSERT_EQUAL_INT(2, state.blueprints.count);
+    TEST_ASSERT_EQUAL_INT(3, state.current_level.entity_count);
+    TEST_ASSERT_EQUAL_INT(3, state.blueprints.count);
+    TEST_ASSERT_TRUE(state.player_index >= 0);
 
     game_free(&state);
 }
@@ -67,7 +85,8 @@ void test_integration_load_specific_level(void)
     bool loaded = game_load_gamedata(&state, fixture_gamedata, "cave", dummy_lookup, NULL);
     TEST_ASSERT_TRUE(loaded);
     TEST_ASSERT_EQUAL_STRING("cave", state.current_level.name);
-    TEST_ASSERT_EQUAL_INT(1, state.current_level.entity_count);
+    TEST_ASSERT_EQUAL_INT(2, state.current_level.entity_count);
+    TEST_ASSERT_TRUE(state.player_index >= 0);
 
     game_free(&state);
 }
@@ -78,7 +97,7 @@ void test_integration_walk_and_collide(void)
     game_init(&state, (RectU32){320, 240});
     game_load_gamedata(&state, fixture_gamedata, NULL, dummy_lookup, NULL);
 
-    /* Player starts at center (160, 120), rock at (200, 120) with 16x16 collision.
+    /* Player starts at (160, 120), rock at (200, 120) with 16x16 collision.
      * Walk right into the rock. */
     InputState input = {0};
     input.left_stick.x = 1.0F;
@@ -87,10 +106,11 @@ void test_integration_walk_and_collide(void)
         game_update(&state, input, 1.0F / 60.0F);
     }
 
-    /* Player hitbox must not overlap the rock */
-    Rectangle hitbox = game_player_hitbox(&state.player);
-    Rectangle rock = state.current_level.entities[0].collision;
-    TEST_ASSERT_TRUE(hitbox.x + hitbox.width <= rock.x + 0.1F);
+    /* Player collision must not overlap the rock */
+    const Entity *player = game_get_player_const(&state);
+    /* Rock is entity index 1 (player is 0) */
+    Rectangle rock = state.current_level.entities[1].collision;
+    TEST_ASSERT_TRUE(player->collision.x + player->collision.width <= rock.x + 0.1F);
 
     game_free(&state);
 }
@@ -101,8 +121,9 @@ void test_integration_walk_freely(void)
     game_init(&state, (RectU32){320, 240});
     game_load_gamedata(&state, fixture_gamedata, NULL, dummy_lookup, NULL);
 
-    float start_x = state.player.position.x;
-    float start_y = state.player.position.y;
+    const Entity *player = game_get_player_const(&state);
+    float start_x = player->position.x;
+    float start_y = player->position.y;
 
     /* Walk down-left for 30 frames (away from obstacles) */
     InputState input = {0};
@@ -113,8 +134,9 @@ void test_integration_walk_freely(void)
         game_update(&state, input, 1.0F / 60.0F);
     }
 
-    TEST_ASSERT_TRUE(state.player.position.x < start_x);
-    TEST_ASSERT_TRUE(state.player.position.y > start_y);
+    player = game_get_player_const(&state);
+    TEST_ASSERT_TRUE(player->position.x < start_x);
+    TEST_ASSERT_TRUE(player->position.y > start_y);
     TEST_ASSERT_EQUAL_INT(30, state.frame);
 
     game_free(&state);
@@ -135,28 +157,28 @@ void test_integration_boundary_all_directions(void)
     for (int iteration = 0; iteration < 500; iteration++) {
         game_update(&state, input, 1.0F / 60.0F);
     }
-    TEST_ASSERT_FLOAT_WITHIN(0.1F, half, state.player.position.x);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, half, game_get_player_const(&state)->position.x);
 
     input.left_stick.x = 0.0F;
     input.left_stick.y = -1.0F;
     for (int iteration = 0; iteration < 500; iteration++) {
         game_update(&state, input, 1.0F / 60.0F);
     }
-    TEST_ASSERT_FLOAT_WITHIN(0.1F, half, state.player.position.y);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, half, game_get_player_const(&state)->position.y);
 
     input.left_stick.x = 1.0F;
     input.left_stick.y = 0.0F;
     for (int iteration = 0; iteration < 500; iteration++) {
         game_update(&state, input, 1.0F / 60.0F);
     }
-    TEST_ASSERT_FLOAT_WITHIN(0.1F, 320.0F - half, state.player.position.x);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 320.0F - half, game_get_player_const(&state)->position.x);
 
     input.left_stick.x = 0.0F;
     input.left_stick.y = 1.0F;
     for (int iteration = 0; iteration < 500; iteration++) {
         game_update(&state, input, 1.0F / 60.0F);
     }
-    TEST_ASSERT_FLOAT_WITHIN(0.1F, 240.0F - half, state.player.position.y);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 240.0F - half, game_get_player_const(&state)->position.y);
 
     game_free(&state);
 }

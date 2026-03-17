@@ -5,6 +5,33 @@
 #include <stdlib.h>
 #include <string.h>
 
+static void parse_instance_attr(AttrSet *attrs, toml_table_t *table, const char *key)
+{
+    toml_datum_t bool_value = toml_bool_in(table, key);
+    if (bool_value.ok) {
+        attr_set_bool(attrs, key, (bool)bool_value.u.b);
+        return;
+    }
+
+    toml_datum_t int_value = toml_int_in(table, key);
+    if (int_value.ok) {
+        attr_set_int(attrs, key, (int)int_value.u.i);
+        return;
+    }
+
+    toml_datum_t double_value = toml_double_in(table, key);
+    if (double_value.ok) {
+        attr_set_float(attrs, key, (float)double_value.u.d);
+        return;
+    }
+
+    toml_datum_t string_value = toml_string_in(table, key);
+    if (string_value.ok) {
+        attr_set_string(attrs, key, string_value.u.s);
+        free(string_value.u.s);
+    }
+}
+
 bool level_load(Level *level,
                 void *toml_root,
                 const char *level_name,
@@ -93,6 +120,7 @@ bool level_load(Level *level,
             free(bp_name.u.s);
             continue;
         }
+        free(bp_name.u.s);
 
         /* Parse position */
         toml_array_t *pos = toml_array_in(entity_table, "pos");
@@ -116,20 +144,19 @@ bool level_load(Level *level,
             continue;
         }
 
-        /* Build entity */
-        LevelEntity *entity = &level->entities[level->entity_count];
-        strncpy(entity->blueprint_name, bp_name.u.s, MAX_BLUEPRINT_NAME - 1);
-        entity->blueprint_name[MAX_BLUEPRINT_NAME - 1] = '\0';
-        free(bp_name.u.s);
-        entity->position = (Vector2){position_x, position_y};
-        entity->texture = texture;
-        entity->source = blueprint->source;
-        entity->collision = (Rectangle){
-            position_x + blueprint->collision_offset.x,
-            position_y + blueprint->collision_offset.y,
-            blueprint->collision_size.x,
-            blueprint->collision_size.y,
-        };
+        /* Build entity from blueprint */
+        Entity *entity = &level->entities[level->entity_count];
+        entity_init_from_blueprint(entity, blueprint, (Vector2){position_x, position_y}, texture);
+
+        /* Parse instance attribute overrides (any kval that isn't "blueprint") */
+        int total_keys = toml_table_nkval(entity_table) + toml_table_narr(entity_table) + toml_table_ntab(entity_table);
+        for (int key_index = 0; key_index < total_keys; key_index++) {
+            const char *key = toml_key_in(entity_table, key_index);
+            if (!key || strcmp(key, "blueprint") == 0) {
+                continue;
+            }
+            parse_instance_attr(&entity->attrs, entity_table, key);
+        }
 
         level->entity_count++;
     }

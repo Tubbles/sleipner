@@ -777,7 +777,7 @@ pos = [320, 180]
 - [x] Blueprint/instance scoping (instance overrides, blueprint fallback)
 - [x] Blueprint inheritance (extends)
 - [x] Entity storage (flat array in arena)
-- [ ] Convert Player and Obstacle to entity instances with attributes
+- [x] Convert Player and Obstacle to entity instances with attributes
 - [ ] Entity composition (children with relative positioning)
 - [ ] Tag system (named references within composition trees)
 

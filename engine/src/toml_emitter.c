@@ -58,7 +58,7 @@ static int emit_levels(char *buffer, int capacity, int offset, const Level *leve
         offset = emit_append(buffer, capacity, offset, "\n");
 
         for (int entity_index = 0; entity_index < level->entity_count; entity_index++) {
-            const LevelEntity *entity = &level->entities[entity_index];
+            const Entity *entity = &level->entities[entity_index];
 
             offset = emit_append(buffer, capacity, offset, "[[level.entity]]\n");
             offset = emit_append(buffer, capacity, offset, "blueprint = \"%s\"\n", entity->blueprint_name);

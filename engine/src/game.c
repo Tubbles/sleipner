@@ -13,10 +13,20 @@ void game_init(GameState *state, RectU32 game_bounds)
 {
     memset(state, 0, sizeof(*state));
     state->game_bounds = game_bounds;
-    state->player.position = (Vector2){(float)game_bounds.width / 2.0F, (float)game_bounds.height / 2.0F};
-    state->player.anim_row = ANIM_IDLE_DOWN;
+    state->player_index = -1;
     state->debug_enabled = true;
     arena_init(&state->gamedata_arena, GAMEDATA_ARENA_SIZE);
+}
+
+static int find_player_entity(const Level *level)
+{
+    for (int index = 0; index < level->entity_count; index++) {
+        const char *behavior = entity_get_string(&level->entities[index], "behavior", "");
+        if (strcmp(behavior, "player") == 0) {
+            return index;
+        }
+    }
+    return -1;
 }
 
 bool game_load_gamedata(GameState *state,
@@ -48,21 +58,39 @@ bool game_load_gamedata(GameState *state,
 
     toml_free(root);
     state->gamedata_loaded = level_ok;
+
+    if (level_ok) {
+        state->player_index = find_player_entity(&state->current_level);
+    }
+
     return level_ok;
 }
 
-Rectangle game_player_hitbox(const Player *player)
+Entity *game_get_player(GameState *state)
 {
-    return (Rectangle){player->position.x - 5, player->position.y + 6, 10, 10};
+    if (state->player_index < 0 || state->player_index >= state->current_level.entity_count) {
+        return NULL;
+    }
+    return &state->current_level.entities[state->player_index];
 }
 
-static void update_player(Player *player, InputState input, float delta_time, RectU32 bounds)
+const Entity *game_get_player_const(const GameState *state)
+{
+    if (state->player_index < 0 || state->player_index >= state->current_level.entity_count) {
+        return NULL;
+    }
+    return &state->current_level.entities[state->player_index];
+}
+
+static void update_player(Entity *player, InputState input, float delta_time, RectU32 bounds)
 {
     player->moving = false;
 
+    float speed = entity_get_float(player, "speed", DEFAULT_PLAYER_SPEED);
+
     if (input.left_stick.x != 0.0F || input.left_stick.y != 0.0F) {
-        player->position.x += input.left_stick.x * PLAYER_SPEED * delta_time;
-        player->position.y += input.left_stick.y * PLAYER_SPEED * delta_time;
+        player->position.x += input.left_stick.x * speed * delta_time;
+        player->position.y += input.left_stick.y * speed * delta_time;
         player->moving = true;
 
         if (fabsf(input.left_stick.x) > fabsf(input.left_stick.y)) {
@@ -101,13 +129,18 @@ static void update_player(Player *player, InputState input, float delta_time, Re
         player->frame_index = 0;
         player->frame_timer = 0.0F;
     }
+
+    entity_update_collision(player);
 }
 
-static void resolve_player_obstacles(Player *player, const LevelEntity *obstacles, int count)
+static void resolve_player_obstacles(Entity *player, Entity *entities, int count, int player_index)
 {
     for (int index = 0; index < count; index++) {
-        Rectangle hitbox = game_player_hitbox(player);
-        Rectangle obstacle = obstacles[index].collision;
+        if (index == player_index || !entities[index].solid) {
+            continue;
+        }
+        Rectangle hitbox = player->collision;
+        Rectangle obstacle = entities[index].collision;
         if (!CheckCollisionRecs(hitbox, obstacle)) {
             continue;
         }
@@ -140,6 +173,8 @@ static void resolve_player_obstacles(Player *player, const LevelEntity *obstacle
         } else {
             player->position.y += push_down;
         }
+
+        entity_update_collision(player);
     }
 }
 
@@ -148,8 +183,12 @@ void game_update(GameState *state, InputState input, float delta_time)
     state->frame++;
     state->elapsed += delta_time;
 
-    update_player(&state->player, input, delta_time, state->game_bounds);
-    resolve_player_obstacles(&state->player, state->current_level.entities, state->current_level.entity_count);
+    Entity *player = game_get_player(state);
+    if (player) {
+        update_player(player, input, delta_time, state->game_bounds);
+        resolve_player_obstacles(player, state->current_level.entities, state->current_level.entity_count,
+                                 state->player_index);
+    }
 }
 
 void game_free(GameState *state)

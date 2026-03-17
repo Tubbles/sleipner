@@ -1,6 +1,60 @@
 #include "unity.h"
 #include "game.h"
 
+static const char *game_test_gamedata = "[[blueprint]]\n"
+                                        "name = \"player\"\n"
+                                        "texture = \"player.png\"\n"
+                                        "src = [0, 0, 32, 32]\n"
+                                        "collision_offset = [-5, 6]\n"
+                                        "collision_size = [10, 10]\n"
+                                        "behavior = \"player\"\n"
+                                        "speed = 80\n"
+                                        "\n"
+                                        "[[level]]\n"
+                                        "name = \"test\"\n"
+                                        "size = [320, 240]\n"
+                                        "\n"
+                                        "[[level.entity]]\n"
+                                        "blueprint = \"player\"\n"
+                                        "pos = [160, 120]\n";
+
+static const char *game_test_gamedata_with_obstacle = "[[blueprint]]\n"
+                                                      "name = \"player\"\n"
+                                                      "texture = \"player.png\"\n"
+                                                      "src = [0, 0, 32, 32]\n"
+                                                      "collision_offset = [-5, 6]\n"
+                                                      "collision_size = [10, 10]\n"
+                                                      "behavior = \"player\"\n"
+                                                      "speed = 80\n"
+                                                      "\n"
+                                                      "[[blueprint]]\n"
+                                                      "name = \"rock\"\n"
+                                                      "texture = \"rock.png\"\n"
+                                                      "src = [0, 0, 16, 16]\n"
+                                                      "collision_offset = [0, 0]\n"
+                                                      "collision_size = [16, 16]\n"
+                                                      "\n"
+                                                      "[[level]]\n"
+                                                      "name = \"test\"\n"
+                                                      "size = [320, 240]\n"
+                                                      "\n"
+                                                      "[[level.entity]]\n"
+                                                      "blueprint = \"player\"\n"
+                                                      "pos = [160, 120]\n"
+                                                      "\n"
+                                                      "[[level.entity]]\n"
+                                                      "blueprint = \"rock\"\n"
+                                                      "pos = [170, 120]\n";
+
+static Texture2D dummy_texture;
+
+static Texture2D *dummy_lookup(const char *texture_name, void *user_data)
+{
+    (void)texture_name;
+    (void)user_data;
+    return &dummy_texture;
+}
+
 void test_game_init_defaults(void)
 {
     GameState state;
@@ -9,9 +63,7 @@ void test_game_init_defaults(void)
 
     TEST_ASSERT_EQUAL_INT(320, state.game_bounds.width);
     TEST_ASSERT_EQUAL_INT(240, state.game_bounds.height);
-    TEST_ASSERT_FLOAT_WITHIN(0.1F, 160.0F, state.player.position.x);
-    TEST_ASSERT_FLOAT_WITHIN(0.1F, 120.0F, state.player.position.y);
-    TEST_ASSERT_EQUAL_INT(ANIM_IDLE_DOWN, state.player.anim_row);
+    TEST_ASSERT_EQUAL_INT(-1, state.player_index);
     TEST_ASSERT_EQUAL_INT(0, state.frame);
     TEST_ASSERT_FALSE(state.gamedata_loaded);
     TEST_ASSERT_TRUE(state.debug_enabled);
@@ -52,17 +104,22 @@ void test_game_update_player_moves_right(void)
 {
     GameState state;
     game_init(&state, (RectU32){320, 240});
+    game_load_gamedata(&state, game_test_gamedata, NULL, dummy_lookup, NULL);
 
-    float start_x = state.player.position.x;
+    const Entity *player = game_get_player_const(&state);
+    TEST_ASSERT_NOT_NULL(player);
+    float start_x = player->position.x;
+
     InputState input = {0};
     input.left_stick.x = 1.0F;
 
     game_update(&state, input, 1.0F / 60.0F);
 
-    TEST_ASSERT_TRUE(state.player.position.x > start_x);
-    TEST_ASSERT_TRUE(state.player.moving);
-    TEST_ASSERT_EQUAL_INT(ANIM_WALK_SIDE, state.player.anim_row);
-    TEST_ASSERT_FALSE(state.player.flip);
+    player = game_get_player_const(&state);
+    TEST_ASSERT_TRUE(player->position.x > start_x);
+    TEST_ASSERT_TRUE(player->moving);
+    TEST_ASSERT_EQUAL_INT(ANIM_WALK_SIDE, player->anim_row);
+    TEST_ASSERT_FALSE(player->flip);
 
     game_free(&state);
 }
@@ -71,15 +128,18 @@ void test_game_update_player_moves_left(void)
 {
     GameState state;
     game_init(&state, (RectU32){320, 240});
+    game_load_gamedata(&state, game_test_gamedata, NULL, dummy_lookup, NULL);
 
     InputState input = {0};
     input.left_stick.x = -1.0F;
 
     game_update(&state, input, 1.0F / 60.0F);
 
-    TEST_ASSERT_TRUE(state.player.moving);
-    TEST_ASSERT_EQUAL_INT(ANIM_WALK_SIDE, state.player.anim_row);
-    TEST_ASSERT_TRUE(state.player.flip);
+    const Entity *player = game_get_player_const(&state);
+    TEST_ASSERT_NOT_NULL(player);
+    TEST_ASSERT_TRUE(player->moving);
+    TEST_ASSERT_EQUAL_INT(ANIM_WALK_SIDE, player->anim_row);
+    TEST_ASSERT_TRUE(player->flip);
 
     game_free(&state);
 }
@@ -88,16 +148,20 @@ void test_game_update_no_input_no_movement(void)
 {
     GameState state;
     game_init(&state, (RectU32){320, 240});
+    game_load_gamedata(&state, game_test_gamedata, NULL, dummy_lookup, NULL);
 
-    float start_x = state.player.position.x;
-    float start_y = state.player.position.y;
+    const Entity *player = game_get_player_const(&state);
+    TEST_ASSERT_NOT_NULL(player);
+    float start_x = player->position.x;
+    float start_y = player->position.y;
+
     InputState input = {0};
-
     game_update(&state, input, 1.0F / 60.0F);
 
-    TEST_ASSERT_FLOAT_WITHIN(0.01F, start_x, state.player.position.x);
-    TEST_ASSERT_FLOAT_WITHIN(0.01F, start_y, state.player.position.y);
-    TEST_ASSERT_FALSE(state.player.moving);
+    player = game_get_player_const(&state);
+    TEST_ASSERT_FLOAT_WITHIN(0.01F, start_x, player->position.x);
+    TEST_ASSERT_FLOAT_WITHIN(0.01F, start_y, player->position.y);
+    TEST_ASSERT_FALSE(player->moving);
 
     game_free(&state);
 }
@@ -106,6 +170,7 @@ void test_game_player_clamps_to_bounds(void)
 {
     GameState state;
     game_init(&state, (RectU32){320, 240});
+    game_load_gamedata(&state, game_test_gamedata, NULL, dummy_lookup, NULL);
 
     InputState input = {0};
     input.left_stick.x = -1.0F;
@@ -114,31 +179,36 @@ void test_game_player_clamps_to_bounds(void)
         game_update(&state, input, 1.0F / 60.0F);
     }
 
+    const Entity *player = game_get_player_const(&state);
     float half = FRAME_SIZE / 2.0F;
-    TEST_ASSERT_FLOAT_WITHIN(0.1F, half, state.player.position.x);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, half, player->position.x);
 
     game_free(&state);
 }
 
-void test_game_player_hitbox_position(void)
+void test_game_player_collision_from_blueprint(void)
 {
-    Player player = {.position = {100.0F, 100.0F}};
-    Rectangle hitbox = game_player_hitbox(&player);
+    GameState state;
+    game_init(&state, (RectU32){320, 240});
+    game_load_gamedata(&state, game_test_gamedata, NULL, dummy_lookup, NULL);
 
-    TEST_ASSERT_FLOAT_WITHIN(0.1F, 95.0F, hitbox.x);
-    TEST_ASSERT_FLOAT_WITHIN(0.1F, 106.0F, hitbox.y);
-    TEST_ASSERT_FLOAT_WITHIN(0.1F, 10.0F, hitbox.width);
-    TEST_ASSERT_FLOAT_WITHIN(0.1F, 10.0F, hitbox.height);
+    const Entity *player = game_get_player_const(&state);
+    TEST_ASSERT_NOT_NULL(player);
+
+    /* Player at (160, 120) with collision_offset [-5, 6] and size [10, 10] */
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 155.0F, player->collision.x);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 126.0F, player->collision.y);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 10.0F, player->collision.width);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 10.0F, player->collision.height);
+
+    game_free(&state);
 }
 
 void test_game_update_resolves_obstacle_collision(void)
 {
     GameState state;
     game_init(&state, (RectU32){320, 240});
-
-    /* Place an obstacle directly to the right of the player */
-    state.current_level.entity_count = 1;
-    state.current_level.entities[0].collision = (Rectangle){170.0F, 100.0F, 32.0F, 32.0F};
+    game_load_gamedata(&state, game_test_gamedata_with_obstacle, NULL, dummy_lookup, NULL);
 
     /* Push player into the obstacle */
     InputState input = {0};
@@ -148,9 +218,9 @@ void test_game_update_resolves_obstacle_collision(void)
         game_update(&state, input, 1.0F / 60.0F);
     }
 
-    /* Player hitbox should not overlap the obstacle */
-    Rectangle hitbox = game_player_hitbox(&state.player);
-    TEST_ASSERT_TRUE(hitbox.x + hitbox.width <= 170.0F + 0.1F);
+    /* Player collision should not overlap the obstacle */
+    const Entity *player = game_get_player_const(&state);
+    TEST_ASSERT_TRUE(player->collision.x + player->collision.width <= 170.0F + 0.1F);
 
     game_free(&state);
 }

@@ -54,7 +54,7 @@ void test_game_update_player_moves_right(void);
 void test_game_update_player_moves_left(void);
 void test_game_update_no_input_no_movement(void);
 void test_game_player_clamps_to_bounds(void);
-void test_game_player_hitbox_position(void);
+void test_game_player_collision_from_blueprint(void);
 void test_game_update_resolves_obstacle_collision(void);
 
 /* test_level.c */
@@ -158,7 +158,7 @@ int main(void)
     RUN_TEST(test_game_update_player_moves_left);
     RUN_TEST(test_game_update_no_input_no_movement);
     RUN_TEST(test_game_player_clamps_to_bounds);
-    RUN_TEST(test_game_player_hitbox_position);
+    RUN_TEST(test_game_player_collision_from_blueprint);
     RUN_TEST(test_game_update_resolves_obstacle_collision);
 
     RUN_TEST(test_integration_load_gamedata);

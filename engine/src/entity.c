@@ -84,3 +84,11 @@ void entity_init_from_blueprint(Entity *entity, const Blueprint *blueprint, Vect
     entity->opacity = 1.0F;
     entity->parent_index = -1;
 }
+
+void entity_update_collision(Entity *entity)
+{
+    if (entity->blueprint) {
+        entity->collision.x = entity->position.x + entity->blueprint->collision_offset.x;
+        entity->collision.y = entity->position.y + entity->blueprint->collision_offset.y;
+    }
+}

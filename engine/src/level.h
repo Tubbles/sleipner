@@ -1,25 +1,13 @@
 #ifndef LEVEL_H
 #define LEVEL_H
 
-#include "blueprint.h"
-
-#include "raylib.h"
+#include "entity.h"
 
 #include <stdbool.h>
 
 #define MAX_LEVEL_NAME 64
 #define MAX_MUSIC_NAME 64
 #define MAX_LEVEL_ENTITIES 512
-
-#define MAX_BLUEPRINT_NAME 64
-
-typedef struct {
-    char blueprint_name[MAX_BLUEPRINT_NAME];
-    Vector2 position;
-    Texture2D *texture;
-    Rectangle source;
-    Rectangle collision;
-} LevelEntity;
 
 /* Callback for resolving a texture name to a Texture2D pointer.
  * The loader calls this for each entity's blueprint texture_name. */
@@ -30,7 +18,7 @@ typedef struct {
     char music_name[MAX_MUSIC_NAME];
     int width;
     int height;
-    LevelEntity entities[MAX_LEVEL_ENTITIES];
+    Entity entities[MAX_LEVEL_ENTITIES];
     int entity_count;
 } Level;
 

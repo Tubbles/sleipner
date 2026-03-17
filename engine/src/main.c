@@ -111,7 +111,7 @@ static Texture2D load_embedded_texture(const unsigned char *data, int size)
     return texture;
 }
 
-static void draw_player(const Player *player, Texture2D texture)
+static void draw_player_entity(const Entity *player)
 {
     float source_width = (float)FRAME_SIZE;
     if (player->flip) {
@@ -121,12 +121,12 @@ static void draw_player(const Player *player, Texture2D texture)
                         FRAME_SIZE};
     Rectangle dest = {player->position.x - (FRAME_SIZE / 2.0F), player->position.y - (FRAME_SIZE / 2.0F), FRAME_SIZE,
                       FRAME_SIZE};
-    DrawTexturePro(texture, source, dest, (Vector2){0, 0}, 0.0F, WHITE);
+    DrawTexturePro(*player->texture, source, dest, (Vector2){0, 0}, 0.0F, WHITE);
 }
 
-static void draw_obstacle(const LevelEntity *obstacle)
+static void draw_entity(const Entity *entity)
 {
-    DrawTextureRec(*obstacle->texture, obstacle->source, obstacle->position, WHITE);
+    DrawTextureRec(*entity->texture, entity->source, entity->position, WHITE);
 }
 
 static void log_gamepad_changes(int *prev_gamepads, int frame)
@@ -182,24 +182,28 @@ static void debug_log(const char *format, ...)
     }
 }
 
-static void draw_debug_collision_boxes(const Player *player, const LevelEntity *obstacles, int obstacle_count)
+static void draw_debug_collision_boxes(const Entity *player, const Entity *entities, int entity_count, int player_index)
 {
-    /* Player hitbox (green) */
-    Rectangle hitbox = game_player_hitbox(player);
-    DrawRectangleLinesEx(hitbox, 1, GREEN);
+    /* Player collision box (green) */
+    if (player) {
+        DrawRectangleLinesEx(player->collision, 1, GREEN);
 
-    /* Player sprite bounds (yellow) */
-    Rectangle sprite = {player->position.x - FRAME_SIZE / 2.0F, player->position.y - FRAME_SIZE / 2.0F, FRAME_SIZE,
-                        FRAME_SIZE};
-    DrawRectangleLinesEx(sprite, 1, YELLOW);
+        /* Player sprite bounds (yellow) */
+        Rectangle sprite = {player->position.x - FRAME_SIZE / 2.0F, player->position.y - FRAME_SIZE / 2.0F, FRAME_SIZE,
+                            FRAME_SIZE};
+        DrawRectangleLinesEx(sprite, 1, YELLOW);
+    }
 
-    /* Obstacle collision boxes (red) */
-    for (int index = 0; index < obstacle_count; index++) {
-        DrawRectangleLinesEx(obstacles[index].collision, 1, RED);
+    /* Entity collision boxes (red) */
+    for (int index = 0; index < entity_count; index++) {
+        if (index == player_index) {
+            continue;
+        }
+        DrawRectangleLinesEx(entities[index].collision, 1, RED);
     }
 }
 
-static void draw_debug_info(const Player *player, RectU32 game_bounds, int frame, float elapsed)
+static void draw_debug_info(const Entity *player, RectU32 game_bounds, int frame, float elapsed)
 {
     int line = 0;
     int screen_w = GetScreenWidth();
@@ -220,12 +224,15 @@ static void draw_debug_info(const Player *player, RectU32 game_bounds, int frame
              DEBUG_MARGIN + line++ * DEBUG_LINE_HEIGHT, DEBUG_FONT_SIZE, GREEN);
     DrawText(TextFormat("game: %ux%u  scale: %d", game_bounds.width, game_bounds.height, PIXEL_SCALE), DEBUG_MARGIN,
              DEBUG_MARGIN + line++ * DEBUG_LINE_HEIGHT, DEBUG_FONT_SIZE, GREEN);
-    DrawText(TextFormat("player: %.1f, %.1f  row: %d", player->position.x, player->position.y, player->anim_row),
-             DEBUG_MARGIN, DEBUG_MARGIN + line++ * DEBUG_LINE_HEIGHT, DEBUG_FONT_SIZE, GREEN);
 
-    Rectangle hitbox = game_player_hitbox(player);
-    DrawText(TextFormat("hitbox: %.0f,%.0f %.0fx%.0f", hitbox.x, hitbox.y, hitbox.width, hitbox.height), DEBUG_MARGIN,
-             DEBUG_MARGIN + line++ * DEBUG_LINE_HEIGHT, DEBUG_FONT_SIZE, GREEN);
+    if (player) {
+        DrawText(TextFormat("player: %.1f, %.1f  row: %d", player->position.x, player->position.y, player->anim_row),
+                 DEBUG_MARGIN, DEBUG_MARGIN + line++ * DEBUG_LINE_HEIGHT, DEBUG_FONT_SIZE, GREEN);
+        DrawText(TextFormat("collision: %.0f,%.0f %.0fx%.0f", player->collision.x, player->collision.y,
+                            player->collision.width, player->collision.height),
+                 DEBUG_MARGIN, DEBUG_MARGIN + line++ * DEBUG_LINE_HEIGHT, DEBUG_FONT_SIZE, GREEN);
+    }
+
     DrawText(TextFormat("gamepads: %d", input_count_gamepads()), DEBUG_MARGIN,
              DEBUG_MARGIN + line++ * DEBUG_LINE_HEIGHT, DEBUG_FONT_SIZE, GREEN);
 
@@ -270,34 +277,42 @@ static void load_gamedata(GameState *state)
         return;
     }
 
-    char errbuf[200];
-    toml_table_t *root = toml_parse_file(file, errbuf, sizeof(errbuf));
-    fclose(file);
+    fseek(file, 0, SEEK_END);
+    long file_size = ftell(file);
+    fseek(file, 0, SEEK_SET);
 
-    if (!root) {
-        dzlog_warn("gamedata: parse error: %s", errbuf);
-        debug_log("gamedata: parse error: %s", errbuf);
+    if (file_size <= 0) {
+        fclose(file);
         return;
     }
 
-    arena_reset(&state->gamedata_arena);
-
-    int blueprint_count = blueprints_load(&state->blueprints, root, &state->gamedata_arena);
-    debug_log("gamedata: %d blueprints", blueprint_count);
-    for (int index = 0; index < state->blueprints.count; index++) {
-        debug_log("  blueprint: %s", state->blueprints.entries[index].name);
+    char *content = malloc((size_t)file_size + 1);
+    if (!content) {
+        fclose(file);
+        return;
     }
 
-    bool level_ok = level_load(&state->current_level, root, NULL, &state->blueprints, texture_registry_lookup, NULL);
-    if (level_ok) {
+    size_t bytes_read = fread(content, 1, (size_t)file_size, file);
+    fclose(file);
+    content[bytes_read] = '\0';
+
+    bool loaded = game_load_gamedata(state, content, NULL, texture_registry_lookup, NULL);
+    free(content);
+
+    if (loaded) {
+        debug_log("gamedata: %d blueprints", state->blueprints.count);
+        for (int index = 0; index < state->blueprints.count; index++) {
+            debug_log("  blueprint: %s", state->blueprints.entries[index].name);
+        }
         debug_log("gamedata: level '%s' (%dx%d, %d entities)", state->current_level.name, state->current_level.width,
                   state->current_level.height, state->current_level.entity_count);
+        if (state->player_index >= 0) {
+            debug_log("gamedata: player at entity[%d]", state->player_index);
+        }
     } else {
         debug_log("gamedata: no level found");
     }
 
-    toml_free(root);
-    state->gamedata_loaded = true;
     gamedata_mtime = get_file_mtime(GAMEDATA_PATH);
 }
 
@@ -438,27 +453,41 @@ int main(void)
 
         draw_grass(*texture_registry_lookup("grass.png", NULL), game_bounds);
 
-        float player_sort_y = state.player.position.y + 16;
-        /* Draw entities behind player */
+        const Entity *player = game_get_player_const(&state);
+        float player_sort_y = player ? player->position.y + 16 : 0;
+
+        /* Draw entities behind player (excluding player) */
         for (int index = 0; index < state.current_level.entity_count; index++) {
+            if (index == state.player_index) {
+                continue;
+            }
             float entity_sort_y =
                 state.current_level.entities[index].collision.y + state.current_level.entities[index].collision.height;
             if (entity_sort_y <= player_sort_y) {
-                draw_obstacle(&state.current_level.entities[index]);
+                draw_entity(&state.current_level.entities[index]);
             }
         }
-        draw_player(&state.player, *texture_registry_lookup("player.png", NULL));
-        /* Draw entities in front of player */
+
+        /* Draw player */
+        if (player) {
+            draw_player_entity(player);
+        }
+
+        /* Draw entities in front of player (excluding player) */
         for (int index = 0; index < state.current_level.entity_count; index++) {
+            if (index == state.player_index) {
+                continue;
+            }
             float entity_sort_y =
                 state.current_level.entities[index].collision.y + state.current_level.entities[index].collision.height;
             if (entity_sort_y > player_sort_y) {
-                draw_obstacle(&state.current_level.entities[index]);
+                draw_entity(&state.current_level.entities[index]);
             }
         }
 
         if (state.debug_enabled) {
-            draw_debug_collision_boxes(&state.player, state.current_level.entities, state.current_level.entity_count);
+            draw_debug_collision_boxes(player, state.current_level.entities, state.current_level.entity_count,
+                                       state.player_index);
         }
 
         EndTextureMode();
@@ -469,7 +498,7 @@ int main(void)
                        (Rectangle){0, 0, (float)screen_width, (float)screen_height}, (Vector2){0, 0}, 0.0F, WHITE);
 
         if (state.debug_enabled) {
-            draw_debug_info(&state.player, game_bounds, state.frame, state.elapsed);
+            draw_debug_info(player, game_bounds, state.frame, state.elapsed);
         }
         EndDrawing();
     }

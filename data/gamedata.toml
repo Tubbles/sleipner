@@ -2,6 +2,15 @@
 # This file is shared via Syncthing between desktop and Android.
 
 [[blueprint]]
+name = "player"
+texture = "player.png"
+src = [0, 0, 32, 32]
+collision_offset = [-5, 6]
+collision_size = [10, 10]
+behavior = "player"
+speed = 80
+
+[[blueprint]]
 name = "tree"
 texture = "tree.png"
 src = [0, 0, 64, 80]
@@ -37,6 +46,10 @@ behavior = "static"
 name = "overworld"
 size = [640, 360]
 music = "bgm.mp3"
+
+[[level.entity]]
+blueprint = "player"
+pos = [320, 180]
 
 [[level.entity]]
 blueprint = "house"
