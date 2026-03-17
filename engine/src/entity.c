@@ -84,7 +84,7 @@ void entity_init_from_blueprint(Entity *entity, const Blueprint *blueprint, Vect
     entity->max_health = attr_get_int(&blueprint->attrs, "max_health", 0);
     entity->visible = true;
     entity->active = true;
-    entity->solid = blueprint->collision_size.x > 0 || blueprint->collision_size.y > 0;
+    entity->solid = (bool)((blueprint->collision_size.x > 0.0F) || (blueprint->collision_size.y > 0.0F));
     entity->opacity = 1.0F;
     entity->parent_index = -1;
 }

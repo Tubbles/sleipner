@@ -175,7 +175,7 @@ static void debug_log(const char *format, ...)
 {
     va_list args;
     va_start(args, format);
-    vsnprintf(debug_log_lines[debug_log_head], DEBUG_LOG_LINE_LEN, format, args);
+    (void)vsnprintf(debug_log_lines[debug_log_head], DEBUG_LOG_LINE_LEN, format, args);
     va_end(args);
     debug_log_head = (debug_log_head + 1) % DEBUG_LOG_LINES;
     if (debug_log_count < DEBUG_LOG_LINES) {
@@ -190,8 +190,8 @@ static void draw_debug_collision_boxes(const Entity *player, const Entity *entit
         DrawRectangleLinesEx(player->collision, 1, GREEN);
 
         /* Player sprite bounds (yellow) */
-        Rectangle sprite = {player->position.x - FRAME_SIZE / 2.0F, player->position.y - FRAME_SIZE / 2.0F, FRAME_SIZE,
-                            FRAME_SIZE};
+        Rectangle sprite = {player->position.x - (FRAME_SIZE / 2.0F), player->position.y - (FRAME_SIZE / 2.0F),
+                            FRAME_SIZE, FRAME_SIZE};
         DrawRectangleLinesEx(sprite, 1, YELLOW);
     }
 
@@ -214,45 +214,45 @@ static void draw_debug_info(const Entity *player, RectU32 game_bounds, int frame
 
     /* Semi-transparent background for info panel */
     int panel_width = 360;
-    int panel_height = 10 * DEBUG_LINE_HEIGHT + DEBUG_MARGIN * 2;
+    int panel_height = (10 * DEBUG_LINE_HEIGHT) + (DEBUG_MARGIN * 2);
     DrawRectangle(0, 0, panel_width, panel_height, (Color){0, 0, 0, DEBUG_BG_ALPHA});
 
     DrawText(TextFormat("FPS: %d  frame: %d  t: %.1fs", GetFPS(), frame, elapsed), DEBUG_MARGIN,
-             DEBUG_MARGIN + line++ * DEBUG_LINE_HEIGHT, DEBUG_FONT_SIZE, GREEN);
+             DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, GREEN);
     DrawText(TextFormat("screen: %dx%d", screen_width, screen_height), DEBUG_MARGIN,
-             DEBUG_MARGIN + line++ * DEBUG_LINE_HEIGHT, DEBUG_FONT_SIZE, GREEN);
+             DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, GREEN);
     DrawText(TextFormat("GetScreen: %dx%d  GetRender: %dx%d", screen_w, screen_h, render_w, render_h), DEBUG_MARGIN,
-             DEBUG_MARGIN + line++ * DEBUG_LINE_HEIGHT, DEBUG_FONT_SIZE, GREEN);
+             DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, GREEN);
     DrawText(TextFormat("game: %ux%u  scale: %d", game_bounds.width, game_bounds.height, PIXEL_SCALE), DEBUG_MARGIN,
-             DEBUG_MARGIN + line++ * DEBUG_LINE_HEIGHT, DEBUG_FONT_SIZE, GREEN);
+             DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, GREEN);
 
     if (player) {
         DrawText(TextFormat("player: %.1f, %.1f  row: %d", player->position.x, player->position.y, player->anim_row),
-                 DEBUG_MARGIN, DEBUG_MARGIN + line++ * DEBUG_LINE_HEIGHT, DEBUG_FONT_SIZE, GREEN);
+                 DEBUG_MARGIN, DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, GREEN);
         DrawText(TextFormat("collision: %.0f,%.0f %.0fx%.0f", player->collision.x, player->collision.y,
                             player->collision.width, player->collision.height),
-                 DEBUG_MARGIN, DEBUG_MARGIN + line++ * DEBUG_LINE_HEIGHT, DEBUG_FONT_SIZE, GREEN);
+                 DEBUG_MARGIN, DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, GREEN);
     }
 
     DrawText(TextFormat("gamepads: %d", input_count_gamepads()), DEBUG_MARGIN,
-             DEBUG_MARGIN + line++ * DEBUG_LINE_HEIGHT, DEBUG_FONT_SIZE, GREEN);
+             DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, GREEN);
 
     for (int index = 0; index < 4; index++) {
         if (IsGamepadAvailable(index)) {
             DrawText(TextFormat("  gp%d: %s", index, GetGamepadName(index)), DEBUG_MARGIN,
-                     DEBUG_MARGIN + line++ * DEBUG_LINE_HEIGHT, DEBUG_FONT_SIZE, GREEN);
+                     DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, GREEN);
         }
     }
 
     /* Log panel at bottom */
     if (debug_log_count > 0) {
-        int log_height = debug_log_count * DEBUG_LINE_HEIGHT + DEBUG_MARGIN * 2;
+        int log_height = (debug_log_count * DEBUG_LINE_HEIGHT) + (DEBUG_MARGIN * 2);
         int log_y = screen_height - log_height;
         DrawRectangle(0, log_y, screen_width, log_height, (Color){0, 0, 0, DEBUG_BG_ALPHA});
 
         for (int index = 0; index < debug_log_count; index++) {
             int log_index = (debug_log_head - debug_log_count + index + DEBUG_LOG_LINES) % DEBUG_LOG_LINES;
-            DrawText(debug_log_lines[log_index], DEBUG_MARGIN, log_y + DEBUG_MARGIN + index * DEBUG_LINE_HEIGHT,
+            DrawText(debug_log_lines[log_index], DEBUG_MARGIN, log_y + DEBUG_MARGIN + (index * DEBUG_LINE_HEIGHT),
                      DEBUG_FONT_SIZE, LIME);
         }
     }
@@ -278,23 +278,23 @@ static void load_gamedata(GameState *state)
         return;
     }
 
-    fseek(file, 0, SEEK_END);
+    (void)fseek(file, 0, SEEK_END);
     long file_size = ftell(file);
-    fseek(file, 0, SEEK_SET);
+    (void)fseek(file, 0, SEEK_SET);
 
     if (file_size <= 0) {
-        fclose(file);
+        (void)fclose(file);
         return;
     }
 
     char *content = malloc((size_t)file_size + 1);
     if (!content) {
-        fclose(file);
+        (void)fclose(file);
         return;
     }
 
     size_t bytes_read = fread(content, 1, (size_t)file_size, file);
-    fclose(file);
+    (void)fclose(file);
     content[bytes_read] = '\0';
 
     bool loaded = game_load_gamedata(state, content, NULL, texture_registry_lookup, NULL);
@@ -424,7 +424,7 @@ int main(void)
 
         /* Toggle debug overlay: F3 or gamepad Select */
         if (IsKeyPressed(KEY_F3) || IsGamepadButtonPressed(0, GAMEPAD_BUTTON_MIDDLE_LEFT)) {
-            state.debug_enabled = !state.debug_enabled;
+            state.debug_enabled = state.debug_enabled ? false : true;
             debug_log("debug %s (frame %d)", state.debug_enabled ? "ON" : "OFF", state.frame);
         }
 

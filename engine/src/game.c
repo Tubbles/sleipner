@@ -13,7 +13,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define GAMEDATA_ARENA_SIZE (64 * 1024)
+#define GAMEDATA_ARENA_SIZE (64UL * 1024)
 
 void game_init(GameState *state, RectU32 game_bounds)
 {
@@ -166,7 +166,6 @@ static void resolve_player_obstacles(Entity *player, Entity *entities, int count
             direction = 2;
         }
         if (push_down < min_push) {
-            min_push = push_down;
             direction = 3;
         }
 
