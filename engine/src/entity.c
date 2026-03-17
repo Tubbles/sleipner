@@ -53,13 +53,13 @@ bool entity_get_bool(const Entity *entity, const char *name, bool fallback)
     return fallback;
 }
 
-const char *entity_get_string(const Entity *entity, const char *name, const char *fallback)
+const char *entity_get_string(const Entity *entity, const char *name)
 {
     const Attribute *entry = entity_get_attr(entity, name);
     if (entry && entry->type == ATTR_STRING) {
         return entry->value.s;
     }
-    return fallback;
+    return NULL;
 }
 
 void entity_init_from_blueprint(Entity *entity, const Blueprint *blueprint, Vector2 position, Texture2D *texture)

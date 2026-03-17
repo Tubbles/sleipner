@@ -64,7 +64,7 @@ static void parse_custom_attr(AttrSet *attrs, toml_table_t *table, const char *k
 
     toml_datum_t string_value = toml_string_in(table, key);
     if (string_value.ok) {
-        attr_set_string(attrs, key, string_value.u.s);
+        attr_set_string(attrs, (AttrStringPair){.name = key, .value = string_value.u.s});
         free(string_value.u.s);
     }
 }

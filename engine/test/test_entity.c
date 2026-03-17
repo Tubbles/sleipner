@@ -12,7 +12,7 @@ static Blueprint make_test_blueprint(void)
     blueprint.collision_offset = (Vector2){2, 4};
     blueprint.collision_size = (Vector2){12, 8};
 
-    attr_set_string(&blueprint.attrs, "behavior", "static");
+    attr_set_string(&blueprint.attrs, (AttrStringPair){.name = "behavior", .value = "static"});
     attr_set_bool(&blueprint.attrs, "is_locked", true);
     attr_set_int(&blueprint.attrs, "health", 3);
     attr_set_int(&blueprint.attrs, "max_health", 5);
@@ -55,7 +55,7 @@ void test_entity_get_attr_from_blueprint(void)
     entity_init_from_blueprint(&entity, &blueprint, (Vector2){0, 0}, &dummy);
 
     /* No instance overrides — falls back to blueprint */
-    TEST_ASSERT_EQUAL_STRING("static", entity_get_string(&entity, "behavior", ""));
+    TEST_ASSERT_EQUAL_STRING("static", entity_get_string(&entity, "behavior"));
     TEST_ASSERT_TRUE(entity_get_bool(&entity, "is_locked", false));
     TEST_ASSERT_FLOAT_WITHIN(0.01F, 0.0F, entity_get_float(&entity, "speed", -1.0F));
 }
@@ -77,7 +77,7 @@ void test_entity_instance_overrides_blueprint(void)
     TEST_ASSERT_FLOAT_WITHIN(0.01F, 50.0F, entity_get_float(&entity, "speed", 0));
 
     /* Blueprint still provides unoverridden attrs */
-    TEST_ASSERT_EQUAL_STRING("static", entity_get_string(&entity, "behavior", ""));
+    TEST_ASSERT_EQUAL_STRING("static", entity_get_string(&entity, "behavior"));
 }
 
 void test_entity_get_missing_attr(void)
@@ -89,7 +89,7 @@ void test_entity_get_missing_attr(void)
     entity_init_from_blueprint(&entity, &blueprint, (Vector2){0, 0}, &dummy);
 
     TEST_ASSERT_EQUAL_INT(42, entity_get_int(&entity, "nonexistent", 42));
-    TEST_ASSERT_EQUAL_STRING("default", entity_get_string(&entity, "nope", "default"));
+    TEST_ASSERT_NULL(entity_get_string(&entity, "nope"));
 }
 
 void test_entity_int_float_coercion(void)

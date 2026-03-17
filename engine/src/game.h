@@ -34,12 +34,15 @@ typedef struct {
     bool debug_enabled;
 } GameState;
 
+typedef struct {
+    const char *toml_string;
+    const char *level_name;
+    TextureLookupFn texture_lookup;
+    void *texture_user_data;
+} GamedataParams;
+
 void game_init(GameState *state, RectU32 game_bounds);
-bool game_load_gamedata(GameState *state,
-                        const char *toml_string,
-                        const char *level_name,
-                        TextureLookupFn texture_lookup,
-                        void *texture_user_data);
+bool game_load_gamedata(GameState *state, GamedataParams params);
 void game_update(GameState *state, InputState input, float delta_time);
 Entity *game_get_player(GameState *state);
 const Entity *game_get_player_const(const GameState *state);

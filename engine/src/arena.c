@@ -16,14 +16,14 @@ bool arena_init(Arena *arena, size_t capacity)
     return true;
 }
 
-void *arena_alloc(Arena *arena, size_t size, size_t alignment)
+void *arena_alloc(Arena *arena, AllocRequest request)
 {
-    size_t aligned_offset = (arena->offset + alignment - 1) & ~(alignment - 1);
-    if (aligned_offset + size > arena->capacity) {
+    size_t aligned_offset = (arena->offset + request.alignment - 1) & ~(request.alignment - 1);
+    if (aligned_offset + request.size > arena->capacity) {
         return NULL;
     }
     void *pointer = arena->buffer + aligned_offset;
-    arena->offset = aligned_offset + size;
+    arena->offset = aligned_offset + request.size;
     return pointer;
 }
 

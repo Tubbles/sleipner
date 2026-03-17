@@ -62,14 +62,14 @@ bool attr_set_bool(AttrSet *set, const char *name, bool value)
     return true;
 }
 
-bool attr_set_string(AttrSet *set, const char *name, const char *value)
+bool attr_set_string(AttrSet *set, AttrStringPair pair)
 {
-    Attribute *entry = find_or_append(set, name);
+    Attribute *entry = find_or_append(set, pair.name);
     if (!entry) {
         return false;
     }
     entry->type = ATTR_STRING;
-    strncpy(entry->value.s, value, MAX_ATTR_STRING - 1);
+    strncpy(entry->value.s, pair.value, MAX_ATTR_STRING - 1);
     entry->value.s[MAX_ATTR_STRING - 1] = '\0';
     return true;
 }
@@ -101,13 +101,13 @@ bool attr_get_bool(const AttrSet *set, const char *name, bool fallback)
     return fallback;
 }
 
-const char *attr_get_string(const AttrSet *set, const char *name, const char *fallback)
+const char *attr_get_string(const AttrSet *set, const char *name)
 {
     const Attribute *entry = attr_get(set, name);
     if (entry && entry->type == ATTR_STRING) {
         return entry->value.s;
     }
-    return fallback;
+    return NULL;
 }
 
 const Attribute *attr_get_scoped(const AttrSet *instance, const AttrSet *blueprint, const char *name)

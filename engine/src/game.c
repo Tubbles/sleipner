@@ -28,26 +28,22 @@ void game_init(GameState *state, RectU32 game_bounds)
 static int find_player_entity(const Level *level)
 {
     for (int index = 0; index < level->entity_count; index++) {
-        const char *behavior = entity_get_string(&level->entities[index], "behavior", "");
-        if (strcmp(behavior, "player") == 0) {
+        const char *behavior = entity_get_string(&level->entities[index], "behavior");
+        if (behavior && strcmp(behavior, "player") == 0) {
             return index;
         }
     }
     return -1;
 }
 
-bool game_load_gamedata(GameState *state,
-                        const char *toml_string,
-                        const char *level_name,
-                        TextureLookupFn texture_lookup,
-                        void *texture_user_data)
+bool game_load_gamedata(GameState *state, GamedataParams params)
 {
-    size_t length = strlen(toml_string);
+    size_t length = strlen(params.toml_string);
     char *buffer = malloc(length + 1);
     if (!buffer) {
         return false;
     }
-    memcpy(buffer, toml_string, length + 1);
+    memcpy(buffer, params.toml_string, length + 1);
 
     char errbuf[TOML_ERRBUF_SIZE];
     toml_table_t *root = toml_parse(buffer, errbuf, (int)sizeof(errbuf));
@@ -60,8 +56,8 @@ bool game_load_gamedata(GameState *state,
     arena_reset(&state->gamedata_arena);
     blueprints_load(&state->blueprints, root, &state->gamedata_arena);
 
-    bool level_ok =
-        level_load(&state->current_level, root, level_name, &state->blueprints, texture_lookup, texture_user_data);
+    bool level_ok = level_load(&state->current_level, root, params.level_name, &state->blueprints,
+                               params.texture_lookup, params.texture_user_data);
 
     toml_free(root);
     state->gamedata_loaded = level_ok;
@@ -140,14 +136,15 @@ static void update_player(Entity *player, InputState input, float delta_time, Re
     entity_update_collision(player);
 }
 
-static void resolve_player_obstacles(Entity *player, Entity *entities, int count, int player_index)
+static void resolve_player_obstacles(Level *level, int player_index)
 {
-    for (int index = 0; index < count; index++) {
-        if (index == player_index || !entities[index].solid) {
+    Entity *player = &level->entities[player_index];
+    for (int index = 0; index < level->entity_count; index++) {
+        if (index == player_index || !level->entities[index].solid) {
             continue;
         }
         Rectangle hitbox = player->collision;
-        Rectangle obstacle = entities[index].collision;
+        Rectangle obstacle = level->entities[index].collision;
         if (!CheckCollisionRecs(hitbox, obstacle)) {
             continue;
         }
@@ -192,8 +189,7 @@ void game_update(GameState *state, InputState input, float delta_time)
     Entity *player = game_get_player(state);
     if (player) {
         update_player(player, input, delta_time, state->game_bounds);
-        resolve_player_obstacles(player, state->current_level.entities, state->current_level.entity_count,
-                                 state->player_index);
+        resolve_player_obstacles(&state->current_level, state->player_index);
     }
 }
 

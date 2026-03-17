@@ -40,13 +40,18 @@ const Attribute *attr_get(const AttrSet *set, const char *name);
 bool attr_set_float(AttrSet *set, const char *name, float value);
 bool attr_set_int(AttrSet *set, const char *name, int value);
 bool attr_set_bool(AttrSet *set, const char *name, bool value);
-bool attr_set_string(AttrSet *set, const char *name, const char *value);
+typedef struct {
+    const char *name;
+    const char *value;
+} AttrStringPair;
+
+bool attr_set_string(AttrSet *set, AttrStringPair pair);
 
 /* Convenience getters with fallback defaults. */
 float attr_get_float(const AttrSet *set, const char *name, float fallback);
 int attr_get_int(const AttrSet *set, const char *name, int fallback);
 bool attr_get_bool(const AttrSet *set, const char *name, bool fallback);
-const char *attr_get_string(const AttrSet *set, const char *name, const char *fallback);
+const char *attr_get_string(const AttrSet *set, const char *name);
 
 /* Look up an attribute by name, falling back to a second set if not found
  * in the first. Used for instance -> blueprint scoping. */

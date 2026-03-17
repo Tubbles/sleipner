@@ -3,6 +3,7 @@
 #include "entity.h"
 #include "game.h"
 #include "input.h"
+#include "level.h"
 #include "rect.h"
 #include "screen.h"
 
@@ -177,10 +178,11 @@ static void debug_log(const char *format, ...)
     }
 }
 
-static void draw_debug_collision_boxes(const Entity *player, const Entity *entities, int entity_count, int player_index)
+static void draw_debug_collision_boxes(const Level *level, int player_index)
 {
     /* Player collision box (green) */
-    if (player) {
+    if (player_index >= 0 && player_index < level->entity_count) {
+        const Entity *player = &level->entities[player_index];
         DrawRectangleLinesEx(player->collision, 1, GREEN);
 
         /* Player sprite bounds (yellow) */
@@ -190,11 +192,11 @@ static void draw_debug_collision_boxes(const Entity *player, const Entity *entit
     }
 
     /* Entity collision boxes (red) */
-    for (int index = 0; index < entity_count; index++) {
+    for (int index = 0; index < level->entity_count; index++) {
         if (index == player_index) {
             continue;
         }
-        DrawRectangleLinesEx(entities[index].collision, 1, RED);
+        DrawRectangleLinesEx(level->entities[index].collision, 1, RED);
     }
 }
 
@@ -262,7 +264,8 @@ static void load_gamedata(GameState *state)
         return;
     }
 
-    bool loaded = game_load_gamedata(state, content, NULL, texture_registry_lookup, NULL);
+    bool loaded = game_load_gamedata(
+        state, (GamedataParams){.toml_string = content, .texture_lookup = texture_registry_lookup});
     UnloadFileText(content);
 
     if (loaded) {
@@ -328,8 +331,7 @@ static void draw_entities_depth_sorted(const GameState *state)
     }
 
     if (state->debug_enabled) {
-        draw_debug_collision_boxes(player, state->current_level.entities, state->current_level.entity_count,
-                                   state->player_index);
+        draw_debug_collision_boxes(&state->current_level, state->player_index);
     }
 }
 

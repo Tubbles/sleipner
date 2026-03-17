@@ -53,7 +53,7 @@ const Attribute *entity_get_attr(const Entity *entity, const char *name);
 float entity_get_float(const Entity *entity, const char *name, float fallback);
 int entity_get_int(const Entity *entity, const char *name, int fallback);
 bool entity_get_bool(const Entity *entity, const char *name, bool fallback);
-const char *entity_get_string(const Entity *entity, const char *name, const char *fallback);
+const char *entity_get_string(const Entity *entity, const char *name);
 
 /* Initialize an entity from a blueprint. Sets built-in attributes
  * from blueprint defaults and copies rendering fields. */

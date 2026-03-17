@@ -34,9 +34,9 @@ void test_attr_set_and_get_bool(void)
 void test_attr_set_and_get_string(void)
 {
     AttrSet set = {0};
-    attr_set_string(&set, "loot_table", "common");
+    attr_set_string(&set, (AttrStringPair){.name = "loot_table", .value = "common"});
 
-    TEST_ASSERT_EQUAL_STRING("common", attr_get_string(&set, "loot_table", ""));
+    TEST_ASSERT_EQUAL_STRING("common", attr_get_string(&set, "loot_table"));
 }
 
 void test_attr_overwrite_existing(void)
@@ -56,7 +56,7 @@ void test_attr_get_missing_returns_fallback(void)
     TEST_ASSERT_FLOAT_WITHIN(0.01F, 99.0F, attr_get_float(&set, "missing", 99.0F));
     TEST_ASSERT_EQUAL_INT(42, attr_get_int(&set, "missing", 42));
     TEST_ASSERT_FALSE(attr_get_bool(&set, "missing", false));
-    TEST_ASSERT_EQUAL_STRING("default", attr_get_string(&set, "missing", "default"));
+    TEST_ASSERT_NULL(attr_get_string(&set, "missing"));
 }
 
 void test_attr_full_set_returns_false(void)
@@ -89,7 +89,7 @@ void test_attr_scoped_instance_overrides_blueprint(void)
 {
     AttrSet blueprint = {0};
     attr_set_bool(&blueprint, "is_locked", true);
-    attr_set_string(&blueprint, "loot_table", "common");
+    attr_set_string(&blueprint, (AttrStringPair){.name = "loot_table", .value = "common"});
 
     AttrSet instance = {0};
     attr_set_bool(&instance, "is_locked", false);
@@ -115,11 +115,11 @@ void test_attr_multiple_types(void)
     attr_set_float(&set, "speed", 80.0F);
     attr_set_int(&set, "health", 10);
     attr_set_bool(&set, "visible", true);
-    attr_set_string(&set, "name", "chest");
+    attr_set_string(&set, (AttrStringPair){.name = "name", .value = "chest"});
 
     TEST_ASSERT_EQUAL_INT(4, set.count);
     TEST_ASSERT_FLOAT_WITHIN(0.01F, 80.0F, attr_get_float(&set, "speed", 0));
     TEST_ASSERT_EQUAL_INT(10, attr_get_int(&set, "health", 0));
     TEST_ASSERT_TRUE(attr_get_bool(&set, "visible", false));
-    TEST_ASSERT_EQUAL_STRING("chest", attr_get_string(&set, "name", ""));
+    TEST_ASSERT_EQUAL_STRING("chest", attr_get_string(&set, "name"));
 }
