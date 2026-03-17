@@ -14,6 +14,7 @@
 #include <string.h>
 
 #define GAMEDATA_ARENA_SIZE (64UL * 1024)
+#define TOML_ERRBUF_SIZE 200
 
 void game_init(GameState *state, RectU32 game_bounds)
 {
@@ -48,7 +49,7 @@ bool game_load_gamedata(GameState *state,
     }
     memcpy(buffer, toml_string, length + 1);
 
-    char errbuf[200];
+    char errbuf[TOML_ERRBUF_SIZE];
     toml_table_t *root = toml_parse(buffer, errbuf, (int)sizeof(errbuf));
     free(buffer);
 

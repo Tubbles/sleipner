@@ -4,8 +4,6 @@
 #include "zlog.h"
 
 #include <math.h>
-#include <stdlib.h>
-#include <string.h>
 
 #define STICK_DEADZONE 0.15F
 
@@ -19,23 +17,18 @@ static Vector2 apply_deadzone(Vector2 stick, float deadzone)
     return (Vector2){stick.x * scale, stick.y * scale};
 }
 
-void input_load_mappings(const char *data, int size)
+void input_load_mappings(const char *path)
 {
-    char *buf = malloc(size + 1);
-    if (buf == NULL) {
-        dzlog_warn("could not allocate %d bytes for mappings", size);
+    char *mappings = LoadFileText(path);
+    if (!mappings) {
+        dzlog_warn("could not load gamepad mappings from %s", path);
         return;
     }
 
-    for (int index = 0; index < size; index++) {
-        buf[index] = data[index];
-    }
-    buf[size] = '\0';
+    int result = SetGamepadMappings(mappings);
+    dzlog_info("loaded gamepad mappings from %s (result=%d)", path, result);
 
-    int result = SetGamepadMappings(buf);
-    dzlog_info("loaded embedded gamepad mappings (%d bytes, result=%d)", size, result);
-
-    free(buf);
+    UnloadFileText(mappings);
 }
 
 InputState input_read(int gamepad_id)

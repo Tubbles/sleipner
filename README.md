@@ -1,14 +1,16 @@
 # Sleipner
 
-Top-down action RPG in the style of classic Zelda, written in C23 with raylib.
+Top-down action RPG in the style of classic Zelda, written in C with raylib.
 
 ## Features
 
 - Controller-first input (gamepad primary, keyboard fallback)
+- Data-driven engine: game defined entirely by `data/gamedata.toml` and `assets/`
+- Blueprint/entity system with attribute inheritance
 - SAT-based 2D collision detection (circles, rectangles, triangles, composite shapes)
 - Particle system with pooled allocation
-- Procedural audio synthesis (tones and pops)
-- Single-binary distribution via C23 `#embed` (all assets compiled in)
+- Hot-reload of gamedata during play
+- In-game editor with full gamepad UX (no keyboard required)
 - Runs on Android via [Game Native](https://play.google.com/store/apps/details?id=com.nicolefeelsgood.gamenative) (FEX + Proton)
 
 ## Building
@@ -34,12 +36,8 @@ conan build .
 
 ## Toolchain
 
-- **Compiler:** clang-22 (C23 with `#embed` support)
+- **Compiler:** clang-22
 - **Build system:** CMake, driven by Conan 2
-- **Linting:** clang-tidy with strict checks (clang-analyzer, bugprone, cert, misc, performance, portability, readability)
+- **Linting:** clang-tidy with strict checks (all checks enabled, warnings as errors)
 - **Formatting:** clang-format (LLVM-based style)
 - **Testing:** Unity (ThrowTheSwitch) + fff.h (Fake Function Framework)
-
-## Known improvements
-
-- **RNG:** Currently uses `rand()`/`srand()` for particle effects. A proper PRNG (e.g. xoshiro256) would improve quality. When done, re-enable the disabled clang-tidy checks: `bugprone-random-generator-seed`, `cert-msc30-c`, `cert-msc32-c`, `cert-msc50-cpp`, `cert-msc51-cpp`, `concurrency-mt-unsafe`, `misc-predictable-rand`.

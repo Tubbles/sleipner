@@ -36,6 +36,61 @@ static void parse_instance_attr(AttrSet *attrs, toml_table_t *table, const char 
     }
 }
 
+static void parse_instance_overrides(Entity *entity, toml_table_t *entity_table)
+{
+    int total_keys = toml_table_nkval(entity_table) + toml_table_narr(entity_table) + toml_table_ntab(entity_table);
+    for (int key_index = 0; key_index < total_keys; key_index++) {
+        const char *key = toml_key_in(entity_table, key_index);
+        if (!key || strcmp(key, "blueprint") == 0) {
+            continue;
+        }
+        parse_instance_attr(&entity->attrs, entity_table, key);
+    }
+}
+
+static void parse_entity(Level *level,
+                          toml_table_t *entity_table,
+                          const BlueprintTable *blueprints,
+                          TextureLookupFn texture_lookup,
+                          void *texture_user_data)
+{
+    toml_datum_t bp_name = toml_string_in(entity_table, "blueprint");
+    if (!bp_name.ok) {
+        return;
+    }
+    const Blueprint *blueprint = blueprint_find(blueprints, bp_name.u.s);
+    if (!blueprint) {
+        free(bp_name.u.s);
+        return;
+    }
+    free(bp_name.u.s);
+
+    toml_array_t *pos = toml_array_in(entity_table, "pos");
+    if (!pos || toml_array_nelem(pos) != 2) {
+        return;
+    }
+    float position_x = 0;
+    float position_y = 0;
+    toml_datum_t pos_x = toml_int_at(pos, 0);
+    toml_datum_t pos_y = toml_int_at(pos, 1);
+    if (pos_x.ok) {
+        position_x = (float)pos_x.u.i;
+    }
+    if (pos_y.ok) {
+        position_y = (float)pos_y.u.i;
+    }
+
+    Texture2D *texture = texture_lookup(blueprint->texture_name, texture_user_data);
+    if (!texture) {
+        return;
+    }
+
+    Entity *entity = &level->entities[level->entity_count];
+    entity_init_from_blueprint(entity, blueprint, (Vector2){position_x, position_y}, texture);
+    parse_instance_overrides(entity, entity_table);
+    level->entity_count++;
+}
+
 bool level_load(Level *level,
                 void *toml_root,
                 const char *level_name,
@@ -110,59 +165,9 @@ bool level_load(Level *level,
     int entity_count = toml_array_nelem(entities);
     for (int index = 0; index < entity_count && level->entity_count < MAX_LEVEL_ENTITIES; index++) {
         toml_table_t *entity_table = toml_table_at(entities, index);
-        if (!entity_table) {
-            continue;
+        if (entity_table) {
+            parse_entity(level, entity_table, blueprints, texture_lookup, texture_user_data);
         }
-
-        /* Look up blueprint */
-        toml_datum_t bp_name = toml_string_in(entity_table, "blueprint");
-        if (!bp_name.ok) {
-            continue;
-        }
-        const Blueprint *blueprint = blueprint_find(blueprints, bp_name.u.s);
-        if (!blueprint) {
-            free(bp_name.u.s);
-            continue;
-        }
-        free(bp_name.u.s);
-
-        /* Parse position */
-        toml_array_t *pos = toml_array_in(entity_table, "pos");
-        if (!pos || toml_array_nelem(pos) != 2) {
-            continue;
-        }
-        float position_x = 0;
-        float position_y = 0;
-        toml_datum_t pos_x = toml_int_at(pos, 0);
-        toml_datum_t pos_y = toml_int_at(pos, 1);
-        if (pos_x.ok) {
-            position_x = (float)pos_x.u.i;
-        }
-        if (pos_y.ok) {
-            position_y = (float)pos_y.u.i;
-        }
-
-        /* Resolve texture */
-        Texture2D *texture = texture_lookup(blueprint->texture_name, texture_user_data);
-        if (!texture) {
-            continue;
-        }
-
-        /* Build entity from blueprint */
-        Entity *entity = &level->entities[level->entity_count];
-        entity_init_from_blueprint(entity, blueprint, (Vector2){position_x, position_y}, texture);
-
-        /* Parse instance attribute overrides (any kval that isn't "blueprint") */
-        int total_keys = toml_table_nkval(entity_table) + toml_table_narr(entity_table) + toml_table_ntab(entity_table);
-        for (int key_index = 0; key_index < total_keys; key_index++) {
-            const char *key = toml_key_in(entity_table, key_index);
-            if (!key || strcmp(key, "blueprint") == 0) {
-                continue;
-            }
-            parse_instance_attr(&entity->attrs, entity_table, key);
-        }
-
-        level->entity_count++;
     }
 
     return true;

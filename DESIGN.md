@@ -778,6 +778,7 @@ pos = [320, 180]
 - [x] Blueprint inheritance (extends)
 - [x] Entity storage (flat array in arena)
 - [x] Convert Player and Obstacle to entity instances with attributes
+- [ ] Proper PRNG (xoshiro256 or similar, replacing `rand()` in particle system)
 - [ ] Entity composition (children with relative positioning)
 - [ ] Tag system (named references within composition trees)
 

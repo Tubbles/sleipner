@@ -6,22 +6,19 @@
 #include "rect.h"
 #include "screen.h"
 
-#include "assets.h"
-
 #include "zlog.h"
 
 #include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>
-#include <time.h>
 
 #ifdef __ANDROID__
+#define ASSET_PREFIX ""
 #define SYNCTHING_PATH "/storage/emulated/0/Sync"
 #define GAMEDATA_PATH SYNCTHING_PATH "/sleipner/gamedata.toml"
 #else
+#define ASSET_PREFIX "assets/"
 #define GAMEDATA_PATH "data/gamedata.toml"
 #endif
 
@@ -37,6 +34,8 @@
 #define DEBUG_LINE_HEIGHT 18
 #define DEBUG_MARGIN 6
 #define DEBUG_BG_ALPHA 160
+#define DEBUG_PANEL_WIDTH 360
+#define DEBUG_LINES 10
 
 int screen_width = SCREEN_WIDTH_DEFAULT;
 int screen_height = SCREEN_HEIGHT_DEFAULT;
@@ -104,14 +103,6 @@ static InputState merge_input(InputState base, InputState overlay)
     return base;
 }
 
-static Texture2D load_embedded_texture(const unsigned char *data, int size)
-{
-    Image image = LoadImageFromMemory(".png", data, size);
-    Texture2D texture = LoadTextureFromImage(image);
-    UnloadImage(image);
-    return texture;
-}
-
 static void draw_player_entity(const Entity *player)
 {
     float source_width = (float)FRAME_SIZE;
@@ -134,11 +125,9 @@ static void log_gamepad_changes(int *prev_gamepads, int frame)
 {
     int gamepads = input_count_gamepads();
     if (gamepads != *prev_gamepads) {
-        dzlog_info("gamepads %d -> %d (frame=%d)", *prev_gamepads, gamepads, frame);
         debug_log("gamepads %d -> %d (frame %d)", *prev_gamepads, gamepads, frame);
         for (int index = 0; index < 4; index++) {
             if (IsGamepadAvailable(index)) {
-                dzlog_info("gamepad %d: %s", index, GetGamepadName(index));
                 debug_log("gp%d: %s", index, GetGamepadName(index));
             }
         }
@@ -175,8 +164,13 @@ static void debug_log(const char *format, ...)
 {
     va_list args;
     va_start(args, format);
-    (void)vsnprintf(debug_log_lines[debug_log_head], DEBUG_LOG_LINE_LEN, format, args);
+    (void)vsnprintf(debug_log_lines[debug_log_head], DEBUG_LOG_LINE_LEN, format, args); // NOLINT(clang-analyzer-security.VAList) false positive, LLVM #40656
     va_end(args);
+
+    va_start(args, format);
+    vdzlog_info(format, args);
+    va_end(args);
+
     debug_log_head = (debug_log_head + 1) % DEBUG_LOG_LINES;
     if (debug_log_count < DEBUG_LOG_LINES) {
         debug_log_count++;
@@ -213,8 +207,8 @@ static void draw_debug_info(const Entity *player, RectU32 game_bounds, int frame
     int render_h = GetRenderHeight();
 
     /* Semi-transparent background for info panel */
-    int panel_width = 360;
-    int panel_height = (10 * DEBUG_LINE_HEIGHT) + (DEBUG_MARGIN * 2);
+    int panel_width = DEBUG_PANEL_WIDTH;
+    int panel_height = (DEBUG_LINES * DEBUG_LINE_HEIGHT) + (DEBUG_MARGIN * 2);
     DrawRectangle(0, 0, panel_width, panel_height, (Color){0, 0, 0, DEBUG_BG_ALPHA});
 
     DrawText(TextFormat("FPS: %d  frame: %d  t: %.1fs", GetFPS(), frame, elapsed), DEBUG_MARGIN,
@@ -258,47 +252,18 @@ static void draw_debug_info(const Entity *player, RectU32 game_bounds, int frame
     }
 }
 
-static time_t gamedata_mtime = 0;
-
-static time_t get_file_mtime(const char *path)
-{
-    struct stat file_stat;
-    if (stat(path, &file_stat) != 0) {
-        return 0;
-    }
-    return file_stat.st_mtime;
-}
+static long gamedata_mtime = 0;
 
 static void load_gamedata(GameState *state)
 {
-    FILE *file = fopen(GAMEDATA_PATH, "r");
-    if (!file) {
-        dzlog_warn("gamedata: could not open %s", GAMEDATA_PATH);
+    char *content = LoadFileText(GAMEDATA_PATH);
+    if (!content) {
         debug_log("gamedata: FAILED to open %s", GAMEDATA_PATH);
         return;
     }
 
-    (void)fseek(file, 0, SEEK_END);
-    long file_size = ftell(file);
-    (void)fseek(file, 0, SEEK_SET);
-
-    if (file_size <= 0) {
-        (void)fclose(file);
-        return;
-    }
-
-    char *content = malloc((size_t)file_size + 1);
-    if (!content) {
-        (void)fclose(file);
-        return;
-    }
-
-    size_t bytes_read = fread(content, 1, (size_t)file_size, file);
-    (void)fclose(file);
-    content[bytes_read] = '\0';
-
     bool loaded = game_load_gamedata(state, content, NULL, texture_registry_lookup, NULL);
-    free(content);
+    UnloadFileText(content);
 
     if (loaded) {
         debug_log("gamedata: %d blueprints", state->blueprints.count);
@@ -314,25 +279,66 @@ static void load_gamedata(GameState *state)
         debug_log("gamedata: no level found");
     }
 
-    gamedata_mtime = get_file_mtime(GAMEDATA_PATH);
+    gamedata_mtime = GetFileModTime(GAMEDATA_PATH);
+}
+
+static void poll_hot_reload(GameState *state)
+{
+    if (!state->gamedata_loaded) {
+        load_gamedata(state);
+        return;
+    }
+
+    long current_mtime = GetFileModTime(GAMEDATA_PATH);
+    if (current_mtime > 0 && current_mtime != gamedata_mtime) {
+        debug_log("gamedata: hot-reload triggered");
+        load_gamedata(state);
+    }
+}
+
+static void draw_entities_depth_sorted(const GameState *state)
+{
+    const Entity *player = game_get_player_const(state);
+    float player_sort_y = player ? player->position.y + 16 : 0;
+
+    for (int index = 0; index < state->current_level.entity_count; index++) {
+        if (index == state->player_index) {
+            continue;
+        }
+        float entity_sort_y =
+            state->current_level.entities[index].collision.y + state->current_level.entities[index].collision.height;
+        if (entity_sort_y <= player_sort_y) {
+            draw_entity(&state->current_level.entities[index]);
+        }
+    }
+
+    if (player) {
+        draw_player_entity(player);
+    }
+
+    for (int index = 0; index < state->current_level.entity_count; index++) {
+        if (index == state->player_index) {
+            continue;
+        }
+        float entity_sort_y =
+            state->current_level.entities[index].collision.y + state->current_level.entities[index].collision.height;
+        if (entity_sort_y > player_sort_y) {
+            draw_entity(&state->current_level.entities[index]);
+        }
+    }
+
+    if (state->debug_enabled) {
+        draw_debug_collision_boxes(player, state->current_level.entities, state->current_level.entity_count,
+                                   state->player_index);
+    }
 }
 
 int main(void)
 {
 #ifndef __ANDROID__
-    /* Init zlog from embedded config string */
-    {
-        char zlog_conf[sizeof(asset_zlog_conf) + 1];
-        for (unsigned long index = 0; index < sizeof(asset_zlog_conf); index++) {
-            zlog_conf[index] = (char)asset_zlog_conf[index];
-        }
-        zlog_conf[sizeof(asset_zlog_conf)] = '\0';
-        zlog_init_from_string(zlog_conf);
-        dzlog_set_category("sleipner");
-    }
-#else
-    dzlog_set_category("sleipner");
+    zlog_init(ASSET_PREFIX "zlog.conf");
 #endif
+    dzlog_set_category("sleipner");
 
 #ifdef __ANDROID__
     SetConfigFlags(FLAG_FULLSCREEN_MODE);
@@ -348,7 +354,7 @@ int main(void)
     int monitor = GetCurrentMonitor();
     int mon_width = GetMonitorWidth(monitor);
     int mon_height = GetMonitorHeight(monitor);
-    dzlog_info("monitor=%d resolution=%dx%d", monitor, mon_width, mon_height);
+    debug_log("monitor=%d resolution=%dx%d", monitor, mon_width, mon_height);
     if (mon_width > 0 && mon_height > 0) {
         screen_width = mon_width;
         screen_height = mon_height;
@@ -358,32 +364,22 @@ int main(void)
 #ifndef __ANDROID__
     ToggleBorderlessWindowed();
 #endif
-    dzlog_info("screen_width=%d screen_height=%d", screen_width, screen_height);
+    debug_log("screen_width=%d screen_height=%d", screen_width, screen_height);
 
 #ifndef __ANDROID__
-    input_load_mappings((const char *)asset_gamecontrollerdb, sizeof(asset_gamecontrollerdb));
+    input_load_mappings(ASSET_PREFIX "gamecontrollerdb.txt");
 #endif
     SetTargetFPS(TARGET_FPS);
     InitAudioDevice();
 
     /* Load textures and register them by filename */
-#ifdef __ANDROID__
-    texture_registry_add("player.png", LoadTexture("sprites/player.png"));
-    texture_registry_add("grass.png", LoadTexture("sprites/grass.png"));
-    texture_registry_add("tree.png", LoadTexture("sprites/tree.png"));
-    texture_registry_add("chest.png", LoadTexture("sprites/chest.png"));
-    texture_registry_add("house.png", LoadTexture("sprites/house.png"));
-    texture_registry_add("fence.png", LoadTexture("sprites/fence.png"));
-    Music bgm = LoadMusicStream("music/bgm.mp3");
-#else
-    texture_registry_add("player.png", load_embedded_texture(asset_player_png, sizeof(asset_player_png)));
-    texture_registry_add("grass.png", load_embedded_texture(asset_grass_png, sizeof(asset_grass_png)));
-    texture_registry_add("tree.png", load_embedded_texture(asset_tree_png, sizeof(asset_tree_png)));
-    texture_registry_add("chest.png", load_embedded_texture(asset_chest_png, sizeof(asset_chest_png)));
-    texture_registry_add("house.png", load_embedded_texture(asset_house_png, sizeof(asset_house_png)));
-    texture_registry_add("fence.png", load_embedded_texture(asset_fence_png, sizeof(asset_fence_png)));
-    Music bgm = LoadMusicStreamFromMemory(".mp3", asset_bgm_mp3, sizeof(asset_bgm_mp3));
-#endif
+    texture_registry_add("player.png", LoadTexture(ASSET_PREFIX "sprites/player.png"));
+    texture_registry_add("grass.png", LoadTexture(ASSET_PREFIX "sprites/grass.png"));
+    texture_registry_add("tree.png", LoadTexture(ASSET_PREFIX "sprites/tree.png"));
+    texture_registry_add("chest.png", LoadTexture(ASSET_PREFIX "sprites/chest.png"));
+    texture_registry_add("house.png", LoadTexture(ASSET_PREFIX "sprites/house.png"));
+    texture_registry_add("fence.png", LoadTexture(ASSET_PREFIX "sprites/fence.png"));
+    Music bgm = LoadMusicStream(ASSET_PREFIX "music/bgm.mp3");
     bgm.looping = true;
     PlayMusicStream(bgm);
 
@@ -396,7 +392,6 @@ int main(void)
 
     int prev_gamepads = -1;
 
-    dzlog_info("entering game loop (game_res=%ux%u scale=%d)", game_bounds.width, game_bounds.height, PIXEL_SCALE);
     debug_log("screen %dx%d  game %ux%u  scale %d", screen_width, screen_height, game_bounds.width, game_bounds.height,
               PIXEL_SCALE);
     debug_log("GetScreen %dx%d  GetRender %dx%d", GetScreenWidth(), GetScreenHeight(), GetRenderWidth(),
@@ -410,22 +405,13 @@ int main(void)
 
         /* Hot-reload: poll mtime and reload if gamedata changed */
         if (state.frame % HOT_RELOAD_POLL_FRAMES == 0) {
-            if (!state.gamedata_loaded) {
-                load_gamedata(&state);
-            } else {
-                time_t current_mtime = get_file_mtime(GAMEDATA_PATH);
-                if (current_mtime > 0 && current_mtime != gamedata_mtime) {
-                    dzlog_info("gamedata: file changed, reloading");
-                    debug_log("gamedata: hot-reload triggered");
-                    load_gamedata(&state);
-                }
-            }
+            poll_hot_reload(&state);
         }
 
         /* Toggle debug overlay: F3 or gamepad Select */
         if (IsKeyPressed(KEY_F3) || IsGamepadButtonPressed(0, GAMEPAD_BUTTON_MIDDLE_LEFT)) {
-            state.debug_enabled = state.debug_enabled ? false : true;
-            debug_log("debug %s (frame %d)", state.debug_enabled ? "ON" : "OFF", state.frame);
+            state.debug_enabled = (bool)!state.debug_enabled;
+            debug_log("debug %s (frame %d)", (int)state.debug_enabled ? "ON" : "OFF", state.frame);
         }
 
         log_gamepad_changes(&prev_gamepads, state.frame);
@@ -445,7 +431,7 @@ int main(void)
 
         /* Heartbeat every ~5 seconds */
         if (state.frame % HEARTBEAT_INTERVAL == 0) {
-            dzlog_debug("frame=%d t=%.1fs dt=%.4f fps=%d", state.frame, state.elapsed, delta_time, GetFPS());
+            debug_log("frame=%d t=%.1fs dt=%.4f fps=%d", state.frame, state.elapsed, delta_time, GetFPS());
         }
 
         /* Render at game resolution with depth sorting */
@@ -453,43 +439,7 @@ int main(void)
         ClearBackground(BLACK);
 
         draw_grass(*texture_registry_lookup("grass.png", NULL), game_bounds);
-
-        const Entity *player = game_get_player_const(&state);
-        float player_sort_y = player ? player->position.y + 16 : 0;
-
-        /* Draw entities behind player (excluding player) */
-        for (int index = 0; index < state.current_level.entity_count; index++) {
-            if (index == state.player_index) {
-                continue;
-            }
-            float entity_sort_y =
-                state.current_level.entities[index].collision.y + state.current_level.entities[index].collision.height;
-            if (entity_sort_y <= player_sort_y) {
-                draw_entity(&state.current_level.entities[index]);
-            }
-        }
-
-        /* Draw player */
-        if (player) {
-            draw_player_entity(player);
-        }
-
-        /* Draw entities in front of player (excluding player) */
-        for (int index = 0; index < state.current_level.entity_count; index++) {
-            if (index == state.player_index) {
-                continue;
-            }
-            float entity_sort_y =
-                state.current_level.entities[index].collision.y + state.current_level.entities[index].collision.height;
-            if (entity_sort_y > player_sort_y) {
-                draw_entity(&state.current_level.entities[index]);
-            }
-        }
-
-        if (state.debug_enabled) {
-            draw_debug_collision_boxes(player, state.current_level.entities, state.current_level.entity_count,
-                                       state.player_index);
-        }
+        draw_entities_depth_sorted(&state);
 
         EndTextureMode();
 
@@ -499,13 +449,13 @@ int main(void)
                        (Rectangle){0, 0, (float)screen_width, (float)screen_height}, (Vector2){0, 0}, 0.0F, WHITE);
 
         if (state.debug_enabled) {
-            draw_debug_info(player, game_bounds, state.frame, state.elapsed);
+            draw_debug_info(game_get_player_const(&state), game_bounds, state.frame, state.elapsed);
         }
         EndDrawing();
     }
 
 quit:
-    dzlog_info("exiting game loop (frame=%d t=%.1fs)", state.frame, state.elapsed);
+    debug_log("exiting game loop (frame=%d t=%.1fs)", state.frame, state.elapsed);
 
     UnloadMusicStream(bgm);
     UnloadRenderTexture(target);

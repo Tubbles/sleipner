@@ -1,5 +1,6 @@
 #include "particle.h"
 #include "raylib.h"
+
 #include <math.h>
 #include <stdlib.h>
 

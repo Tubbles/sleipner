@@ -19,7 +19,7 @@ static int emit_append(char *buffer, int capacity, int offset, const char *forma
     va_list args;
     va_start(args, format);
     int remaining = capacity - offset;
-    int written = vsnprintf(buffer + offset, (size_t)(remaining > 0 ? remaining : 0), format, args);
+    int written = vsnprintf(buffer + offset, (size_t)(remaining > 0 ? remaining : 0), format, args); // NOLINT(clang-analyzer-security.VAList) false positive, LLVM #40656
     va_end(args);
 
     if (written < 0 || offset + written >= capacity) {
