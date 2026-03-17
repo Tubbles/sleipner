@@ -42,6 +42,7 @@ typedef struct {
 
     /* Composition */
     int parent_index;
+    Vector2 offset;
 } Entity;
 
 /* Get an attribute with instance -> blueprint fallback.

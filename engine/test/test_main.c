@@ -76,6 +76,10 @@ void test_level_load_by_name(void);
 void test_level_load_nonexistent(void);
 void test_level_entity_positions(void);
 void test_level_entity_source_rects(void);
+void test_level_child_entities_instantiated(void);
+void test_level_child_entity_positions(void);
+void test_level_child_entity_tags(void);
+void test_level_nested_children(void);
 
 /* test_integration.c */
 void test_integration_load_gamedata(void);
@@ -199,6 +203,10 @@ int main(void)
     RUN_TEST(test_level_load_nonexistent);
     RUN_TEST(test_level_entity_positions);
     RUN_TEST(test_level_entity_source_rects);
+    RUN_TEST(test_level_child_entities_instantiated);
+    RUN_TEST(test_level_child_entity_positions);
+    RUN_TEST(test_level_child_entity_tags);
+    RUN_TEST(test_level_nested_children);
 
     RUN_TEST(test_circle_bounds_centered);
     RUN_TEST(test_square_bounds_same_as_circle);

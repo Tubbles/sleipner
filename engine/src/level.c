@@ -52,6 +52,86 @@ static void parse_instance_overrides(Entity *entity, toml_table_t *entity_table)
     }
 }
 
+#define MAX_CHILD_DEPTH 4
+
+static int entity_depth(const Entity *entities, int entity_index)
+{
+    int depth = 0;
+    int current = entity_index;
+    while (entities[current].parent_index >= 0) {
+        current = entities[current].parent_index;
+        depth++;
+    }
+    return depth;
+}
+
+static bool spawn_children_for(Level *level,
+                               int parent_index,
+                               const BlueprintTable *blueprints,
+                               TextureLookupFn texture_lookup,
+                               void *texture_user_data)
+{
+    const Entity *parent = &level->entities[parent_index];
+    const Blueprint *parent_blueprint = parent->blueprint;
+
+    for (int index = 0; index < parent_blueprint->child_count; index++) {
+        const BlueprintChild *child_def = &parent_blueprint->children[index];
+
+        const Blueprint *child_blueprint = blueprint_find(blueprints, child_def->blueprint_name);
+        if (!child_blueprint) {
+            error_set("child blueprint '%s' not found", child_def->blueprint_name);
+            error_wrap("parent '%s' child[%d]", parent_blueprint->name, index);
+            return false;
+        }
+
+        if (level->entity_count >= MAX_LEVEL_ENTITIES) {
+            error_set("entity limit reached (%d)", MAX_LEVEL_ENTITIES);
+            return false;
+        }
+
+        Texture2D *texture = texture_lookup(child_blueprint->texture_name, texture_user_data);
+        Vector2 child_position = {parent->position.x + child_def->offset.x, parent->position.y + child_def->offset.y};
+
+        Entity *child = &level->entities[level->entity_count];
+        entity_init_from_blueprint(child, child_blueprint, child_position, texture);
+        child->parent_index = parent_index;
+        child->offset = child_def->offset;
+        if (child_def->tag[0] != '\0') {
+            strncpy(child->tag, child_def->tag, MAX_TAG - 1);
+        }
+        level->entity_count++;
+    }
+
+    return true;
+}
+
+/* Instantiate children for the entity at start_index and all descendants.
+ * Iterative: scans forward through newly appended children, which may
+ * themselves have children. Parents always appear before children. */
+static bool instantiate_children(Level *level,
+                                 int start_index,
+                                 const BlueprintTable *blueprints,
+                                 TextureLookupFn texture_lookup,
+                                 void *texture_user_data)
+{
+    int scan_index = start_index;
+    while (scan_index < level->entity_count) {
+        const Entity *entity = &level->entities[scan_index];
+        if (entity->blueprint && entity->blueprint->child_count > 0) {
+            int depth = entity_depth(level->entities, scan_index);
+            if (depth >= MAX_CHILD_DEPTH) {
+                error_set("child nesting exceeds max depth %d", MAX_CHILD_DEPTH);
+                return false;
+            }
+            if (!spawn_children_for(level, scan_index, blueprints, texture_lookup, texture_user_data)) {
+                return false;
+            }
+        }
+        scan_index++;
+    }
+    return true;
+}
+
 static void parse_entity(Level *level,
                          int entity_index,
                          toml_table_t *entity_table,
@@ -94,10 +174,15 @@ static void parse_entity(Level *level,
         return;
     }
 
-    Entity *entity = &level->entities[level->entity_count];
+    int parent_index = level->entity_count;
+    Entity *entity = &level->entities[parent_index];
     entity_init_from_blueprint(entity, blueprint, (Vector2){position_x, position_y}, texture);
     parse_instance_overrides(entity, entity_table);
     level->entity_count++;
+
+    if (!instantiate_children(level, parent_index, blueprints, texture_lookup, texture_user_data)) {
+        debug_log("ent[%d]: failed to instantiate children: %s", entity_index, error_get());
+    }
 }
 
 static toml_table_t *find_level_table(toml_array_t *levels, const char *level_name)

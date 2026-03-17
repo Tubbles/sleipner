@@ -45,6 +45,10 @@ static const char *test_gamedata = "[[blueprint]]\n"
 /* Dummy textures for testing */
 static Texture2D dummy_tree_texture;
 static Texture2D dummy_chest_texture;
+static Texture2D dummy_lantern_texture;
+static Texture2D dummy_wheel_texture;
+static Texture2D dummy_wagon_texture;
+static Texture2D dummy_part_texture;
 
 static Texture2D *test_texture_lookup(const char *texture_name, void *user_data)
 {
@@ -54,6 +58,18 @@ static Texture2D *test_texture_lookup(const char *texture_name, void *user_data)
     }
     if (strcmp(texture_name, "chest.png") == 0) {
         return &dummy_chest_texture;
+    }
+    if (strcmp(texture_name, "lantern.png") == 0) {
+        return &dummy_lantern_texture;
+    }
+    if (strcmp(texture_name, "wheel.png") == 0) {
+        return &dummy_wheel_texture;
+    }
+    if (strcmp(texture_name, "wagon.png") == 0) {
+        return &dummy_wagon_texture;
+    }
+    if (strcmp(texture_name, "part.png") == 0) {
+        return &dummy_part_texture;
     }
     return NULL;
 }
@@ -188,6 +204,179 @@ void test_level_entity_source_rects(void)
     /* Chest source rect from blueprint */
     TEST_ASSERT_FLOAT_WITHIN(0.1f, 16.0f, level.entities[1].source.width);
     TEST_ASSERT_FLOAT_WITHIN(0.1f, 16.0f, level.entities[1].source.height);
+
+    toml_free(root);
+    arena_free(&arena);
+}
+
+static const char *child_gamedata = "[[blueprint]]\n"
+                                    "name = \"lantern\"\n"
+                                    "texture = \"lantern.png\"\n"
+                                    "src = [0, 0, 8, 8]\n"
+                                    "\n"
+                                    "[[blueprint]]\n"
+                                    "name = \"wheel\"\n"
+                                    "texture = \"wheel.png\"\n"
+                                    "src = [0, 0, 16, 16]\n"
+                                    "\n"
+                                    "[[blueprint]]\n"
+                                    "name = \"wagon\"\n"
+                                    "texture = \"wagon.png\"\n"
+                                    "src = [0, 0, 64, 32]\n"
+                                    "\n"
+                                    "[[blueprint.child]]\n"
+                                    "blueprint = \"lantern\"\n"
+                                    "tag = \"light\"\n"
+                                    "offset = [56, -8]\n"
+                                    "\n"
+                                    "[[blueprint.child]]\n"
+                                    "blueprint = \"wheel\"\n"
+                                    "tag = \"front_wheel\"\n"
+                                    "offset = [8, 28]\n"
+                                    "\n"
+                                    "[[level]]\n"
+                                    "name = \"test\"\n"
+                                    "size = [320, 240]\n"
+                                    "\n"
+                                    "[[level.entity]]\n"
+                                    "blueprint = \"wagon\"\n"
+                                    "pos = [100, 50]\n";
+
+void test_level_child_entities_instantiated(void)
+{
+    Arena arena;
+    TEST_ASSERT_TRUE(arena_init(&arena, 4096));
+    BlueprintTable blueprints;
+    Level level;
+
+    toml_table_t *root = parse_toml(child_gamedata);
+    TEST_ASSERT_NOT_NULL(root);
+
+    blueprints_load(&blueprints, root, &arena);
+    TEST_ASSERT_TRUE(level_load(&level, root, "test", &blueprints, test_texture_lookup, NULL));
+
+    /* 1 parent (wagon) + 2 children (lantern, wheel) */
+    TEST_ASSERT_EQUAL_INT(3, level.entity_count);
+
+    /* Parent has no parent */
+    TEST_ASSERT_EQUAL_INT(-1, level.entities[0].parent_index);
+
+    /* Children point back to parent */
+    TEST_ASSERT_EQUAL_INT(0, level.entities[1].parent_index);
+    TEST_ASSERT_EQUAL_INT(0, level.entities[2].parent_index);
+
+    toml_free(root);
+    arena_free(&arena);
+}
+
+void test_level_child_entity_positions(void)
+{
+    Arena arena;
+    TEST_ASSERT_TRUE(arena_init(&arena, 4096));
+    BlueprintTable blueprints;
+    Level level;
+
+    toml_table_t *root = parse_toml(child_gamedata);
+    TEST_ASSERT_NOT_NULL(root);
+
+    blueprints_load(&blueprints, root, &arena);
+    TEST_ASSERT_TRUE(level_load(&level, root, "test", &blueprints, test_texture_lookup, NULL));
+
+    /* Lantern at wagon(100,50) + offset(56,-8) = (156, 42) */
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 156.0F, level.entities[1].position.x);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 42.0F, level.entities[1].position.y);
+
+    /* Wheel at wagon(100,50) + offset(8,28) = (108, 78) */
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 108.0F, level.entities[2].position.x);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 78.0F, level.entities[2].position.y);
+
+    toml_free(root);
+    arena_free(&arena);
+}
+
+void test_level_child_entity_tags(void)
+{
+    Arena arena;
+    TEST_ASSERT_TRUE(arena_init(&arena, 4096));
+    BlueprintTable blueprints;
+    Level level;
+
+    toml_table_t *root = parse_toml(child_gamedata);
+    TEST_ASSERT_NOT_NULL(root);
+
+    blueprints_load(&blueprints, root, &arena);
+    TEST_ASSERT_TRUE(level_load(&level, root, "test", &blueprints, test_texture_lookup, NULL));
+
+    TEST_ASSERT_EQUAL_STRING("light", level.entities[1].tag);
+    TEST_ASSERT_EQUAL_STRING("front_wheel", level.entities[2].tag);
+
+    toml_free(root);
+    arena_free(&arena);
+}
+
+void test_level_nested_children(void)
+{
+    Arena arena;
+    TEST_ASSERT_TRUE(arena_init(&arena, 4096));
+    BlueprintTable blueprints;
+    Level level;
+
+    const char *nested_data = "[[blueprint]]\n"
+                              "name = \"part\"\n"
+                              "texture = \"part.png\"\n"
+                              "src = [0, 0, 4, 4]\n"
+                              "\n"
+                              "[[blueprint]]\n"
+                              "name = \"mid\"\n"
+                              "texture = \"part.png\"\n"
+                              "src = [0, 0, 8, 8]\n"
+                              "\n"
+                              "[[blueprint.child]]\n"
+                              "blueprint = \"part\"\n"
+                              "tag = \"inner\"\n"
+                              "offset = [2, 2]\n"
+                              "\n"
+                              "[[blueprint]]\n"
+                              "name = \"outer\"\n"
+                              "texture = \"part.png\"\n"
+                              "src = [0, 0, 16, 16]\n"
+                              "\n"
+                              "[[blueprint.child]]\n"
+                              "blueprint = \"mid\"\n"
+                              "tag = \"middle\"\n"
+                              "offset = [4, 4]\n"
+                              "\n"
+                              "[[level]]\n"
+                              "name = \"test\"\n"
+                              "size = [100, 100]\n"
+                              "\n"
+                              "[[level.entity]]\n"
+                              "blueprint = \"outer\"\n"
+                              "pos = [10, 10]\n";
+
+    toml_table_t *root = parse_toml(nested_data);
+    TEST_ASSERT_NOT_NULL(root);
+
+    blueprints_load(&blueprints, root, &arena);
+    TEST_ASSERT_TRUE(level_load(&level, root, "test", &blueprints, test_texture_lookup, NULL));
+
+    /* outer(0) -> mid(1) -> part(2) */
+    TEST_ASSERT_EQUAL_INT(3, level.entity_count);
+
+    TEST_ASSERT_EQUAL_INT(-1, level.entities[0].parent_index);
+    TEST_ASSERT_EQUAL_INT(0, level.entities[1].parent_index);
+    TEST_ASSERT_EQUAL_INT(1, level.entities[2].parent_index);
+
+    /* outer at (10,10), mid at (10+4, 10+4) = (14, 14) */
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 14.0F, level.entities[1].position.x);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 14.0F, level.entities[1].position.y);
+
+    /* part at (14+2, 14+2) = (16, 16) */
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 16.0F, level.entities[2].position.x);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 16.0F, level.entities[2].position.y);
+
+    TEST_ASSERT_EQUAL_STRING("middle", level.entities[1].tag);
+    TEST_ASSERT_EQUAL_STRING("inner", level.entities[2].tag);
 
     toml_free(root);
     arena_free(&arena);
