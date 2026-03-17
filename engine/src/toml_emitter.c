@@ -32,13 +32,12 @@ static int emit_blueprints(char *buffer, int capacity, int offset, const Bluepri
         offset = emit_append(buffer, capacity, offset, "[[blueprint]]\n");
         offset = emit_append(buffer, capacity, offset, "name = \"%s\"\n", blueprint->name);
         offset = emit_append(buffer, capacity, offset, "texture = \"%s\"\n", blueprint->texture_name);
-        offset = emit_append(buffer, capacity, offset, "src = [%d, %d, %d, %d]\n",
-                             (int)blueprint->source.x, (int)blueprint->source.y,
-                             (int)blueprint->source.width, (int)blueprint->source.height);
+        offset = emit_append(buffer, capacity, offset, "src = [%d, %d, %d, %d]\n", (int)blueprint->source.x,
+                             (int)blueprint->source.y, (int)blueprint->source.width, (int)blueprint->source.height);
         offset = emit_append(buffer, capacity, offset, "collision_offset = [%d, %d]\n",
                              (int)blueprint->collision_offset.x, (int)blueprint->collision_offset.y);
-        offset = emit_append(buffer, capacity, offset, "collision_size = [%d, %d]\n",
-                             (int)blueprint->collision_size.x, (int)blueprint->collision_size.y);
+        offset = emit_append(buffer, capacity, offset, "collision_size = [%d, %d]\n", (int)blueprint->collision_size.x,
+                             (int)blueprint->collision_size.y);
         offset = emit_append(buffer, capacity, offset, "\n");
     }
     return offset;
@@ -63,17 +62,16 @@ static int emit_levels(char *buffer, int capacity, int offset, const Level *leve
 
             offset = emit_append(buffer, capacity, offset, "[[level.entity]]\n");
             offset = emit_append(buffer, capacity, offset, "blueprint = \"%s\"\n", entity->blueprint_name);
-            offset = emit_append(buffer, capacity, offset, "pos = [%d, %d]\n",
-                                 (int)entity->position.x, (int)entity->position.y);
+            offset = emit_append(buffer, capacity, offset, "pos = [%d, %d]\n", (int)entity->position.x,
+                                 (int)entity->position.y);
             offset = emit_append(buffer, capacity, offset, "\n");
         }
     }
     return offset;
 }
 
-int toml_emit_gamedata(char *buffer, int capacity,
-                       const BlueprintTable *blueprints,
-                       const Level *levels, int level_count)
+int toml_emit_gamedata(
+    char *buffer, int capacity, const BlueprintTable *blueprints, const Level *levels, int level_count)
 {
     int offset = 0;
 

@@ -43,8 +43,8 @@ bool game_load_gamedata(GameState *state,
     arena_reset(&state->gamedata_arena);
     blueprints_load(&state->blueprints, root, &state->gamedata_arena);
 
-    bool level_ok = level_load(&state->current_level, root, level_name,
-                               &state->blueprints, texture_lookup, texture_user_data);
+    bool level_ok =
+        level_load(&state->current_level, root, level_name, &state->blueprints, texture_lookup, texture_user_data);
 
     toml_free(root);
     state->gamedata_loaded = level_ok;

@@ -27,13 +27,12 @@ void test_blueprint_load_single(void)
     with_arena(&test_arena);
     BlueprintTable table;
 
-    toml_table_t *root = parse_toml(
-        "[[blueprint]]\n"
-        "name = \"tree\"\n"
-        "texture = \"tree.png\"\n"
-        "src = [0, 0, 64, 80]\n"
-        "collision_offset = [20, 60]\n"
-        "collision_size = [24, 16]\n");
+    toml_table_t *root = parse_toml("[[blueprint]]\n"
+                                    "name = \"tree\"\n"
+                                    "texture = \"tree.png\"\n"
+                                    "src = [0, 0, 64, 80]\n"
+                                    "collision_offset = [20, 60]\n"
+                                    "collision_size = [24, 16]\n");
     TEST_ASSERT_NOT_NULL(root);
 
     int count = blueprints_load(&table, root, &test_arena);
@@ -61,20 +60,19 @@ void test_blueprint_load_multiple(void)
     with_arena(&test_arena);
     BlueprintTable table;
 
-    toml_table_t *root = parse_toml(
-        "[[blueprint]]\n"
-        "name = \"tree\"\n"
-        "texture = \"tree.png\"\n"
-        "src = [0, 0, 64, 80]\n"
-        "collision_offset = [20, 60]\n"
-        "collision_size = [24, 16]\n"
-        "\n"
-        "[[blueprint]]\n"
-        "name = \"chest\"\n"
-        "texture = \"chest.png\"\n"
-        "src = [0, 0, 16, 16]\n"
-        "collision_offset = [0, 0]\n"
-        "collision_size = [16, 16]\n");
+    toml_table_t *root = parse_toml("[[blueprint]]\n"
+                                    "name = \"tree\"\n"
+                                    "texture = \"tree.png\"\n"
+                                    "src = [0, 0, 64, 80]\n"
+                                    "collision_offset = [20, 60]\n"
+                                    "collision_size = [24, 16]\n"
+                                    "\n"
+                                    "[[blueprint]]\n"
+                                    "name = \"chest\"\n"
+                                    "texture = \"chest.png\"\n"
+                                    "src = [0, 0, 16, 16]\n"
+                                    "collision_offset = [0, 0]\n"
+                                    "collision_size = [16, 16]\n");
     TEST_ASSERT_NOT_NULL(root);
 
     int count = blueprints_load(&table, root, &test_arena);
@@ -92,20 +90,19 @@ void test_blueprint_find(void)
     with_arena(&test_arena);
     BlueprintTable table;
 
-    toml_table_t *root = parse_toml(
-        "[[blueprint]]\n"
-        "name = \"tree\"\n"
-        "texture = \"tree.png\"\n"
-        "src = [0, 0, 64, 80]\n"
-        "collision_offset = [20, 60]\n"
-        "collision_size = [24, 16]\n"
-        "\n"
-        "[[blueprint]]\n"
-        "name = \"chest\"\n"
-        "texture = \"chest.png\"\n"
-        "src = [0, 0, 16, 16]\n"
-        "collision_offset = [0, 0]\n"
-        "collision_size = [16, 16]\n");
+    toml_table_t *root = parse_toml("[[blueprint]]\n"
+                                    "name = \"tree\"\n"
+                                    "texture = \"tree.png\"\n"
+                                    "src = [0, 0, 64, 80]\n"
+                                    "collision_offset = [20, 60]\n"
+                                    "collision_size = [24, 16]\n"
+                                    "\n"
+                                    "[[blueprint]]\n"
+                                    "name = \"chest\"\n"
+                                    "texture = \"chest.png\"\n"
+                                    "src = [0, 0, 16, 16]\n"
+                                    "collision_offset = [0, 0]\n"
+                                    "collision_size = [16, 16]\n");
     TEST_ASSERT_NOT_NULL(root);
 
     blueprints_load(&table, root, &test_arena);
@@ -128,16 +125,15 @@ void test_blueprint_skip_nameless(void)
     with_arena(&test_arena);
     BlueprintTable table;
 
-    toml_table_t *root = parse_toml(
-        "[[blueprint]]\n"
-        "texture = \"tree.png\"\n"
-        "\n"
-        "[[blueprint]]\n"
-        "name = \"chest\"\n"
-        "texture = \"chest.png\"\n"
-        "src = [0, 0, 16, 16]\n"
-        "collision_offset = [0, 0]\n"
-        "collision_size = [16, 16]\n");
+    toml_table_t *root = parse_toml("[[blueprint]]\n"
+                                    "texture = \"tree.png\"\n"
+                                    "\n"
+                                    "[[blueprint]]\n"
+                                    "name = \"chest\"\n"
+                                    "texture = \"chest.png\"\n"
+                                    "src = [0, 0, 16, 16]\n"
+                                    "collision_offset = [0, 0]\n"
+                                    "collision_size = [16, 16]\n");
     TEST_ASSERT_NOT_NULL(root);
 
     int count = blueprints_load(&table, root, &test_arena);
@@ -154,9 +150,8 @@ void test_blueprint_no_blueprints_section(void)
     with_arena(&test_arena);
     BlueprintTable table;
 
-    toml_table_t *root = parse_toml(
-        "[[level]]\n"
-        "name = \"overworld\"\n");
+    toml_table_t *root = parse_toml("[[level]]\n"
+                                    "name = \"overworld\"\n");
     TEST_ASSERT_NOT_NULL(root);
 
     int count = blueprints_load(&table, root, &test_arena);
