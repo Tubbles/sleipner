@@ -30,7 +30,7 @@ void debug_init(const char *trace_path)
     memset(log_lines, 0, sizeof(log_lines));
 
     if (trace_path) {
-        trace_file = fopen(trace_path, "we");
+        trace_file = fopen(trace_path, "ae");
         if (trace_file) {
             debug_log("trace file opened: %s", trace_path);
         } else {
