@@ -165,8 +165,8 @@ static void debug_log(const char *format, ...)
 {
     va_list args;
     va_start(args, format);
-    (void)vsnprintf(debug_log_lines[debug_log_head], DEBUG_LOG_LINE_LEN, format,
-                    args); // NOLINT(clang-analyzer-security.VAList) false positive, LLVM #40656
+    // NOLINTNEXTLINE(clang-analyzer-security.VAList) false positive, LLVM #40656
+    (void)vsnprintf(debug_log_lines[debug_log_head], DEBUG_LOG_LINE_LEN, format, args);
     va_end(args);
 
     va_start(args, format);
