@@ -44,49 +44,49 @@ behavior = "static"
 
 [[level]]
 name = "overworld"
-size = [640, 360]
+size = [480, 270]
 music = "bgm.mp3"
 
 [[level.entity]]
 blueprint = "player"
-pos = [320, 180]
+pos = [240, 135]
 
 [[level.entity]]
 blueprint = "house"
-pos = [40, 20]
+pos = [30, 15]
 
 [[level.entity]]
 blueprint = "tree"
-pos = [200, 60]
+pos = [150, 45]
 
 [[level.entity]]
 blueprint = "tree"
-pos = [350, 150]
+pos = [262, 112]
 
 [[level.entity]]
 blueprint = "tree"
-pos = [80, 200]
+pos = [60, 150]
 
 [[level.entity]]
 blueprint = "tree"
-pos = [450, 40]
+pos = [338, 30]
 
 [[level.entity]]
 blueprint = "tree"
-pos = [500, 220]
+pos = [375, 165]
 
 [[level.entity]]
 blueprint = "chest"
-pos = [300, 100]
+pos = [225, 75]
 
 [[level.entity]]
 blueprint = "chest"
-pos = [160, 280]
+pos = [120, 210]
 
 [[level.entity]]
 blueprint = "fence_v"
-pos = [260, 50]
+pos = [195, 38]
 
 [[level.entity]]
 blueprint = "fence_v"
-pos = [260, 98]
+pos = [195, 74]

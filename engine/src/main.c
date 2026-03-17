@@ -34,7 +34,7 @@
 #define TARGET_FPS 60
 #define HOT_RELOAD_POLL_FRAMES 30
 
-#define PIXEL_SCALE 3
+#define PIXEL_SCALE 4
 #define TILE_SIZE 16
 #define DEBUG_LOG_LINES 20
 #define DEBUG_LOG_LINE_LEN 128
@@ -83,6 +83,38 @@ static Texture2D *texture_registry_lookup(const char *filename, void *user_data)
     return NULL;
 }
 
+/* Font preview registry */
+#define MAX_PREVIEW_FONTS 16
+#define FONT_PREVIEW_SIZE 32
+#define FONT_NAME_LEN 64
+
+typedef struct {
+    char name[FONT_NAME_LEN];
+    Font font;
+    bool valid;
+} FontPreviewEntry;
+
+static FontPreviewEntry font_preview_entries[MAX_PREVIEW_FONTS];
+static int font_preview_count = 0;
+
+static void font_preview_add(const char *name, const char *path)
+{
+    if (font_preview_count >= MAX_PREVIEW_FONTS) {
+        return;
+    }
+    FontPreviewEntry *entry = &font_preview_entries[font_preview_count];
+    strncpy(entry->name, name, FONT_NAME_LEN - 1);
+    entry->name[FONT_NAME_LEN - 1] = '\0';
+    entry->font = LoadFontEx(path, FONT_PREVIEW_SIZE, NULL, 0);
+    entry->valid = IsFontValid(entry->font);
+    if (entry->valid) {
+        debug_log("font[%d]: '%s'", font_preview_count, name);
+    } else {
+        debug_log("font[%d]: '%s' failed: %s", font_preview_count, name, path);
+    }
+    font_preview_count++;
+}
+
 static InputState merge_input(InputState base, InputState overlay)
 {
     if (overlay.left_stick.x != 0.0F) {
@@ -107,6 +139,15 @@ static InputState merge_input(InputState base, InputState overlay)
         base.right_trigger = overlay.right_trigger;
     }
     return base;
+}
+
+static InputState read_all_input(void)
+{
+    InputState input = input_read_keyboard();
+    if (IsGamepadAvailable(0)) {
+        input = merge_input(input, input_read(0));
+    }
+    return input;
 }
 
 static void draw_player_entity(const Entity *player)
@@ -237,6 +278,35 @@ static void draw_debug_info(const Entity *player, RectU32 game_bounds, int frame
             DrawText(debug_get_line(index), DEBUG_MARGIN, log_y + DEBUG_MARGIN + (index * DEBUG_LINE_HEIGHT),
                      DEBUG_FONT_SIZE, debug_log_color);
         }
+    }
+}
+
+static void font_preview_cleanup(void)
+{
+    for (int index = 0; index < font_preview_count; index++) {
+        if (font_preview_entries[index].valid) {
+            UnloadFont(font_preview_entries[index].font);
+        }
+    }
+}
+
+static void draw_font_preview(void)
+{
+    int panel_x = screen_width / 2;
+    int line_spacing = FONT_PREVIEW_SIZE + DEBUG_MARGIN;
+    int panel_height = (font_preview_count * (DEBUG_LINE_HEIGHT + line_spacing)) + DEBUG_MARGIN;
+    DrawRectangle(panel_x, 0, screen_width - panel_x, panel_height, debug_bg_color);
+
+    int y_offset = DEBUG_MARGIN;
+    for (int index = 0; index < font_preview_count; index++) {
+        if (!font_preview_entries[index].valid) {
+            continue;
+        }
+        DrawText(font_preview_entries[index].name, panel_x + DEBUG_MARGIN, y_offset, DEBUG_FONT_SIZE, debug_text_color);
+        y_offset += DEBUG_LINE_HEIGHT;
+        DrawTextEx(font_preview_entries[index].font, "The quick brown fox 0123456789",
+                   (Vector2){(float)(panel_x + DEBUG_MARGIN), (float)y_offset}, FONT_PREVIEW_SIZE, 1, WHITE);
+        y_offset += line_spacing;
     }
 }
 
@@ -518,6 +588,16 @@ int main(void)
                   texture_registry[index].texture.id, texture_registry[index].texture.width,
                   texture_registry[index].texture.height);
     }
+    /* Load fonts for preview */
+    font_preview_add("Earth Illusion",
+                     ASSET_PREFIX "ttf/Role Playing Fonts/Role Playing Fonts/Earth Illusion/earth-illusion.ttf");
+    font_preview_add("Golden Apple",
+                     ASSET_PREFIX "ttf/Role Playing Fonts/Role Playing Fonts/Golden Apple/golden-apple.ttf");
+    font_preview_add("MenuCard", ASSET_PREFIX "ttf/RolePlayingFonts3_SysL/menu_card/MenuCard.ttf");
+    font_preview_add("Nudge Orb", ASSET_PREFIX "ttf/RolePlayingFonts3_SysL/nudge_orb/Nudge Orb.ttf");
+    font_preview_add("CardboardCrown", ASSET_PREFIX "ttf/RolePlayingFontsII-SysL/CardboardCrown/CardboardCrown.ttf");
+    font_preview_add("RoyalFibre", ASSET_PREFIX "ttf/RolePlayingFontsII-SysL/RoyalFibre/RoyalFibre.ttf");
+
     Music bgm = LoadMusicStream(ASSET_PREFIX "music/bgm.mp3");
     bgm.looping = true;
     PlayMusicStream(bgm);
@@ -534,6 +614,7 @@ int main(void)
     }
 
     int prev_gamepads = -1;
+    bool font_preview_enabled = false;
 
     debug_log("gamedata path: %s", GAMEDATA_PATH);
     debug_log("screen %dx%d  game %ux%u  scale %d", screen_width, screen_height, game_bounds.width, game_bounds.height,
@@ -558,17 +639,18 @@ int main(void)
             debug_log("debug %s (frame %d)", (int)state.debug_enabled ? "ON" : "OFF", state.frame);
         }
 
+        /* Toggle font preview: F4 */
+        if (IsKeyPressed(KEY_F4)) {
+            font_preview_enabled = (bool)!font_preview_enabled;
+        }
+
         log_gamepad_changes(&prev_gamepads, state.frame);
 
         if (any_gamepad_exit_requested()) {
             goto quit;
         }
 
-        /* Read input (gamepad 0 + keyboard merged) */
-        InputState input = input_read_keyboard();
-        if (IsGamepadAvailable(0)) {
-            input = merge_input(input, input_read(0));
-        }
+        InputState input = read_all_input();
 
         /* Update (pure logic — no rendering) */
         game_update(&state, input, delta_time);
@@ -595,6 +677,9 @@ int main(void)
         if (state.debug_enabled) {
             draw_debug_info(game_get_player_const(&state), game_bounds, state.frame, state.elapsed);
         }
+        if (font_preview_enabled) {
+            draw_font_preview();
+        }
         EndDrawing();
     }
 
@@ -606,6 +691,7 @@ quit:
     for (int index = 0; index < texture_registry_count; index++) {
         UnloadTexture(texture_registry[index].texture);
     }
+    font_preview_cleanup();
     game_free(&state);
     debug_shutdown();
     CloseAudioDevice();
