@@ -453,6 +453,7 @@ int main(void)
 
     int prev_gamepads = -1;
 
+    debug_log("gamedata path: %s", GAMEDATA_PATH);
     debug_log("screen %dx%d  game %ux%u  scale %d", screen_width, screen_height, game_bounds.width, game_bounds.height,
               PIXEL_SCALE);
     debug_log("GetScreen %dx%d  GetRender %dx%d", GetScreenWidth(), GetScreenHeight(), GetRenderWidth(),

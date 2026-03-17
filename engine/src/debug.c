@@ -6,6 +6,7 @@
 #include <time.h>
 
 #define NSEC_PER_MSEC 1000000L
+#define TM_YEAR_OFFSET 1900
 
 static char log_lines[DEBUG_LOG_LINES][DEBUG_LOG_LINE_LEN];
 static int log_head = 0;
@@ -19,8 +20,8 @@ static void write_timestamp(FILE *output)
     clock_gettime(CLOCK_REALTIME, &now);
     struct tm local;
     localtime_r(&now.tv_sec, &local);
-    (void)fprintf(output, "[%02d:%02d:%02d.%03ld] ", local.tm_hour, local.tm_min, local.tm_sec,
-                  now.tv_nsec / NSEC_PER_MSEC);
+    (void)fprintf(output, "[%04d-%02d-%02d %02d:%02d:%02d.%03ld] ", local.tm_year + TM_YEAR_OFFSET, local.tm_mon + 1,
+                  local.tm_mday, local.tm_hour, local.tm_min, local.tm_sec, now.tv_nsec / NSEC_PER_MSEC);
 }
 
 void debug_init(const char *trace_path)

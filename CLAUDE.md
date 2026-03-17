@@ -132,6 +132,46 @@ if (!game_load_gamedata(&state, params)) {
 
 **Migration:** existing functions are migrated incrementally. When touching a function that returns `bool` or a pointer, add `[[nodiscard]]` to its declaration, replace `debug_log` + `return false` with `error_set` + `return false`, and update callers to wrap with `error_wrap` instead of logging directly.
 
+## Gamedata Sync Workflow
+
+Two copies of `gamedata.toml` exist:
+- **Repo:** `data/gamedata.toml` — versioned in git, read by the desktop game at runtime.
+- **Syncthing:** `~/Sync/sleipner/gamedata.toml` — synced to Android via Syncthing, read by the Android game at runtime.
+
+**Hard links do not work.** Syncthing's atomic write (temp file + rename) breaks hard links. The two files must be kept in sync by explicit copy.
+
+### Editing gamedata — strict procedure
+
+1. **Pull from Syncthing into repo** (pick up any in-game editor changes from Android):
+   ```bash
+   cp ~/Sync/sleipner/gamedata.toml ~/Sync/sleipner/gamedata.toml.bak
+   cp ~/Sync/sleipner/gamedata.toml data/gamedata.toml
+   ```
+2. **Diff and commit if needed.** If the Syncthing copy has changes, commit them to git before making further edits.
+3. **Make changes** to `data/gamedata.toml` in the repo.
+4. **Push from repo to Syncthing:**
+   ```bash
+   cp ~/Sync/sleipner/gamedata.toml ~/Sync/sleipner/gamedata.toml.bak
+   cp data/gamedata.toml ~/Sync/sleipner/gamedata.toml
+   ```
+5. **Commit the repo copy** so git tracks the final state.
+
+Always back up the destination before overwriting. The `.bak` file is a safety net — if Syncthing delivered changes between step 1 and step 4, the backup preserves them.
+
+### Conflict resolution
+
+If `data/gamedata.toml` and `~/Sync/sleipner/gamedata.toml` have diverged (both were edited independently), **do not overwrite either file**. Instead:
+1. Diff the two files: `diff data/gamedata.toml ~/Sync/sleipner/gamedata.toml`
+2. Ask the user — the Syncthing copy likely has in-game editor changes they want to keep.
+3. Merge manually, commit, then push to Syncthing.
+
+### Runtime paths
+
+- **Desktop:** `data/gamedata.toml` (repo-relative, from working directory).
+- **Android:** `/storage/emulated/0/Sync/sleipner/gamedata.toml` (hardcoded).
+- **Trace log (Android):** `/storage/emulated/0/Sync/sleipner/trace.log` — readable from desktop via Syncthing at `~/Sync/sleipner/trace.log`.
+- **Trace log (desktop):** `trace.log` in the working directory.
+
 ## Game Design Notes
 
 - **Genre:** Top-down action RPG in the style of classic Zelda (Link to the Past / Link's Awakening).
