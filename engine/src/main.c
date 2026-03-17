@@ -9,9 +9,12 @@
 #include "rect.h"
 #include "screen.h"
 
+#include <errno.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 
 #ifdef __ANDROID__
 #define ASSET_PREFIX ""
@@ -236,16 +239,59 @@ static void draw_debug_info(const Entity *player, RectU32 game_bounds, int frame
 
 static long gamedata_mtime = 0;
 
+#define MAX_GAMEDATA_SIZE (256UL * 1024)
+
+static char *read_file_text(const char *path)
+{
+    /* Stat the file first for diagnostics */
+    struct stat file_stat;
+    if (stat(path, &file_stat) != 0) {
+        debug_log("gamedata: stat(%s) failed: %s", path, strerror(errno));
+        return NULL;
+    }
+    debug_log("gamedata: stat(%s): size=%ld mode=%o uid=%d gid=%d", path, (long)file_stat.st_size,
+              (unsigned)file_stat.st_mode, (int)file_stat.st_uid, (int)file_stat.st_gid);
+
+    FILE *file = fopen(path, "re");
+    if (!file) {
+        debug_log("gamedata: fopen(%s) failed: %s", path, strerror(errno));
+        return NULL;
+    }
+
+    char *buffer = malloc(MAX_GAMEDATA_SIZE + 1);
+    if (!buffer) {
+        debug_log("gamedata: malloc failed: %s", strerror(errno));
+        (void)fclose(file);
+        return NULL;
+    }
+
+    size_t bytes_read = fread(buffer, 1, MAX_GAMEDATA_SIZE, file);
+    if (ferror(file)) {
+        debug_log("gamedata: fread failed: %s", strerror(errno));
+        free(buffer);
+        (void)fclose(file);
+        return NULL;
+    }
+    (void)fclose(file);
+
+    if (bytes_read > MAX_GAMEDATA_SIZE) {
+        debug_log("gamedata: bytes_read %zu exceeds max %lu", bytes_read, MAX_GAMEDATA_SIZE);
+        free(buffer);
+        return NULL;
+    }
+    buffer[bytes_read] = '\0';
+    debug_log("gamedata: read %zu bytes from %s", bytes_read, path);
+    return buffer;
+}
+
 static void load_gamedata(GameState *state)
 {
-    char *content = LoadFileText(GAMEDATA_PATH);
+    char *content = read_file_text(GAMEDATA_PATH);
     if (!content) {
-        debug_log("gamedata: FAILED to open %s", GAMEDATA_PATH);
         return;
     }
 
     int content_length = (int)strlen(content);
-    debug_log("gamedata: loaded %s (%d bytes)", GAMEDATA_PATH, content_length);
 
     /* Log first 16 bytes as hex for BOM/encoding diagnosis */
     char hexbuf[(16 * 3) + 1] = {0};
@@ -258,7 +304,7 @@ static void load_gamedata(GameState *state)
 
     bool loaded =
         game_load_gamedata(state, (GamedataParams){.toml_string = content, .texture_lookup = texture_registry_lookup});
-    UnloadFileText(content);
+    free(content);
 
     if (loaded) {
         debug_log("gamedata: %d blueprints", state->blueprints.count);
