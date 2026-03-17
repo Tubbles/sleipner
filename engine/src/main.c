@@ -1,5 +1,6 @@
 #include "raylib.h"
 
+#include "entity.h"
 #include "game.h"
 #include "input.h"
 #include "rect.h"
@@ -7,10 +8,10 @@
 
 #include "assets.h"
 
-#include "toml.h"
 #include "zlog.h"
 
 #include <stdarg.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

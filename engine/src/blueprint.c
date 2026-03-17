@@ -1,4 +1,6 @@
 #include "blueprint.h"
+#include "arena.h"
+#include "attribute.h"
 
 #include "toml.h"
 

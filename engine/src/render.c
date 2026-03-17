@@ -1,7 +1,9 @@
 #include "render.h"
-#include "raylib.h"
 #include "particle.h"
+#include "rect.h"
 #include "shape.h"
+
+#include "raylib.h"
 #include <math.h>
 
 #define ARENA_INSET 20

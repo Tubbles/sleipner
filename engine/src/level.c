@@ -1,5 +1,9 @@
 #include "level.h"
+#include "attribute.h"
+#include "blueprint.h"
+#include "entity.h"
 
+#include "raylib.h"
 #include "toml.h"
 
 #include <stdlib.h>

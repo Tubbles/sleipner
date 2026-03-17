@@ -1,4 +1,10 @@
 #include "game.h"
+#include "arena.h"
+#include "blueprint.h"
+#include "entity.h"
+#include "input.h"
+#include "level.h"
+#include "rect.h"
 
 #include "raylib.h"
 #include "toml.h"

@@ -1,5 +1,9 @@
 #include "toml_emitter.h"
+#include "blueprint.h"
+#include "entity.h"
+#include "level.h"
 
+#include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
 

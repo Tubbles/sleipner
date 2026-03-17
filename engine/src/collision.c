@@ -1,4 +1,6 @@
 #include "collision.h"
+#include "rect.h"
+
 #include "raylib.h"
 
 #include <float.h>

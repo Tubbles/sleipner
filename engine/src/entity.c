@@ -1,4 +1,8 @@
 #include "entity.h"
+#include "attribute.h"
+#include "blueprint.h"
+
+#include "raylib.h"
 
 #include <string.h>
 
