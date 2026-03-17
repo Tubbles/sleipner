@@ -617,7 +617,7 @@ Game data is split into two concerns with separate storage:
 
 ### Asset Database (`assets/`)
 
-Binary resources: sprites, music, sound effects. These rarely change, are large, and don't diff well. Checked into git as-is. Embedded via `#embed` on desktop, bundled in APK assets on Android.
+Binary resources: sprites, music, sound effects. These rarely change, are large, and don't diff well. Checked into git as-is. Loaded at runtime from the filesystem via raylib.
 
 ```
 assets/
@@ -856,7 +856,7 @@ pos = [320, 180]
 - **Sync mechanism:** Two separate copies — `data/gamedata.toml` in the repo (versioned, read by desktop game) and `~/Sync/sleipner/gamedata.toml` (Syncthing-managed, read by Android game). Kept in sync by explicit copy with backup (see CLAUDE.md "Gamedata Sync Workflow"). Hard links do not work because Syncthing's atomic write (temp + rename) breaks them.
 - **Safe save:** Write to temp file, rename onto the original. Atomic on same filesystem. Prevents corrupt partial writes from Syncthing races.
 - **Android data path:** `/storage/emulated/0/Sync/sleipner/gamedata.toml` (hardcoded). Desktop: `data/gamedata.toml` (repo-relative).
-- **Release distribution:** Embed `gamedata.toml` via `#embed` (desktop) / APK assets (Android). Dev builds load from filesystem path instead.
+- **Release distribution:** Load `gamedata.toml` from filesystem at runtime on both platforms.
 - **Engine grows organically.** Don't build engine features speculatively — add them when the game needs them.
 - **Undo system:** Snapshot-based. Before each editor operation, snapshot the entire in-memory gamedata and push onto a history stack. Undo = pop and restore. Simple, every operation is automatically undoable, no need to define inverse operations. Gamedata is small enough that even 100+ snapshots are negligible memory. If gamedata ever grows to megabytes, migrate to command pattern — undo is internal to the editor so refactoring is cheap.
 - **Memory allocation:** Arena allocator for all gamedata. All data loaded from TOML lives in one arena — reload or undo = reset the arena. Behavior params per blueprint are variable-length (pointer + count into the arena), no fixed cap. Undo snapshots are just `memcpy` of the arena.
@@ -934,8 +934,7 @@ pos = [320, 180]
 - Music and SFX volume as separate settings?
 
 ### Asset Pipeline
-- `#embed` compiles all assets into the binary — does this scale to hundreds of sprites?
-- Compile time impact as asset count grows?
+- Assets are loaded from the filesystem at runtime — does this require a bundling strategy for distribution?
 - Atlas packing — manual or automated as part of the build?
 - Should large assets (music, tilesets) use a different strategy than small ones (icons, UI)?
 

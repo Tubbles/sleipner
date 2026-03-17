@@ -31,7 +31,7 @@ conan build .
 
 ## Dependencies
 
-- C23 compiler (clang-22 in container, for `#embed` support)
+- C23 compiler (clang-22 in container)
 - Conan 2 (package manager — drives CMake)
 - CMake (generated/invoked by Conan)
 - raylib (graphics, input, audio)
@@ -144,19 +144,17 @@ Two copies of `gamedata.toml` exist:
 
 1. **Pull from Syncthing into repo** (pick up any in-game editor changes from Android):
    ```bash
-   cp ~/Sync/sleipner/gamedata.toml ~/Sync/sleipner/gamedata.toml.bak
    cp ~/Sync/sleipner/gamedata.toml data/gamedata.toml
    ```
 2. **Diff and commit if needed.** If the Syncthing copy has changes, commit them to git before making further edits.
 3. **Make changes** to `data/gamedata.toml` in the repo.
 4. **Push from repo to Syncthing:**
    ```bash
-   cp ~/Sync/sleipner/gamedata.toml ~/Sync/sleipner/gamedata.toml.bak
    cp data/gamedata.toml ~/Sync/sleipner/gamedata.toml
    ```
 5. **Commit the repo copy** so git tracks the final state.
 
-Always back up the destination before overwriting. The `.bak` file is a safety net — if Syncthing delivered changes between step 1 and step 4, the backup preserves them.
+The game engine creates `.bak` files automatically via `backup_file()` when saving gamedata on Android. Do not manually create `.bak` files.
 
 ### Conflict resolution
 
@@ -177,7 +175,7 @@ If `data/gamedata.toml` and `~/Sync/sleipner/gamedata.toml` have diverged (both 
 - **Genre:** Top-down action RPG in the style of classic Zelda (Link to the Past / Link's Awakening).
 - **Input:** Controller-first. Gamepad is the primary input method; keyboard fallback for development.
 - **Mobile target:** The game runs on Android via Game Native (FEX + Proton). This means we build a normal Linux x86_64 binary — no Android-specific code. Keep performance reasonable for emulated execution (avoid heavy compute, prefer simple draw calls).
-- **Assets:** Embedded in the binary via C23 `#embed` for portability — single-binary distribution with no external asset files.
+- **Assets:** Loaded at runtime from the filesystem via raylib (`LoadTexture`, `LoadMusicStream`, etc.). Asset paths are platform-relative (`assets/` on desktop, working directory on Android).
 - **Architecture:** All C code lives in `engine/`. There is no separate "game code" — the game is defined entirely by `data/gamedata.toml` and `assets/`. The engine interprets the game data at runtime.
 
 ## Development Discipline
