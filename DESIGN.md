@@ -774,8 +774,8 @@ pos = [320, 180]
 
 ### Phase 3 — Entity System
 - [x] Attribute system (built-in + custom, typed key-value pairs)
-- [ ] Blueprint/instance scoping (instance overrides, blueprint fallback)
-- [ ] Blueprint inheritance (extends)
+- [x] Blueprint/instance scoping (instance overrides, blueprint fallback)
+- [x] Blueprint inheritance (extends)
 - [ ] Entity storage (flat array in arena)
 - [ ] Convert Player and Obstacle to entity instances with attributes
 - [ ] Entity composition (children with relative positioning)

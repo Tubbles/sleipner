@@ -32,6 +32,10 @@ void test_blueprint_load_multiple(void);
 void test_blueprint_find(void);
 void test_blueprint_skip_nameless(void);
 void test_blueprint_no_blueprints_section(void);
+void test_blueprint_custom_attrs(void);
+void test_blueprint_health_parsed(void);
+void test_blueprint_extends(void);
+void test_blueprint_extends_chain(void);
 
 /* test_game.c */
 void test_game_init_defaults(void);
@@ -125,6 +129,10 @@ int main(void)
     RUN_TEST(test_blueprint_find);
     RUN_TEST(test_blueprint_skip_nameless);
     RUN_TEST(test_blueprint_no_blueprints_section);
+    RUN_TEST(test_blueprint_custom_attrs);
+    RUN_TEST(test_blueprint_health_parsed);
+    RUN_TEST(test_blueprint_extends);
+    RUN_TEST(test_blueprint_extends_chain);
 
     RUN_TEST(test_game_init_defaults);
     RUN_TEST(test_game_update_increments_frame);

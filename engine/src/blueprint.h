@@ -2,6 +2,7 @@
 #define BLUEPRINT_H
 
 #include "arena.h"
+#include "attribute.h"
 
 #include "raylib.h"
 
@@ -13,10 +14,12 @@
 
 typedef struct {
     char name[MAX_BLUEPRINT_NAME];
+    char extends_name[MAX_BLUEPRINT_NAME];
     char texture_name[MAX_TEXTURE_NAME];
     Rectangle source;
     Vector2 collision_offset;
     Vector2 collision_size;
+    AttrSet attrs;
 } Blueprint;
 
 typedef struct {
