@@ -150,6 +150,19 @@ static InputState read_all_input(void)
     return input;
 }
 
+typedef struct {
+    int key;
+    int gamepad_button;
+} ToggleBinding;
+
+static bool toggle_pressed(ToggleBinding binding)
+{
+    if (IsKeyPressed(binding.key)) {
+        return true;
+    }
+    return IsGamepadButtonPressed(0, binding.gamepad_button);
+}
+
 static void draw_player_entity(const Entity *player)
 {
     float source_width = (float)FRAME_SIZE;
@@ -634,13 +647,13 @@ int main(void)
         }
 
         /* Toggle debug overlay: F3 or gamepad Select */
-        if (IsKeyPressed(KEY_F3) || IsGamepadButtonPressed(0, GAMEPAD_BUTTON_MIDDLE_LEFT)) {
+        if (toggle_pressed((ToggleBinding){KEY_F3, GAMEPAD_BUTTON_MIDDLE_LEFT})) {
             state.debug_enabled = (bool)!state.debug_enabled;
             debug_log("debug %s (frame %d)", (int)state.debug_enabled ? "ON" : "OFF", state.frame);
         }
 
         /* Toggle font preview: F4 or gamepad Right Thumb */
-        if (IsKeyPressed(KEY_F4) || IsGamepadButtonPressed(0, GAMEPAD_BUTTON_RIGHT_THUMB)) {
+        if (toggle_pressed((ToggleBinding){KEY_F4, GAMEPAD_BUTTON_RIGHT_THUMB})) {
             font_preview_enabled = (bool)!font_preview_enabled;
         }
 
