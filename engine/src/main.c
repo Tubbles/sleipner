@@ -639,8 +639,8 @@ int main(void)
             debug_log("debug %s (frame %d)", (int)state.debug_enabled ? "ON" : "OFF", state.frame);
         }
 
-        /* Toggle font preview: F4 */
-        if (IsKeyPressed(KEY_F4)) {
+        /* Toggle font preview: F4 or gamepad Right Thumb */
+        if (IsKeyPressed(KEY_F4) || IsGamepadButtonPressed(0, GAMEPAD_BUTTON_RIGHT_THUMB)) {
             font_preview_enabled = (bool)!font_preview_enabled;
         }
 
