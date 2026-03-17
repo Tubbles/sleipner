@@ -6,6 +6,18 @@ void tearDown(void) {}
 /* test_stub.c */
 void test_stub_passes(void);
 
+/* test_attribute.c */
+void test_attr_set_and_get_float(void);
+void test_attr_set_and_get_int(void);
+void test_attr_set_and_get_bool(void);
+void test_attr_set_and_get_string(void);
+void test_attr_overwrite_existing(void);
+void test_attr_get_missing_returns_fallback(void);
+void test_attr_full_set_returns_false(void);
+void test_attr_type_change(void);
+void test_attr_scoped_instance_overrides_blueprint(void);
+void test_attr_multiple_types(void);
+
 /* test_arena.c */
 void test_arena_init_and_free(void);
 void test_arena_alloc_basic(void);
@@ -89,6 +101,17 @@ int main(void)
     UNITY_BEGIN();
 
     RUN_TEST(test_stub_passes);
+
+    RUN_TEST(test_attr_set_and_get_float);
+    RUN_TEST(test_attr_set_and_get_int);
+    RUN_TEST(test_attr_set_and_get_bool);
+    RUN_TEST(test_attr_set_and_get_string);
+    RUN_TEST(test_attr_overwrite_existing);
+    RUN_TEST(test_attr_get_missing_returns_fallback);
+    RUN_TEST(test_attr_full_set_returns_false);
+    RUN_TEST(test_attr_type_change);
+    RUN_TEST(test_attr_scoped_instance_overrides_blueprint);
+    RUN_TEST(test_attr_multiple_types);
 
     RUN_TEST(test_arena_init_and_free);
     RUN_TEST(test_arena_alloc_basic);

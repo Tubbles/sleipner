@@ -773,7 +773,7 @@ pos = [320, 180]
 - [x] TOML emitter for editor save
 
 ### Phase 3 — Entity System
-- [ ] Attribute system (built-in + custom, typed key-value pairs)
+- [x] Attribute system (built-in + custom, typed key-value pairs)
 - [ ] Blueprint/instance scoping (instance overrides, blueprint fallback)
 - [ ] Blueprint inheritance (extends)
 - [ ] Entity storage (flat array in arena)

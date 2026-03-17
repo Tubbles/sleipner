@@ -24,6 +24,7 @@ add_library(sleipner SHARED
     ${PROJECT_ROOT}/engine/vendor/zlog/zlog_android.c
     ${PROJECT_ROOT}/engine/vendor/tomlc99/toml.c
     ${PROJECT_ROOT}/engine/src/arena.c
+    ${PROJECT_ROOT}/engine/src/attribute.c
     ${PROJECT_ROOT}/engine/src/audio.c
     ${PROJECT_ROOT}/engine/src/blueprint.c
     ${PROJECT_ROOT}/engine/src/collision.c
