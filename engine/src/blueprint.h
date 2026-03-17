@@ -11,6 +11,14 @@
 #define MAX_BLUEPRINTS 256
 #define MAX_BLUEPRINT_NAME 64
 #define MAX_TEXTURE_NAME 64
+#define MAX_BLUEPRINT_CHILDREN 8
+#define MAX_TAG 32
+
+typedef struct {
+    char blueprint_name[MAX_BLUEPRINT_NAME];
+    char tag[MAX_TAG];
+    Vector2 offset;
+} BlueprintChild;
 
 typedef struct {
     char name[MAX_BLUEPRINT_NAME];
@@ -20,6 +28,8 @@ typedef struct {
     Vector2 collision_offset;
     Vector2 collision_size;
     AttrSet attrs;
+    BlueprintChild children[MAX_BLUEPRINT_CHILDREN];
+    int child_count;
 } Blueprint;
 
 typedef struct {

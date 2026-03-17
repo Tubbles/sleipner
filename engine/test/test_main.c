@@ -36,6 +36,10 @@ void test_blueprint_custom_attrs(void);
 void test_blueprint_health_parsed(void);
 void test_blueprint_extends(void);
 void test_blueprint_extends_chain(void);
+void test_blueprint_child_parsed(void);
+void test_blueprint_multiple_children(void);
+void test_blueprint_child_no_tag(void);
+void test_blueprint_child_default_offset(void);
 
 /* test_error.c */
 void test_error_initially_null(void);
@@ -152,6 +156,10 @@ int main(void)
     RUN_TEST(test_blueprint_health_parsed);
     RUN_TEST(test_blueprint_extends);
     RUN_TEST(test_blueprint_extends_chain);
+    RUN_TEST(test_blueprint_child_parsed);
+    RUN_TEST(test_blueprint_multiple_children);
+    RUN_TEST(test_blueprint_child_no_tag);
+    RUN_TEST(test_blueprint_child_default_offset);
 
     RUN_TEST(test_error_initially_null);
     RUN_TEST(test_error_set_and_get);

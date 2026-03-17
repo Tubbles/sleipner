@@ -262,6 +262,159 @@ void test_blueprint_extends(void)
     arena_free(&test_arena);
 }
 
+void test_blueprint_child_parsed(void)
+{
+    Arena test_arena;
+    with_arena(&test_arena);
+    BlueprintTable table;
+
+    toml_table_t *root = parse_toml("[[blueprint]]\n"
+                                    "name = \"lantern\"\n"
+                                    "texture = \"lantern.png\"\n"
+                                    "src = [0, 0, 8, 8]\n"
+                                    "\n"
+                                    "[[blueprint]]\n"
+                                    "name = \"wagon\"\n"
+                                    "texture = \"wagon.png\"\n"
+                                    "src = [0, 0, 64, 32]\n"
+                                    "\n"
+                                    "[[blueprint.child]]\n"
+                                    "blueprint = \"lantern\"\n"
+                                    "tag = \"front_light\"\n"
+                                    "offset = [56, -8]\n");
+    TEST_ASSERT_NOT_NULL(root);
+
+    blueprints_load(&table, root, &test_arena);
+    const Blueprint *wagon = blueprint_find(&table, "wagon");
+    TEST_ASSERT_NOT_NULL(wagon);
+
+    TEST_ASSERT_EQUAL_INT(1, wagon->child_count);
+    TEST_ASSERT_EQUAL_STRING("lantern", wagon->children[0].blueprint_name);
+    TEST_ASSERT_EQUAL_STRING("front_light", wagon->children[0].tag);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 56.0F, wagon->children[0].offset.x);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, -8.0F, wagon->children[0].offset.y);
+
+    toml_free(root);
+    arena_free(&test_arena);
+}
+
+void test_blueprint_multiple_children(void)
+{
+    Arena test_arena;
+    with_arena(&test_arena);
+    BlueprintTable table;
+
+    toml_table_t *root = parse_toml("[[blueprint]]\n"
+                                    "name = \"wheel\"\n"
+                                    "texture = \"wheel.png\"\n"
+                                    "src = [0, 0, 16, 16]\n"
+                                    "\n"
+                                    "[[blueprint]]\n"
+                                    "name = \"lantern\"\n"
+                                    "texture = \"lantern.png\"\n"
+                                    "src = [0, 0, 8, 8]\n"
+                                    "\n"
+                                    "[[blueprint]]\n"
+                                    "name = \"wagon\"\n"
+                                    "texture = \"wagon.png\"\n"
+                                    "src = [0, 0, 64, 32]\n"
+                                    "\n"
+                                    "[[blueprint.child]]\n"
+                                    "blueprint = \"lantern\"\n"
+                                    "tag = \"light\"\n"
+                                    "offset = [56, -8]\n"
+                                    "\n"
+                                    "[[blueprint.child]]\n"
+                                    "blueprint = \"wheel\"\n"
+                                    "tag = \"front_wheel\"\n"
+                                    "offset = [8, 28]\n"
+                                    "\n"
+                                    "[[blueprint.child]]\n"
+                                    "blueprint = \"wheel\"\n"
+                                    "tag = \"rear_wheel\"\n"
+                                    "offset = [48, 28]\n");
+    TEST_ASSERT_NOT_NULL(root);
+
+    blueprints_load(&table, root, &test_arena);
+    const Blueprint *wagon = blueprint_find(&table, "wagon");
+    TEST_ASSERT_NOT_NULL(wagon);
+
+    TEST_ASSERT_EQUAL_INT(3, wagon->child_count);
+    TEST_ASSERT_EQUAL_STRING("lantern", wagon->children[0].blueprint_name);
+    TEST_ASSERT_EQUAL_STRING("wheel", wagon->children[1].blueprint_name);
+    TEST_ASSERT_EQUAL_STRING("front_wheel", wagon->children[1].tag);
+    TEST_ASSERT_EQUAL_STRING("wheel", wagon->children[2].blueprint_name);
+    TEST_ASSERT_EQUAL_STRING("rear_wheel", wagon->children[2].tag);
+
+    toml_free(root);
+    arena_free(&test_arena);
+}
+
+void test_blueprint_child_no_tag(void)
+{
+    Arena test_arena;
+    with_arena(&test_arena);
+    BlueprintTable table;
+
+    toml_table_t *root = parse_toml("[[blueprint]]\n"
+                                    "name = \"part\"\n"
+                                    "texture = \"part.png\"\n"
+                                    "src = [0, 0, 8, 8]\n"
+                                    "\n"
+                                    "[[blueprint]]\n"
+                                    "name = \"parent\"\n"
+                                    "texture = \"parent.png\"\n"
+                                    "src = [0, 0, 32, 32]\n"
+                                    "\n"
+                                    "[[blueprint.child]]\n"
+                                    "blueprint = \"part\"\n"
+                                    "offset = [10, 20]\n");
+    TEST_ASSERT_NOT_NULL(root);
+
+    blueprints_load(&table, root, &test_arena);
+    const Blueprint *parent = blueprint_find(&table, "parent");
+    TEST_ASSERT_NOT_NULL(parent);
+
+    TEST_ASSERT_EQUAL_INT(1, parent->child_count);
+    TEST_ASSERT_EQUAL_STRING("", parent->children[0].tag);
+
+    toml_free(root);
+    arena_free(&test_arena);
+}
+
+void test_blueprint_child_default_offset(void)
+{
+    Arena test_arena;
+    with_arena(&test_arena);
+    BlueprintTable table;
+
+    toml_table_t *root = parse_toml("[[blueprint]]\n"
+                                    "name = \"part\"\n"
+                                    "texture = \"part.png\"\n"
+                                    "src = [0, 0, 8, 8]\n"
+                                    "\n"
+                                    "[[blueprint]]\n"
+                                    "name = \"parent\"\n"
+                                    "texture = \"parent.png\"\n"
+                                    "src = [0, 0, 32, 32]\n"
+                                    "\n"
+                                    "[[blueprint.child]]\n"
+                                    "blueprint = \"part\"\n"
+                                    "tag = \"center\"\n");
+    TEST_ASSERT_NOT_NULL(root);
+
+    blueprints_load(&table, root, &test_arena);
+    const Blueprint *parent = blueprint_find(&table, "parent");
+    TEST_ASSERT_NOT_NULL(parent);
+
+    TEST_ASSERT_EQUAL_INT(1, parent->child_count);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 0.0F, parent->children[0].offset.x);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 0.0F, parent->children[0].offset.y);
+
+    toml_free(root);
+    arena_free(&test_arena);
+}
+
 void test_blueprint_extends_chain(void)
 {
     Arena test_arena;

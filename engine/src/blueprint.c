@@ -2,6 +2,7 @@
 #include "arena.h"
 #include "attribute.h"
 #include "debug.h"
+#include "error.h"
 
 #include "toml.h"
 
@@ -206,6 +207,61 @@ static bool parse_custom_attrs(Blueprint *blueprint, toml_table_t *entry)
     return true;
 }
 
+static bool parse_single_child(BlueprintChild *child, toml_table_t *entry)
+{
+    memset(child, 0, sizeof(*child));
+
+    toml_datum_t blueprint_name = toml_string_in(entry, "blueprint");
+    if (!blueprint_name.ok) {
+        error_set("child missing required 'blueprint' key");
+        return false;
+    }
+    strncpy(child->blueprint_name, blueprint_name.u.s, MAX_BLUEPRINT_NAME - 1);
+    free(blueprint_name.u.s);
+
+    toml_datum_t tag = toml_string_in(entry, "tag");
+    if (tag.ok) {
+        strncpy(child->tag, tag.u.s, MAX_TAG - 1);
+        free(tag.u.s);
+    }
+
+    toml_array_t *offset = toml_array_in(entry, "offset");
+    float offset_values[2] = {0};
+    if (parse_float_array(offset, offset_values, 2)) {
+        child->offset = (Vector2){offset_values[0], offset_values[1]};
+    }
+
+    return true;
+}
+
+static bool parse_children(Blueprint *blueprint, toml_table_t *entry)
+{
+    toml_array_t *children = toml_array_in(entry, "child");
+    if (!children) {
+        return true;
+    }
+
+    int count = toml_array_nelem(children);
+    if (count > MAX_BLUEPRINT_CHILDREN) {
+        error_set("blueprint '%s' has %d children (max %d)", blueprint->name, count, MAX_BLUEPRINT_CHILDREN);
+        return false;
+    }
+
+    for (int index = 0; index < count; index++) {
+        toml_table_t *child_entry = toml_table_at(children, index);
+        if (!child_entry) {
+            continue;
+        }
+        if (!parse_single_child(&blueprint->children[blueprint->child_count], child_entry)) {
+            error_wrap("blueprint '%s' child[%d]", blueprint->name, index);
+            return false;
+        }
+        blueprint->child_count++;
+    }
+
+    return true;
+}
+
 static bool parse_single_blueprint(Blueprint *blueprint, toml_table_t *entry)
 {
     memset(blueprint, 0, sizeof(*blueprint));
@@ -222,7 +278,10 @@ static bool parse_single_blueprint(Blueprint *blueprint, toml_table_t *entry)
     if (!parse_health(blueprint, entry)) {
         return false;
     }
-    return parse_custom_attrs(blueprint, entry);
+    if (!parse_custom_attrs(blueprint, entry)) {
+        return false;
+    }
+    return parse_children(blueprint, entry);
 }
 
 int blueprints_load(BlueprintTable *table, void *toml_root, Arena *arena)

@@ -9,7 +9,6 @@
 #include <stdbool.h>
 
 #define MAX_ENTITIES 512
-#define MAX_TAG 32
 
 typedef struct {
     /* Identity */

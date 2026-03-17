@@ -778,7 +778,6 @@ pos = [320, 180]
 - [x] Blueprint inheritance (extends)
 - [x] Entity storage (flat array in arena)
 - [x] Convert Player and Obstacle to entity instances with attributes
-- [ ] Proper PRNG (xoshiro256 or similar, replacing `rand()` in particle system)
 - [ ] Entity composition (children with relative positioning)
 - [ ] Tag system (named references within composition trees)
 
@@ -838,6 +837,7 @@ pos = [320, 180]
 - [ ] Dev mode flag to load from filesystem instead of embedded
 
 ### Phase 8 — Gameplay Systems
+- [ ] Proper PRNG (xoshiro256 or similar, replacing `rand()` in particle system)
 - [ ] Camera system (follow, bounds, transitions)
 - [ ] Combat (hitboxes, damage, knockback, i-frames)
 - [ ] Inventory & items
