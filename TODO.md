@@ -10,3 +10,5 @@
   truly are not applicable (c++, verilog), otherwise go through them one by one and decide on a case by case. the
   .clang-tidy file shall not be edited without confirming first, it carries the difference between modern, safe C and
   a buggy memory-unsafe mess
+* increase sprite size slightly, its at 3 now, and everything feels slightly too small on my android screen
+* i added new fonts in the asset folder, i want to preview them all in debug overlay

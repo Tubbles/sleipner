@@ -8,6 +8,7 @@
 #include "level.h"
 #include "rect.h"
 #include "screen.h"
+#include "toml_emitter.h"
 
 #include "error.h"
 
@@ -242,6 +243,87 @@ static void draw_debug_info(const Entity *player, RectU32 game_bounds, int frame
 static long gamedata_mtime = 0;
 
 #define MAX_GAMEDATA_SIZE (256UL * 1024)
+#define MAX_PATH_LEN 512
+#define COPY_BUFFER_SIZE 4096
+
+static bool backup_file(const char *path)
+{
+    char backup_path[MAX_PATH_LEN];
+    (void)snprintf(backup_path, MAX_PATH_LEN, "%s.bak", path);
+
+    FILE *source = fopen(path, "re");
+    if (!source) {
+        error_set("backup fopen(%s): %s", path, strerror(errno));
+        return false;
+    }
+
+    FILE *dest = fopen(backup_path, "we");
+    if (!dest) {
+        error_set("backup fopen(%s): %s", backup_path, strerror(errno));
+        (void)fclose(source);
+        return false;
+    }
+
+    char buffer[COPY_BUFFER_SIZE];
+    for (;;) {
+        size_t bytes = fread(buffer, 1, sizeof(buffer), source);
+        if (bytes > 0 && fwrite(buffer, 1, bytes, dest) != bytes) {
+            error_set("backup fwrite(%s): %s", backup_path, strerror(errno));
+            (void)fclose(source);
+            (void)fclose(dest);
+            return false;
+        }
+        if (bytes < sizeof(buffer)) {
+            break;
+        }
+    }
+
+    bool read_ok = (ferror(source) == 0);
+    (void)fclose(source);
+    (void)fclose(dest);
+
+    if (!read_ok) {
+        error_set("backup fread(%s): %s", path, strerror(errno));
+        return false;
+    }
+
+    debug_log("backup: %s -> %s", path, backup_path);
+    return true;
+}
+
+static bool save_gamedata(const GameState *state)
+{
+    if (!backup_file(GAMEDATA_PATH)) {
+        error_wrap("save_gamedata");
+        return false;
+    }
+
+    char buffer[MAX_GAMEDATA_SIZE];
+    int written = toml_emit_gamedata(buffer, (int)sizeof(buffer), &state->blueprints, &state->current_level, 1);
+    if (written < 0) {
+        error_wrap("save_gamedata");
+        return false;
+    }
+
+    FILE *file = fopen(GAMEDATA_PATH, "we");
+    if (!file) {
+        error_set("fopen(%s): %s", GAMEDATA_PATH, strerror(errno));
+        error_wrap("save_gamedata");
+        return false;
+    }
+
+    size_t to_write = (size_t)written;
+    if (fwrite(buffer, 1, to_write, file) != to_write) {
+        error_set("fwrite(%s): %s", GAMEDATA_PATH, strerror(errno));
+        (void)fclose(file);
+        error_wrap("save_gamedata");
+        return false;
+    }
+    (void)fclose(file);
+
+    debug_log("saved gamedata: %d bytes to %s", written, GAMEDATA_PATH);
+    return true;
+}
 
 static char *read_file_text(const char *path)
 {
