@@ -1,7 +1,6 @@
 #include "input.h"
+#include "debug.h"
 #include "raylib.h"
-
-#include "zlog.h"
 
 #include <math.h>
 
@@ -21,12 +20,12 @@ void input_load_mappings(const char *path)
 {
     char *mappings = LoadFileText(path);
     if (!mappings) {
-        dzlog_warn("could not load gamepad mappings from %s", path);
+        debug_log("WARNING: could not load gamepad mappings from %s", path);
         return;
     }
 
     int result = SetGamepadMappings(mappings);
-    dzlog_info("loaded gamepad mappings from %s (result=%d)", path, result);
+    debug_log("loaded gamepad mappings from %s (result=%d)", path, result);
 
     UnloadFileText(mappings);
 }

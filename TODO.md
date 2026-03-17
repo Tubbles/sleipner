@@ -6,8 +6,6 @@
 * generally see if there are other areas where we are inventing our own thing, where raylib actually already has a
   solution available. Lets utilize raylib
 * create .clangd for editor lsp support
-* simplify logging, can zlog help with this? we don't need two different logging function (dzlog_warn, debug_log),
-  there is a zlog conf
 * enable all clang-tidy checks, and make them all warningaserrors, and then selectively disabling them only if they
   truly are not applicable (c++, verilog), otherwise go through them one by one and decide on a case by case. the
   .clang-tidy file shall not be edited without confirming first, it carries the difference between modern, safe C and

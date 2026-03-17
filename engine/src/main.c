@@ -1,5 +1,7 @@
 #include "raylib.h"
 
+#include "blueprint.h"
+#include "debug.h"
 #include "entity.h"
 #include "game.h"
 #include "input.h"
@@ -7,20 +9,18 @@
 #include "rect.h"
 #include "screen.h"
 
-#include "zlog.h"
-
-#include <stdarg.h>
 #include <stdint.h>
-#include <stdio.h>
 #include <string.h>
 
 #ifdef __ANDROID__
 #define ASSET_PREFIX ""
 #define SYNCTHING_PATH "/storage/emulated/0/Sync"
 #define GAMEDATA_PATH SYNCTHING_PATH "/sleipner/gamedata.toml"
+#define TRACE_LOG_PATH SYNCTHING_PATH "/sleipner/trace.log"
 #else
 #define ASSET_PREFIX "assets/"
 #define GAMEDATA_PATH "data/gamedata.toml"
+#define TRACE_LOG_PATH "trace.log"
 #endif
 
 #define HEARTBEAT_INTERVAL 300
@@ -31,11 +31,11 @@
 #define TILE_SIZE 16
 #define DEBUG_LOG_LINES 20
 #define DEBUG_LOG_LINE_LEN 128
-#define DEBUG_FONT_SIZE 16
-#define DEBUG_LINE_HEIGHT 18
-#define DEBUG_MARGIN 6
-#define DEBUG_BG_ALPHA 160
-#define DEBUG_PANEL_WIDTH 360
+#define DEBUG_FONT_SIZE 20
+#define DEBUG_LINE_HEIGHT 22
+#define DEBUG_MARGIN 8
+#define DEBUG_BG_ALPHA 180
+#define DEBUG_PANEL_WIDTH 420
 #define DEBUG_LINES 10
 
 int screen_width = SCREEN_WIDTH_DEFAULT;
@@ -75,8 +75,6 @@ static Texture2D *texture_registry_lookup(const char *filename, void *user_data)
     }
     return NULL;
 }
-
-static void debug_log(const char *format, ...) __attribute__((format(printf, 1, 2)));
 
 static InputState merge_input(InputState base, InputState overlay)
 {
@@ -155,30 +153,6 @@ static void draw_grass(Texture2D texture, RectU32 bounds)
     }
 }
 
-/* --- Debug overlay --- */
-
-static char debug_log_lines[DEBUG_LOG_LINES][DEBUG_LOG_LINE_LEN];
-static int debug_log_head = 0;
-static int debug_log_count = 0;
-
-static void debug_log(const char *format, ...)
-{
-    va_list args;
-    va_start(args, format);
-    // NOLINTNEXTLINE(clang-analyzer-security.VAList) false positive, LLVM #40656
-    (void)vsnprintf(debug_log_lines[debug_log_head], DEBUG_LOG_LINE_LEN, format, args);
-    va_end(args);
-
-    va_start(args, format);
-    vdzlog_info(format, args);
-    va_end(args);
-
-    debug_log_head = (debug_log_head + 1) % DEBUG_LOG_LINES;
-    if (debug_log_count < DEBUG_LOG_LINES) {
-        debug_log_count++;
-    }
-}
-
 static void draw_debug_collision_boxes(const Level *level, int player_index)
 {
     /* Player collision box (green) */
@@ -201,6 +175,10 @@ static void draw_debug_collision_boxes(const Level *level, int player_index)
     }
 }
 
+static const Color debug_text_color = {200, 220, 240, 255};
+static const Color debug_log_color = {180, 210, 180, 255};
+static const Color debug_bg_color = {20, 25, 35, DEBUG_BG_ALPHA};
+
 static void draw_debug_info(const Entity *player, RectU32 game_bounds, int frame, float elapsed)
 {
     int line = 0;
@@ -212,45 +190,45 @@ static void draw_debug_info(const Entity *player, RectU32 game_bounds, int frame
     /* Semi-transparent background for info panel */
     int panel_width = DEBUG_PANEL_WIDTH;
     int panel_height = (DEBUG_LINES * DEBUG_LINE_HEIGHT) + (DEBUG_MARGIN * 2);
-    DrawRectangle(0, 0, panel_width, panel_height, (Color){0, 0, 0, DEBUG_BG_ALPHA});
+    DrawRectangle(0, 0, panel_width, panel_height, debug_bg_color);
 
     DrawText(TextFormat("FPS: %d  frame: %d  t: %.1fs", GetFPS(), frame, elapsed), DEBUG_MARGIN,
-             DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, GREEN);
+             DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, debug_text_color);
     DrawText(TextFormat("screen: %dx%d", screen_width, screen_height), DEBUG_MARGIN,
-             DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, GREEN);
+             DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, debug_text_color);
     DrawText(TextFormat("GetScreen: %dx%d  GetRender: %dx%d", screen_w, screen_h, render_w, render_h), DEBUG_MARGIN,
-             DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, GREEN);
+             DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, debug_text_color);
     DrawText(TextFormat("game: %ux%u  scale: %d", game_bounds.width, game_bounds.height, PIXEL_SCALE), DEBUG_MARGIN,
-             DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, GREEN);
+             DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, debug_text_color);
 
     if (player) {
         DrawText(TextFormat("player: %.1f, %.1f  row: %d", player->position.x, player->position.y, player->anim_row),
-                 DEBUG_MARGIN, DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, GREEN);
+                 DEBUG_MARGIN, DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, debug_text_color);
         DrawText(TextFormat("collision: %.0f,%.0f %.0fx%.0f", player->collision.x, player->collision.y,
                             player->collision.width, player->collision.height),
-                 DEBUG_MARGIN, DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, GREEN);
+                 DEBUG_MARGIN, DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, debug_text_color);
     }
 
     DrawText(TextFormat("gamepads: %d", input_count_gamepads()), DEBUG_MARGIN,
-             DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, GREEN);
+             DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, debug_text_color);
 
     for (int index = 0; index < 4; index++) {
         if (IsGamepadAvailable(index)) {
             DrawText(TextFormat("  gp%d: %s", index, GetGamepadName(index)), DEBUG_MARGIN,
-                     DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, GREEN);
+                     DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, debug_text_color);
         }
     }
 
     /* Log panel at bottom */
-    if (debug_log_count > 0) {
-        int log_height = (debug_log_count * DEBUG_LINE_HEIGHT) + (DEBUG_MARGIN * 2);
+    int line_count = debug_get_line_count();
+    if (line_count > 0) {
+        int log_height = (line_count * DEBUG_LINE_HEIGHT) + (DEBUG_MARGIN * 2);
         int log_y = screen_height - log_height;
-        DrawRectangle(0, log_y, screen_width, log_height, (Color){0, 0, 0, DEBUG_BG_ALPHA});
+        DrawRectangle(0, log_y, screen_width, log_height, debug_bg_color);
 
-        for (int index = 0; index < debug_log_count; index++) {
-            int log_index = (debug_log_head - debug_log_count + index + DEBUG_LOG_LINES) % DEBUG_LOG_LINES;
-            DrawText(debug_log_lines[log_index], DEBUG_MARGIN, log_y + DEBUG_MARGIN + (index * DEBUG_LINE_HEIGHT),
-                     DEBUG_FONT_SIZE, LIME);
+        for (int index = 0; index < line_count; index++) {
+            DrawText(debug_get_line(index), DEBUG_MARGIN, log_y + DEBUG_MARGIN + (index * DEBUG_LINE_HEIGHT),
+                     DEBUG_FONT_SIZE, debug_log_color);
         }
     }
 }
@@ -265,6 +243,9 @@ static void load_gamedata(GameState *state)
         return;
     }
 
+    debug_log("gamedata: loaded %s (%d bytes, first=0x%02x)", GAMEDATA_PATH, (int)strlen(content),
+              (unsigned char)content[0]);
+
     bool loaded =
         game_load_gamedata(state, (GamedataParams){.toml_string = content, .texture_lookup = texture_registry_lookup});
     UnloadFileText(content);
@@ -272,12 +253,21 @@ static void load_gamedata(GameState *state)
     if (loaded) {
         debug_log("gamedata: %d blueprints", state->blueprints.count);
         for (int index = 0; index < state->blueprints.count; index++) {
-            debug_log("  blueprint: %s", state->blueprints.entries[index].name);
+            const Blueprint *blueprint = &state->blueprints.entries[index];
+            debug_log("  bp[%d]: '%s' tex='%s' attrs=%d", index, blueprint->name, blueprint->texture_name,
+                      blueprint->attrs.count);
         }
         debug_log("gamedata: level '%s' (%dx%d, %d entities)", state->current_level.name, state->current_level.width,
                   state->current_level.height, state->current_level.entity_count);
+        for (int index = 0; index < state->current_level.entity_count; index++) {
+            const Entity *entity = &state->current_level.entities[index];
+            debug_log("  ent[%d]: bp='%s' pos=(%.0f,%.0f) tex=%s", index, entity->blueprint_name, entity->position.x,
+                      entity->position.y, entity->texture ? "ok" : "NULL");
+        }
         if (state->player_index >= 0) {
             debug_log("gamedata: player at entity[%d]", state->player_index);
+        } else {
+            debug_log("gamedata: WARNING player not found!");
         }
     } else {
         debug_log("gamedata: no level found");
@@ -338,10 +328,7 @@ static void draw_entities_depth_sorted(const GameState *state)
 
 int main(void)
 {
-#ifndef __ANDROID__
-    zlog_init(ASSET_PREFIX "zlog.conf");
-#endif
-    dzlog_set_category("sleipner");
+    debug_init(TRACE_LOG_PATH);
 
 #ifdef __ANDROID__
     SetConfigFlags(FLAG_FULLSCREEN_MODE);
@@ -382,6 +369,11 @@ int main(void)
     texture_registry_add("chest.png", LoadTexture(ASSET_PREFIX "sprites/chest.png"));
     texture_registry_add("house.png", LoadTexture(ASSET_PREFIX "sprites/house.png"));
     texture_registry_add("fence.png", LoadTexture(ASSET_PREFIX "sprites/fence.png"));
+    for (int index = 0; index < texture_registry_count; index++) {
+        debug_log("texture[%d]: '%s' id=%u %dx%d", index, texture_registry[index].filename,
+                  texture_registry[index].texture.id, texture_registry[index].texture.width,
+                  texture_registry[index].texture.height);
+    }
     Music bgm = LoadMusicStream(ASSET_PREFIX "music/bgm.mp3");
     bgm.looping = true;
     PlayMusicStream(bgm);
@@ -466,10 +458,8 @@ quit:
         UnloadTexture(texture_registry[index].texture);
     }
     game_free(&state);
+    debug_shutdown();
     CloseAudioDevice();
     CloseWindow();
-#ifndef __ANDROID__
-    zlog_fini();
-#endif
     return 0;
 }

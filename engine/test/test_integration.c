@@ -1,4 +1,5 @@
 #include "unity.h"
+#include "entity.h"
 #include "game.h"
 
 static const char *fixture_gamedata = "[[blueprint]]\n"
@@ -182,6 +183,44 @@ void test_integration_boundary_all_directions(void)
         game_update(&state, input, 1.0F / 60.0F);
     }
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 240.0F - half, game_get_player_const(&state)->position.y);
+
+    game_free(&state);
+}
+
+void test_integration_player_entity_spawns(void)
+{
+    GameState state;
+    game_init(&state, (RectU32){640, 360});
+    game_load_gamedata(&state, (GamedataParams){.toml_string = fixture_gamedata, .texture_lookup = dummy_lookup});
+
+    /* Player entity must exist */
+    TEST_ASSERT_TRUE(state.player_index >= 0);
+
+    const Entity *player = game_get_player_const(&state);
+    TEST_ASSERT_NOT_NULL(player);
+
+    /* Player must have behavior="player" attribute (via blueprint) */
+    const char *behavior = entity_get_string(player, "behavior");
+    TEST_ASSERT_NOT_NULL(behavior);
+    TEST_ASSERT_EQUAL_STRING("player", behavior);
+
+    /* Player must have a valid texture and blueprint */
+    TEST_ASSERT_NOT_NULL(player->blueprint);
+    TEST_ASSERT_NOT_NULL(player->texture);
+    TEST_ASSERT_EQUAL_STRING("player", player->blueprint_name);
+
+    /* Player must be at the spawned position */
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 160.0F, player->position.x);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 120.0F, player->position.y);
+
+    /* Player must be controllable — move right for a few frames */
+    float start_x = player->position.x;
+    InputState input = {0};
+    input.left_stick.x = 1.0F;
+    for (int iteration = 0; iteration < 10; iteration++) {
+        game_update(&state, input, 1.0F / 60.0F);
+    }
+    TEST_ASSERT_TRUE(game_get_player_const(&state)->position.x > start_x);
 
     game_free(&state);
 }

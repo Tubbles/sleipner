@@ -21,7 +21,6 @@ set(NATIVE_APP_GLUE_DIR "${ANDROID_NDK}/sources/android/native_app_glue")
 # Build everything into a single shared library
 add_library(sleipner SHARED
     ${NATIVE_APP_GLUE_DIR}/android_native_app_glue.c
-    ${PROJECT_ROOT}/engine/vendor/zlog/zlog_android.c
     ${PROJECT_ROOT}/engine/vendor/tomlc99/toml.c
     ${PROJECT_ROOT}/engine/src/arena.c
     ${PROJECT_ROOT}/engine/src/attribute.c
@@ -35,13 +34,13 @@ add_library(sleipner SHARED
     ${PROJECT_ROOT}/engine/src/particle.c
     ${PROJECT_ROOT}/engine/src/render.c
     ${PROJECT_ROOT}/engine/src/shape.c
+    ${PROJECT_ROOT}/engine/src/debug.c
     ${PROJECT_ROOT}/engine/src/toml_emitter.c
     ${PROJECT_ROOT}/engine/src/main.c
 )
 
 target_include_directories(sleipner PRIVATE
     ${NATIVE_APP_GLUE_DIR}
-    ${PROJECT_ROOT}/engine/vendor/zlog
     ${PROJECT_ROOT}/engine/vendor/unity
     ${PROJECT_ROOT}/engine/vendor/tomlc99
     ${PROJECT_ROOT}/engine/src

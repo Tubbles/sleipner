@@ -1,8 +1,3 @@
-file(GLOB ZLOG_SOURCES vendor/zlog/*.c)
-add_library(zlog STATIC ${ZLOG_SOURCES})
-target_include_directories(zlog PUBLIC vendor/zlog)
-target_link_libraries(zlog PRIVATE pthread)
-
 add_library(unity STATIC vendor/unity/unity.c)
 target_include_directories(unity PUBLIC vendor/unity)
 
@@ -15,6 +10,7 @@ add_library(engine STATIC
     src/audio.c
     src/blueprint.c
     src/collision.c
+    src/debug.c
     src/entity.c
     src/game.c
     src/level.c
@@ -25,7 +21,8 @@ add_library(engine STATIC
     src/toml_emitter.c
 )
 target_include_directories(engine PUBLIC src)
-target_link_libraries(engine PUBLIC raylib zlog tomlc99)
+target_compile_definitions(engine PRIVATE _POSIX_C_SOURCE=199309L)
+target_link_libraries(engine PUBLIC raylib tomlc99)
 
 add_executable(sleipner src/main.c)
 target_link_libraries(sleipner PRIVATE engine)
