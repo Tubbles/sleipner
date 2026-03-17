@@ -28,6 +28,7 @@ add_library(sleipner SHARED
     ${PROJECT_ROOT}/engine/src/audio.c
     ${PROJECT_ROOT}/engine/src/blueprint.c
     ${PROJECT_ROOT}/engine/src/collision.c
+    ${PROJECT_ROOT}/engine/src/entity.c
     ${PROJECT_ROOT}/engine/src/game.c
     ${PROJECT_ROOT}/engine/src/input.c
     ${PROJECT_ROOT}/engine/src/level.c

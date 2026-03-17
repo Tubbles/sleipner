@@ -15,6 +15,7 @@ add_library(engine STATIC
     src/audio.c
     src/blueprint.c
     src/collision.c
+    src/entity.c
     src/game.c
     src/level.c
     src/input.c

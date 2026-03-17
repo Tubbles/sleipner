@@ -37,6 +37,15 @@ void test_blueprint_health_parsed(void);
 void test_blueprint_extends(void);
 void test_blueprint_extends_chain(void);
 
+/* test_entity.c */
+void test_entity_init_from_blueprint(void);
+void test_entity_get_attr_from_blueprint(void);
+void test_entity_instance_overrides_blueprint(void);
+void test_entity_get_missing_attr(void);
+void test_entity_int_float_coercion(void);
+void test_entity_no_blueprint(void);
+void test_entity_solid_from_collision(void);
+
 /* test_game.c */
 void test_game_init_defaults(void);
 void test_game_update_increments_frame(void);
@@ -133,6 +142,14 @@ int main(void)
     RUN_TEST(test_blueprint_health_parsed);
     RUN_TEST(test_blueprint_extends);
     RUN_TEST(test_blueprint_extends_chain);
+
+    RUN_TEST(test_entity_init_from_blueprint);
+    RUN_TEST(test_entity_get_attr_from_blueprint);
+    RUN_TEST(test_entity_instance_overrides_blueprint);
+    RUN_TEST(test_entity_get_missing_attr);
+    RUN_TEST(test_entity_int_float_coercion);
+    RUN_TEST(test_entity_no_blueprint);
+    RUN_TEST(test_entity_solid_from_collision);
 
     RUN_TEST(test_game_init_defaults);
     RUN_TEST(test_game_update_increments_frame);
