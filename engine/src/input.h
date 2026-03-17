@@ -12,7 +12,7 @@ typedef struct {
     float right_trigger;
 } InputState;
 
-void input_load_mappings(const char *path);
+void input_load_mappings(const char *data, int size);
 InputState input_read(int gamepad_id);
 InputState input_read_keyboard(void);
 int input_count_gamepads(void);

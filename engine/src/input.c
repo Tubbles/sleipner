@@ -3,6 +3,8 @@
 #include "raylib.h"
 
 #include <math.h>
+#include <stdlib.h>
+#include <string.h>
 
 #define STICK_DEADZONE 0.15F
 
@@ -16,18 +18,20 @@ static Vector2 apply_deadzone(Vector2 stick, float deadzone)
     return (Vector2){stick.x * scale, stick.y * scale};
 }
 
-void input_load_mappings(const char *path)
+void input_load_mappings(const char *data, int size)
 {
-    char *mappings = LoadFileText(path);
+    char *mappings = malloc((size_t)size + 1);
     if (!mappings) {
-        debug_log("WARNING: could not load gamepad mappings from %s", path);
+        debug_log("WARNING: could not allocate gamepad mappings buffer");
         return;
     }
+    memcpy(mappings, data, (size_t)size);
+    mappings[size] = '\0';
 
     int result = SetGamepadMappings(mappings);
-    debug_log("loaded gamepad mappings from %s (result=%d)", path, result);
+    debug_log("loaded gamepad mappings (%d bytes, result=%d)", size, result);
 
-    UnloadFileText(mappings);
+    free(mappings);
 }
 
 InputState input_read(int gamepad_id)

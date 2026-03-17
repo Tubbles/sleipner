@@ -1,5 +1,6 @@
 #include "raylib.h"
 
+#include "assets.h"
 #include "blueprint.h"
 #include "debug.h"
 #include "entity.h"
@@ -20,12 +21,10 @@
 #include <sys/stat.h>
 
 #ifdef __ANDROID__
-#define ASSET_PREFIX ""
 #define SYNCTHING_PATH "/storage/emulated/0/Sync"
 #define GAMEDATA_PATH SYNCTHING_PATH "/sleipner/gamedata.toml"
 #define TRACE_LOG_PATH SYNCTHING_PATH "/sleipner/trace.log"
 #else
-#define ASSET_PREFIX "assets/"
 #define GAMEDATA_PATH "data/gamedata.toml"
 #define TRACE_LOG_PATH "trace.log"
 #endif
@@ -97,7 +96,15 @@ typedef struct {
 static FontPreviewEntry font_preview_entries[MAX_PREVIEW_FONTS];
 static int font_preview_count = 0;
 
-static void font_preview_add(const char *name, const char *path)
+static Texture2D load_embedded_texture(EmbeddedAsset asset)
+{
+    Image image = LoadImageFromMemory(".png", asset.data, asset.size);
+    Texture2D texture = LoadTextureFromImage(image);
+    UnloadImage(image);
+    return texture;
+}
+
+static void font_preview_add(const char *name, EmbeddedAsset asset)
 {
     if (font_preview_count >= MAX_PREVIEW_FONTS) {
         return;
@@ -105,12 +112,12 @@ static void font_preview_add(const char *name, const char *path)
     FontPreviewEntry *entry = &font_preview_entries[font_preview_count];
     strncpy(entry->name, name, FONT_NAME_LEN - 1);
     entry->name[FONT_NAME_LEN - 1] = '\0';
-    entry->font = LoadFontEx(path, FONT_PREVIEW_SIZE, NULL, 0);
+    entry->font = LoadFontFromMemory(".ttf", asset.data, asset.size, FONT_PREVIEW_SIZE, NULL, 0);
     entry->valid = IsFontValid(entry->font);
     if (entry->valid) {
-        debug_log("font[%d]: '%s'", font_preview_count, name);
+        debug_log("font[%d]: '%s' (%d bytes)", font_preview_count, name, asset.size);
     } else {
-        debug_log("font[%d]: '%s' failed: %s", font_preview_count, name, path);
+        debug_log("font[%d]: '%s' failed to load", font_preview_count, name);
     }
     font_preview_count++;
 }
@@ -584,34 +591,34 @@ int main(void)
     debug_log("screen_width=%d screen_height=%d", screen_width, screen_height);
 
 #ifndef __ANDROID__
-    input_load_mappings(ASSET_PREFIX "gamecontrollerdb.txt");
+    EmbeddedAsset gamepad_asset = ASSET(gamecontrollerdb_txt);
+    input_load_mappings((const char *)gamepad_asset.data, gamepad_asset.size);
 #endif
     SetTargetFPS(TARGET_FPS);
     InitAudioDevice();
 
-    /* Load textures and register them by filename */
-    texture_registry_add("player.png", LoadTexture(ASSET_PREFIX "sprites/player.png"));
-    texture_registry_add("grass.png", LoadTexture(ASSET_PREFIX "sprites/grass.png"));
-    texture_registry_add("tree.png", LoadTexture(ASSET_PREFIX "sprites/tree.png"));
-    texture_registry_add("chest.png", LoadTexture(ASSET_PREFIX "sprites/chest.png"));
-    texture_registry_add("house.png", LoadTexture(ASSET_PREFIX "sprites/house.png"));
-    texture_registry_add("fence.png", LoadTexture(ASSET_PREFIX "sprites/fence.png"));
+    /* Load textures from embedded assets */
+    texture_registry_add("player.png", load_embedded_texture(ASSET(player_png)));
+    texture_registry_add("grass.png", load_embedded_texture(ASSET(grass_png)));
+    texture_registry_add("tree.png", load_embedded_texture(ASSET(tree_png)));
+    texture_registry_add("chest.png", load_embedded_texture(ASSET(chest_png)));
+    texture_registry_add("house.png", load_embedded_texture(ASSET(house_png)));
+    texture_registry_add("fence.png", load_embedded_texture(ASSET(fence_png)));
     for (int index = 0; index < texture_registry_count; index++) {
         debug_log("texture[%d]: '%s' id=%u %dx%d", index, texture_registry[index].filename,
                   texture_registry[index].texture.id, texture_registry[index].texture.width,
                   texture_registry[index].texture.height);
     }
-    /* Load fonts for preview */
-    font_preview_add("Earth Illusion",
-                     ASSET_PREFIX "ttf/Role Playing Fonts/Role Playing Fonts/Earth Illusion/earth-illusion.ttf");
-    font_preview_add("Golden Apple",
-                     ASSET_PREFIX "ttf/Role Playing Fonts/Role Playing Fonts/Golden Apple/golden-apple.ttf");
-    font_preview_add("MenuCard", ASSET_PREFIX "ttf/RolePlayingFonts3_SysL/menu_card/MenuCard.ttf");
-    font_preview_add("Nudge Orb", ASSET_PREFIX "ttf/RolePlayingFonts3_SysL/nudge_orb/Nudge Orb.ttf");
-    font_preview_add("CardboardCrown", ASSET_PREFIX "ttf/RolePlayingFontsII-SysL/CardboardCrown/CardboardCrown.ttf");
-    font_preview_add("RoyalFibre", ASSET_PREFIX "ttf/RolePlayingFontsII-SysL/RoyalFibre/RoyalFibre.ttf");
+    /* Load fonts from embedded assets */
+    font_preview_add("Earth Illusion", ASSET(earth_illusion_ttf));
+    font_preview_add("Golden Apple", ASSET(golden_apple_ttf));
+    font_preview_add("MenuCard", ASSET(menucard_ttf));
+    font_preview_add("Nudge Orb", ASSET(nudge_orb_ttf));
+    font_preview_add("CardboardCrown", ASSET(cardboardcrown_ttf));
+    font_preview_add("RoyalFibre", ASSET(royalfibre_ttf));
 
-    Music bgm = LoadMusicStream(ASSET_PREFIX "music/bgm.mp3");
+    EmbeddedAsset bgm_asset = ASSET(bgm_mp3);
+    Music bgm = LoadMusicStreamFromMemory(".mp3", bgm_asset.data, bgm_asset.size);
     bgm.looping = true;
     PlayMusicStream(bgm);
 
