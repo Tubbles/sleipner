@@ -222,21 +222,13 @@ Android requires APK updates to be signed with the same key as the original inst
 - **Remove before adding.** Before writing new code, check if existing code already handles part of the task, or if existing code will become dead after the change. Remove or update it first, then add the new code. This prevents accumulation of unused code paths.
 - **Reset state on initialization.** Be vigilant about resetting static variables, counters, and state arrays during game initialization. Failure to reset can cause bugs across game restarts (e.g., the font preview bug where fonts appeared twice because `font_preview_count` wasn't reset). Audit initialization code when adding new stateful features.
 
-- **Use explicit init functions for static data.** All modules with static state must provide an `init()` function that resets the module to a clean state. These init functions should be called during game initialization (either directly from `main()` or through initialization chains). This pattern:
-  - Makes initialization explicit and auditable
-  - Simplifies adding reset functionality later
-  - Prevents subtle bugs from static variable persistence (especially on Android where native libraries may be cached across app restarts)
-  - Example: `font_preview_init()`, `game_state_init()`, etc.
+- **Minimize static data.** Strive for zero static variables. Use explicit state passing and holder structs instead. Static variables should be extremely rare exceptions, not the norm. When static data is unavoidable (e.g., for one-time initialization), it must:
+  - Have a corresponding `init()` function
+  - Be called during game startup
+  - Be clearly documented with lifetime expectations
+  - Example: `font_preview_init()` resets the font preview system
 
-**Note on static data:** While the ideal architecture minimizes static variables (preferring explicit state in structs like `GameState`), some global state is practical for game engines:
-  - **Texture/font registries**: Cached for performance, globally accessible
-  - **Debug systems**: Global by nature (logging, metrics)
-  - **One-time initialization**: Configuration that doesn't change
-
-When adding new static data, consider:
-  - Can this be moved into `GameState` or another explicit struct?
-  - Is the global access truly necessary, or can dependencies be passed explicitly?
-  - What's the lifecycle? (one-time init, per-level, per-frame)
+- **Prefer pure functions.** Functions should take inputs and return outputs without relying on or modifying static state. Use holder structs to group related data and pass them explicitly rather than using global variables.
 - **One subsystem at a time.** Implement features incrementally, one subsystem at a time. Get it working, tested, and integrated before moving to the next. Don't build multiple half-finished subsystems in parallel.
 
 ## Git Workflow
