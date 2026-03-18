@@ -516,7 +516,7 @@ static bool parse_actions_array(Rule *rule, toml_array_t *actions, Arena *arena)
             if (table_value) {
                 toml_datum_t table_datum;
                 table_datum.ok = 1;
-                table_datum.u.t = table_value;
+                table_datum.u.ts = (toml_timestamp_t *)table_value; // Store in ts field
                 if (!action_node_parse(&nodes[index], table_datum, arena)) {
                     error_wrap("action[%d]", index);
                     return false;
