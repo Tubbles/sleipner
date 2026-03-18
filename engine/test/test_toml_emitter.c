@@ -175,6 +175,91 @@ void test_toml_emit_buffer_too_small(void)
     TEST_ASSERT_EQUAL_INT(-1, written);
 }
 
+static const char *child_fixture = "[[blueprint]]\n"
+                                   "name = \"lantern\"\n"
+                                   "texture = \"lantern.png\"\n"
+                                   "src = [0, 0, 8, 8]\n"
+                                   "collision_offset = [0, 0]\n"
+                                   "collision_size = [0, 0]\n"
+                                   "\n"
+                                   "[[blueprint]]\n"
+                                   "name = \"wagon\"\n"
+                                   "texture = \"wagon.png\"\n"
+                                   "src = [0, 0, 64, 32]\n"
+                                   "collision_offset = [0, 0]\n"
+                                   "collision_size = [0, 0]\n"
+                                   "\n"
+                                   "[[blueprint.child]]\n"
+                                   "blueprint = \"lantern\"\n"
+                                   "tag = \"light\"\n"
+                                   "offset = [56, -8]\n"
+                                   "\n"
+                                   "[[level]]\n"
+                                   "name = \"test\"\n"
+                                   "size = [320, 240]\n"
+                                   "\n"
+                                   "[[level.entity]]\n"
+                                   "blueprint = \"wagon\"\n"
+                                   "pos = [100, 50]\n";
+
+void test_toml_emit_blueprint_children(void)
+{
+    Arena arena;
+    TEST_ASSERT_TRUE(arena_init(&arena, 4096));
+    BlueprintTable blueprints;
+
+    toml_table_t *root = parse_toml(child_fixture);
+    TEST_ASSERT_NOT_NULL(root);
+    blueprints_load(&blueprints, root, &arena);
+    toml_free(root);
+
+    char output[4096];
+    Level empty_level = {0};
+    int written = toml_emit_gamedata(output, (int)sizeof(output), &blueprints, &empty_level, 0);
+    TEST_ASSERT_TRUE(written > 0);
+
+    TEST_ASSERT_NOT_NULL(strstr(output, "[[blueprint.child]]"));
+    TEST_ASSERT_NOT_NULL(strstr(output, "tag = \"light\""));
+    TEST_ASSERT_NOT_NULL(strstr(output, "offset = [56, -8]"));
+
+    arena_free(&arena);
+}
+
+void test_toml_emit_skips_child_entities(void)
+{
+    Arena arena;
+    TEST_ASSERT_TRUE(arena_init(&arena, 4096));
+    BlueprintTable blueprints;
+    Level level;
+
+    toml_table_t *root = parse_toml(child_fixture);
+    TEST_ASSERT_NOT_NULL(root);
+    blueprints_load(&blueprints, root, &arena);
+    TEST_ASSERT_TRUE(level_load(&level, root, "test", &blueprints, dummy_lookup, NULL));
+    toml_free(root);
+
+    /* Level has 2 entities (wagon + lantern child) */
+    TEST_ASSERT_EQUAL_INT(2, level.entity_count);
+
+    char output[4096];
+    int written = toml_emit_gamedata(output, (int)sizeof(output), &blueprints, &level, 1);
+    TEST_ASSERT_TRUE(written > 0);
+
+    /* Only the parent wagon should appear as a level.entity */
+    TEST_ASSERT_NOT_NULL(strstr(output, "blueprint = \"wagon\""));
+
+    /* Count occurrences of [[level.entity]] — should be 1 */
+    int count = 0;
+    const char *search = output;
+    while ((search = strstr(search, "[[level.entity]]")) != NULL) {
+        count++;
+        search += 16;
+    }
+    TEST_ASSERT_EQUAL_INT(1, count);
+
+    arena_free(&arena);
+}
+
 void test_toml_emit_no_music(void)
 {
     Level level = {0};

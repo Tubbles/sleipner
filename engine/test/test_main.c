@@ -120,6 +120,8 @@ void test_toml_emit_level_with_entities(void);
 void test_toml_emit_round_trip(void);
 void test_toml_emit_buffer_too_small(void);
 void test_toml_emit_no_music(void);
+void test_toml_emit_blueprint_children(void);
+void test_toml_emit_skips_child_entities(void);
 
 /* test_collision.c */
 void test_rect_rect_overlap(void);
@@ -263,6 +265,8 @@ int main(void)
     RUN_TEST(test_toml_emit_round_trip);
     RUN_TEST(test_toml_emit_buffer_too_small);
     RUN_TEST(test_toml_emit_no_music);
+    RUN_TEST(test_toml_emit_blueprint_children);
+    RUN_TEST(test_toml_emit_skips_child_entities);
 
     return UNITY_END();
 }

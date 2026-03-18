@@ -778,8 +778,8 @@ pos = [320, 180]
 - [x] Blueprint inheritance (extends)
 - [x] Entity storage (flat array in arena)
 - [x] Convert Player and Obstacle to entity instances with attributes
-- [ ] Entity composition (children with relative positioning)
-- [ ] Tag system (named references within composition trees)
+- [x] Entity composition (children with relative positioning)
+- [x] Tag system (named references within composition trees)
 
 ### Phase 4 — Rule Engine
 - [ ] Rule struct (trigger + conditions + action tree)

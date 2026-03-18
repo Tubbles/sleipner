@@ -45,6 +45,20 @@ static int emit_blueprints(char *buffer, int capacity, int offset, const Bluepri
         offset = emit_append(buffer, capacity, offset, "collision_size = [%d, %d]\n", (int)blueprint->collision_size.x,
                              (int)blueprint->collision_size.y);
         offset = emit_append(buffer, capacity, offset, "\n");
+
+        for (int child_index = 0; child_index < blueprint->child_count; child_index++) {
+            const BlueprintChild *child = &blueprint->children[child_index];
+            offset = emit_append(buffer, capacity, offset, "[[blueprint.child]]\n");
+            offset = emit_append(buffer, capacity, offset, "blueprint = \"%s\"\n", child->blueprint_name);
+            if (child->tag[0] != '\0') {
+                offset = emit_append(buffer, capacity, offset, "tag = \"%s\"\n", child->tag);
+            }
+            if (child->offset.x != 0.0F || child->offset.y != 0.0F) {
+                offset = emit_append(buffer, capacity, offset, "offset = [%d, %d]\n", (int)child->offset.x,
+                                     (int)child->offset.y);
+            }
+            offset = emit_append(buffer, capacity, offset, "\n");
+        }
     }
     return offset;
 }
@@ -65,6 +79,11 @@ static int emit_levels(char *buffer, int capacity, int offset, const Level *leve
 
         for (int entity_index = 0; entity_index < level->entity_count; entity_index++) {
             const Entity *entity = &level->entities[entity_index];
+
+            /* Skip child entities — they are instantiated from blueprint children */
+            if (entity->parent_index >= 0) {
+                continue;
+            }
 
             offset = emit_append(buffer, capacity, offset, "[[level.entity]]\n");
             offset = emit_append(buffer, capacity, offset, "blueprint = \"%s\"\n", entity->blueprint_name);
