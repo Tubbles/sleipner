@@ -58,6 +58,17 @@ void test_entity_get_missing_attr(void);
 void test_entity_int_float_coercion(void);
 void test_entity_no_blueprint(void);
 void test_entity_solid_from_collision(void);
+void test_entity_find_by_tag_self(void);
+void test_entity_find_by_tag_parent(void);
+void test_entity_find_by_tag_parent_of_root(void);
+void test_entity_find_by_tag_root(void);
+void test_entity_find_by_tag_custom(void);
+void test_entity_find_by_tag_not_found(void);
+void test_entity_is_visible_standalone(void);
+void test_entity_is_visible_parent_hidden(void);
+void test_entity_is_visible_both_visible(void);
+void test_entity_is_active_parent_inactive(void);
+void test_entity_is_active_both_active(void);
 
 /* test_game.c */
 void test_game_init_defaults(void);
@@ -180,6 +191,17 @@ int main(void)
     RUN_TEST(test_entity_int_float_coercion);
     RUN_TEST(test_entity_no_blueprint);
     RUN_TEST(test_entity_solid_from_collision);
+    RUN_TEST(test_entity_find_by_tag_self);
+    RUN_TEST(test_entity_find_by_tag_parent);
+    RUN_TEST(test_entity_find_by_tag_parent_of_root);
+    RUN_TEST(test_entity_find_by_tag_root);
+    RUN_TEST(test_entity_find_by_tag_custom);
+    RUN_TEST(test_entity_find_by_tag_not_found);
+    RUN_TEST(test_entity_is_visible_standalone);
+    RUN_TEST(test_entity_is_visible_parent_hidden);
+    RUN_TEST(test_entity_is_visible_both_visible);
+    RUN_TEST(test_entity_is_active_parent_inactive);
+    RUN_TEST(test_entity_is_active_both_active);
 
     RUN_TEST(test_game_init_defaults);
     RUN_TEST(test_game_update_increments_frame);

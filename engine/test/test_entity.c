@@ -130,3 +130,126 @@ void test_entity_solid_from_collision(void)
 
     TEST_ASSERT_FALSE(entity.solid);
 }
+
+/* Helper: set up a 3-entity tree (parent -> child -> grandchild) */
+static void make_entity_tree(Entity *entities)
+{
+    memset(entities, 0, 3 * sizeof(Entity));
+
+    strncpy(entities[0].blueprint_name, "wagon", MAX_BLUEPRINT_NAME);
+    entities[0].parent_index = -1;
+    entities[0].visible = true;
+    entities[0].active = true;
+
+    strncpy(entities[1].blueprint_name, "lantern", MAX_BLUEPRINT_NAME);
+    strncpy(entities[1].tag, "light", MAX_TAG);
+    entities[1].parent_index = 0;
+    entities[1].visible = true;
+    entities[1].active = true;
+
+    strncpy(entities[2].blueprint_name, "wheel", MAX_BLUEPRINT_NAME);
+    strncpy(entities[2].tag, "front_wheel", MAX_TAG);
+    entities[2].parent_index = 0;
+    entities[2].visible = true;
+    entities[2].active = true;
+}
+
+void test_entity_find_by_tag_self(void)
+{
+    Entity entities[3];
+    make_entity_tree(entities);
+
+    const Entity *result = entity_find_by_tag(&entities[1], "self", entities, 3);
+    TEST_ASSERT_TRUE(result == &entities[1]);
+}
+
+void test_entity_find_by_tag_parent(void)
+{
+    Entity entities[3];
+    make_entity_tree(entities);
+
+    const Entity *result = entity_find_by_tag(&entities[1], "parent", entities, 3);
+    TEST_ASSERT_TRUE(result == &entities[0]);
+}
+
+void test_entity_find_by_tag_parent_of_root(void)
+{
+    Entity entities[3];
+    make_entity_tree(entities);
+
+    const Entity *result = entity_find_by_tag(&entities[0], "parent", entities, 3);
+    TEST_ASSERT_NULL(result);
+}
+
+void test_entity_find_by_tag_root(void)
+{
+    Entity entities[3];
+    make_entity_tree(entities);
+
+    const Entity *result = entity_find_by_tag(&entities[1], "root", entities, 3);
+    TEST_ASSERT_TRUE(result == &entities[0]);
+}
+
+void test_entity_find_by_tag_custom(void)
+{
+    Entity entities[3];
+    make_entity_tree(entities);
+
+    const Entity *result = entity_find_by_tag(&entities[1], "front_wheel", entities, 3);
+    TEST_ASSERT_TRUE(result == &entities[2]);
+}
+
+void test_entity_find_by_tag_not_found(void)
+{
+    Entity entities[3];
+    make_entity_tree(entities);
+
+    const Entity *result = entity_find_by_tag(&entities[1], "nonexistent", entities, 3);
+    TEST_ASSERT_NULL(result);
+}
+
+void test_entity_is_visible_standalone(void)
+{
+    Entity entity = {0};
+    entity.parent_index = -1;
+    entity.visible = true;
+
+    TEST_ASSERT_TRUE(entity_is_visible(0, &entity));
+}
+
+void test_entity_is_visible_parent_hidden(void)
+{
+    Entity entities[3];
+    make_entity_tree(entities);
+
+    /* Child is visible, but parent is hidden */
+    entities[0].visible = false;
+
+    TEST_ASSERT_FALSE(entity_is_visible(1, entities));
+}
+
+void test_entity_is_visible_both_visible(void)
+{
+    Entity entities[3];
+    make_entity_tree(entities);
+
+    TEST_ASSERT_TRUE(entity_is_visible(1, entities));
+}
+
+void test_entity_is_active_parent_inactive(void)
+{
+    Entity entities[3];
+    make_entity_tree(entities);
+
+    entities[0].active = false;
+
+    TEST_ASSERT_FALSE(entity_is_active(1, entities));
+}
+
+void test_entity_is_active_both_active(void)
+{
+    Entity entities[3];
+    make_entity_tree(entities);
+
+    TEST_ASSERT_TRUE(entity_is_active(1, entities));
+}

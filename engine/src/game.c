@@ -192,6 +192,20 @@ static void resolve_player_obstacles(Level *level, int player_index)
     }
 }
 
+static void update_child_positions(Level *level)
+{
+    for (int index = 0; index < level->entity_count; index++) {
+        Entity *entity = &level->entities[index];
+        if (entity->parent_index < 0) {
+            continue;
+        }
+        const Entity *parent = &level->entities[entity->parent_index];
+        entity->position.x = parent->position.x + entity->offset.x;
+        entity->position.y = parent->position.y + entity->offset.y;
+        entity_update_collision(entity);
+    }
+}
+
 void game_update(GameState *state, InputState input, float delta_time)
 {
     state->frame++;
@@ -202,6 +216,8 @@ void game_update(GameState *state, InputState input, float delta_time)
         update_player(player, input, delta_time, state->game_bounds);
         resolve_player_obstacles(&state->current_level, state->player_index);
     }
+
+    update_child_positions(&state->current_level);
 }
 
 void game_free(GameState *state)

@@ -63,4 +63,18 @@ void entity_init_from_blueprint(Entity *entity, const Blueprint *blueprint, Vect
  * Call after moving an entity. */
 void entity_update_collision(Entity *entity);
 
+/* Find an entity by tag within the same composition tree as source.
+ * Handles implicit tags: "self", "parent", "root".
+ * Returns NULL if not found. */
+const Entity *entity_find_by_tag(const Entity *source, const char *tag, const Entity *entities, int entity_count);
+
+/* Mutable version of entity_find_by_tag. */
+Entity *entity_find_by_tag_mut(Entity *source, const char *tag, Entity *entities, int entity_count);
+
+/* Effective visibility: own visible AND all ancestors visible. */
+bool entity_is_visible(int entity_index, const Entity *entities);
+
+/* Effective active state: own active AND all ancestors active. */
+bool entity_is_active(int entity_index, const Entity *entities);
+
 #endif

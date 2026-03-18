@@ -96,3 +96,87 @@ void entity_update_collision(Entity *entity)
         entity->collision.y = entity->position.y + entity->blueprint->collision_offset.y;
     }
 }
+
+static int find_entity_index(const Entity *entity, const Entity *entities, int entity_count)
+{
+    for (int index = 0; index < entity_count; index++) {
+        if (&entities[index] == entity) {
+            return index;
+        }
+    }
+    return -1;
+}
+
+static int find_root_index(const Entity *entities, int entity_index)
+{
+    int current = entity_index;
+    while (entities[current].parent_index >= 0) {
+        current = entities[current].parent_index;
+    }
+    return current;
+}
+
+const Entity *entity_find_by_tag(const Entity *source, const char *tag, const Entity *entities, int entity_count)
+{
+    if (strcmp(tag, "self") == 0) {
+        return source;
+    }
+
+    if (strcmp(tag, "parent") == 0) {
+        if (source->parent_index >= 0) {
+            return &entities[source->parent_index];
+        }
+        return NULL;
+    }
+
+    int source_index = find_entity_index(source, entities, entity_count);
+    if (source_index < 0) {
+        return NULL;
+    }
+
+    if (strcmp(tag, "root") == 0) {
+        return &entities[find_root_index(entities, source_index)];
+    }
+
+    int root_index = find_root_index(entities, source_index);
+    for (int index = 0; index < entity_count; index++) {
+        if (find_root_index(entities, index) == root_index && entities[index].tag[0] != '\0' &&
+            strcmp(entities[index].tag, tag) == 0) {
+            return &entities[index];
+        }
+    }
+    return NULL;
+}
+
+Entity *entity_find_by_tag_mut(Entity *source, const char *tag, Entity *entities, int entity_count)
+{
+    const Entity *result = entity_find_by_tag((const Entity *)source, tag, (const Entity *)entities, entity_count);
+    if (!result) {
+        return NULL;
+    }
+    return &entities[result - entities];
+}
+
+bool entity_is_visible(int entity_index, const Entity *entities)
+{
+    int current = entity_index;
+    while (current >= 0) {
+        if (!entities[current].visible) {
+            return false;
+        }
+        current = entities[current].parent_index;
+    }
+    return true;
+}
+
+bool entity_is_active(int entity_index, const Entity *entities)
+{
+    int current = entity_index;
+    while (current >= 0) {
+        if (!entities[current].active) {
+            return false;
+        }
+        current = entities[current].parent_index;
+    }
+    return true;
+}
