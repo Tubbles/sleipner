@@ -29,8 +29,6 @@ conan build .
 ./build/Release/engine/sleipner
 ```
 
-**Container caveat:** The build container does not have git installed. Any build logic that calls git (e.g. Gradle version helpers in `build.gradle.kts`) must handle the missing binary gracefully with try/catch and fallback values.
-
 ## Dependencies
 
 - C23 compiler (clang-22 in container)

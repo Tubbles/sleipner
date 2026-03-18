@@ -12,7 +12,7 @@ FROM debian:bookworm
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential cmake ninja-build pkg-config \
+    build-essential cmake ninja-build pkg-config git \
     python3 python3-venv python3-pip \
     wget gnupg lsb-release software-properties-common \
     libgl-dev \
