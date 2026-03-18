@@ -76,12 +76,13 @@ RUN conan profile detect \
 # Stage 2: Minimal runtime image
 FROM debian:bookworm-slim
 
-# Copy only essential tools from builder
+# Copy only essential tools from builder (exclude Android SDK/NDK for smaller size)
 COPY --from=builder /opt/venv /opt/venv
 COPY --from=builder /usr/bin/clang* /usr/bin/
 COPY --from=builder /usr/lib/llvm-22 /usr/lib/llvm-22
 COPY --from=builder /usr/lib/x86_64-linux-gnu/libc++.so* /usr/lib/x86_64-linux-gnu/
 COPY --from=builder /usr/lib/x86_64-linux-gnu/libstdc++.so* /usr/lib/x86_64-linux-gnu/
+COPY --from=builder /opt/gradle-8.11.1 /opt/gradle-8.11.1
 
 ENV PATH="/opt/venv/bin:${PATH}"
 ENV LD_LIBRARY_PATH=/usr/lib/llvm-22/lib:/usr/lib/x86_64-linux-gnu
