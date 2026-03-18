@@ -2,21 +2,21 @@ plugins {
     id("com.android.application")
 }
 
-fun gitVersionCode(): Int {
+fun gitVersionCode(): Int = try {
     val process = ProcessBuilder("git", "rev-list", "--count", "HEAD")
         .directory(rootProject.projectDir)
         .redirectErrorStream(true)
         .start()
-    return process.inputStream.bufferedReader().readText().trim().toIntOrNull() ?: 1
-}
+    process.inputStream.bufferedReader().readText().trim().toIntOrNull() ?: 1
+} catch (_: Exception) { 1 }
 
-fun gitShortHash(): String {
+fun gitShortHash(): String = try {
     val process = ProcessBuilder("git", "rev-parse", "--short", "HEAD")
         .directory(rootProject.projectDir)
         .redirectErrorStream(true)
         .start()
-    return process.inputStream.bufferedReader().readText().trim()
-}
+    process.inputStream.bufferedReader().readText().trim().ifEmpty { "unknown" }
+} catch (_: Exception) { "unknown" }
 
 android {
     namespace = "com.sleipner"
