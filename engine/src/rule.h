@@ -6,6 +6,10 @@
 
 #include <stdbool.h>
 
+// Include actual TOML headers instead of forward declarations
+// This makes dependencies explicit and maintains module integrity
+#include "toml.h"
+
 #define MAX_FLAGS 64
 #define MAX_FLAG_NAME 32
 #define MAX_CONDITIONS 8

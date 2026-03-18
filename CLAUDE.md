@@ -49,6 +49,7 @@ conan build .
 - **Test everything with Unity + fff.h.** Every non-trivial pure function should have corresponding tests in `test/`. If a function is hard to test, it probably does too much.
 - **Full descriptive names always.** No single-letter variables anywhere, including loop counters (`i` → `index`, `j` → `next`). No small abbreviations either (`pt` → `particle`, `dx` → `delta_x`, `wp` → `world_pos`). The codebase should be self-documenting through clear naming.
 - **Vendor libraries go in `engine/vendor/`.** Not the top-level `vendor/`.
+- **Avoid forward declarations.** Prefer including actual headers to make dependencies explicit and maintain module integrity. Forward declarations can hide circular dependencies and break the "code module" concept. If circular dependencies exist, refactor to eliminate them rather than hiding them.
 
 ## Testing Strategy
 
