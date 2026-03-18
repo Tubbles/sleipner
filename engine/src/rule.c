@@ -326,7 +326,7 @@ static bool parse_control_flow_node(ActionNode *node, toml_table_t *table, Arena
                         if (then_table) {
                             toml_datum_t table_value;
                             table_value.ok = 1;
-                            table_value.u.t = then_table;
+                            table_value.u.ts = (toml_timestamp_t *)then_table; // Store table pointer in ts field
                             if (!action_node_parse(&node->children[i], table_value, arena)) {
                                 error_wrap("then[%d]", i);
                                 return false;
@@ -368,7 +368,7 @@ static bool parse_control_flow_node(ActionNode *node, toml_table_t *table, Arena
                         if (else_table) {
                             toml_datum_t table_value;
                             table_value.ok = 1;
-                            table_value.u.t = else_table;
+                            table_value.u.ts = (toml_timestamp_t *)else_table; // Store table pointer in ts field
                             if (!action_node_parse(&node->else_children[i], table_value, arena)) {
                                 error_wrap("else[%d]", i);
                                 return false;
@@ -418,7 +418,7 @@ static bool parse_control_flow_node(ActionNode *node, toml_table_t *table, Arena
                         if (do_table) {
                             toml_datum_t table_value;
                             table_value.ok = 1;
-                            table_value.u.t = do_table;
+                            table_value.u.ts = (toml_timestamp_t *)do_table; // Store table pointer in ts field
                             if (!action_node_parse(&node->children[i], table_value, arena)) {
                                 error_wrap("do[%d]", i);
                                 return false;
@@ -441,10 +441,12 @@ static bool parse_control_flow_node(ActionNode *node, toml_table_t *table, Arena
 
 bool action_node_parse(ActionNode *node, toml_datum_t value, Arena *arena)
 {
-    if (value.type == TOML_STRING) {
+    if (value.ok && value.u.s) {
+        // String value
         return parse_simple_action(node, value.u.s);
-    } else if (value.type == TOML_TABLE) {
-        return parse_control_flow_node(node, value.u.t, arena);
+    } else if (value.ok) {
+        // Table value (stored in ts field as pointer)
+        return parse_control_flow_node(node, (toml_table_t *)value.u.ts, arena);
     }
 
     error_set("action_node_parse: unsupported value type");
