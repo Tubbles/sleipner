@@ -13,11 +13,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build Android toolchain image
-        run: docker build -f Dockerfile.android -t sleipner-toolchain-android .
+      - name: Build toolchain image
+        run: docker build -t sleipner-toolchain .
 
       - name: Build APK
-        run: IMAGE=sleipner-toolchain-android CONTAINER_CMD=docker ./ci.sh apk
+        run: CONTAINER_CMD=docker ./ci.sh apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
