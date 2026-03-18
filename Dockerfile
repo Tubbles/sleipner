@@ -1,13 +1,14 @@
 # Toolchain image: reproducible build environment for Sleipner.
-# Contains clang-22, clang-format, clang-tidy, conan, cmake, X11/GL dev libs,
-# JDK 17, and Android SDK/NDK for cross-compilation.
+# Uses multi-stage build for smaller final image.
+# Contains clang-22, clang-format, clang-tidy, conan, cmake, X11/GL dev libs.
 #
 # Build the image:
 #   podman build -t sleipner-toolchain .
 #
 # Use via ci.sh for format, build, test, lint steps.
 
-FROM debian:bookworm
+# Stage 1: Builder with full toolchain
+FROM debian:bookworm-slim as builder
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -16,18 +17,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 python3-venv python3-pip \
     wget gnupg lsb-release software-properties-common \
     libgl-dev \
-    libx11-dev libx11-xcb-dev libfontenc-dev libice-dev libsm-dev \
-    libxaw7-dev libxcomposite-dev libxcursor-dev libxdamage-dev \
-    libxext-dev libxfixes-dev libxi-dev libxinerama-dev \
-    libxkbfile-dev libxmu-dev libxmuu-dev libxpm-dev libxrandr-dev \
-    libxrender-dev libxres-dev libxss-dev libxt-dev libxtst-dev \
-    libxv-dev libxxf86vm-dev libxcb-glx0-dev libxcb-render0-dev \
+    libx11-dev libx11-xcb-dev libxcb-glx0-dev libxcb-render0-dev \
     libxcb-render-util0-dev libxcb-xkb-dev libxcb-icccm4-dev \
     libxcb-image0-dev libxcb-keysyms1-dev libxcb-randr0-dev \
     libxcb-shape0-dev libxcb-sync-dev libxcb-xfixes0-dev \
-    libxcb-xinerama0-dev libxcb-dri3-dev uuid-dev \
-    libxcb-cursor-dev libxcb-dri2-0-dev libxcb-present-dev \
-    libxcb-composite0-dev libxcb-ewmh-dev libxcb-res0-dev \
+    libxcb-xinerama0-dev libxcb-dri3-dev libxcb-cursor-dev \
     libxcb-util-dev \
     && rm -rf /var/lib/apt/lists/*
 
@@ -78,3 +72,18 @@ RUN conan profile detect \
     && sed -i '/compiler.cppstd/d' ~/.conan2/profiles/default \
     && printf '\n[conf]\ntools.build:compiler_executables={"c": "clang", "cpp": "clang++"}\n' >> ~/.conan2/profiles/default \
     && sed -i 's/"21"\]/"21", "22"]/' ~/.conan2/settings.yml
+
+# Stage 2: Minimal runtime image
+FROM debian:bookworm-slim
+
+# Copy only essential tools from builder
+COPY --from=builder /opt/venv /opt/venv
+COPY --from=builder /usr/bin/clang* /usr/bin/
+COPY --from=builder /usr/lib/llvm-22 /usr/lib/llvm-22
+COPY --from=builder /usr/lib/x86_64-linux-gnu/libc++.so* /usr/lib/x86_64-linux-gnu/
+COPY --from=builder /usr/lib/x86_64-linux-gnu/libstdc++.so* /usr/lib/x86_64-linux-gnu/
+
+ENV PATH="/opt/venv/bin:${PATH}"
+ENV LD_LIBRARY_PATH=/usr/lib/llvm-22/lib:/usr/lib/x86_64-linux-gnu
+
+WORKDIR /src
