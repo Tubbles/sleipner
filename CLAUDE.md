@@ -222,7 +222,7 @@ Android requires APK updates to be signed with the same key as the original inst
 - **Remove before adding.** Before writing new code, check if existing code already handles part of the task, or if existing code will become dead after the change. Remove or update it first, then add the new code. This prevents accumulation of unused code paths.
 - **Reset state on initialization.** Be vigilant about resetting static variables, counters, and state arrays during game initialization. Failure to reset can cause bugs across game restarts (e.g., the font preview bug where fonts appeared twice because `font_preview_count` wasn't reset). Audit initialization code when adding new stateful features.
 
-- **Use explicit init functions for static data.** All modules with static state must provide an `init()` function that resets the module to a clean state. Call all init functions from `main()` before game initialization. This pattern:
+- **Use explicit init functions for static data.** All modules with static state must provide an `init()` function that resets the module to a clean state. These init functions should be called during game initialization (either directly from `main()` or through initialization chains). This pattern:
   - Makes initialization explicit and auditable
   - Simplifies adding reset functionality later
   - Prevents subtle bugs from static variable persistence (especially on Android where native libraries may be cached across app restarts)
