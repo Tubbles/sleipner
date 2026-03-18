@@ -791,7 +791,7 @@ pos = [320, 180]
 - [x] Interact trigger detection (edge-triggered A-button, proximity-based)
 - [x] Flag storage (FlagSet on GameState)
 - [x] Custom events (fire_event / event trigger, cross-entity decoupling)
-- [ ] Control flow nodes (if/else, repeat, for-each with entity queries)
+- [x] Control flow nodes (if/else, repeat, for-each with entity queries)
 - [ ] Variable system (local per-execution, global persistent, $ references in parameters)
 - [ ] Subroutines (named reusable action sequences, callable via `call:`)
 - [ ] Timer management (create, destroy named timers)
