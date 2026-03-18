@@ -6,6 +6,7 @@
 #include "input.h"
 #include "level.h"
 #include "rect.h"
+#include "rule.h"
 
 #include <stdbool.h>
 
@@ -27,11 +28,13 @@ typedef struct {
     Arena gamedata_arena;
     BlueprintTable blueprints;
     Level current_level;
+    FlagSet flags;
     RectU32 game_bounds;
     int frame;
     float elapsed;
     bool gamedata_loaded;
     bool debug_enabled;
+    bool prev_interact;
 } GameState;
 
 typedef struct {

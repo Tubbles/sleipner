@@ -1,0 +1,949 @@
+#include "unity.h"
+#include "arena.h"
+#include "attribute.h"
+#include "entity.h"
+#include "game.h"
+#include "rule.h"
+
+#include "toml.h"
+
+#include <stdlib.h>
+#include <string.h>
+
+/* ---- FlagSet tests ---- */
+
+void test_flag_set_and_get(void)
+{
+    FlagSet flags = {0};
+    TEST_ASSERT_FALSE(flag_get(&flags, "chest_opened"));
+
+    flag_set(&flags, "chest_opened");
+    TEST_ASSERT_TRUE(flag_get(&flags, "chest_opened"));
+}
+
+void test_flag_clear(void)
+{
+    FlagSet flags = {0};
+    flag_set(&flags, "door_locked");
+    TEST_ASSERT_TRUE(flag_get(&flags, "door_locked"));
+
+    flag_clear(&flags, "door_locked");
+    TEST_ASSERT_FALSE(flag_get(&flags, "door_locked"));
+}
+
+void test_flag_unset_returns_false(void)
+{
+    FlagSet flags = {0};
+    TEST_ASSERT_FALSE(flag_get(&flags, "never_set"));
+}
+
+void test_flag_set_idempotent(void)
+{
+    FlagSet flags = {0};
+    flag_set(&flags, "test_flag");
+    flag_set(&flags, "test_flag");
+    TEST_ASSERT_EQUAL_INT(1, flags.count);
+}
+
+void test_flag_clear_nonexistent(void)
+{
+    FlagSet flags = {0};
+    flag_clear(&flags, "nonexistent");
+    TEST_ASSERT_EQUAL_INT(0, flags.count);
+}
+
+/* ---- Trigger parsing tests ---- */
+
+void test_trigger_parse_interact(void)
+{
+    Trigger trigger;
+    TEST_ASSERT_TRUE(trigger_parse(&trigger, "interact"));
+    TEST_ASSERT_EQUAL_INT(TRIGGER_INTERACT, trigger.type);
+}
+
+void test_trigger_parse_enter(void)
+{
+    Trigger trigger;
+    TEST_ASSERT_TRUE(trigger_parse(&trigger, "enter"));
+    TEST_ASSERT_EQUAL_INT(TRIGGER_ENTER, trigger.type);
+}
+
+void test_trigger_parse_on_spawn(void)
+{
+    Trigger trigger;
+    TEST_ASSERT_TRUE(trigger_parse(&trigger, "on_spawn"));
+    TEST_ASSERT_EQUAL_INT(TRIGGER_ON_SPAWN, trigger.type);
+}
+
+void test_trigger_parse_event(void)
+{
+    Trigger trigger;
+    TEST_ASSERT_TRUE(trigger_parse(&trigger, "event:boss_defeated"));
+    TEST_ASSERT_EQUAL_INT(TRIGGER_EVENT, trigger.type);
+    TEST_ASSERT_EQUAL_STRING("boss_defeated", trigger.argument);
+}
+
+void test_trigger_parse_attr_changed(void)
+{
+    Trigger trigger;
+    TEST_ASSERT_TRUE(trigger_parse(&trigger, "attr_changed:health"));
+    TEST_ASSERT_EQUAL_INT(TRIGGER_ATTR_CHANGED, trigger.type);
+    TEST_ASSERT_EQUAL_STRING("health", trigger.argument);
+}
+
+void test_trigger_parse_unknown(void)
+{
+    Trigger trigger;
+    TEST_ASSERT_FALSE(trigger_parse(&trigger, "nonexistent"));
+}
+
+/* ---- Condition parsing tests ---- */
+
+void test_condition_parse_flag(void)
+{
+    Condition condition;
+    TEST_ASSERT_TRUE(condition_parse(&condition, "flag:chest_opened"));
+    TEST_ASSERT_EQUAL_INT(COND_FLAG, condition.type);
+    TEST_ASSERT_EQUAL_STRING("chest_opened", condition.argument);
+}
+
+void test_condition_parse_not_flag(void)
+{
+    Condition condition;
+    TEST_ASSERT_TRUE(condition_parse(&condition, "not_flag:boss_alive"));
+    TEST_ASSERT_EQUAL_INT(COND_NOT_FLAG, condition.type);
+    TEST_ASSERT_EQUAL_STRING("boss_alive", condition.argument);
+}
+
+void test_condition_parse_attr_truthy(void)
+{
+    Condition condition;
+    TEST_ASSERT_TRUE(condition_parse(&condition, "self.attr:is_locked"));
+    TEST_ASSERT_EQUAL_INT(COND_ATTR, condition.type);
+    TEST_ASSERT_EQUAL_STRING("is_locked", condition.argument);
+}
+
+void test_condition_parse_attr_short_form(void)
+{
+    Condition condition;
+    TEST_ASSERT_TRUE(condition_parse(&condition, "attr:visible"));
+    TEST_ASSERT_EQUAL_INT(COND_ATTR, condition.type);
+    TEST_ASSERT_EQUAL_STRING("visible", condition.argument);
+}
+
+void test_condition_parse_not_attr(void)
+{
+    Condition condition;
+    TEST_ASSERT_TRUE(condition_parse(&condition, "not_attr:dead"));
+    TEST_ASSERT_EQUAL_INT(COND_NOT_ATTR, condition.type);
+    TEST_ASSERT_EQUAL_STRING("dead", condition.argument);
+}
+
+void test_condition_parse_attr_less_than(void)
+{
+    Condition condition;
+    TEST_ASSERT_TRUE(condition_parse(&condition, "attr:health<10"));
+    TEST_ASSERT_EQUAL_INT(COND_ATTR_LT, condition.type);
+    TEST_ASSERT_EQUAL_STRING("health", condition.argument);
+    TEST_ASSERT_FLOAT_WITHIN(0.01F, 10.0F, condition.compare_value);
+}
+
+void test_condition_parse_attr_greater_than(void)
+{
+    Condition condition;
+    TEST_ASSERT_TRUE(condition_parse(&condition, "attr:speed>5"));
+    TEST_ASSERT_EQUAL_INT(COND_ATTR_GT, condition.type);
+    TEST_ASSERT_EQUAL_STRING("speed", condition.argument);
+    TEST_ASSERT_FLOAT_WITHIN(0.01F, 5.0F, condition.compare_value);
+}
+
+void test_condition_parse_attr_equals(void)
+{
+    Condition condition;
+    TEST_ASSERT_TRUE(condition_parse(&condition, "attr:level==3"));
+    TEST_ASSERT_EQUAL_INT(COND_ATTR_EQ, condition.type);
+    TEST_ASSERT_EQUAL_STRING("level", condition.argument);
+    TEST_ASSERT_FLOAT_WITHIN(0.01F, 3.0F, condition.compare_value);
+}
+
+void test_condition_parse_has_item(void)
+{
+    Condition condition;
+    TEST_ASSERT_TRUE(condition_parse(&condition, "has_item:key"));
+    TEST_ASSERT_EQUAL_INT(COND_HAS_ITEM, condition.type);
+    TEST_ASSERT_EQUAL_STRING("key", condition.argument);
+}
+
+void test_condition_parse_unknown(void)
+{
+    Condition condition;
+    TEST_ASSERT_FALSE(condition_parse(&condition, "garbage_condition"));
+}
+
+/* ---- Action parsing tests ---- */
+
+void test_action_parse_set_flag(void)
+{
+    Action action;
+    TEST_ASSERT_TRUE(action_parse(&action, "set_flag:chest_opened"));
+    TEST_ASSERT_EQUAL_INT(ACTION_SET_FLAG, action.type);
+    TEST_ASSERT_EQUAL_STRING("chest_opened", action.argument);
+}
+
+void test_action_parse_clear_flag(void)
+{
+    Action action;
+    TEST_ASSERT_TRUE(action_parse(&action, "clear_flag:door_locked"));
+    TEST_ASSERT_EQUAL_INT(ACTION_CLEAR_FLAG, action.type);
+    TEST_ASSERT_EQUAL_STRING("door_locked", action.argument);
+}
+
+void test_action_parse_set_attr(void)
+{
+    Action action;
+    TEST_ASSERT_TRUE(action_parse(&action, "set_attr:self.is_locked,false"));
+    TEST_ASSERT_EQUAL_INT(ACTION_SET_ATTR, action.type);
+    TEST_ASSERT_EQUAL_STRING("self.is_locked", action.argument);
+    TEST_ASSERT_EQUAL_STRING("false", action.second_argument);
+}
+
+void test_action_parse_add_attr(void)
+{
+    Action action;
+    TEST_ASSERT_TRUE(action_parse(&action, "add_attr:root.health,-2"));
+    TEST_ASSERT_EQUAL_INT(ACTION_ADD_ATTR, action.type);
+    TEST_ASSERT_EQUAL_STRING("root.health", action.argument);
+    TEST_ASSERT_EQUAL_STRING("-2", action.second_argument);
+}
+
+void test_action_parse_toggle_attr(void)
+{
+    Action action;
+    TEST_ASSERT_TRUE(action_parse(&action, "toggle_attr:self.visible"));
+    TEST_ASSERT_EQUAL_INT(ACTION_TOGGLE_ATTR, action.type);
+    TEST_ASSERT_EQUAL_STRING("self.visible", action.argument);
+}
+
+void test_action_parse_destroy(void)
+{
+    Action action;
+    TEST_ASSERT_TRUE(action_parse(&action, "destroy"));
+    TEST_ASSERT_EQUAL_INT(ACTION_DESTROY, action.type);
+}
+
+void test_action_parse_fire_event(void)
+{
+    Action action;
+    TEST_ASSERT_TRUE(action_parse(&action, "fire_event:boss_defeated"));
+    TEST_ASSERT_EQUAL_INT(ACTION_FIRE_EVENT, action.type);
+    TEST_ASSERT_EQUAL_STRING("boss_defeated", action.argument);
+}
+
+void test_action_parse_unknown(void)
+{
+    Action action;
+    TEST_ASSERT_FALSE(action_parse(&action, "unknown_action:foo"));
+}
+
+/* ---- Trigger matching tests ---- */
+
+void test_trigger_matches_simple(void)
+{
+    Trigger trigger = {.type = TRIGGER_INTERACT};
+    TriggerEvent event = {.type = TRIGGER_INTERACT, .entity_index = 0};
+    TEST_ASSERT_TRUE(trigger_matches(&trigger, &event));
+}
+
+void test_trigger_no_match_different_type(void)
+{
+    Trigger trigger = {.type = TRIGGER_INTERACT};
+    TriggerEvent event = {.type = TRIGGER_ENTER, .entity_index = 0};
+    TEST_ASSERT_FALSE(trigger_matches(&trigger, &event));
+}
+
+void test_trigger_matches_event_with_argument(void)
+{
+    Trigger trigger = {.type = TRIGGER_EVENT};
+    strncpy(trigger.argument, "boss_defeated", MAX_ARG - 1);
+
+    TriggerEvent event = {.type = TRIGGER_EVENT, .entity_index = -1};
+    strncpy(event.argument, "boss_defeated", MAX_ARG - 1);
+
+    TEST_ASSERT_TRUE(trigger_matches(&trigger, &event));
+}
+
+void test_trigger_no_match_event_wrong_argument(void)
+{
+    Trigger trigger = {.type = TRIGGER_EVENT};
+    strncpy(trigger.argument, "boss_defeated", MAX_ARG - 1);
+
+    TriggerEvent event = {.type = TRIGGER_EVENT, .entity_index = -1};
+    strncpy(event.argument, "door_opened", MAX_ARG - 1);
+
+    TEST_ASSERT_FALSE(trigger_matches(&trigger, &event));
+}
+
+/* ---- Condition evaluation tests ---- */
+
+void test_condition_flag_true(void)
+{
+    FlagSet flags = {0};
+    flag_set(&flags, "test_flag");
+
+    Condition condition = {.type = COND_FLAG};
+    strncpy(condition.argument, "test_flag", MAX_ARG - 1);
+
+    Entity entity = {0};
+    ConditionContext context = {.entity = &entity, .flags = &flags};
+    TEST_ASSERT_TRUE(conditions_evaluate(&condition, 1, context));
+}
+
+void test_condition_flag_false(void)
+{
+    FlagSet flags = {0};
+
+    Condition condition = {.type = COND_FLAG};
+    strncpy(condition.argument, "test_flag", MAX_ARG - 1);
+
+    Entity entity = {0};
+    ConditionContext context = {.entity = &entity, .flags = &flags};
+    TEST_ASSERT_FALSE(conditions_evaluate(&condition, 1, context));
+}
+
+void test_condition_not_flag(void)
+{
+    FlagSet flags = {0};
+
+    Condition condition = {.type = COND_NOT_FLAG};
+    strncpy(condition.argument, "test_flag", MAX_ARG - 1);
+
+    Entity entity = {0};
+    ConditionContext context = {.entity = &entity, .flags = &flags};
+    TEST_ASSERT_TRUE(conditions_evaluate(&condition, 1, context));
+}
+
+void test_condition_attr_truthy(void)
+{
+    Entity entity = {0};
+    (void)attr_set_bool(&entity.attrs, "is_locked", true);
+
+    Condition condition = {.type = COND_ATTR};
+    strncpy(condition.argument, "is_locked", MAX_ARG - 1);
+
+    FlagSet flags = {0};
+    ConditionContext context = {.entity = &entity, .flags = &flags};
+    TEST_ASSERT_TRUE(conditions_evaluate(&condition, 1, context));
+}
+
+void test_condition_attr_falsy(void)
+{
+    Entity entity = {0};
+    (void)attr_set_bool(&entity.attrs, "is_locked", false);
+
+    Condition condition = {.type = COND_ATTR};
+    strncpy(condition.argument, "is_locked", MAX_ARG - 1);
+
+    FlagSet flags = {0};
+    ConditionContext context = {.entity = &entity, .flags = &flags};
+    TEST_ASSERT_FALSE(conditions_evaluate(&condition, 1, context));
+}
+
+void test_condition_attr_missing(void)
+{
+    Entity entity = {0};
+
+    Condition condition = {.type = COND_ATTR};
+    strncpy(condition.argument, "nonexistent", MAX_ARG - 1);
+
+    FlagSet flags = {0};
+    ConditionContext context = {.entity = &entity, .flags = &flags};
+    TEST_ASSERT_FALSE(conditions_evaluate(&condition, 1, context));
+}
+
+void test_condition_attr_less_than(void)
+{
+    Entity entity = {0};
+    (void)attr_set_int(&entity.attrs, "health", 5);
+
+    Condition condition = {.type = COND_ATTR_LT, .compare_value = 10.0F};
+    strncpy(condition.argument, "health", MAX_ARG - 1);
+
+    FlagSet flags = {0};
+    ConditionContext context = {.entity = &entity, .flags = &flags};
+    TEST_ASSERT_TRUE(conditions_evaluate(&condition, 1, context));
+}
+
+void test_condition_attr_greater_than(void)
+{
+    Entity entity = {0};
+    (void)attr_set_int(&entity.attrs, "speed", 15);
+
+    Condition condition = {.type = COND_ATTR_GT, .compare_value = 10.0F};
+    strncpy(condition.argument, "speed", MAX_ARG - 1);
+
+    FlagSet flags = {0};
+    ConditionContext context = {.entity = &entity, .flags = &flags};
+    TEST_ASSERT_TRUE(conditions_evaluate(&condition, 1, context));
+}
+
+void test_condition_and_logic_all_pass(void)
+{
+    FlagSet flags = {0};
+    flag_set(&flags, "flag_a");
+    flag_set(&flags, "flag_b");
+
+    Condition conditions[2] = {
+        {.type = COND_FLAG},
+        {.type = COND_FLAG},
+    };
+    strncpy(conditions[0].argument, "flag_a", MAX_ARG - 1);
+    strncpy(conditions[1].argument, "flag_b", MAX_ARG - 1);
+
+    Entity entity = {0};
+    ConditionContext context = {.entity = &entity, .flags = &flags};
+    TEST_ASSERT_TRUE(conditions_evaluate(conditions, 2, context));
+}
+
+void test_condition_and_logic_one_fails(void)
+{
+    FlagSet flags = {0};
+    flag_set(&flags, "flag_a");
+
+    Condition conditions[2] = {
+        {.type = COND_FLAG},
+        {.type = COND_FLAG},
+    };
+    strncpy(conditions[0].argument, "flag_a", MAX_ARG - 1);
+    strncpy(conditions[1].argument, "flag_b", MAX_ARG - 1);
+
+    Entity entity = {0};
+    ConditionContext context = {.entity = &entity, .flags = &flags};
+    TEST_ASSERT_FALSE(conditions_evaluate(conditions, 2, context));
+}
+
+/* ---- Action execution tests ---- */
+
+void test_action_set_flag_executes(void)
+{
+    FlagSet flags = {0};
+    EventQueue queue = {0};
+    Entity entity = {0};
+    entity.active = true;
+
+    Action action = {.type = ACTION_SET_FLAG};
+    strncpy(action.argument, "chest_opened", MAX_ARG - 1);
+
+    ActionContext context = {
+        .entity = &entity,
+        .flags = &flags,
+        .event_queue = &queue,
+    };
+    TEST_ASSERT_TRUE(action_execute(&action, context));
+    TEST_ASSERT_TRUE(flag_get(&flags, "chest_opened"));
+}
+
+void test_action_clear_flag_executes(void)
+{
+    FlagSet flags = {0};
+    flag_set(&flags, "door_locked");
+    EventQueue queue = {0};
+    Entity entity = {0};
+
+    Action action = {.type = ACTION_CLEAR_FLAG};
+    strncpy(action.argument, "door_locked", MAX_ARG - 1);
+
+    ActionContext context = {
+        .entity = &entity,
+        .flags = &flags,
+        .event_queue = &queue,
+    };
+    TEST_ASSERT_TRUE(action_execute(&action, context));
+    TEST_ASSERT_FALSE(flag_get(&flags, "door_locked"));
+}
+
+void test_action_set_attr_bool(void)
+{
+    FlagSet flags = {0};
+    EventQueue queue = {0};
+    Entity entity = {0};
+    (void)attr_set_bool(&entity.attrs, "is_locked", true);
+
+    Action action = {.type = ACTION_SET_ATTR};
+    strncpy(action.argument, "is_locked", MAX_ARG - 1);
+    strncpy(action.second_argument, "false", MAX_ARG - 1);
+
+    ActionContext context = {
+        .entity = &entity,
+        .entities = &entity,
+        .entity_count = 1,
+        .flags = &flags,
+        .event_queue = &queue,
+    };
+    TEST_ASSERT_TRUE(action_execute(&action, context));
+
+    const Attribute *attr = attr_get(&entity.attrs, "is_locked");
+    TEST_ASSERT_NOT_NULL(attr);
+    TEST_ASSERT_EQUAL_INT(ATTR_BOOL, attr->type);
+    TEST_ASSERT_FALSE(attr->value.b);
+}
+
+void test_action_set_attr_int(void)
+{
+    FlagSet flags = {0};
+    EventQueue queue = {0};
+    Entity entity = {0};
+
+    Action action = {.type = ACTION_SET_ATTR};
+    strncpy(action.argument, "health", MAX_ARG - 1);
+    strncpy(action.second_argument, "42", MAX_ARG - 1);
+
+    ActionContext context = {
+        .entity = &entity,
+        .entities = &entity,
+        .entity_count = 1,
+        .flags = &flags,
+        .event_queue = &queue,
+    };
+    TEST_ASSERT_TRUE(action_execute(&action, context));
+    TEST_ASSERT_EQUAL_INT(42, entity_get_int(&entity, "health", 0));
+}
+
+void test_action_add_attr(void)
+{
+    FlagSet flags = {0};
+    EventQueue queue = {0};
+    Entity entity = {0};
+    (void)attr_set_int(&entity.attrs, "health", 10);
+
+    Action action = {.type = ACTION_ADD_ATTR};
+    strncpy(action.argument, "health", MAX_ARG - 1);
+    strncpy(action.second_argument, "-3", MAX_ARG - 1);
+
+    ActionContext context = {
+        .entity = &entity,
+        .entities = &entity,
+        .entity_count = 1,
+        .flags = &flags,
+        .event_queue = &queue,
+    };
+    TEST_ASSERT_TRUE(action_execute(&action, context));
+    TEST_ASSERT_EQUAL_INT(7, entity_get_int(&entity, "health", 0));
+}
+
+void test_action_toggle_attr(void)
+{
+    FlagSet flags = {0};
+    EventQueue queue = {0};
+    Entity entity = {0};
+    (void)attr_set_bool(&entity.attrs, "visible", true);
+
+    Action action = {.type = ACTION_TOGGLE_ATTR};
+    strncpy(action.argument, "visible", MAX_ARG - 1);
+
+    ActionContext context = {
+        .entity = &entity,
+        .entities = &entity,
+        .entity_count = 1,
+        .flags = &flags,
+        .event_queue = &queue,
+    };
+    TEST_ASSERT_TRUE(action_execute(&action, context));
+    TEST_ASSERT_FALSE(entity_get_bool(&entity, "visible", true));
+}
+
+void test_action_destroy(void)
+{
+    FlagSet flags = {0};
+    EventQueue queue = {0};
+    Entity entity = {0};
+    entity.active = true;
+
+    Action action = {.type = ACTION_DESTROY};
+
+    ActionContext context = {
+        .entity = &entity,
+        .flags = &flags,
+        .event_queue = &queue,
+    };
+    TEST_ASSERT_TRUE(action_execute(&action, context));
+    TEST_ASSERT_FALSE(entity.active);
+}
+
+void test_action_fire_event_queues(void)
+{
+    FlagSet flags = {0};
+    EventQueue queue = {0};
+    Entity entity = {0};
+
+    Action action = {.type = ACTION_FIRE_EVENT};
+    strncpy(action.argument, "boss_defeated", MAX_ARG - 1);
+
+    ActionContext context = {
+        .entity = &entity,
+        .flags = &flags,
+        .event_queue = &queue,
+    };
+    TEST_ASSERT_TRUE(action_execute(&action, context));
+    TEST_ASSERT_EQUAL_INT(1, queue.count);
+    TEST_ASSERT_EQUAL_INT(TRIGGER_EVENT, queue.entries[0].type);
+    TEST_ASSERT_EQUAL_STRING("boss_defeated", queue.entries[0].argument);
+}
+
+void test_action_execution_order(void)
+{
+    FlagSet flags = {0};
+    EventQueue queue = {0};
+    Entity entity = {0};
+
+    Action actions[2] = {
+        {.type = ACTION_SET_FLAG},
+        {.type = ACTION_SET_FLAG},
+    };
+    strncpy(actions[0].argument, "first", MAX_ARG - 1);
+    strncpy(actions[1].argument, "second", MAX_ARG - 1);
+
+    ActionContext context = {
+        .entity = &entity,
+        .flags = &flags,
+        .event_queue = &queue,
+    };
+    (void)action_execute(&actions[0], context);
+    (void)action_execute(&actions[1], context);
+
+    TEST_ASSERT_TRUE(flag_get(&flags, "first"));
+    TEST_ASSERT_TRUE(flag_get(&flags, "second"));
+    TEST_ASSERT_EQUAL_INT(2, flags.count);
+}
+
+/* ---- TOML round-trip parsing tests ---- */
+
+void test_rules_parse_from_toml(void)
+{
+    static const char *toml_str = "name = \"chest\"\n"
+                                  "\n"
+                                  "[[rule]]\n"
+                                  "trigger = \"interact\"\n"
+                                  "conditions = [\"flag:has_key\"]\n"
+                                  "actions = [\"set_flag:chest_opened\", \"destroy\"]\n";
+
+    char errbuf[200];
+    char *buf = strdup(toml_str);
+    toml_table_t *root = toml_parse(buf, errbuf, (int)sizeof(errbuf));
+    free(buf);
+    TEST_ASSERT_NOT_NULL(root);
+
+    Arena arena;
+    TEST_ASSERT_TRUE(arena_init(&arena, 65536));
+
+    RuleSet rules;
+    TEST_ASSERT_TRUE(rules_parse(&rules, root, &arena));
+    TEST_ASSERT_EQUAL_INT(1, rules.count);
+
+    const Rule *rule = &rules.entries[0];
+    TEST_ASSERT_EQUAL_INT(TRIGGER_INTERACT, rule->trigger.type);
+    TEST_ASSERT_EQUAL_INT(1, rule->condition_count);
+    TEST_ASSERT_EQUAL_INT(COND_FLAG, rule->conditions[0].type);
+    TEST_ASSERT_EQUAL_STRING("has_key", rule->conditions[0].argument);
+    TEST_ASSERT_EQUAL_INT(2, rule->action_count);
+    TEST_ASSERT_EQUAL_INT(ACTION_SET_FLAG, rule->actions[0].type);
+    TEST_ASSERT_EQUAL_STRING("chest_opened", rule->actions[0].argument);
+    TEST_ASSERT_EQUAL_INT(ACTION_DESTROY, rule->actions[1].type);
+
+    toml_free(root);
+    arena_free(&arena);
+}
+
+void test_rules_parse_no_rules(void)
+{
+    static const char *toml_str = "name = \"tree\"\n";
+
+    char errbuf[200];
+    char *buf = strdup(toml_str);
+    toml_table_t *root = toml_parse(buf, errbuf, (int)sizeof(errbuf));
+    free(buf);
+    TEST_ASSERT_NOT_NULL(root);
+
+    Arena arena;
+    TEST_ASSERT_TRUE(arena_init(&arena, 65536));
+
+    RuleSet rules;
+    TEST_ASSERT_TRUE(rules_parse(&rules, root, &arena));
+    TEST_ASSERT_EQUAL_INT(0, rules.count);
+
+    toml_free(root);
+    arena_free(&arena);
+}
+
+void test_rules_parse_multiple_rules(void)
+{
+    static const char *toml_str = "name = \"door\"\n"
+                                  "\n"
+                                  "[[rule]]\n"
+                                  "trigger = \"interact\"\n"
+                                  "actions = [\"set_flag:opened\"]\n"
+                                  "\n"
+                                  "[[rule]]\n"
+                                  "trigger = \"event:reset\"\n"
+                                  "actions = [\"clear_flag:opened\"]\n";
+
+    char errbuf[200];
+    char *buf = strdup(toml_str);
+    toml_table_t *root = toml_parse(buf, errbuf, (int)sizeof(errbuf));
+    free(buf);
+    TEST_ASSERT_NOT_NULL(root);
+
+    Arena arena;
+    TEST_ASSERT_TRUE(arena_init(&arena, 65536));
+
+    RuleSet rules;
+    TEST_ASSERT_TRUE(rules_parse(&rules, root, &arena));
+    TEST_ASSERT_EQUAL_INT(2, rules.count);
+
+    TEST_ASSERT_EQUAL_INT(TRIGGER_INTERACT, rules.entries[0].trigger.type);
+    TEST_ASSERT_EQUAL_INT(TRIGGER_EVENT, rules.entries[1].trigger.type);
+    TEST_ASSERT_EQUAL_STRING("reset", rules.entries[1].trigger.argument);
+
+    toml_free(root);
+    arena_free(&arena);
+}
+
+/* ---- Evaluation loop tests ---- */
+
+void test_evaluate_interact_sets_flag(void)
+{
+    Blueprint blueprint = {0};
+    strncpy(blueprint.name, "chest", MAX_BLUEPRINT_NAME - 1);
+
+    Arena arena;
+    TEST_ASSERT_TRUE(arena_init(&arena, 65536));
+
+    Rule *rule = arena_alloc(&arena, (AllocRequest){.size = sizeof(Rule), .alignment = _Alignof(Rule)});
+    TEST_ASSERT_NOT_NULL(rule);
+    memset(rule, 0, sizeof(*rule));
+    rule->trigger.type = TRIGGER_INTERACT;
+    rule->action_count = 1;
+    rule->actions[0].type = ACTION_SET_FLAG;
+    strncpy(rule->actions[0].argument, "chest_opened", MAX_ARG - 1);
+
+    blueprint.rules.entries = rule;
+    blueprint.rules.count = 1;
+
+    Entity entity = {0};
+    entity.active = true;
+    entity.blueprint = &blueprint;
+
+    FlagSet flags = {0};
+    TriggerEvent event = {.type = TRIGGER_INTERACT, .entity_index = 0};
+
+    rules_evaluate_batch(&entity, 1, &event, 1, &flags);
+    TEST_ASSERT_TRUE(flag_get(&flags, "chest_opened"));
+
+    arena_free(&arena);
+}
+
+void test_evaluate_condition_blocks_action(void)
+{
+    Blueprint blueprint = {0};
+    strncpy(blueprint.name, "chest", MAX_BLUEPRINT_NAME - 1);
+
+    Arena arena;
+    TEST_ASSERT_TRUE(arena_init(&arena, 65536));
+
+    Rule *rule = arena_alloc(&arena, (AllocRequest){.size = sizeof(Rule), .alignment = _Alignof(Rule)});
+    TEST_ASSERT_NOT_NULL(rule);
+    memset(rule, 0, sizeof(*rule));
+    rule->trigger.type = TRIGGER_INTERACT;
+    rule->condition_count = 1;
+    rule->conditions[0].type = COND_FLAG;
+    strncpy(rule->conditions[0].argument, "has_key", MAX_ARG - 1);
+    rule->action_count = 1;
+    rule->actions[0].type = ACTION_SET_FLAG;
+    strncpy(rule->actions[0].argument, "chest_opened", MAX_ARG - 1);
+
+    blueprint.rules.entries = rule;
+    blueprint.rules.count = 1;
+
+    Entity entity = {0};
+    entity.active = true;
+    entity.blueprint = &blueprint;
+
+    FlagSet flags = {0};
+    TriggerEvent event = {.type = TRIGGER_INTERACT, .entity_index = 0};
+
+    rules_evaluate_batch(&entity, 1, &event, 1, &flags);
+    TEST_ASSERT_FALSE(flag_get(&flags, "chest_opened"));
+
+    arena_free(&arena);
+}
+
+void test_evaluate_fire_event_cascading(void)
+{
+    Arena arena;
+    TEST_ASSERT_TRUE(arena_init(&arena, 65536));
+
+    Blueprint bp_switch = {0};
+    strncpy(bp_switch.name, "switch", MAX_BLUEPRINT_NAME - 1);
+
+    Rule *switch_rule = arena_alloc(&arena, (AllocRequest){.size = sizeof(Rule), .alignment = _Alignof(Rule)});
+    memset(switch_rule, 0, sizeof(*switch_rule));
+    switch_rule->trigger.type = TRIGGER_INTERACT;
+    switch_rule->action_count = 1;
+    switch_rule->actions[0].type = ACTION_FIRE_EVENT;
+    strncpy(switch_rule->actions[0].argument, "switch_pulled", MAX_ARG - 1);
+    bp_switch.rules.entries = switch_rule;
+    bp_switch.rules.count = 1;
+
+    Blueprint bp_door = {0};
+    strncpy(bp_door.name, "door", MAX_BLUEPRINT_NAME - 1);
+
+    Rule *door_rule = arena_alloc(&arena, (AllocRequest){.size = sizeof(Rule), .alignment = _Alignof(Rule)});
+    memset(door_rule, 0, sizeof(*door_rule));
+    door_rule->trigger.type = TRIGGER_EVENT;
+    strncpy(door_rule->trigger.argument, "switch_pulled", MAX_ARG - 1);
+    door_rule->action_count = 1;
+    door_rule->actions[0].type = ACTION_SET_FLAG;
+    strncpy(door_rule->actions[0].argument, "door_opened", MAX_ARG - 1);
+    bp_door.rules.entries = door_rule;
+    bp_door.rules.count = 1;
+
+    Entity entities[2] = {0};
+    entities[0].active = true;
+    entities[0].blueprint = &bp_switch;
+    strncpy(entities[0].blueprint_name, "switch", MAX_BLUEPRINT_NAME - 1);
+    entities[1].active = true;
+    entities[1].blueprint = &bp_door;
+    strncpy(entities[1].blueprint_name, "door", MAX_BLUEPRINT_NAME - 1);
+
+    FlagSet flags = {0};
+    TriggerEvent event = {.type = TRIGGER_INTERACT, .entity_index = 0};
+
+    rules_evaluate_batch(entities, 2, &event, 1, &flags);
+    TEST_ASSERT_TRUE(flag_get(&flags, "door_opened"));
+
+    arena_free(&arena);
+}
+
+/* ---- Integration: blueprint with rules parsed from gamedata ---- */
+
+static Texture2D rule_test_dummy_texture;
+
+static Texture2D *rule_test_dummy_lookup(const char *texture_name, void *user_data)
+{
+    (void)texture_name;
+    (void)user_data;
+    return &rule_test_dummy_texture;
+}
+
+static const char *rule_test_gamedata = "[[blueprint]]\n"
+                                        "name = \"player\"\n"
+                                        "texture = \"player.png\"\n"
+                                        "src = [0, 0, 32, 32]\n"
+                                        "collision_offset = [-5, 6]\n"
+                                        "collision_size = [10, 10]\n"
+                                        "behavior = \"player\"\n"
+                                        "speed = 80\n"
+                                        "\n"
+                                        "[[blueprint]]\n"
+                                        "name = \"chest\"\n"
+                                        "texture = \"chest.png\"\n"
+                                        "src = [0, 0, 16, 16]\n"
+                                        "collision_offset = [0, 0]\n"
+                                        "collision_size = [16, 16]\n"
+                                        "\n"
+                                        "[[blueprint.rule]]\n"
+                                        "trigger = \"interact\"\n"
+                                        "actions = [\"set_flag:chest_opened\"]\n"
+                                        "\n"
+                                        "[[level]]\n"
+                                        "name = \"test\"\n"
+                                        "size = [320, 240]\n"
+                                        "\n"
+                                        "[[level.entity]]\n"
+                                        "blueprint = \"player\"\n"
+                                        "pos = [160, 120]\n"
+                                        "\n"
+                                        "[[level.entity]]\n"
+                                        "blueprint = \"chest\"\n"
+                                        "pos = [165, 120]\n";
+
+void test_integration_interact_rule(void)
+{
+    GameState state;
+    TEST_ASSERT_TRUE(game_init(&state, (RectU32){320, 240}));
+    TEST_ASSERT_TRUE(game_load_gamedata(
+        &state, (GamedataParams){.toml_string = rule_test_gamedata, .texture_lookup = rule_test_dummy_lookup}));
+
+    TEST_ASSERT_TRUE(state.gamedata_loaded);
+    TEST_ASSERT_EQUAL_INT(2, state.current_level.entity_count);
+
+    const Blueprint *chest_bp = blueprint_find(&state.blueprints, "chest");
+    TEST_ASSERT_NOT_NULL(chest_bp);
+    TEST_ASSERT_EQUAL_INT(1, chest_bp->rules.count);
+    TEST_ASSERT_EQUAL_INT(TRIGGER_INTERACT, chest_bp->rules.entries[0].trigger.type);
+
+    TEST_ASSERT_FALSE(flag_get(&state.flags, "chest_opened"));
+
+    InputState input = {0};
+    input.buttons[0] = true;
+    game_update(&state, input, 1.0F / 60.0F);
+
+    TEST_ASSERT_TRUE(flag_get(&state.flags, "chest_opened"));
+
+    game_free(&state);
+}
+
+void test_integration_condition_blocks_interact(void)
+{
+    static const char *gamedata = "[[blueprint]]\n"
+                                  "name = \"player\"\n"
+                                  "texture = \"player.png\"\n"
+                                  "src = [0, 0, 32, 32]\n"
+                                  "collision_offset = [-5, 6]\n"
+                                  "collision_size = [10, 10]\n"
+                                  "behavior = \"player\"\n"
+                                  "speed = 80\n"
+                                  "\n"
+                                  "[[blueprint]]\n"
+                                  "name = \"locked_chest\"\n"
+                                  "texture = \"chest.png\"\n"
+                                  "src = [0, 0, 16, 16]\n"
+                                  "\n"
+                                  "[[blueprint.rule]]\n"
+                                  "trigger = \"interact\"\n"
+                                  "conditions = [\"flag:has_key\"]\n"
+                                  "actions = [\"set_flag:chest_opened\"]\n"
+                                  "\n"
+                                  "[[level]]\n"
+                                  "name = \"test\"\n"
+                                  "size = [320, 240]\n"
+                                  "\n"
+                                  "[[level.entity]]\n"
+                                  "blueprint = \"player\"\n"
+                                  "pos = [160, 120]\n"
+                                  "\n"
+                                  "[[level.entity]]\n"
+                                  "blueprint = \"locked_chest\"\n"
+                                  "pos = [165, 120]\n";
+
+    GameState state;
+    TEST_ASSERT_TRUE(game_init(&state, (RectU32){320, 240}));
+    TEST_ASSERT_TRUE(game_load_gamedata(
+        &state, (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));
+
+    InputState input = {0};
+    input.buttons[0] = true;
+    game_update(&state, input, 1.0F / 60.0F);
+
+    TEST_ASSERT_FALSE(flag_get(&state.flags, "chest_opened"));
+
+    input.buttons[0] = false;
+    game_update(&state, input, 1.0F / 60.0F);
+
+    flag_set(&state.flags, "has_key");
+    input.buttons[0] = true;
+    game_update(&state, input, 1.0F / 60.0F);
+
+    TEST_ASSERT_TRUE(flag_get(&state.flags, "chest_opened"));
+
+    game_free(&state);
+}

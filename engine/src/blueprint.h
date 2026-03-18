@@ -8,6 +8,11 @@
 
 #include <stdbool.h>
 
+typedef struct {
+    struct Rule *entries;
+    int count;
+} RuleSet;
+
 #define MAX_BLUEPRINTS 256
 #define MAX_BLUEPRINT_NAME 64
 #define MAX_TEXTURE_NAME 64
@@ -30,6 +35,7 @@ typedef struct {
     AttrSet attrs;
     BlueprintChild children[MAX_BLUEPRINT_CHILDREN];
     int child_count;
+    RuleSet rules;
 } Blueprint;
 
 typedef struct {
@@ -38,8 +44,8 @@ typedef struct {
 } BlueprintTable;
 
 /* Parse all [[blueprint]] entries from a tomlc99 root table into the blueprint table.
- * Arena is used for any variable-length data (currently unused, reserved for future
- * attribute/rule storage). Returns the number of blueprints loaded, or -1 on error. */
+ * Arena is used for variable-length data (rule arrays).
+ * Returns the number of blueprints loaded, or -1 on error. */
 int blueprints_load(BlueprintTable *table, void *toml_root, Arena *arena);
 
 /* Find a blueprint by name. Returns NULL if not found. */

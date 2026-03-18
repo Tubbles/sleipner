@@ -13,5 +13,6 @@ add_executable(engine_tests
     test_particle.c
     test_collision.c
     test_toml_emitter.c
+    test_rule.c
 )
 target_link_libraries(engine_tests PRIVATE engine unity m)

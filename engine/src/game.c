@@ -6,6 +6,7 @@
 #include "input.h"
 #include "level.h"
 #include "rect.h"
+#include "rule.h"
 
 #include "raylib.h"
 #include "toml.h"
@@ -206,6 +207,59 @@ static void update_child_positions(Level *level)
     }
 }
 
+static int detect_interact_targets(const Entity *player,
+                                   int player_index,
+                                   const Entity *entities,
+                                   int entity_count,
+                                   TriggerEvent *out_events,
+                                   int max_events)
+{
+    int count = 0;
+    for (int index = 0; index < entity_count && count < max_events; index++) {
+        if (index == player_index || !entities[index].active) {
+            continue;
+        }
+        float delta_x = entities[index].position.x - player->position.x;
+        float delta_y = entities[index].position.y - player->position.y;
+        float distance_sq = (delta_x * delta_x) + (delta_y * delta_y);
+        if (distance_sq <= INTERACT_RANGE * INTERACT_RANGE) {
+            out_events[count] = (TriggerEvent){
+                .type = TRIGGER_INTERACT,
+                .entity_index = index,
+            };
+            count++;
+        }
+    }
+    return count;
+}
+
+static int collect_trigger_events(GameState *state, InputState input, TriggerEvent *out_events, int max_events)
+{
+    int count = 0;
+
+    bool interact_pressed = input.buttons[0];
+    bool interact_edge = false;
+    if (interact_pressed) {
+        if (!state->prev_interact) {
+            interact_edge = true;
+        }
+    }
+    state->prev_interact = interact_pressed;
+
+    if (interact_edge) {
+        if (state->player_index >= 0) {
+            const Entity *player = game_get_player_const(state);
+            if (player) {
+                count +=
+                    detect_interact_targets(player, state->player_index, state->current_level.entities,
+                                            state->current_level.entity_count, out_events + count, max_events - count);
+            }
+        }
+    }
+
+    return count;
+}
+
 void game_update(GameState *state, InputState input, float delta_time)
 {
     state->frame++;
@@ -218,6 +272,14 @@ void game_update(GameState *state, InputState input, float delta_time)
     }
 
     update_child_positions(&state->current_level);
+
+    TriggerEvent trigger_events[MAX_TRIGGER_EVENTS];
+    int trigger_count = collect_trigger_events(state, input, trigger_events, MAX_TRIGGER_EVENTS);
+
+    if (trigger_count > 0) {
+        rules_evaluate_batch(state->current_level.entities, state->current_level.entity_count, trigger_events,
+                             trigger_count, &state->flags);
+    }
 }
 
 void game_free(GameState *state)

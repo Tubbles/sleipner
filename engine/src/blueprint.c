@@ -3,6 +3,7 @@
 #include "attribute.h"
 #include "debug.h"
 #include "error.h"
+#include "rule.h"
 
 #include "toml.h"
 
@@ -262,7 +263,7 @@ static bool parse_children(Blueprint *blueprint, toml_table_t *entry)
     return true;
 }
 
-static bool parse_single_blueprint(Blueprint *blueprint, toml_table_t *entry)
+static bool parse_single_blueprint(Blueprint *blueprint, toml_table_t *entry, Arena *arena)
 {
     memset(blueprint, 0, sizeof(*blueprint));
 
@@ -281,12 +282,18 @@ static bool parse_single_blueprint(Blueprint *blueprint, toml_table_t *entry)
     if (!parse_custom_attrs(blueprint, entry)) {
         return false;
     }
-    return parse_children(blueprint, entry);
+    if (!parse_children(blueprint, entry)) {
+        return false;
+    }
+    if (!rules_parse(&blueprint->rules, entry, arena)) {
+        error_wrap("blueprint '%s'", blueprint->name);
+        return false;
+    }
+    return true;
 }
 
 int blueprints_load(BlueprintTable *table, void *toml_root, Arena *arena)
 {
-    (void)arena;
     table->count = 0;
 
     toml_array_t *blueprints = toml_array_in(toml_root, "blueprint");
@@ -317,7 +324,7 @@ int blueprints_load(BlueprintTable *table, void *toml_root, Arena *arena)
             debug_log("bp[%d]: key[%d]='%s'", index, key_index, key ? key : "(null)");
         }
 
-        if (parse_single_blueprint(&table->entries[table->count], entry)) {
+        if (parse_single_blueprint(&table->entries[table->count], entry, arena)) {
             debug_log("bp[%d]: parsed '%s' tex='%s'", index, table->entries[table->count].name,
                       table->entries[table->count].texture_name);
             table->count++;

@@ -782,16 +782,21 @@ pos = [320, 180]
 - [x] Tag system (named references within composition trees)
 
 ### Phase 4 — Rule Engine
-- [ ] Rule struct (trigger + conditions + action tree)
-- [ ] Trigger evaluation (interact, enter, collide, defeat, timer, event, on_spawn, attr_changed)
-- [ ] Condition evaluation (has_item, flag, attr, var, entity_count, AND/OR/NOT grouping)
-- [ ] Action execution (one C function per action type)
+- [x] Rule struct (trigger + conditions + action tree)
+- [x] Trigger evaluation (interact, enter, event, on_spawn, attr_changed — core triggers)
+- [x] Condition evaluation (flag, not_flag, attr, not_attr, attr comparisons, has_item stub, var stub)
+- [x] Action execution (set_flag, clear_flag, set_attr, add_attr, toggle_attr, destroy, fire_event — stubs for rest)
+- [x] TOML parsing of [[blueprint.rule]] entries
+- [x] Evaluation loop with event cascading (max 8 rounds)
+- [x] Interact trigger detection (edge-triggered A-button, proximity-based)
+- [x] Flag storage (FlagSet on GameState)
+- [x] Custom events (fire_event / event trigger, cross-entity decoupling)
 - [ ] Control flow nodes (if/else, repeat, for-each with entity queries)
 - [ ] Variable system (local per-execution, global persistent, $ references in parameters)
 - [ ] Subroutines (named reusable action sequences, callable via `call:`)
-- [ ] Custom events (fire_event / event trigger, cross-entity decoupling)
 - [ ] Timer management (create, destroy named timers)
-- [ ] Flag storage (syntactic sugar over boolean global variables)
+- [ ] Enter/on_spawn trigger detection (overlap tracking, level load events)
+- [ ] Remaining triggers (collide, defeat, timer, timer_periodic, on_destroy)
 
 ### Phase 5 — Editor Mode
 - [ ] Toggle play/editor mode (instant, shared world state)

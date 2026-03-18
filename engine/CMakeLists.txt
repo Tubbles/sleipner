@@ -18,6 +18,7 @@ add_library(engine STATIC
     src/input.c
     src/particle.c
     src/render.c
+    src/rule.c
     src/shape.c
     src/toml_emitter.c
 )
