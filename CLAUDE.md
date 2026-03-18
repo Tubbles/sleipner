@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Sleipner is a top-down Zelda-like action RPG written in C using raylib. The game is controller-driven and targets Linux x86_64. It is designed to also run on Android phones via the "Game Native" app, which uses FEX (x86_64 emulation) and Proton under the hood — so the build target is a standard Linux binary, not an Android NDK build.
 
+**MANDATORY READING:** `DESIGN.md` contains the game design specification and implementation roadmap. Read it before making any changes to understand the intended architecture and feature set.
+
 ## Building
 
 The project uses a containerized toolchain (Podman/Docker) for reproducible builds. All build steps run via `ci.sh`, which wraps `podman run` against the toolchain image.
@@ -234,6 +236,7 @@ Android requires APK updates to be signed with the same key as the original inst
 ## Git Workflow
 
 - **Always commit and push when you're done with a task.** Do not wait to be asked — committing and pushing is part of completing the work.
+- Create small, focused commits as you go so changes are easy to review and revert.
 - Create small, focused commits as you go so changes are easy to review and revert.
 - Each commit should address a single concern (one bug fix, one feature, one refactor).
 - Use a succinct imperative commit title (e.g. "Add player dash mechanic").
