@@ -325,22 +325,27 @@ static void draw_font_preview(void)
 {
     int panel_x = screen_width / 2;
     int line_spacing = FONT_PREVIEW_SIZE + DEBUG_MARGIN;
-    int panel_height = (font_preview_count * (DEBUG_LINE_HEIGHT + line_spacing)) + DEBUG_MARGIN + (DEBUG_LINE_HEIGHT * 3);
+    int panel_height =
+        (font_preview_count * (DEBUG_LINE_HEIGHT + line_spacing)) + DEBUG_MARGIN + (DEBUG_LINE_HEIGHT * 3);
     DrawRectangle(panel_x, 0, screen_width - panel_x, panel_height, debug_bg_color);
 
     int y_offset = DEBUG_MARGIN;
-    DrawText("Font Preview - All fonts loaded at 32px", panel_x + DEBUG_MARGIN, y_offset, DEBUG_FONT_SIZE, debug_text_color);
+    DrawText("Font Preview - All fonts loaded at 32px", panel_x + DEBUG_MARGIN, y_offset, DEBUG_FONT_SIZE,
+             debug_text_color);
     y_offset += DEBUG_LINE_HEIGHT;
-    DrawText("(Visual size varies by font design)", panel_x + DEBUG_MARGIN, y_offset, DEBUG_FONT_SIZE, debug_text_color);
+    DrawText("(Visual size varies by font design)", panel_x + DEBUG_MARGIN, y_offset, DEBUG_FONT_SIZE,
+             debug_text_color);
     y_offset += DEBUG_LINE_HEIGHT;
-    DrawText(TextFormat("Showing %d fonts total", font_preview_count), panel_x + DEBUG_MARGIN, y_offset, DEBUG_FONT_SIZE, debug_text_color);
+    DrawText(TextFormat("Showing %d fonts total", font_preview_count), panel_x + DEBUG_MARGIN, y_offset,
+             DEBUG_FONT_SIZE, debug_text_color);
     y_offset += DEBUG_LINE_HEIGHT;
-    
+
     for (int index = 0; index < font_preview_count; index++) {
         if (!font_preview_entries[index].valid) {
             continue;
         }
-        DrawText(TextFormat("%d. %s", index + 1, font_preview_entries[index].name), panel_x + DEBUG_MARGIN, y_offset, DEBUG_FONT_SIZE, debug_text_color);
+        DrawText(TextFormat("%d. %s", index + 1, font_preview_entries[index].name), panel_x + DEBUG_MARGIN, y_offset,
+                 DEBUG_FONT_SIZE, debug_text_color);
         y_offset += DEBUG_LINE_HEIGHT;
         DrawTextEx(font_preview_entries[index].font, "The quick brown fox 0123456789",
                    (Vector2){(float)(panel_x + DEBUG_MARGIN), (float)y_offset}, FONT_PREVIEW_SIZE, 1, WHITE);
