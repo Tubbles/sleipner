@@ -28,5 +28,5 @@
 ### Follow New Conventions
 - [ ] Apply init function pattern to all modules with static state
 - [ ] Ensure all init functions are called during game startup
-- [ ] Document lifetime expectations for any remaining static data
+- [ ] Document lifetime assumptions when taking pointers to data for caching, performance, or any other reason
 =======
