@@ -17,6 +17,12 @@ src = [0, 0, 64, 80]
 collision_offset = [20, 60]
 collision_size = [24, 16]
 behavior = "static"
+health = [100, 100]
+
+[[blueprint.rule]]
+trigger = "interact"
+conditions = ["self.attr:health"]
+actions = ["add_attr:health,-10"]
 
 [[blueprint]]
 name = "chest"
@@ -26,6 +32,10 @@ collision_offset = [0, 0]
 collision_size = [16, 16]
 behavior = "static"
 
+[[blueprint.rule]]
+trigger = "interact"
+actions = ["set_flag:chest_opened", "destroy"]
+
 [[blueprint]]
 name = "house"
 texture = "house.png"
@@ -33,6 +43,10 @@ src = [0, 0, 96, 128]
 collision_offset = [0, 64]
 collision_size = [96, 64]
 behavior = "static"
+
+[[blueprint.rule]]
+trigger = "enter"
+actions = ["set_flag:house_entered"]
 
 [[blueprint]]
 name = "fence_v"
@@ -90,3 +104,35 @@ pos = [195, 38]
 [[level.entity]]
 blueprint = "fence_v"
 pos = [195, 74]
+
+[[blueprint]]
+name = "switch"
+texture = "chest.png"
+src = [0, 0, 16, 16]
+collision_offset = [0, 0]
+collision_size = [16, 16]
+behavior = "static"
+
+[[blueprint.rule]]
+trigger = "interact"
+actions = ["fire_event:switch_activated"]
+
+[[blueprint]]
+name = "secret_door"
+texture = "tree.png"
+src = [0, 0, 64, 80]
+collision_offset = [20, 60]
+collision_size = [24, 16]
+behavior = "static"
+
+[[blueprint.rule]]
+trigger = "event:switch_activated"
+actions = ["set_flag:door_unlocked", "destroy"]
+
+[[level.entity]]
+blueprint = "switch"
+pos = [300, 150]
+
+[[level.entity]]
+blueprint = "secret_door"
+pos = [350, 150]
