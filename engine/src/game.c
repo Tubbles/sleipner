@@ -1,6 +1,7 @@
 #include "game.h"
 #include "arena.h"
 #include "blueprint.h"
+#include "debug.h"
 #include "error.h"
 #include "entity.h"
 #include "input.h"
