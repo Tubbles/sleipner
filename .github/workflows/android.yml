@@ -13,8 +13,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build toolchain image
-        run: docker build -t sleipner-toolchain .
+      # Cache Docker layers
+      - name: Cache Docker layers
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-docker-${{ hashFiles('Dockerfile') }}
+          restore-keys: |
+            ${{ runner.os }}-docker-
+
+      - name: Build toolchain image with cache
+        run: |
+          docker buildx create --use
+          docker buildx build --cache-from=type=local,src=/tmp/.buildx-cache --cache-to=type=local,dest=/tmp/.buildx-cache -t sleipner-toolchain .
 
       - name: Build APK
         run: CONTAINER_CMD=docker ./ci.sh apk
