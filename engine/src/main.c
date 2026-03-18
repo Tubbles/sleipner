@@ -617,6 +617,7 @@ int main(void)
                   texture_registry[index].texture.height);
     }
     /* Load fonts from embedded assets */
+    font_preview_count = 0;  /* Reset count to avoid duplicate entries across game restarts */
     font_preview_add("Earth Illusion", ASSET(earth_illusion_ttf));
     font_preview_add("Golden Apple", ASSET(golden_apple_ttf));
     font_preview_add("MenuCard", ASSET(menucard_ttf));
