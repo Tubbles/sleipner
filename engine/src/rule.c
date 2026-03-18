@@ -684,15 +684,15 @@ static void evaluate_entity_rules(Entity *entity,
         if (!rule_triggered_by_events(rule, entity_index, pending_events)) {
             continue;
         }
-        debug_log("Rule triggered for entity %d (type: %s), rule %d",
-                 entity_index, entity->blueprint->name, rule_index);
+        debug_log("Rule triggered for entity %d (type: %s), rule %d", entity_index, entity->blueprint->name,
+                  rule_index);
         if (!conditions_evaluate(rule->conditions, rule->condition_count, cond_ctx)) {
-            debug_log("Conditions not met for rule %d on entity %d (type: %s)",
-                     rule_index, entity_index, entity->blueprint->name);
+            debug_log("Conditions not met for rule %d on entity %d (type: %s)", rule_index, entity_index,
+                      entity->blueprint->name);
             continue;
         }
-        debug_log("Executing actions for rule %d on entity %d (type: %s)",
-                 rule_index, entity_index, entity->blueprint->name);
+        debug_log("Executing actions for rule %d on entity %d (type: %s)", rule_index, entity_index,
+                  entity->blueprint->name);
         for (int action_index = 0; action_index < rule->action_count; action_index++) {
             (void)action_execute(&rule->actions[action_index], act_ctx);
         }

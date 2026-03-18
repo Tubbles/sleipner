@@ -223,8 +223,7 @@ static int detect_interact_targets(const Entity *player,
         float delta_y = entities[index].position.y - player->position.y;
         float distance_sq = (delta_x * delta_x) + (delta_y * delta_y);
         if (distance_sq <= INTERACT_RANGE * INTERACT_RANGE) {
-            debug_log("Player within interact range of entity %d (type: %s)",
-                     index, entities[index].blueprint->name);
+            debug_log("Player within interact range of entity %d (type: %s)", index, entities[index].blueprint->name);
             out_events[count] = (TriggerEvent){
                 .type = TRIGGER_INTERACT,
                 .entity_index = index,
