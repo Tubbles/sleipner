@@ -227,6 +227,16 @@ Android requires APK updates to be signed with the same key as the original inst
   - Simplifies adding reset functionality later
   - Prevents subtle bugs from static variable persistence (especially on Android where native libraries may be cached across app restarts)
   - Example: `font_preview_init()`, `game_state_init()`, etc.
+
+**Note on static data:** While the ideal architecture minimizes static variables (preferring explicit state in structs like `GameState`), some global state is practical for game engines:
+  - **Texture/font registries**: Cached for performance, globally accessible
+  - **Debug systems**: Global by nature (logging, metrics)
+  - **One-time initialization**: Configuration that doesn't change
+
+When adding new static data, consider:
+  - Can this be moved into `GameState` or another explicit struct?
+  - Is the global access truly necessary, or can dependencies be passed explicitly?
+  - What's the lifecycle? (one-time init, per-level, per-frame)
 - **One subsystem at a time.** Implement features incrementally, one subsystem at a time. Get it working, tested, and integrated before moving to the next. Don't build multiple half-finished subsystems in parallel.
 
 ## Git Workflow
