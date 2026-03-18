@@ -1,5 +1,6 @@
 build/
 .tmp/
+tmp/
 assets/img/extracted/
 CMakeUserPresets.json
 android/.gradle/
