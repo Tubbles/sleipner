@@ -96,6 +96,17 @@ typedef struct {
 static FontPreviewEntry font_preview_entries[MAX_PREVIEW_FONTS];
 static int font_preview_count = 0;
 
+static void font_preview_init(void)
+{
+    /* Reset font preview system to clean state */
+    font_preview_count = 0;
+    for (int index = 0; index < MAX_PREVIEW_FONTS; index++) {
+        font_preview_entries[index].valid = false;
+        font_preview_entries[index].name[0] = '\0';
+    }
+    debug_log("font_preview: initialized (%d max entries)", MAX_PREVIEW_FONTS);
+}
+
 static Texture2D load_embedded_texture(EmbeddedAsset asset)
 {
     Image image = LoadImageFromMemory(".png", asset.data, asset.size);
@@ -616,8 +627,8 @@ int main(void)
                   texture_registry[index].texture.id, texture_registry[index].texture.width,
                   texture_registry[index].texture.height);
     }
-    /* Load fonts from embedded assets */
-    font_preview_count = 0;  /* Reset count to avoid duplicate entries across game restarts */
+    /* Initialize and load fonts */
+    font_preview_init();
     font_preview_add("Earth Illusion", ASSET(earth_illusion_ttf));
     font_preview_add("Golden Apple", ASSET(golden_apple_ttf));
     font_preview_add("MenuCard", ASSET(menucard_ttf));

@@ -221,6 +221,12 @@ Android requires APK updates to be signed with the same key as the original inst
 - **Keep the delta clear.** DESIGN.md tracks what is designed. The roadmap in DESIGN.md tracks what is actually implemented. When completing a feature, update the roadmap in the same commit. The gap between "designed" and "implemented" should always be visible and accurate.
 - **Remove before adding.** Before writing new code, check if existing code already handles part of the task, or if existing code will become dead after the change. Remove or update it first, then add the new code. This prevents accumulation of unused code paths.
 - **Reset state on initialization.** Be vigilant about resetting static variables, counters, and state arrays during game initialization. Failure to reset can cause bugs across game restarts (e.g., the font preview bug where fonts appeared twice because `font_preview_count` wasn't reset). Audit initialization code when adding new stateful features.
+
+- **Use explicit init functions for static data.** All modules with static state must provide an `init()` function that resets the module to a clean state. Call all init functions from `main()` before game initialization. This pattern:
+  - Makes initialization explicit and auditable
+  - Simplifies adding reset functionality later
+  - Prevents subtle bugs from static variable persistence (especially on Android where native libraries may be cached across app restarts)
+  - Example: `font_preview_init()`, `game_state_init()`, etc.
 - **One subsystem at a time.** Implement features incrementally, one subsystem at a time. Get it working, tested, and integrated before moving to the next. Don't build multiple half-finished subsystems in parallel.
 
 ## Git Workflow
