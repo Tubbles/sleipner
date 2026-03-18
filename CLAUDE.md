@@ -231,3 +231,4 @@ Rules for how Claude Code should operate in this project. Keep adding to this li
 - **No comments in bash commands.** Use the Bash tool's `description` field for context, not inline `#` comments.
 - **Read documentation before probing.** Use WebFetch/WebSearch to read library docs rather than running exploratory commands in containers.
 - **TODO.md workflow.** After completing a task, check `TODO.md` for pending items. If there are items, ask the user if they want to work through them. One item at a time, one commit per item, remove items as they're done, keep the file.
+- **Memories go in CLAUDE.md.** Store all project instructions, feedback, and conventions in this file (versioned in git), not in `~/.claude/` hidden memory files. Exception: if the user explicitly asks for "user local" memory, write to `~/.claude/projects/-home-tubbles-dev-sleipner/memory/`.
