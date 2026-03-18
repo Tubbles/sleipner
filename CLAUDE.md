@@ -233,6 +233,7 @@ Android requires APK updates to be signed with the same key as the original inst
 - Never add "Co-Authored-By" lines or email addresses to commit messages.
 - Push freely without asking, but never use `git push --force` or any force-push variant.
 - **Keep all documentation up to date.** When changing behavior, update CLAUDE.md and code comments in the same commit. Stale docs are worse than no docs.
+- **Run `./ci.sh format` before committing.** Always auto-format code before creating commits to avoid CI failures from clang-format violations. The formatter handles line wrapping, indentation, and other style rules automatically.
 
 ## Claude Code Guidelines
 
