@@ -72,21 +72,37 @@ typedef enum {
     ACTION_WAIT,
     ACTION_CREATE_TIMER,
     ACTION_DESTROY_TIMER,
+    ACTION_IF_ELSE,
+    ACTION_REPEAT,
+    ACTION_FOR_EACH,
 } ActionType;
 
-typedef struct {
+/* --- Control flow nodes --- */
+typedef struct ActionNode ActionNode;
+
+struct ActionNode {
     ActionType type;
     char argument[MAX_ARG];
     char second_argument[MAX_ARG];
-} Action;
+
+    // For control flow nodes
+    ActionNode *children;
+    int child_count;
+    ActionNode *else_children;
+    int else_child_count;
+};
+
+typedef struct {
+    ActionNode *nodes;
+    int count;
+} ActionTree;
 
 /* --- Rule (named struct to match forward declaration in blueprint.h) --- */
 typedef struct Rule {
     Trigger trigger;
     Condition conditions[MAX_CONDITIONS];
     int condition_count;
-    Action actions[MAX_ACTIONS];
-    int action_count;
+    ActionTree action_tree;
 } Rule;
 
 /* --- FlagSet (global boolean flags) --- */
@@ -117,7 +133,7 @@ void event_queue_clear(EventQueue *queue);
 /* --- Parsing (from TOML) --- */
 [[nodiscard]] bool trigger_parse(Trigger *trigger, const char *string);
 [[nodiscard]] bool condition_parse(Condition *condition, const char *string);
-[[nodiscard]] bool action_parse(Action *action, const char *string);
+[[nodiscard]] bool action_node_parse(ActionNode *node, toml_datum_t value, Arena *arena);
 [[nodiscard]] bool rules_parse(RuleSet *rules, void *toml_blueprint_table, Arena *arena);
 
 /* --- Trigger matching --- */
@@ -143,7 +159,7 @@ typedef struct {
     EventQueue *event_queue;
 } ActionContext;
 
-[[nodiscard]] bool action_execute(const Action *action, ActionContext context);
+[[nodiscard]] bool action_node_execute(const ActionNode *node, ActionContext context);
 
 /* --- Evaluation loop --- */
 void rules_evaluate_batch(
