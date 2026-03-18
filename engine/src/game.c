@@ -223,6 +223,8 @@ static int detect_interact_targets(const Entity *player,
         float delta_y = entities[index].position.y - player->position.y;
         float distance_sq = (delta_x * delta_x) + (delta_y * delta_y);
         if (distance_sq <= INTERACT_RANGE * INTERACT_RANGE) {
+            debug_log("Player within interact range of entity %d (type: %s)",
+                     index, entities[index].blueprint->name);
             out_events[count] = (TriggerEvent){
                 .type = TRIGGER_INTERACT,
                 .entity_index = index,
@@ -242,11 +244,13 @@ static int collect_trigger_events(GameState *state, InputState input, TriggerEve
     if (interact_pressed) {
         if (!state->prev_interact) {
             interact_edge = true;
+            debug_log("Interact button pressed");
         }
     }
     state->prev_interact = interact_pressed;
 
     if (interact_edge) {
+        debug_log("Processing interact edge");
         if (state->player_index >= 0) {
             const Entity *player = game_get_player_const(state);
             if (player) {
