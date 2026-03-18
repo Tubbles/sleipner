@@ -2,6 +2,22 @@ plugins {
     id("com.android.application")
 }
 
+fun gitVersionCode(): Int {
+    val process = ProcessBuilder("git", "rev-list", "--count", "HEAD")
+        .directory(rootProject.projectDir)
+        .redirectErrorStream(true)
+        .start()
+    return process.inputStream.bufferedReader().readText().trim().toIntOrNull() ?: 1
+}
+
+fun gitShortHash(): String {
+    val process = ProcessBuilder("git", "rev-parse", "--short", "HEAD")
+        .directory(rootProject.projectDir)
+        .redirectErrorStream(true)
+        .start()
+    return process.inputStream.bufferedReader().readText().trim()
+}
+
 android {
     namespace = "com.sleipner"
     compileSdk = 35
@@ -11,8 +27,8 @@ android {
         applicationId = "com.sleipner"
         minSdk = 27
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = gitVersionCode()
+        versionName = "0.1.0-${gitShortHash()}"
 
         ndk {
             abiFilters += listOf("arm64-v8a")
