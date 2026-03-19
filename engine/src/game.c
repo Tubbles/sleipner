@@ -282,7 +282,7 @@ void game_update(GameState *state, InputState input, float delta_time)
 
     if (trigger_count > 0) {
         rules_evaluate_batch(state->current_level.entities, state->current_level.entity_count, trigger_events,
-                             trigger_count, &state->flags);
+                             trigger_count, &state->flags, &state->vars);
     }
 }
 

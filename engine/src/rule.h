@@ -149,6 +149,8 @@ typedef struct {
     const Entity *entities;
     int entity_count;
     const FlagSet *flags;
+    const AttrSet *local_vars;
+    const AttrSet *global_vars;
 } ConditionContext;
 
 bool conditions_evaluate(const Condition *conditions, int count, ConditionContext context);
@@ -161,12 +163,18 @@ typedef struct {
     int entity_count;
     FlagSet *flags;
     EventQueue *event_queue;
+    AttrSet *local_vars;
+    AttrSet *global_vars;
 } ActionContext;
 
 [[nodiscard]] bool action_node_execute(const ActionNode *node, ActionContext context);
 
 /* --- Evaluation loop --- */
-void rules_evaluate_batch(
-    Entity *entities, int entity_count, const TriggerEvent *events, int event_count, FlagSet *flags);
+void rules_evaluate_batch(Entity *entities,
+                          int entity_count,
+                          const TriggerEvent *events,
+                          int event_count,
+                          FlagSet *flags,
+                          AttrSet *global_vars);
 
 #endif

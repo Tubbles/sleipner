@@ -8,10 +8,13 @@
 
 #include "toml.h"
 
+#include <ctype.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #define MAX_PARSE_CF_STACK 64
+#define GLOBAL_VAR_PREFIX "global."
 #define MAX_EXEC_STACK 512
 #define RADIX_DECIMAL 10
 
@@ -646,8 +649,23 @@ static bool evaluate_single_condition(const Condition *condition, ConditionConte
         return attr_to_float(attr) == condition->compare_value;
     }
     case COND_HAS_ITEM:
-    case COND_VAR:
         return true;
+    case COND_VAR: {
+        const Attribute *var = NULL;
+        if (context.local_vars) {
+            var = attr_get(context.local_vars, condition->argument);
+        }
+        if (!var && context.global_vars) {
+            var = attr_get(context.global_vars, condition->argument);
+        }
+        if (!var) {
+            return false;
+        }
+        if (var->type == ATTR_STRING) {
+            return var->value.s[0] != '\0';
+        }
+        return attr_to_float(var) != 0.0F;
+    }
     }
     return false;
 }
@@ -697,6 +715,81 @@ static bool evaluate_condition_string(const char *condition_str, ConditionContex
     return evaluate_single_condition(&temp_cond, context);
 }
 
+static const Attribute *lookup_var(const char *varname, ActionContext context)
+{
+    if (context.local_vars) {
+        const Attribute *var = attr_get(context.local_vars, varname);
+        if (var) {
+            return var;
+        }
+    }
+    if (context.global_vars) {
+        return attr_get(context.global_vars, varname);
+    }
+    return NULL;
+}
+
+static void format_var_value(char *out, int out_size, const Attribute *var)
+{
+    if (var->type == ATTR_FLOAT) {
+        (void)snprintf(out, (size_t)out_size, "%g", (double)var->value.f);
+    } else if (var->type == ATTR_INT) {
+        (void)snprintf(out, (size_t)out_size, "%d", var->value.i);
+    } else if (var->type == ATTR_BOOL) {
+        if (var->value.b) {
+            strncpy(out, "true", (size_t)(out_size - 1));
+        } else {
+            strncpy(out, "false", (size_t)(out_size - 1));
+        }
+        out[out_size - 1] = '\0';
+    } else {
+        strncpy(out, var->value.s, (size_t)(out_size - 1));
+        out[out_size - 1] = '\0';
+    }
+}
+
+static void resolve_arg(char *out, int out_size, const char *arg, ActionContext context)
+{
+    if (!strchr(arg, '$')) {
+        strncpy(out, arg, (size_t)(out_size - 1));
+        out[out_size - 1] = '\0';
+        return;
+    }
+    int out_pos = 0;
+    const char *pos = arg;
+    while (*pos != '\0' && out_pos < out_size - 1) {
+        if (*pos != '$') {
+            out[out_pos++] = *pos++;
+            continue;
+        }
+        pos++;
+        char varname[MAX_ARG];
+        int varname_len = 0;
+        while (*pos != '\0' && (isalnum((unsigned char)*pos) || *pos == '_')) {
+            if (varname_len < MAX_ARG - 1) {
+                varname[varname_len++] = *pos;
+            }
+            pos++;
+        }
+        varname[varname_len] = '\0';
+        if (varname_len == 0) {
+            out[out_pos++] = '$';
+            continue;
+        }
+        const Attribute *var = lookup_var(varname, context);
+        if (!var) {
+            continue;
+        }
+        char val_buf[MAX_ARG];
+        format_var_value(val_buf, MAX_ARG, var);
+        int val_len = (int)strlen(val_buf);
+        int copy_len = val_len < out_size - 1 - out_pos ? val_len : out_size - 1 - out_pos;
+        memcpy(out + out_pos, val_buf, (size_t)copy_len);
+        out_pos += copy_len;
+    }
+    out[out_pos] = '\0';
+}
+
 static bool execute_set_attr_action(const ActionNode *node, ActionContext context)
 {
     char attr_name[MAX_ATTR_NAME];
@@ -705,14 +798,16 @@ static bool execute_set_attr_action(const ActionNode *node, ActionContext contex
         debug_log("set_attr: target not found: %s", node->argument);
         return true;
     }
-    float value = strtof(node->second_argument, NULL);
-    if (strchr(node->second_argument, '.')) {
+    char resolved[MAX_ARG];
+    resolve_arg(resolved, MAX_ARG, node->second_argument, context);
+    float value = strtof(resolved, NULL);
+    if (strchr(resolved, '.')) {
         return attr_set_float(&target->attrs, attr_name, value);
     }
-    if (strcmp(node->second_argument, "true") == 0) {
+    if (strcmp(resolved, "true") == 0) {
         return attr_set_bool(&target->attrs, attr_name, true);
     }
-    if (strcmp(node->second_argument, "false") == 0) {
+    if (strcmp(resolved, "false") == 0) {
         return attr_set_bool(&target->attrs, attr_name, false);
     }
     return attr_set_int(&target->attrs, attr_name, (int)value);
@@ -727,7 +822,9 @@ static bool execute_add_attr_action(const ActionNode *node, ActionContext contex
         return true;
     }
     const Attribute *existing = entity_get_attr(target, attr_name);
-    float delta = strtof(node->second_argument, NULL);
+    char resolved[MAX_ARG];
+    resolve_arg(resolved, MAX_ARG, node->second_argument, context);
+    float delta = strtof(resolved, NULL);
     if (existing && existing->type == ATTR_FLOAT) {
         return attr_set_float(&target->attrs, attr_name, existing->value.f + delta);
     }
@@ -745,6 +842,41 @@ static bool execute_toggle_attr_action(const ActionNode *node, ActionContext con
     }
     bool current_val = entity_get_bool(target, attr_name, false);
     return attr_set_bool(&target->attrs, attr_name, (bool)!current_val);
+}
+
+static bool execute_set_var_action(const ActionNode *node, ActionContext context)
+{
+    char resolved_value[MAX_ARG];
+    resolve_arg(resolved_value, MAX_ARG, node->second_argument, context);
+
+    AttrSet *target_vars;
+    const char *var_name;
+    if (strncmp(node->argument, GLOBAL_VAR_PREFIX, sizeof(GLOBAL_VAR_PREFIX) - 1) == 0) {
+        target_vars = context.global_vars;
+        var_name = node->argument + sizeof(GLOBAL_VAR_PREFIX) - 1;
+    } else {
+        target_vars = context.local_vars;
+        var_name = node->argument;
+    }
+    if (!target_vars) {
+        debug_log("set_var: no var storage for '%s'", node->argument);
+        return true;
+    }
+    if (strcmp(resolved_value, "true") == 0) {
+        return attr_set_bool(target_vars, var_name, true);
+    }
+    if (strcmp(resolved_value, "false") == 0) {
+        return attr_set_bool(target_vars, var_name, false);
+    }
+    if (strchr(resolved_value, '.')) {
+        return attr_set_float(target_vars, var_name, strtof(resolved_value, NULL));
+    }
+    char *endptr;
+    long ival = strtol(resolved_value, &endptr, RADIX_DECIMAL);
+    if (endptr != resolved_value && *endptr == '\0') {
+        return attr_set_int(target_vars, var_name, (int)ival);
+    }
+    return attr_set_string(target_vars, (AttrStringPair){.name = var_name, .value = resolved_value});
 }
 
 static bool push_branch_nodes(const ActionNode **exec_stack, int *stack_top, const ActionNode *nodes, int count)
@@ -767,6 +899,8 @@ expand_if_else_node(const ActionNode *node, ActionContext context, const ActionN
         .entities = context.entities,
         .entity_count = context.entity_count,
         .flags = context.flags,
+        .local_vars = context.local_vars,
+        .global_vars = context.global_vars,
     };
     bool condition_met = evaluate_condition_string(node->argument, cond_ctx);
     const ActionNode *branch;
@@ -810,6 +944,8 @@ static bool dispatch_simple_action(const ActionNode *node, ActionContext context
         return execute_add_attr_action(node, context);
     case ACTION_TOGGLE_ATTR:
         return execute_toggle_attr_action(node, context);
+    case ACTION_SET_VAR:
+        return execute_set_var_action(node, context);
     case ACTION_DESTROY:
         context.entity->active = false;
         return true;
@@ -868,30 +1004,35 @@ static void evaluate_entity_rules(Entity *entity,
                                   Entity *entities,
                                   int entity_count,
                                   FlagSet *flags,
+                                  AttrSet *global_vars,
                                   const EventQueue *pending_events,
                                   EventQueue *next_events)
 {
     const RuleSet *ruleset = &entity->blueprint->rules;
-    ConditionContext cond_ctx = {
-        .entity = entity,
-        .entities = entities,
-        .entity_count = entity_count,
-        .flags = flags,
-    };
-    ActionContext act_ctx = {
-        .entity = entity,
-        .entity_index = entity_index,
-        .entities = entities,
-        .entity_count = entity_count,
-        .flags = flags,
-        .event_queue = next_events,
-    };
-
     for (int rule_index = 0; rule_index < ruleset->count; rule_index++) {
         const Rule *rule = &ruleset->entries[rule_index];
         if (!rule_triggered_by_events(rule, entity_index, pending_events)) {
             continue;
         }
+        AttrSet local_vars = {0};
+        ConditionContext cond_ctx = {
+            .entity = entity,
+            .entities = entities,
+            .entity_count = entity_count,
+            .flags = flags,
+            .local_vars = &local_vars,
+            .global_vars = global_vars,
+        };
+        ActionContext act_ctx = {
+            .entity = entity,
+            .entity_index = entity_index,
+            .entities = entities,
+            .entity_count = entity_count,
+            .flags = flags,
+            .event_queue = next_events,
+            .local_vars = &local_vars,
+            .global_vars = global_vars,
+        };
         debug_log("Rule triggered for entity %d (type: %s), rule %d", entity_index, entity->blueprint->name,
                   rule_index);
         if (!conditions_evaluate(rule->conditions, rule->condition_count, cond_ctx)) {
@@ -907,8 +1048,12 @@ static void evaluate_entity_rules(Entity *entity,
     }
 }
 
-void rules_evaluate_batch(
-    Entity *entities, int entity_count, const TriggerEvent *events, int event_count, FlagSet *flags)
+void rules_evaluate_batch(Entity *entities,
+                          int entity_count,
+                          const TriggerEvent *events,
+                          int event_count,
+                          FlagSet *flags,
+                          AttrSet *global_vars)
 {
     EventQueue pending_events;
     event_queue_clear(&pending_events);
@@ -930,7 +1075,8 @@ void rules_evaluate_batch(
             if (entity->blueprint->rules.count == 0) {
                 continue;
             }
-            evaluate_entity_rules(entity, entity_index, entities, entity_count, flags, &pending_events, &next_events);
+            evaluate_entity_rules(entity, entity_index, entities, entity_count, flags, global_vars, &pending_events,
+                                  &next_events);
         }
 
         pending_events = next_events;

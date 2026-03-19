@@ -748,9 +748,10 @@ void test_evaluate_interact_sets_flag(void)
     entity.blueprint = &blueprint;
 
     FlagSet flags = {0};
+    AttrSet global_vars = {0};
     TriggerEvent event = {.type = TRIGGER_INTERACT, .entity_index = 0};
 
-    rules_evaluate_batch(&entity, 1, &event, 1, &flags);
+    rules_evaluate_batch(&entity, 1, &event, 1, &flags, &global_vars);
     TEST_ASSERT_TRUE(flag_get(&flags, "chest_opened"));
 
     arena_free(&arena);
@@ -788,9 +789,10 @@ void test_evaluate_condition_blocks_action(void)
     entity.blueprint = &blueprint;
 
     FlagSet flags = {0};
+    AttrSet global_vars = {0};
     TriggerEvent event = {.type = TRIGGER_INTERACT, .entity_index = 0};
 
-    rules_evaluate_batch(&entity, 1, &event, 1, &flags);
+    rules_evaluate_batch(&entity, 1, &event, 1, &flags, &global_vars);
     TEST_ASSERT_FALSE(flag_get(&flags, "chest_opened"));
 
     arena_free(&arena);
@@ -845,12 +847,163 @@ void test_evaluate_fire_event_cascading(void)
     strncpy(entities[1].blueprint_name, "door", MAX_BLUEPRINT_NAME - 1);
 
     FlagSet flags = {0};
+    AttrSet global_vars = {0};
     TriggerEvent event = {.type = TRIGGER_INTERACT, .entity_index = 0};
 
-    rules_evaluate_batch(entities, 2, &event, 1, &flags);
+    rules_evaluate_batch(entities, 2, &event, 1, &flags, &global_vars);
     TEST_ASSERT_TRUE(flag_get(&flags, "door_opened"));
 
     arena_free(&arena);
+}
+
+/* ---- Variable system tests ---- */
+
+void test_var_set_local(void)
+{
+    FlagSet flags = {0};
+    EventQueue queue = {0};
+    Entity entity = {0};
+    AttrSet local_vars = {0};
+    AttrSet global_vars = {0};
+
+    ActionNode action = {.type = ACTION_SET_VAR};
+    strncpy(action.argument, "damage", MAX_ARG - 1);
+    strncpy(action.second_argument, "42", MAX_ARG - 1);
+
+    ActionContext context = {
+        .entity = &entity,
+        .entities = &entity,
+        .entity_count = 1,
+        .flags = &flags,
+        .event_queue = &queue,
+        .local_vars = &local_vars,
+        .global_vars = &global_vars,
+    };
+    TEST_ASSERT_TRUE(action_node_execute(&action, context));
+    TEST_ASSERT_EQUAL_INT(42, attr_get_int(&local_vars, "damage", 0));
+    TEST_ASSERT_NULL(attr_get(&global_vars, "damage"));
+}
+
+void test_var_set_global(void)
+{
+    FlagSet flags = {0};
+    EventQueue queue = {0};
+    Entity entity = {0};
+    AttrSet local_vars = {0};
+    AttrSet global_vars = {0};
+
+    ActionNode action = {.type = ACTION_SET_VAR};
+    strncpy(action.argument, "global.score", MAX_ARG - 1);
+    strncpy(action.second_argument, "100", MAX_ARG - 1);
+
+    ActionContext context = {
+        .entity = &entity,
+        .entities = &entity,
+        .entity_count = 1,
+        .flags = &flags,
+        .event_queue = &queue,
+        .local_vars = &local_vars,
+        .global_vars = &global_vars,
+    };
+    TEST_ASSERT_TRUE(action_node_execute(&action, context));
+    TEST_ASSERT_EQUAL_INT(100, attr_get_int(&global_vars, "score", 0));
+    TEST_ASSERT_NULL(attr_get(&local_vars, "score"));
+}
+
+void test_var_condition_truthy(void)
+{
+    FlagSet flags = {0};
+    Entity entity = {0};
+    AttrSet local_vars = {0};
+    AttrSet global_vars = {0};
+    (void)attr_set_int(&local_vars, "active", 1);
+
+    Condition cond = {.type = COND_VAR};
+    strncpy(cond.argument, "active", MAX_ARG - 1);
+
+    ConditionContext context = {
+        .entity = &entity,
+        .entities = &entity,
+        .entity_count = 1,
+        .flags = &flags,
+        .local_vars = &local_vars,
+        .global_vars = &global_vars,
+    };
+    TEST_ASSERT_TRUE(conditions_evaluate(&cond, 1, context));
+}
+
+void test_var_condition_falsy_when_unset(void)
+{
+    FlagSet flags = {0};
+    Entity entity = {0};
+    AttrSet local_vars = {0};
+    AttrSet global_vars = {0};
+
+    Condition cond = {.type = COND_VAR};
+    strncpy(cond.argument, "missing", MAX_ARG - 1);
+
+    ConditionContext context = {
+        .entity = &entity,
+        .entities = &entity,
+        .entity_count = 1,
+        .flags = &flags,
+        .local_vars = &local_vars,
+        .global_vars = &global_vars,
+    };
+    TEST_ASSERT_FALSE(conditions_evaluate(&cond, 1, context));
+}
+
+void test_var_substitution_in_set_attr(void)
+{
+    FlagSet flags = {0};
+    EventQueue queue = {0};
+    Entity entity = {0};
+    AttrSet local_vars = {0};
+    AttrSet global_vars = {0};
+    (void)attr_set_int(&local_vars, "amount", 5);
+
+    ActionNode action = {.type = ACTION_SET_ATTR};
+    strncpy(action.argument, "health", MAX_ARG - 1);
+    strncpy(action.second_argument, "$amount", MAX_ARG - 1);
+
+    ActionContext context = {
+        .entity = &entity,
+        .entities = &entity,
+        .entity_count = 1,
+        .flags = &flags,
+        .event_queue = &queue,
+        .local_vars = &local_vars,
+        .global_vars = &global_vars,
+    };
+    TEST_ASSERT_TRUE(action_node_execute(&action, context));
+    TEST_ASSERT_EQUAL_INT(5, entity_get_int(&entity, "health", 0));
+}
+
+void test_local_var_scoped_per_rule(void)
+{
+    FlagSet flags = {0};
+    EventQueue queue = {0};
+    Entity entity = {0};
+    AttrSet local_vars_a = {0};
+    AttrSet local_vars_b = {0};
+    AttrSet global_vars = {0};
+
+    ActionNode action = {.type = ACTION_SET_VAR};
+    strncpy(action.argument, "temp", MAX_ARG - 1);
+    strncpy(action.second_argument, "99", MAX_ARG - 1);
+
+    ActionContext context_a = {
+        .entity = &entity,
+        .entities = &entity,
+        .entity_count = 1,
+        .flags = &flags,
+        .event_queue = &queue,
+        .local_vars = &local_vars_a,
+        .global_vars = &global_vars,
+    };
+    TEST_ASSERT_TRUE(action_node_execute(&action, context_a));
+    TEST_ASSERT_EQUAL_INT(99, attr_get_int(&local_vars_a, "temp", 0));
+    TEST_ASSERT_NULL(attr_get(&local_vars_b, "temp"));
 }
 
 /* ---- Integration: blueprint with rules parsed from gamedata ---- */

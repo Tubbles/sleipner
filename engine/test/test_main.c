@@ -184,6 +184,12 @@ void test_evaluate_condition_blocks_action(void);
 void test_evaluate_fire_event_cascading(void);
 void test_integration_interact_rule(void);
 void test_integration_condition_blocks_interact(void);
+void test_var_set_local(void);
+void test_var_set_global(void);
+void test_var_condition_truthy(void);
+void test_var_condition_falsy_when_unset(void);
+void test_var_substitution_in_set_attr(void);
+void test_local_var_scoped_per_rule(void);
 
 /* test_collision.c */
 void test_rect_rect_overlap(void);
@@ -366,6 +372,12 @@ int main(void)
     RUN_TEST(test_evaluate_fire_event_cascading);
     RUN_TEST(test_integration_interact_rule);
     RUN_TEST(test_integration_condition_blocks_interact);
+    RUN_TEST(test_var_set_local);
+    RUN_TEST(test_var_set_global);
+    RUN_TEST(test_var_condition_truthy);
+    RUN_TEST(test_var_condition_falsy_when_unset);
+    RUN_TEST(test_var_substitution_in_set_attr);
+    RUN_TEST(test_local_var_scoped_per_rule);
 
     RUN_TEST(test_rect_rect_overlap);
     RUN_TEST(test_rect_rect_no_overlap);

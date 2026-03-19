@@ -29,6 +29,7 @@ typedef struct {
     BlueprintTable blueprints;
     Level current_level;
     FlagSet flags;
+    AttrSet vars;
     RectU32 game_bounds;
     int frame;
     float elapsed;
