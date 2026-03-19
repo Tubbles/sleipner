@@ -182,26 +182,36 @@ void test_condition_parse_unknown(void)
 
 /* ---- Action parsing tests ---- */
 
+static bool parse_action_str(ActionNode *node, const char *str)
+{
+    char buf[MAX_ARG * 4];
+    strncpy(buf, str, sizeof(buf) - 1);
+    buf[sizeof(buf) - 1] = '\0';
+    toml_datum_t value = {.ok = 1};
+    value.u.s = buf;
+    return action_node_parse(node, value, NULL);
+}
+
 void test_action_parse_set_flag(void)
 {
-    Action action;
-    TEST_ASSERT_TRUE(action_parse(&action, "set_flag:chest_opened"));
+    ActionNode action;
+    TEST_ASSERT_TRUE(parse_action_str(&action, "set_flag:chest_opened"));
     TEST_ASSERT_EQUAL_INT(ACTION_SET_FLAG, action.type);
     TEST_ASSERT_EQUAL_STRING("chest_opened", action.argument);
 }
 
 void test_action_parse_clear_flag(void)
 {
-    Action action;
-    TEST_ASSERT_TRUE(action_parse(&action, "clear_flag:door_locked"));
+    ActionNode action;
+    TEST_ASSERT_TRUE(parse_action_str(&action, "clear_flag:door_locked"));
     TEST_ASSERT_EQUAL_INT(ACTION_CLEAR_FLAG, action.type);
     TEST_ASSERT_EQUAL_STRING("door_locked", action.argument);
 }
 
 void test_action_parse_set_attr(void)
 {
-    Action action;
-    TEST_ASSERT_TRUE(action_parse(&action, "set_attr:self.is_locked,false"));
+    ActionNode action;
+    TEST_ASSERT_TRUE(parse_action_str(&action, "set_attr:self.is_locked,false"));
     TEST_ASSERT_EQUAL_INT(ACTION_SET_ATTR, action.type);
     TEST_ASSERT_EQUAL_STRING("self.is_locked", action.argument);
     TEST_ASSERT_EQUAL_STRING("false", action.second_argument);
@@ -209,8 +219,8 @@ void test_action_parse_set_attr(void)
 
 void test_action_parse_add_attr(void)
 {
-    Action action;
-    TEST_ASSERT_TRUE(action_parse(&action, "add_attr:root.health,-2"));
+    ActionNode action;
+    TEST_ASSERT_TRUE(parse_action_str(&action, "add_attr:root.health,-2"));
     TEST_ASSERT_EQUAL_INT(ACTION_ADD_ATTR, action.type);
     TEST_ASSERT_EQUAL_STRING("root.health", action.argument);
     TEST_ASSERT_EQUAL_STRING("-2", action.second_argument);
@@ -218,31 +228,31 @@ void test_action_parse_add_attr(void)
 
 void test_action_parse_toggle_attr(void)
 {
-    Action action;
-    TEST_ASSERT_TRUE(action_parse(&action, "toggle_attr:self.visible"));
+    ActionNode action;
+    TEST_ASSERT_TRUE(parse_action_str(&action, "toggle_attr:self.visible"));
     TEST_ASSERT_EQUAL_INT(ACTION_TOGGLE_ATTR, action.type);
     TEST_ASSERT_EQUAL_STRING("self.visible", action.argument);
 }
 
 void test_action_parse_destroy(void)
 {
-    Action action;
-    TEST_ASSERT_TRUE(action_parse(&action, "destroy"));
+    ActionNode action;
+    TEST_ASSERT_TRUE(parse_action_str(&action, "destroy"));
     TEST_ASSERT_EQUAL_INT(ACTION_DESTROY, action.type);
 }
 
 void test_action_parse_fire_event(void)
 {
-    Action action;
-    TEST_ASSERT_TRUE(action_parse(&action, "fire_event:boss_defeated"));
+    ActionNode action;
+    TEST_ASSERT_TRUE(parse_action_str(&action, "fire_event:boss_defeated"));
     TEST_ASSERT_EQUAL_INT(ACTION_FIRE_EVENT, action.type);
     TEST_ASSERT_EQUAL_STRING("boss_defeated", action.argument);
 }
 
 void test_action_parse_unknown(void)
 {
-    Action action;
-    TEST_ASSERT_FALSE(action_parse(&action, "unknown_action:foo"));
+    ActionNode action;
+    TEST_ASSERT_FALSE(parse_action_str(&action, "unknown_action:foo"));
 }
 
 /* ---- Trigger matching tests ---- */
@@ -430,7 +440,7 @@ void test_action_set_flag_executes(void)
     Entity entity = {0};
     entity.active = true;
 
-    Action action = {.type = ACTION_SET_FLAG};
+    ActionNode action = {.type = ACTION_SET_FLAG};
     strncpy(action.argument, "chest_opened", MAX_ARG - 1);
 
     ActionContext context = {
@@ -438,7 +448,7 @@ void test_action_set_flag_executes(void)
         .flags = &flags,
         .event_queue = &queue,
     };
-    TEST_ASSERT_TRUE(action_execute(&action, context));
+    TEST_ASSERT_TRUE(action_node_execute(&action, context));
     TEST_ASSERT_TRUE(flag_get(&flags, "chest_opened"));
 }
 
@@ -449,7 +459,7 @@ void test_action_clear_flag_executes(void)
     EventQueue queue = {0};
     Entity entity = {0};
 
-    Action action = {.type = ACTION_CLEAR_FLAG};
+    ActionNode action = {.type = ACTION_CLEAR_FLAG};
     strncpy(action.argument, "door_locked", MAX_ARG - 1);
 
     ActionContext context = {
@@ -457,7 +467,7 @@ void test_action_clear_flag_executes(void)
         .flags = &flags,
         .event_queue = &queue,
     };
-    TEST_ASSERT_TRUE(action_execute(&action, context));
+    TEST_ASSERT_TRUE(action_node_execute(&action, context));
     TEST_ASSERT_FALSE(flag_get(&flags, "door_locked"));
 }
 
@@ -468,7 +478,7 @@ void test_action_set_attr_bool(void)
     Entity entity = {0};
     (void)attr_set_bool(&entity.attrs, "is_locked", true);
 
-    Action action = {.type = ACTION_SET_ATTR};
+    ActionNode action = {.type = ACTION_SET_ATTR};
     strncpy(action.argument, "is_locked", MAX_ARG - 1);
     strncpy(action.second_argument, "false", MAX_ARG - 1);
 
@@ -479,7 +489,7 @@ void test_action_set_attr_bool(void)
         .flags = &flags,
         .event_queue = &queue,
     };
-    TEST_ASSERT_TRUE(action_execute(&action, context));
+    TEST_ASSERT_TRUE(action_node_execute(&action, context));
 
     const Attribute *attr = attr_get(&entity.attrs, "is_locked");
     TEST_ASSERT_NOT_NULL(attr);
@@ -493,7 +503,7 @@ void test_action_set_attr_int(void)
     EventQueue queue = {0};
     Entity entity = {0};
 
-    Action action = {.type = ACTION_SET_ATTR};
+    ActionNode action = {.type = ACTION_SET_ATTR};
     strncpy(action.argument, "health", MAX_ARG - 1);
     strncpy(action.second_argument, "42", MAX_ARG - 1);
 
@@ -504,7 +514,7 @@ void test_action_set_attr_int(void)
         .flags = &flags,
         .event_queue = &queue,
     };
-    TEST_ASSERT_TRUE(action_execute(&action, context));
+    TEST_ASSERT_TRUE(action_node_execute(&action, context));
     TEST_ASSERT_EQUAL_INT(42, entity_get_int(&entity, "health", 0));
 }
 
@@ -515,7 +525,7 @@ void test_action_add_attr(void)
     Entity entity = {0};
     (void)attr_set_int(&entity.attrs, "health", 10);
 
-    Action action = {.type = ACTION_ADD_ATTR};
+    ActionNode action = {.type = ACTION_ADD_ATTR};
     strncpy(action.argument, "health", MAX_ARG - 1);
     strncpy(action.second_argument, "-3", MAX_ARG - 1);
 
@@ -526,7 +536,7 @@ void test_action_add_attr(void)
         .flags = &flags,
         .event_queue = &queue,
     };
-    TEST_ASSERT_TRUE(action_execute(&action, context));
+    TEST_ASSERT_TRUE(action_node_execute(&action, context));
     TEST_ASSERT_EQUAL_INT(7, entity_get_int(&entity, "health", 0));
 }
 
@@ -537,7 +547,7 @@ void test_action_toggle_attr(void)
     Entity entity = {0};
     (void)attr_set_bool(&entity.attrs, "visible", true);
 
-    Action action = {.type = ACTION_TOGGLE_ATTR};
+    ActionNode action = {.type = ACTION_TOGGLE_ATTR};
     strncpy(action.argument, "visible", MAX_ARG - 1);
 
     ActionContext context = {
@@ -547,7 +557,7 @@ void test_action_toggle_attr(void)
         .flags = &flags,
         .event_queue = &queue,
     };
-    TEST_ASSERT_TRUE(action_execute(&action, context));
+    TEST_ASSERT_TRUE(action_node_execute(&action, context));
     TEST_ASSERT_FALSE(entity_get_bool(&entity, "visible", true));
 }
 
@@ -558,14 +568,14 @@ void test_action_destroy(void)
     Entity entity = {0};
     entity.active = true;
 
-    Action action = {.type = ACTION_DESTROY};
+    ActionNode action = {.type = ACTION_DESTROY};
 
     ActionContext context = {
         .entity = &entity,
         .flags = &flags,
         .event_queue = &queue,
     };
-    TEST_ASSERT_TRUE(action_execute(&action, context));
+    TEST_ASSERT_TRUE(action_node_execute(&action, context));
     TEST_ASSERT_FALSE(entity.active);
 }
 
@@ -575,7 +585,7 @@ void test_action_fire_event_queues(void)
     EventQueue queue = {0};
     Entity entity = {0};
 
-    Action action = {.type = ACTION_FIRE_EVENT};
+    ActionNode action = {.type = ACTION_FIRE_EVENT};
     strncpy(action.argument, "boss_defeated", MAX_ARG - 1);
 
     ActionContext context = {
@@ -583,7 +593,7 @@ void test_action_fire_event_queues(void)
         .flags = &flags,
         .event_queue = &queue,
     };
-    TEST_ASSERT_TRUE(action_execute(&action, context));
+    TEST_ASSERT_TRUE(action_node_execute(&action, context));
     TEST_ASSERT_EQUAL_INT(1, queue.count);
     TEST_ASSERT_EQUAL_INT(TRIGGER_EVENT, queue.entries[0].type);
     TEST_ASSERT_EQUAL_STRING("boss_defeated", queue.entries[0].argument);
@@ -595,7 +605,7 @@ void test_action_execution_order(void)
     EventQueue queue = {0};
     Entity entity = {0};
 
-    Action actions[2] = {
+    ActionNode actions[2] = {
         {.type = ACTION_SET_FLAG},
         {.type = ACTION_SET_FLAG},
     };
@@ -607,8 +617,8 @@ void test_action_execution_order(void)
         .flags = &flags,
         .event_queue = &queue,
     };
-    (void)action_execute(&actions[0], context);
-    (void)action_execute(&actions[1], context);
+    (void)action_node_execute(&actions[0], context);
+    (void)action_node_execute(&actions[1], context);
 
     TEST_ASSERT_TRUE(flag_get(&flags, "first"));
     TEST_ASSERT_TRUE(flag_get(&flags, "second"));
@@ -644,10 +654,10 @@ void test_rules_parse_from_toml(void)
     TEST_ASSERT_EQUAL_INT(1, rule->condition_count);
     TEST_ASSERT_EQUAL_INT(COND_FLAG, rule->conditions[0].type);
     TEST_ASSERT_EQUAL_STRING("has_key", rule->conditions[0].argument);
-    TEST_ASSERT_EQUAL_INT(2, rule->action_count);
-    TEST_ASSERT_EQUAL_INT(ACTION_SET_FLAG, rule->actions[0].type);
-    TEST_ASSERT_EQUAL_STRING("chest_opened", rule->actions[0].argument);
-    TEST_ASSERT_EQUAL_INT(ACTION_DESTROY, rule->actions[1].type);
+    TEST_ASSERT_EQUAL_INT(2, rule->action_tree.count);
+    TEST_ASSERT_EQUAL_INT(ACTION_SET_FLAG, rule->action_tree.nodes[0].type);
+    TEST_ASSERT_EQUAL_STRING("chest_opened", rule->action_tree.nodes[0].argument);
+    TEST_ASSERT_EQUAL_INT(ACTION_DESTROY, rule->action_tree.nodes[1].type);
 
     toml_free(root);
     arena_free(&arena);
@@ -721,9 +731,14 @@ void test_evaluate_interact_sets_flag(void)
     TEST_ASSERT_NOT_NULL(rule);
     memset(rule, 0, sizeof(*rule));
     rule->trigger.type = TRIGGER_INTERACT;
-    rule->action_count = 1;
-    rule->actions[0].type = ACTION_SET_FLAG;
-    strncpy(rule->actions[0].argument, "chest_opened", MAX_ARG - 1);
+    ActionNode *nodes_interact =
+        arena_alloc(&arena, (AllocRequest){.size = sizeof(ActionNode), .alignment = _Alignof(ActionNode)});
+    TEST_ASSERT_NOT_NULL(nodes_interact);
+    memset(nodes_interact, 0, sizeof(ActionNode));
+    nodes_interact[0].type = ACTION_SET_FLAG;
+    strncpy(nodes_interact[0].argument, "chest_opened", MAX_ARG - 1);
+    rule->action_tree.nodes = nodes_interact;
+    rule->action_tree.count = 1;
 
     blueprint.rules.entries = rule;
     blueprint.rules.count = 1;
@@ -756,9 +771,14 @@ void test_evaluate_condition_blocks_action(void)
     rule->condition_count = 1;
     rule->conditions[0].type = COND_FLAG;
     strncpy(rule->conditions[0].argument, "has_key", MAX_ARG - 1);
-    rule->action_count = 1;
-    rule->actions[0].type = ACTION_SET_FLAG;
-    strncpy(rule->actions[0].argument, "chest_opened", MAX_ARG - 1);
+    ActionNode *nodes_blocked =
+        arena_alloc(&arena, (AllocRequest){.size = sizeof(ActionNode), .alignment = _Alignof(ActionNode)});
+    TEST_ASSERT_NOT_NULL(nodes_blocked);
+    memset(nodes_blocked, 0, sizeof(ActionNode));
+    nodes_blocked[0].type = ACTION_SET_FLAG;
+    strncpy(nodes_blocked[0].argument, "chest_opened", MAX_ARG - 1);
+    rule->action_tree.nodes = nodes_blocked;
+    rule->action_tree.count = 1;
 
     blueprint.rules.entries = rule;
     blueprint.rules.count = 1;
@@ -787,9 +807,14 @@ void test_evaluate_fire_event_cascading(void)
     Rule *switch_rule = arena_alloc(&arena, (AllocRequest){.size = sizeof(Rule), .alignment = _Alignof(Rule)});
     memset(switch_rule, 0, sizeof(*switch_rule));
     switch_rule->trigger.type = TRIGGER_INTERACT;
-    switch_rule->action_count = 1;
-    switch_rule->actions[0].type = ACTION_FIRE_EVENT;
-    strncpy(switch_rule->actions[0].argument, "switch_pulled", MAX_ARG - 1);
+    ActionNode *switch_nodes =
+        arena_alloc(&arena, (AllocRequest){.size = sizeof(ActionNode), .alignment = _Alignof(ActionNode)});
+    TEST_ASSERT_NOT_NULL(switch_nodes);
+    memset(switch_nodes, 0, sizeof(ActionNode));
+    switch_nodes[0].type = ACTION_FIRE_EVENT;
+    strncpy(switch_nodes[0].argument, "switch_pulled", MAX_ARG - 1);
+    switch_rule->action_tree.nodes = switch_nodes;
+    switch_rule->action_tree.count = 1;
     bp_switch.rules.entries = switch_rule;
     bp_switch.rules.count = 1;
 
@@ -800,9 +825,14 @@ void test_evaluate_fire_event_cascading(void)
     memset(door_rule, 0, sizeof(*door_rule));
     door_rule->trigger.type = TRIGGER_EVENT;
     strncpy(door_rule->trigger.argument, "switch_pulled", MAX_ARG - 1);
-    door_rule->action_count = 1;
-    door_rule->actions[0].type = ACTION_SET_FLAG;
-    strncpy(door_rule->actions[0].argument, "door_opened", MAX_ARG - 1);
+    ActionNode *door_nodes =
+        arena_alloc(&arena, (AllocRequest){.size = sizeof(ActionNode), .alignment = _Alignof(ActionNode)});
+    TEST_ASSERT_NOT_NULL(door_nodes);
+    memset(door_nodes, 0, sizeof(ActionNode));
+    door_nodes[0].type = ACTION_SET_FLAG;
+    strncpy(door_nodes[0].argument, "door_opened", MAX_ARG - 1);
+    door_rule->action_tree.nodes = door_nodes;
+    door_rule->action_tree.count = 1;
     bp_door.rules.entries = door_rule;
     bp_door.rules.count = 1;
 

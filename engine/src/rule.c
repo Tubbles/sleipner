@@ -11,6 +11,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define MAX_PARSE_CF_STACK 64
+#define MAX_EXEC_STACK 512
+#define RADIX_DECIMAL 10
+
 /* ---- FlagSet ---- */
 
 static int flag_find(const FlagSet *flags, const char *name)
@@ -288,169 +292,116 @@ static bool parse_simple_action(ActionNode *node, const char *string)
     return false;
 }
 
-static bool parse_control_flow_node(ActionNode *node, toml_table_t *table, Arena *arena)
+typedef struct {
+    ActionNode *target;
+    toml_table_t *table;
+} ParseCFTask;
+
+static bool parse_branch_array_into(ActionNode **out_nodes,
+                                    int *out_count,
+                                    toml_array_t *array,
+                                    Arena *arena,
+                                    const char *branch_name,
+                                    ParseCFTask *task_stack,
+                                    int *task_top)
+{
+    if (!array) {
+        return true;
+    }
+    int count = toml_array_nelem(array);
+    if (count <= 0) {
+        return true;
+    }
+    ActionNode *nodes = arena_alloc(
+        arena, (AllocRequest){.size = (size_t)count * sizeof(ActionNode), .alignment = _Alignof(ActionNode)});
+    if (!nodes) {
+        error_wrap("parse_branch_array_into: arena_alloc");
+        return false;
+    }
+    for (int child_index = 0; child_index < count; child_index++) {
+        toml_datum_t value = toml_string_at(array, child_index);
+        if (value.ok) {
+            if (!action_node_parse(&nodes[child_index], value, arena)) {
+                error_wrap("%s[%d]", branch_name, child_index);
+                free(value.u.s);
+                return false;
+            }
+            free(value.u.s);
+        } else {
+            toml_table_t *table = toml_table_at(array, child_index);
+            if (!table) {
+                error_set("%s[%d] is not a string or table", branch_name, child_index);
+                return false;
+            }
+            if (*task_top >= MAX_PARSE_CF_STACK) {
+                error_set("parse_branch_array_into: task stack overflow");
+                return false;
+            }
+            memset(&nodes[child_index], 0, sizeof(ActionNode));
+            task_stack[(*task_top)++] = (ParseCFTask){&nodes[child_index], table};
+        }
+    }
+    *out_nodes = nodes;
+    *out_count = count;
+    return true;
+}
+
+static bool
+parse_one_cf_node(ActionNode *node, toml_table_t *table, Arena *arena, ParseCFTask *task_stack, int *task_top)
 {
     memset(node, 0, sizeof(*node));
 
-    // Check for if/else structure
-    toml_datum_t if_condition = toml_string_in(table, "if");
-    if (if_condition.ok) {
+    toml_datum_t if_cond = toml_string_in(table, "if");
+    if (if_cond.ok) {
         node->type = ACTION_IF_ELSE;
-        strncpy(node->argument, if_condition.u.s, MAX_ARG - 1);
-        free(if_condition.u.s);
-
-        // Parse then branch
-        toml_array_t *then_array = toml_array_in(table, "then");
-        if (then_array) {
-            int then_count = toml_array_nelem(then_array);
-            if (then_count > 0) {
-                node->children = arena_alloc(arena, (AllocRequest){.size = (size_t)then_count * sizeof(ActionNode),
-                                                                   .alignment = _Alignof(ActionNode)});
-                if (!node->children) {
-                    error_wrap("parse_control_flow_node: arena_alloc for then branch");
-                    return false;
-                }
-                for (int i = 0; i < then_count; i++) {
-                    // Try string first
-                    toml_datum_t then_value = toml_string_at(then_array, i);
-                    if (then_value.ok) {
-                        if (!action_node_parse(&node->children[i], then_value, arena)) {
-                            error_wrap("then[%d]", i);
-                            free(then_value.u.s);
-                            return false;
-                        }
-                        free(then_value.u.s);
-                    } else {
-                        // Try table (control flow node)
-                        toml_table_t *then_table = toml_table_at(then_array, i);
-                        if (then_table) {
-                            toml_datum_t table_value;
-                            table_value.ok = 1;
-                            table_value.u.ts = (toml_timestamp_t *)then_table; // Store table pointer in ts field
-                            if (!action_node_parse(&node->children[i], table_value, arena)) {
-                                error_wrap("then[%d]", i);
-                                return false;
-                            }
-                        } else {
-                            error_set("then[%d] is not a string or table", i);
-                            return false;
-                        }
-                    }
-                }
-                node->child_count = then_count;
-            }
+        strncpy(node->argument, if_cond.u.s, MAX_ARG - 1);
+        free(if_cond.u.s);
+        if (!parse_branch_array_into(&node->children, &node->child_count, toml_array_in(table, "then"), arena, "then",
+                                     task_stack, task_top)) {
+            return false;
         }
-
-        // Parse else branch
-        toml_array_t *else_array = toml_array_in(table, "else");
-        if (else_array) {
-            int else_count = toml_array_nelem(else_array);
-            if (else_count > 0) {
-                node->else_children = arena_alloc(arena, (AllocRequest){.size = (size_t)else_count * sizeof(ActionNode),
-                                                                        .alignment = _Alignof(ActionNode)});
-                if (!node->else_children) {
-                    error_wrap("parse_control_flow_node: arena_alloc for else branch");
-                    return false;
-                }
-                for (int i = 0; i < else_count; i++) {
-                    // Try string first
-                    toml_datum_t else_value = toml_string_at(else_array, i);
-                    if (else_value.ok) {
-                        if (!action_node_parse(&node->else_children[i], else_value, arena)) {
-                            error_wrap("else[%d]", i);
-                            free(else_value.u.s);
-                            return false;
-                        }
-                        free(else_value.u.s);
-                    } else {
-                        // Try table (control flow node)
-                        toml_table_t *else_table = toml_table_at(else_array, i);
-                        if (else_table) {
-                            toml_datum_t table_value;
-                            table_value.ok = 1;
-                            table_value.u.ts = (toml_timestamp_t *)else_table; // Store table pointer in ts field
-                            if (!action_node_parse(&node->else_children[i], table_value, arena)) {
-                                error_wrap("else[%d]", i);
-                                return false;
-                            }
-                        } else {
-                            error_set("else[%d] is not a string or table", i);
-                            return false;
-                        }
-                    }
-                }
-                node->else_child_count = else_count;
-            }
-        }
-        return true;
+        return parse_branch_array_into(&node->else_children, &node->else_child_count, toml_array_in(table, "else"),
+                                       arena, "else", task_stack, task_top);
     }
 
-    // Check for repeat structure
-    toml_datum_t repeat_count = toml_string_in(table, "repeat");
-    if (repeat_count.ok) {
+    toml_datum_t repeat_str = toml_string_in(table, "repeat");
+    if (repeat_str.ok) {
         node->type = ACTION_REPEAT;
-        strncpy(node->argument, repeat_count.u.s, MAX_ARG - 1);
-        free(repeat_count.u.s);
-
-        toml_array_t *do_array = toml_array_in(table, "do");
-        if (do_array) {
-            int do_count = toml_array_nelem(do_array);
-            if (do_count > 0) {
-                node->children = arena_alloc(arena, (AllocRequest){.size = (size_t)do_count * sizeof(ActionNode),
-                                                                   .alignment = _Alignof(ActionNode)});
-                if (!node->children) {
-                    error_wrap("parse_control_flow_node: arena_alloc for repeat body");
-                    return false;
-                }
-                for (int i = 0; i < do_count; i++) {
-                    // Try string first
-                    toml_datum_t do_value = toml_string_at(do_array, i);
-                    if (do_value.ok) {
-                        if (!action_node_parse(&node->children[i], do_value, arena)) {
-                            error_wrap("do[%d]", i);
-                            free(do_value.u.s);
-                            return false;
-                        }
-                        free(do_value.u.s);
-                    } else {
-                        // Try table (control flow node)
-                        toml_table_t *do_table = toml_table_at(do_array, i);
-                        if (do_table) {
-                            toml_datum_t table_value;
-                            table_value.ok = 1;
-                            table_value.u.ts = (toml_timestamp_t *)do_table; // Store table pointer in ts field
-                            if (!action_node_parse(&node->children[i], table_value, arena)) {
-                                error_wrap("do[%d]", i);
-                                return false;
-                            }
-                        } else {
-                            error_set("do[%d] is not a string or table", i);
-                            return false;
-                        }
-                    }
-                }
-                node->child_count = do_count;
-            }
-        }
-        return true;
+        strncpy(node->argument, repeat_str.u.s, MAX_ARG - 1);
+        free(repeat_str.u.s);
+        return parse_branch_array_into(&node->children, &node->child_count, toml_array_in(table, "do"), arena, "do",
+                                       task_stack, task_top);
     }
 
     error_set("unknown control flow structure");
     return false;
 }
 
+static bool parse_control_flow_node(ActionNode *node, toml_table_t *table, Arena *arena)
+{
+    ParseCFTask task_stack[MAX_PARSE_CF_STACK];
+    int task_top = 0;
+
+    if (!parse_one_cf_node(node, table, arena, task_stack, &task_top)) {
+        return false;
+    }
+    while (task_top > 0) {
+        ParseCFTask task = task_stack[--task_top];
+        if (!parse_one_cf_node(task.target, task.table, arena, task_stack, &task_top)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 bool action_node_parse(ActionNode *node, toml_datum_t value, Arena *arena)
 {
-    if (value.ok && value.u.s) {
-        // String value
-        return parse_simple_action(node, value.u.s);
-    } else if (value.ok) {
-        // Table value (stored in ts field as pointer)
-        return parse_control_flow_node(node, (toml_table_t *)value.u.ts, arena);
+    (void)arena;
+    if (!value.ok || !value.u.s) {
+        error_set("action_node_parse: expected string value");
+        return false;
     }
-
-    error_set("action_node_parse: unsupported value type");
-    return false;
+    return parse_simple_action(node, value.u.s);
 }
 
 /* ---- TOML rule parsing ---- */
@@ -511,13 +462,9 @@ static bool parse_actions_array(Rule *rule, toml_array_t *actions, Arena *arena)
             }
             free(value.u.s);
         } else {
-            // Try table (control flow node)
             toml_table_t *table_value = toml_table_at(actions, index);
             if (table_value) {
-                toml_datum_t table_datum;
-                table_datum.ok = 1;
-                table_datum.u.ts = (toml_timestamp_t *)table_value; // Store in ts field
-                if (!action_node_parse(&nodes[index], table_datum, arena)) {
+                if (!parse_control_flow_node(&nodes[index], table_value, arena)) {
                     error_wrap("action[%d]", index);
                     return false;
                 }
@@ -750,137 +697,152 @@ static bool evaluate_condition_string(const char *condition_str, ConditionContex
     return evaluate_single_condition(&temp_cond, context);
 }
 
-static bool execute_action_node_children(const ActionNode *node, ActionContext context)
+static bool execute_set_attr_action(const ActionNode *node, ActionContext context)
 {
-    for (int i = 0; i < node->child_count; i++) {
-        if (!action_node_execute(&node->children[i], context)) {
+    char attr_name[MAX_ATTR_NAME];
+    Entity *target = resolve_target(node->argument, context, attr_name, MAX_ATTR_NAME);
+    if (!target) {
+        debug_log("set_attr: target not found: %s", node->argument);
+        return true;
+    }
+    float value = strtof(node->second_argument, NULL);
+    if (strchr(node->second_argument, '.')) {
+        return attr_set_float(&target->attrs, attr_name, value);
+    }
+    if (strcmp(node->second_argument, "true") == 0) {
+        return attr_set_bool(&target->attrs, attr_name, true);
+    }
+    if (strcmp(node->second_argument, "false") == 0) {
+        return attr_set_bool(&target->attrs, attr_name, false);
+    }
+    return attr_set_int(&target->attrs, attr_name, (int)value);
+}
+
+static bool execute_add_attr_action(const ActionNode *node, ActionContext context)
+{
+    char attr_name[MAX_ATTR_NAME];
+    Entity *target = resolve_target(node->argument, context, attr_name, MAX_ATTR_NAME);
+    if (!target) {
+        debug_log("add_attr: target not found: %s", node->argument);
+        return true;
+    }
+    const Attribute *existing = entity_get_attr(target, attr_name);
+    float delta = strtof(node->second_argument, NULL);
+    if (existing && existing->type == ATTR_FLOAT) {
+        return attr_set_float(&target->attrs, attr_name, existing->value.f + delta);
+    }
+    int current_val = existing ? existing->value.i : 0;
+    return attr_set_int(&target->attrs, attr_name, current_val + (int)delta);
+}
+
+static bool execute_toggle_attr_action(const ActionNode *node, ActionContext context)
+{
+    char attr_name[MAX_ATTR_NAME];
+    Entity *target = resolve_target(node->argument, context, attr_name, MAX_ATTR_NAME);
+    if (!target) {
+        debug_log("toggle_attr: target not found: %s", node->argument);
+        return true;
+    }
+    bool current_val = entity_get_bool(target, attr_name, false);
+    return attr_set_bool(&target->attrs, attr_name, (bool)!current_val);
+}
+
+static bool push_branch_nodes(const ActionNode **exec_stack, int *stack_top, const ActionNode *nodes, int count)
+{
+    for (int push_index = count - 1; push_index >= 0; push_index--) {
+        if (*stack_top >= MAX_EXEC_STACK) {
+            error_set("action execution stack overflow");
+            return false;
+        }
+        exec_stack[(*stack_top)++] = &nodes[push_index];
+    }
+    return true;
+}
+
+static bool
+expand_if_else_node(const ActionNode *node, ActionContext context, const ActionNode **exec_stack, int *stack_top)
+{
+    ConditionContext cond_ctx = {
+        .entity = context.entity,
+        .entities = context.entities,
+        .entity_count = context.entity_count,
+        .flags = context.flags,
+    };
+    bool condition_met = evaluate_condition_string(node->argument, cond_ctx);
+    const ActionNode *branch;
+    int branch_count;
+    if (condition_met) {
+        branch = node->children;
+        branch_count = node->child_count;
+    } else {
+        branch = node->else_children;
+        branch_count = node->else_child_count;
+    }
+    return push_branch_nodes(exec_stack, stack_top, branch, branch_count);
+}
+
+static bool expand_repeat_node(const ActionNode *node, const ActionNode **exec_stack, int *stack_top)
+{
+    int repeat_count = (int)strtol(node->argument, NULL, RADIX_DECIMAL);
+    if (repeat_count <= 0) {
+        repeat_count = 1;
+    }
+    for (int repeat_index = 0; repeat_index < repeat_count; repeat_index++) {
+        if (!push_branch_nodes(exec_stack, stack_top, node->children, node->child_count)) {
             return false;
         }
     }
     return true;
 }
 
-bool action_node_execute(const ActionNode *node, ActionContext context)
+static bool dispatch_simple_action(const ActionNode *node, ActionContext context)
 {
     switch (node->type) {
     case ACTION_SET_FLAG:
         flag_set(context.flags, node->argument);
         return true;
-
     case ACTION_CLEAR_FLAG:
         flag_clear(context.flags, node->argument);
         return true;
-
-    case ACTION_SET_ATTR: {
-        char attr_name[MAX_ATTR_NAME];
-        Entity *target = resolve_target(node->argument, context, attr_name, MAX_ATTR_NAME);
-        if (!target) {
-            debug_log("set_attr: target not found: %s", node->argument);
-            return true;
-        }
-        float value = strtof(node->second_argument, NULL);
-        if (strchr(node->second_argument, '.')) {
-            return attr_set_float(&target->attrs, attr_name, value);
-        }
-        if (strcmp(node->second_argument, "true") == 0) {
-            return attr_set_bool(&target->attrs, attr_name, true);
-        }
-        if (strcmp(node->second_argument, "false") == 0) {
-            return attr_set_bool(&target->attrs, attr_name, false);
-        }
-        return attr_set_int(&target->attrs, attr_name, (int)value);
-    }
-
-    case ACTION_ADD_ATTR: {
-        char attr_name[MAX_ATTR_NAME];
-        Entity *target = resolve_target(node->argument, context, attr_name, MAX_ATTR_NAME);
-        if (!target) {
-            debug_log("add_attr: target not found: %s", node->argument);
-            return true;
-        }
-        const Attribute *existing = entity_get_attr(target, attr_name);
-        float delta = strtof(node->second_argument, NULL);
-        if (existing && existing->type == ATTR_FLOAT) {
-            return attr_set_float(&target->attrs, attr_name, existing->value.f + delta);
-        }
-        int current = existing ? existing->value.i : 0;
-        return attr_set_int(&target->attrs, attr_name, current + (int)delta);
-    }
-
-    case ACTION_TOGGLE_ATTR: {
-        char attr_name[MAX_ATTR_NAME];
-        Entity *target = resolve_target(node->argument, context, attr_name, MAX_ATTR_NAME);
-        if (!target) {
-            debug_log("toggle_attr: target not found: %s", node->argument);
-            return true;
-        }
-        bool current = entity_get_bool(target, attr_name, false);
-        return attr_set_bool(&target->attrs, attr_name, (bool)!current);
-    }
-
+    case ACTION_SET_ATTR:
+        return execute_set_attr_action(node, context);
+    case ACTION_ADD_ATTR:
+        return execute_add_attr_action(node, context);
+    case ACTION_TOGGLE_ATTR:
+        return execute_toggle_attr_action(node, context);
     case ACTION_DESTROY:
         context.entity->active = false;
         return true;
-
     case ACTION_FIRE_EVENT: {
         TriggerEvent fire = {.type = TRIGGER_EVENT, .entity_index = -1};
         strncpy(fire.argument, node->argument, MAX_ARG - 1);
         return event_queue_push(context.event_queue, fire);
     }
-
-    case ACTION_IF_ELSE: {
-        ConditionContext cond_ctx = {
-            .entity = context.entity,
-            .entities = context.entities,
-            .entity_count = context.entity_count,
-            .flags = context.flags,
-        };
-
-        bool condition_met = evaluate_condition_string(node->argument, cond_ctx);
-
-        if (condition_met) {
-            return execute_action_node_children(node, context);
-        } else if (node->else_child_count > 0) {
-            for (int i = 0; i < node->else_child_count; i++) {
-                if (!action_node_execute(&node->else_children[i], context)) {
-                    return false;
-                }
-            }
-        }
-        return true;
-    }
-
-    case ACTION_REPEAT: {
-        int repeat_count = atoi(node->argument);
-        if (repeat_count <= 0) {
-            repeat_count = 1;
-        }
-
-        for (int i = 0; i < repeat_count; i++) {
-            if (!execute_action_node_children(node, context)) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    case ACTION_FOR_EACH:
-    case ACTION_GIVE_ITEM:
-    case ACTION_REMOVE_ITEM:
-    case ACTION_CHANGE_SPRITE:
-    case ACTION_PLAY_SOUND:
-    case ACTION_DIALOGUE:
-    case ACTION_TRANSITION:
-    case ACTION_SPAWN:
-    case ACTION_CAMERA_PAN:
-    case ACTION_CAMERA_SHAKE:
-    case ACTION_CALL:
-    case ACTION_SET_VAR:
-    case ACTION_WAIT:
-    case ACTION_CREATE_TIMER:
-    case ACTION_DESTROY_TIMER:
+    default:
         debug_log("action stub: %s (not yet implemented)", node->argument);
         return true;
+    }
+}
+
+bool action_node_execute(const ActionNode *node, ActionContext context)
+{
+    const ActionNode *exec_stack[MAX_EXEC_STACK];
+    int stack_top = 0;
+    exec_stack[stack_top++] = node;
+
+    while (stack_top > 0) {
+        const ActionNode *current = exec_stack[--stack_top];
+        if (current->type == ACTION_IF_ELSE) {
+            if (!expand_if_else_node(current, context, exec_stack, &stack_top)) {
+                return false;
+            }
+        } else if (current->type == ACTION_REPEAT) {
+            if (!expand_repeat_node(current, exec_stack, &stack_top)) {
+                return false;
+            }
+        } else if (!dispatch_simple_action(current, context)) {
+            return false;
+        }
     }
     return true;
 }
