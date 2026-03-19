@@ -1,32 +1,19 @@
-# Sleipner Refactoring Tasks
+# Sleipner TODO
 
-## Architecture Improvements
+## Static data audit
+Audit all static variables in the codebase. Goal: understand the current
+landscape, then eliminate or document each one.
 
-### Eliminate Static Variables
-- [ ] Refactor font preview system to use explicit state instead of static variables
-  - Create `FontPreview` struct to hold fonts and count
-  - Pass struct explicitly to `draw_font_preview()` instead of using globals
-  - Remove static `font_preview_entries` and `font_preview_count`
+- [ ] Search for all `static` variable declarations in `engine/src/`
+- [ ] For each: can it live in an existing holder struct (GameState, Level, etc.)?
+  - If yes: move it — pass the struct explicitly
+  - If no: document why it must be static and add a reset call in game_init
+- [ ] Known candidates: font preview system, texture registry
 
-- [ ] Refactor texture registry to use explicit state
-  - Create `TextureRegistry` struct to hold textures
-  - Pass registry explicitly to functions that need texture lookup
-  - Remove static `texture_registry` and `texture_registry_count`
+## Code reuse
+Are there patterns in the codebase that suggest we need common primitives?
+Look at dynamic arrays, hash maps, and stacks — are we reinventing them?
+Candidate libraries: stb_ds, stc, cc. Evaluate before adding any dependency.
 
-- [ ] Audit all static variables and eliminate where possible
-  - Search for `static` in codebase
-  - Convert to explicit state passing pattern
-  - Document any remaining static variables as necessary exceptions
-
-### Improve Function Purity
-- [ ] Identify functions that rely on static state
-- [ ] Convert to pure functions by passing dependencies explicitly
-- [ ] Add `// IMPURE:` comments for functions that must remain impure
-
-## Code Quality
-
-### Follow New Conventions
-- [ ] Apply init function pattern to all modules with static state
-- [ ] Ensure all init functions are called during game startup
-- [ ] Document lifetime assumptions when taking pointers to data for caching, performance, or any other reason
-=======
+- [ ] Inventory places where we hand-roll fixed-size arrays with a count field
+- [ ] Decide: is the current approach sufficient, or does complexity justify a lib?
