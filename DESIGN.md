@@ -793,7 +793,7 @@ pos = [320, 180]
 - [x] Custom events (fire_event / event trigger, cross-entity decoupling)
 - [x] Control flow nodes (if/else, repeat)
 - [ ] for-each control flow node (entity queries)
-- [ ] Variable system (local per-execution, global persistent, $ references in parameters)
+- [x] Variable system (local per-execution, global persistent, $ references in parameters)
 - [ ] Subroutines (named reusable action sequences, callable via `call:`)
 - [ ] Timer management (create, destroy named timers)
 - [ ] Enter/on_spawn trigger detection (overlap tracking, level load events)
