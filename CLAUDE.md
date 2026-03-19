@@ -225,11 +225,7 @@ Android requires APK updates to be signed with the same key as the original inst
 - **Remove before adding.** Before writing new code, check if existing code already handles part of the task, or if existing code will become dead after the change. Remove or update it first, then add the new code. This prevents accumulation of unused code paths.
 - **Reset state on initialization.** Be vigilant about resetting static variables, counters, and state arrays during game initialization. Failure to reset can cause bugs across game restarts (e.g., the font preview bug where fonts appeared twice because `font_preview_count` wasn't reset). Audit initialization code when adding new stateful features.
 
-- **Minimize static data.** Strive for zero static variables. Use explicit state passing and holder structs instead. Static variables should be extremely rare exceptions, not the norm. When static data is unavoidable (e.g., for one-time initialization), it must:
-  - Have a corresponding `init()` function
-  - Be called during game startup
-  - Be clearly documented with lifetime expectations
-  - Example: `font_preview_init()` resets the font preview system
+- **Minimize static data.** Strive for zero static variables. Use explicit state passing and holder structs instead. Static variables should be extremely rare exceptions, not the norm. When static data is truly unavoidable (e.g., a one-time platform registration that has no caller-owned home), it must have a matching reset function called during game init, and its lifetime must be clearly documented. This is a last resort — if you find yourself reaching for a static, first ask whether it can live in an existing holder struct.
 
 - **Prefer pure functions.** Functions should take inputs and return outputs without relying on or modifying static state. Use holder structs to group related data and pass them explicitly rather than using global variables.
 - **One subsystem at a time.** Implement features incrementally, one subsystem at a time. Get it working, tested, and integrated before moving to the next. Don't build multiple half-finished subsystems in parallel.
@@ -237,7 +233,6 @@ Android requires APK updates to be signed with the same key as the original inst
 ## Git Workflow
 
 - **Always commit and push when you're done with a task.** Do not wait to be asked — committing and pushing is part of completing the work.
-- Create small, focused commits as you go so changes are easy to review and revert.
 - Create small, focused commits as you go so changes are easy to review and revert.
 - Each commit should address a single concern (one bug fix, one feature, one refactor).
 - Use a succinct imperative commit title (e.g. "Add player dash mechanic").
