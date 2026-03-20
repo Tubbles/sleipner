@@ -12,6 +12,7 @@ All changes must use feature branches. Create a new branch for each feature or b
 2. **Implement changes** with focused commits
 3. **Spin up subagent** for code review:
    - Provide original prompts as requirements
+   - Seed the subagents prompt with ~/.vibe/prompts/my-custom-prompt.md
    - Subagent verifies exact match to requirements
    - Subagent checks code quality and style
    - Subagent validates test coverage
