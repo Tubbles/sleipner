@@ -618,7 +618,7 @@ int main(void)
     /* Initialize game state early for texture/font loading */
     RectU32 game_bounds = {(uint32_t)screen_width / PIXEL_SCALE, (uint32_t)screen_height / PIXEL_SCALE};
     GameState state;
-    audio_init(&state);
+    audio_init(&state.audio_state);
     if (!game_init(&state, game_bounds)) {
         debug_log("error: %s", error_get());
         error_clear();
@@ -729,7 +729,7 @@ quit:
     }
     font_preview_cleanup(&state);
     game_free(&state);
-    audio_shutdown(&state);
+    audio_shutdown(&state.audio_state);
     debug_shutdown();
     /* Debug state is owned by main.c, no need to free */
     CloseAudioDevice();

@@ -49,8 +49,8 @@ typedef struct {
     FontPreviewEntry font_preview_entries[MAX_PREVIEW_FONTS];
     int font_preview_count;
     
-    /* Audio state - formerly static variables */
-    Sound audio_sounds[SOUND_COUNT];
+    /* Audio state - owned by GameState, managed by audio module */
+    AudioState audio_state;
     
     /* Gamedata hot-reload tracking - formerly static variable */
     long gamedata_mtime;
