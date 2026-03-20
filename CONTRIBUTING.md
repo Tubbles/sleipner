@@ -1,5 +1,7 @@
 # Development Workflow
 
+**IMPORTANT:** This document is specifically for Mistral LLM (devstral-2). Anthropic LLMs do not need to read or follow CONTRIBUTING.md.
+
 ## Feature Branches
 
 All changes must use feature branches. Create a new branch for each feature or bug fix.
