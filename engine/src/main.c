@@ -51,6 +51,9 @@ int screen_height = SCREEN_HEIGHT_DEFAULT;
 /* Debug logging state - owned by main.c, passed to debug module */
 static DebugState debug_state;
 
+/* Error state - owned by main.c, passed to error module */
+static ErrorState error_state;
+
 /* Texture registry — maps texture filenames to loaded Texture2D handles */
 /* Now stored in GameState instead of static variables */
 
@@ -339,8 +342,6 @@ static void draw_font_preview(GameState *state)
     }
 }
 
-static long gamedata_mtime = 0;
-
 #define MAX_GAMEDATA_SIZE (256UL * 1024)
 #define MAX_PATH_LEN 512
 #define COPY_BUFFER_SIZE 4096
@@ -516,7 +517,7 @@ static void load_gamedata(GameState *state)
         error_clear();
     }
 
-    gamedata_mtime = GetFileModTime(GAMEDATA_PATH);
+    state->gamedata_mtime = GetFileModTime(GAMEDATA_PATH);
 }
 
 static void poll_hot_reload(GameState *state)
@@ -527,7 +528,7 @@ static void poll_hot_reload(GameState *state)
     }
 
     long current_mtime = GetFileModTime(GAMEDATA_PATH);
-    if (current_mtime > 0 && current_mtime != gamedata_mtime) {
+    if (current_mtime > 0 && current_mtime != state->gamedata_mtime) {
         debug_log("gamedata: hot-reload triggered");
         load_gamedata(state);
     }
@@ -572,6 +573,9 @@ static void draw_entities_depth_sorted(const GameState *state)
 int main(void)
 {
     debug_init(&debug_state, TRACE_LOG_PATH);
+    
+    /* Initialize error system */
+    error_init(&error_state);
 
 #ifdef __ANDROID__
     SetConfigFlags(FLAG_FULLSCREEN_MODE);

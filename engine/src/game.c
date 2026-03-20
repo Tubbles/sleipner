@@ -28,6 +28,9 @@ bool game_init(GameState *state, RectU32 game_bounds)
     state->player_index = -1;
     state->debug_enabled = true;
     
+    /* Initialize error system */
+    error_init(&state->error_state);
+    
     /* Initialize render state (formerly static variables) */
     /* Note: font_preview_init is defined in main.c and called there during setup */
     

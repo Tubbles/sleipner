@@ -4,6 +4,7 @@
 #include "arena.h"
 #include "audio.h"
 #include "blueprint.h"
+#include "error.h"
 #include "input.h"
 #include "level.h"
 #include "rect.h"
@@ -39,6 +40,9 @@ typedef struct {
     bool debug_enabled;
     bool prev_interact;
     
+    /* Error state - singleton pattern */
+    ErrorState error_state;
+    
     /* Render state - formerly static variables */
     TextureEntry texture_registry[MAX_TEXTURES];
     int texture_registry_count;
@@ -47,6 +51,9 @@ typedef struct {
     
     /* Audio state - formerly static variables */
     Sound audio_sounds[SOUND_COUNT];
+    
+    /* Gamedata hot-reload tracking - formerly static variable */
+    long gamedata_mtime;
 } GameState;
 
 typedef struct {
