@@ -229,6 +229,14 @@ Android requires APK updates to be signed with the same key as the original inst
 
 - **Minimize static data.** Strive for zero static variables. Use explicit state passing and holder structs instead. Static variables should be extremely rare exceptions, not the norm. When static data is truly unavoidable (e.g., a one-time platform registration that has no caller-owned home), it must have a matching reset function called during game init, and its lifetime must be clearly documented. This is a last resort — if you find yourself reaching for a static, first ask whether it can live in an existing holder struct.
 
+### Singleton Pattern for Global Systems
+
+For true singletons (global systems used across many modules), use a **static pointer to externally owned state**:
+
+- **Pattern**: Owner module declares state, passes pointer to singleton module via init function
+- **Key insight**: Singleton module uses static pointer to avoid global variables while maintaining single instance
+- **Examples**: Debug logging, asset manager, sound engine, input system
+
 - **Prefer pure functions.** Functions should take inputs and return outputs without relying on or modifying static state. Use holder structs to group related data and pass them explicitly rather than using global variables.
 - **One subsystem at a time.** Implement features incrementally, one subsystem at a time. Get it working, tested, and integrated before moving to the next. Don't build multiple half-finished subsystems in parallel.
 

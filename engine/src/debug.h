@@ -2,13 +2,18 @@
 #define DEBUG_H
 
 #include <stdbool.h>
+#include <stdio.h>
 
 #define DEBUG_LOG_LINES 20
 #define DEBUG_LOG_LINE_LEN 128
 
-/* Initialize the debug logging system. Call once at startup.
- * If trace_path is non-NULL, opens a trace file at that path. */
-void debug_init(const char *trace_path);
+/* Initialize the debug logging system with external state pointers. Call once at startup.
+ * log_lines: pointer to DEBUG_LOG_LINES x DEBUG_LOG_LINE_LEN char array
+ * log_head: pointer to int for ring buffer head index
+ * log_count: pointer to int for current line count
+ * trace_file: pointer to FILE* for trace file handle
+ * trace_path: if non-NULL, opens a trace file at this path */
+void debug_init(char (*log_lines)[DEBUG_LOG_LINE_LEN], int *log_head, int *log_count, FILE **trace_file, const char *trace_path);
 
 /* Shut down the debug logging system. Closes the trace file if open. */
 void debug_shutdown(void);

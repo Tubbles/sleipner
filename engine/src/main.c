@@ -48,6 +48,12 @@
 int screen_width = SCREEN_WIDTH_DEFAULT;
 int screen_height = SCREEN_HEIGHT_DEFAULT;
 
+/* Debug logging state - owned by main.c, passed to debug module */
+static char debug_log_lines[DEBUG_LOG_LINES][DEBUG_LOG_LINE_LEN];
+static int debug_log_head = 0;
+static int debug_log_count = 0;
+static FILE *debug_trace_file = NULL;
+
 /* Texture registry — maps texture filenames to loaded Texture2D handles */
 /* Now stored in GameState instead of static variables */
 
@@ -330,7 +336,7 @@ static void draw_font_preview(GameState *state)
         DrawText(TextFormat("%d. %s", index + 1, state->font_preview_entries[index].name), panel_x + DEBUG_MARGIN, y_offset,
                  DEBUG_FONT_SIZE, debug_text_color);
         y_offset += DEBUG_LINE_HEIGHT;
-        DrawTextEx(font_preview_entries[index].font, "The quick brown fox 0123456789",
+        DrawTextEx(state->font_preview_entries[index].font, "The quick brown fox 0123456789",
                    (Vector2){(float)(panel_x + DEBUG_MARGIN), (float)y_offset}, FONT_PREVIEW_SIZE, 1, WHITE);
         y_offset += line_spacing;
     }
@@ -568,7 +574,7 @@ static void draw_entities_depth_sorted(const GameState *state)
 
 int main(void)
 {
-    debug_init(TRACE_LOG_PATH);
+    debug_init(debug_log_lines, &debug_log_head, &debug_log_count, &debug_trace_file, TRACE_LOG_PATH);
 
 #ifdef __ANDROID__
     SetConfigFlags(FLAG_FULLSCREEN_MODE);
@@ -603,6 +609,21 @@ int main(void)
     SetTargetFPS(TARGET_FPS);
     InitAudioDevice();
 
+    EmbeddedAsset bgm_asset = ASSET(bgm_mp3);
+    Music bgm = LoadMusicStreamFromMemory(".mp3", bgm_asset.data, bgm_asset.size);
+    bgm.looping = true;
+    PlayMusicStream(bgm);
+
+    /* Initialize game state early for texture/font loading */
+    RectU32 game_bounds = {(uint32_t)screen_width / PIXEL_SCALE, (uint32_t)screen_height / PIXEL_SCALE};
+    GameState state;
+    audio_init(&state);
+    if (!game_init(&state, game_bounds)) {
+        debug_log("error: %s", error_get());
+        error_clear();
+        return 1;
+    }
+
     /* Load textures from embedded assets */
     texture_registry_add(&state, "player.png", load_embedded_texture(ASSET(player_png)));
     texture_registry_add(&state, "grass.png", load_embedded_texture(ASSET(grass_png)));
@@ -623,20 +644,6 @@ int main(void)
     font_preview_add(&state, "Nudge Orb", ASSET(nudge_orb_ttf));
     font_preview_add(&state, "CardboardCrown", ASSET(cardboardcrown_ttf));
     font_preview_add(&state, "RoyalFibre", ASSET(royalfibre_ttf));
-
-    EmbeddedAsset bgm_asset = ASSET(bgm_mp3);
-    Music bgm = LoadMusicStreamFromMemory(".mp3", bgm_asset.data, bgm_asset.size);
-    bgm.looping = true;
-    PlayMusicStream(bgm);
-
-    /* Initialize game state early for texture/font loading */
-    RectU32 game_bounds = {(uint32_t)screen_width / PIXEL_SCALE, (uint32_t)screen_height / PIXEL_SCALE};
-    GameState state;
-    if (!game_init(&state, game_bounds)) {
-        debug_log("error: %s", error_get());
-        error_clear();
-        return 1;
-    }
 
     /* Render target at game resolution for pixel-perfect scaling */
     RenderTexture2D target = LoadRenderTexture((int)game_bounds.width, (int)game_bounds.height);
@@ -721,7 +728,9 @@ quit:
     }
     font_preview_cleanup(&state);
     game_free(&state);
+    audio_shutdown(&state);
     debug_shutdown();
+    /* Debug state is owned by main.c, no need to free */
     CloseAudioDevice();
     CloseWindow();
     return 0;

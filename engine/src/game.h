@@ -2,6 +2,7 @@
 #define GAME_H
 
 #include "arena.h"
+#include "audio.h"
 #include "blueprint.h"
 #include "input.h"
 #include "level.h"
@@ -43,6 +44,9 @@ typedef struct {
     int texture_registry_count;
     FontPreviewEntry font_preview_entries[MAX_PREVIEW_FONTS];
     int font_preview_count;
+    
+    /* Audio state - formerly static variables */
+    Sound audio_sounds[SOUND_COUNT];
 } GameState;
 
 typedef struct {

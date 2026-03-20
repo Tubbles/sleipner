@@ -1,4 +1,5 @@
 #include "audio.h"
+#include "game.h"
 #include "raylib.h"
 #include <math.h>
 #include <stdlib.h>
@@ -16,8 +17,6 @@
 #define POP_ATTACK_TIME 0.05F
 #define POP_DURATION_SEC 0.12F
 #define POP_VOLUME 0.3F
-
-static Sound sounds[SOUND_COUNT];
 
 // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 static Wave generate_tone(float freq, float duration, float volume)
@@ -72,30 +71,33 @@ static Wave generate_bubble_pop(float duration, float volume)
     return wave;
 }
 
-void audio_init(void)
+void audio_init(void *void_state)
 {
+    GameState *state = (GameState *)void_state;
     InitAudioDevice();
 
     Wave button_wave = generate_tone(TONE_FREQ_HZ, TONE_DURATION_SEC, TONE_VOLUME);
-    sounds[SOUND_BUTTON] = LoadSoundFromWave(button_wave);
+    state->audio_sounds[SOUND_BUTTON] = LoadSoundFromWave(button_wave);
     free(button_wave.data);
 
     Wave collision_wave = generate_bubble_pop(POP_DURATION_SEC, POP_VOLUME);
-    sounds[SOUND_COLLISION] = LoadSoundFromWave(collision_wave);
+    state->audio_sounds[SOUND_COLLISION] = LoadSoundFromWave(collision_wave);
     free(collision_wave.data);
 }
 
-void audio_play(SoundKind kind)
+void audio_play(void *void_state, SoundKind kind)
 {
+    GameState *state = (GameState *)void_state;
     if (kind >= 0 && kind < SOUND_COUNT) {
-        PlaySound(sounds[kind]);
+        PlaySound(state->audio_sounds[kind]);
     }
 }
 
-void audio_shutdown(void)
+void audio_shutdown(void *void_state)
 {
+    GameState *state = (GameState *)void_state;
     for (int index = 0; index < SOUND_COUNT; index++) {
-        UnloadSound(sounds[index]);
+        UnloadSound(state->audio_sounds[index]);
     }
     CloseAudioDevice();
 }
