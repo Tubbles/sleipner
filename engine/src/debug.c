@@ -9,7 +9,7 @@
 #define TM_YEAR_OFFSET 1900
 
 /* Static pointer to externally owned DebugState */
-static DebugState *debug_state = NULL;
+static DebugState *debug_state = nullptr;
 
 static void write_timestamp(FILE *output)
 {
@@ -46,10 +46,10 @@ void debug_shutdown(void)
 {
     if (debug_state && debug_state->trace_file) {
         (void)fclose(debug_state->trace_file);
-        debug_state->trace_file = NULL;
+        debug_state->trace_file = nullptr;
     }
     /* Clear pointer to avoid dangling reference */
-    debug_state = NULL;
+    debug_state = nullptr;
 }
 
 void debug_log(const char *format, ...)
