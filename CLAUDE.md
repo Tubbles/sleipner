@@ -234,7 +234,7 @@ Android requires APK updates to be signed with the same key as the original inst
 
 ## Git Workflow
 
-- **Always commit and push when you're done with a task.** Do not wait to be asked — committing and pushing is part of completing the work.
+- **Always commit and push when you're done with a task.** Do not wait to be asked — committing and pushing is part of completing the work. This applies to all changes, including documentation updates, unless explicitly instructed otherwise.
 - Create small, focused commits as you go so changes are easy to review and revert.
 - Each commit should address a single concern (one bug fix, one feature, one refactor).
 - Use a succinct imperative commit title (e.g. "Add player dash mechanic").
