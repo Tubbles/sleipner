@@ -11,26 +11,6 @@ typedef struct {
 VEC_DECL(point, Point)
 VEC_IMPL(point, Point)
 
-/* Named test values — avoids readability-magic-numbers warnings. */
-#define PUSH_SINGLE_VALUE 42
-#define PUSH_RETURN_VALUE 7
-#define PUSH_ORDERED_FIRST 10
-#define PUSH_ORDERED_SECOND 20
-#define PUSH_ORDERED_THIRD 30
-#define GROWTH_SCALE 10
-#define CLEAR_FIRST_VAL 99
-#define CLEAR_SECOND_VAL 77
-#define FREE_REPUSH_VAL 55
-#define CONTIGUOUS_A 100
-#define CONTIGUOUS_B 200
-#define CONTIGUOUS_C 300
-#define FLOAT_VAL_A 1.5F
-#define FLOAT_VAL_B 2.5F
-#define I64_LARGE_VAL 9000000000LL
-#define U32_BIT_PATTERN 0xDEADBEEFU
-#define POINT1_Y 7
-#define POINT2_X 9
-
 /* ---- Initial state ---- */
 
 void test_vec_initial_state_count_is_zero(void)
@@ -64,28 +44,28 @@ void test_vec_push_increments_count(void)
 void test_vec_push_single_value_readable(void)
 {
     vec_int vector = {0};
-    TEST_ASSERT_TRUE(vec_int_push(&vector, PUSH_SINGLE_VALUE));
-    TEST_ASSERT_EQUAL_INT(PUSH_SINGLE_VALUE, vector.data[0]);
+    TEST_ASSERT_TRUE(vec_int_push(&vector, 42));
+    TEST_ASSERT_EQUAL_INT(42, vector.data[0]);
     vec_int_free(&vector);
 }
 
 void test_vec_push_multiple_values_in_order(void)
 {
     vec_int vector = {0};
-    TEST_ASSERT_TRUE(vec_int_push(&vector, PUSH_ORDERED_FIRST));
-    TEST_ASSERT_TRUE(vec_int_push(&vector, PUSH_ORDERED_SECOND));
-    TEST_ASSERT_TRUE(vec_int_push(&vector, PUSH_ORDERED_THIRD));
+    TEST_ASSERT_TRUE(vec_int_push(&vector, 10));
+    TEST_ASSERT_TRUE(vec_int_push(&vector, 20));
+    TEST_ASSERT_TRUE(vec_int_push(&vector, 30));
     TEST_ASSERT_EQUAL_INT(3, vector.count);
-    TEST_ASSERT_EQUAL_INT(PUSH_ORDERED_FIRST, vector.data[0]);
-    TEST_ASSERT_EQUAL_INT(PUSH_ORDERED_SECOND, vector.data[1]);
-    TEST_ASSERT_EQUAL_INT(PUSH_ORDERED_THIRD, vector.data[2]);
+    TEST_ASSERT_EQUAL_INT(10, vector.data[0]);
+    TEST_ASSERT_EQUAL_INT(20, vector.data[1]);
+    TEST_ASSERT_EQUAL_INT(30, vector.data[2]);
     vec_int_free(&vector);
 }
 
 void test_vec_push_returns_true_on_success(void)
 {
     vec_int vector = {0};
-    bool result = vec_int_push(&vector, PUSH_RETURN_VALUE);
+    bool result = vec_int_push(&vector, 7);
     TEST_ASSERT_TRUE(result);
     vec_int_free(&vector);
 }
@@ -138,10 +118,10 @@ void test_vec_growth_preserves_existing_values(void)
     vec_int vector = {0};
     int push_count = VEC_INITIAL_CAPACITY + 4;
     for (int index = 0; index < push_count; index++) {
-        TEST_ASSERT_TRUE(vec_int_push(&vector, index * GROWTH_SCALE));
+        TEST_ASSERT_TRUE(vec_int_push(&vector, index * 10));
     }
     for (int index = 0; index < push_count; index++) {
-        TEST_ASSERT_EQUAL_INT(index * GROWTH_SCALE, vector.data[index]);
+        TEST_ASSERT_EQUAL_INT(index * 10, vector.data[index]);
     }
     vec_int_free(&vector);
 }
@@ -186,11 +166,11 @@ void test_vec_clear_preserves_allocation(void)
 void test_vec_clear_allows_repush(void)
 {
     vec_int vector = {0};
-    TEST_ASSERT_TRUE(vec_int_push(&vector, CLEAR_FIRST_VAL));
+    TEST_ASSERT_TRUE(vec_int_push(&vector, 99));
     vec_int_clear(&vector);
-    TEST_ASSERT_TRUE(vec_int_push(&vector, CLEAR_SECOND_VAL));
+    TEST_ASSERT_TRUE(vec_int_push(&vector, 77));
     TEST_ASSERT_EQUAL_INT(1, vector.count);
-    TEST_ASSERT_EQUAL_INT(CLEAR_SECOND_VAL, vector.data[0]);
+    TEST_ASSERT_EQUAL_INT(77, vector.data[0]);
     vec_int_free(&vector);
 }
 
@@ -240,9 +220,9 @@ void test_vec_free_allows_repush(void)
     vec_int vector = {0};
     TEST_ASSERT_TRUE(vec_int_push(&vector, 1));
     vec_int_free(&vector);
-    TEST_ASSERT_TRUE(vec_int_push(&vector, FREE_REPUSH_VAL));
+    TEST_ASSERT_TRUE(vec_int_push(&vector, 55));
     TEST_ASSERT_EQUAL_INT(1, vector.count);
-    TEST_ASSERT_EQUAL_INT(FREE_REPUSH_VAL, vector.data[0]);
+    TEST_ASSERT_EQUAL_INT(55, vector.data[0]);
     vec_int_free(&vector);
 }
 
@@ -251,13 +231,13 @@ void test_vec_free_allows_repush(void)
 void test_vec_data_is_contiguous_in_memory(void)
 {
     vec_int vector = {0};
-    TEST_ASSERT_TRUE(vec_int_push(&vector, CONTIGUOUS_A));
-    TEST_ASSERT_TRUE(vec_int_push(&vector, CONTIGUOUS_B));
-    TEST_ASSERT_TRUE(vec_int_push(&vector, CONTIGUOUS_C));
+    TEST_ASSERT_TRUE(vec_int_push(&vector, 100));
+    TEST_ASSERT_TRUE(vec_int_push(&vector, 200));
+    TEST_ASSERT_TRUE(vec_int_push(&vector, 300));
     /* Pointer arithmetic on .data must match indexed access */
-    TEST_ASSERT_EQUAL_INT(CONTIGUOUS_A, *(vector.data + 0));
-    TEST_ASSERT_EQUAL_INT(CONTIGUOUS_B, *(vector.data + 1));
-    TEST_ASSERT_EQUAL_INT(CONTIGUOUS_C, *(vector.data + 2));
+    TEST_ASSERT_EQUAL_INT(100, *(vector.data + 0));
+    TEST_ASSERT_EQUAL_INT(200, *(vector.data + 1));
+    TEST_ASSERT_EQUAL_INT(300, *(vector.data + 2));
     vec_int_free(&vector);
 }
 
@@ -266,10 +246,10 @@ void test_vec_data_is_contiguous_in_memory(void)
 void test_vec_float_push_and_read(void)
 {
     vec_float vector = {0};
-    TEST_ASSERT_TRUE(vec_float_push(&vector, FLOAT_VAL_A));
-    TEST_ASSERT_TRUE(vec_float_push(&vector, FLOAT_VAL_B));
-    TEST_ASSERT_EQUAL_FLOAT(FLOAT_VAL_A, vector.data[0]);
-    TEST_ASSERT_EQUAL_FLOAT(FLOAT_VAL_B, vector.data[1]);
+    TEST_ASSERT_TRUE(vec_float_push(&vector, 1.5F));
+    TEST_ASSERT_TRUE(vec_float_push(&vector, 2.5F));
+    TEST_ASSERT_EQUAL_FLOAT(1.5F, vector.data[0]);
+    TEST_ASSERT_EQUAL_FLOAT(2.5F, vector.data[1]);
     vec_float_free(&vector);
 }
 
@@ -286,7 +266,7 @@ void test_vec_bool_push_and_read(void)
 void test_vec_i64_push_and_read(void)
 {
     vec_i64 vector = {0};
-    int64_t large_value = I64_LARGE_VAL;
+    int64_t large_value = 9000000000LL;
     TEST_ASSERT_TRUE(vec_i64_push(&vector, large_value));
     TEST_ASSERT_EQUAL_INT64(large_value, vector.data[0]);
     vec_i64_free(&vector);
@@ -295,8 +275,8 @@ void test_vec_i64_push_and_read(void)
 void test_vec_u32_push_and_read(void)
 {
     vec_u32 vector = {0};
-    TEST_ASSERT_TRUE(vec_u32_push(&vector, U32_BIT_PATTERN));
-    TEST_ASSERT_EQUAL_UINT32(U32_BIT_PATTERN, vector.data[0]);
+    TEST_ASSERT_TRUE(vec_u32_push(&vector, 0xDEADBEEFU));
+    TEST_ASSERT_EQUAL_UINT32(0xDEADBEEFU, vector.data[0]);
     vec_u32_free(&vector);
 }
 
@@ -305,12 +285,12 @@ void test_vec_u32_push_and_read(void)
 void test_vec_struct_push_and_read(void)
 {
     vec_point vector = {0};
-    TEST_ASSERT_TRUE(vec_point_push(&vector, (Point){.x_pos = 3, .y_pos = POINT1_Y}));
-    TEST_ASSERT_TRUE(vec_point_push(&vector, (Point){.x_pos = POINT2_X, .y_pos = 1}));
+    TEST_ASSERT_TRUE(vec_point_push(&vector, (Point){.x_pos = 3, .y_pos = 7}));
+    TEST_ASSERT_TRUE(vec_point_push(&vector, (Point){.x_pos = 9, .y_pos = 1}));
     TEST_ASSERT_EQUAL_INT(2, vector.count);
     TEST_ASSERT_EQUAL_INT(3, vector.data[0].x_pos);
-    TEST_ASSERT_EQUAL_INT(POINT1_Y, vector.data[0].y_pos);
-    TEST_ASSERT_EQUAL_INT(POINT2_X, vector.data[1].x_pos);
+    TEST_ASSERT_EQUAL_INT(7, vector.data[0].y_pos);
+    TEST_ASSERT_EQUAL_INT(9, vector.data[1].x_pos);
     TEST_ASSERT_EQUAL_INT(1, vector.data[1].y_pos);
     vec_point_free(&vector);
 }
