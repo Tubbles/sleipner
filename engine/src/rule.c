@@ -1,4 +1,5 @@
 #include "rule.h"
+#include "vec.h"
 #include "arena.h"
 #include "attribute.h"
 #include "blueprint.h"
@@ -17,6 +18,8 @@
 #define GLOBAL_VAR_PREFIX "global."
 #define MAX_EXEC_STACK 512
 #define RADIX_DECIMAL 10
+
+VEC_IMPL(trigger_event, TriggerEvent)
 
 /* ---- FlagSet ---- */
 
@@ -59,24 +62,6 @@ void flag_clear(FlagSet *flags, const char *name)
     if (index < flags->count) {
         memcpy(flags->names[index], flags->names[flags->count], MAX_FLAG_NAME);
     }
-}
-
-/* ---- EventQueue ---- */
-
-void event_queue_clear(EventQueue *queue)
-{
-    queue->count = 0;
-}
-
-bool event_queue_push(EventQueue *queue, TriggerEvent event)
-{
-    if (queue->count >= MAX_TRIGGER_EVENTS) {
-        error_set("event queue full (%d)", MAX_TRIGGER_EVENTS);
-        return false;
-    }
-    queue->entries[queue->count] = event;
-    queue->count++;
-    return true;
 }
 
 /* ---- Parsing helpers ---- */
@@ -952,7 +937,7 @@ static bool dispatch_simple_action(const ActionNode *node, ActionContext context
     case ACTION_FIRE_EVENT: {
         TriggerEvent fire = {.type = TRIGGER_EVENT, .entity_index = -1};
         strncpy(fire.argument, node->argument, MAX_ARG - 1);
-        return event_queue_push(context.event_queue, fire);
+        return vec_trigger_event_push(context.event_queue, fire);
     }
     default:
         debug_log("action stub: %s (not yet implemented)", node->argument);
@@ -985,10 +970,10 @@ bool action_node_execute(const ActionNode *node, ActionContext context)
 
 /* ---- Evaluation loop ---- */
 
-static bool rule_triggered_by_events(const Rule *rule, int entity_index, const EventQueue *pending_events)
+static bool rule_triggered_by_events(const Rule *rule, int entity_index, const vec_trigger_event *pending_events)
 {
     for (int pending_index = 0; pending_index < pending_events->count; pending_index++) {
-        const TriggerEvent *pending = &pending_events->entries[pending_index];
+        const TriggerEvent *pending = &pending_events->data[pending_index];
         if (pending->entity_index >= 0 && pending->entity_index != entity_index) {
             continue;
         }
@@ -1005,8 +990,8 @@ static void evaluate_entity_rules(Entity *entity,
                                   int entity_count,
                                   FlagSet *flags,
                                   AttrSet *global_vars,
-                                  const EventQueue *pending_events,
-                                  EventQueue *next_events)
+                                  const vec_trigger_event *pending_events,
+                                  vec_trigger_event *next_events)
 {
     const RuleSet *ruleset = &entity->blueprint->rules;
     for (int rule_index = 0; rule_index < ruleset->count; rule_index++) {
@@ -1055,17 +1040,13 @@ void rules_evaluate_batch(Entity *entities,
                           FlagSet *flags,
                           AttrSet *global_vars)
 {
-    EventQueue pending_events;
-    event_queue_clear(&pending_events);
-
+    vec_trigger_event pending_events = {0};
     for (int event_index = 0; event_index < event_count; event_index++) {
-        (void)event_queue_push(&pending_events, events[event_index]);
+        (void)vec_trigger_event_push(&pending_events, events[event_index]);
     }
 
-    EventQueue next_events;
-
     for (int cascade = 0; cascade < MAX_EVENT_CASCADES && pending_events.count > 0; cascade++) {
-        event_queue_clear(&next_events);
+        vec_trigger_event next_events = {0};
 
         for (int entity_index = 0; entity_index < entity_count; entity_index++) {
             Entity *entity = &entities[entity_index];
@@ -1079,6 +1060,9 @@ void rules_evaluate_batch(Entity *entities,
                                   &next_events);
         }
 
+        vec_trigger_event_free(&pending_events);
         pending_events = next_events;
     }
+
+    vec_trigger_event_free(&pending_events);
 }

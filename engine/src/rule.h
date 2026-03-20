@@ -3,6 +3,7 @@
 
 #include "arena.h"
 #include "entity.h"
+#include "vec.h" // IWYU pragma: export
 
 #include <stdbool.h>
 
@@ -16,7 +17,6 @@
 #define MAX_ACTIONS 16
 #define MAX_RULES 16
 #define MAX_ARG 64
-#define MAX_TRIGGER_EVENTS 32
 #define MAX_EVENT_CASCADES 8
 #define INTERACT_RANGE 24.0F
 
@@ -126,13 +126,7 @@ typedef struct {
     char argument[MAX_ARG];
 } TriggerEvent;
 
-typedef struct {
-    TriggerEvent entries[MAX_TRIGGER_EVENTS];
-    int count;
-} EventQueue;
-
-void event_queue_clear(EventQueue *queue);
-[[nodiscard]] bool event_queue_push(EventQueue *queue, TriggerEvent event);
+VEC_DECL(trigger_event, TriggerEvent)
 
 /* --- Parsing (from TOML) --- */
 [[nodiscard]] bool trigger_parse(Trigger *trigger, const char *string);
@@ -162,7 +156,7 @@ typedef struct {
     Entity *entities;
     int entity_count;
     FlagSet *flags;
-    EventQueue *event_queue;
+    vec_trigger_event *event_queue;
     AttrSet *local_vars;
     AttrSet *global_vars;
 } ActionContext;

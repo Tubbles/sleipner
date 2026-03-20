@@ -11,9 +11,8 @@ landscape, then eliminate or document each one.
 - [ ] Known candidates: font preview system, texture registry
 
 ## Code reuse
-Are there patterns in the codebase that suggest we need common primitives?
-Look at dynamic arrays, hash maps, and stacks — are we reinventing them?
-Candidate libraries: stb_ds, stc, cc. Evaluate before adding any dependency.
+Convert remaining fixed-size array + count patterns to `vec_<name>` using the
+new `VEC_DECL`/`VEC_IMPL` macros in `vec.h`.
 
-- [ ] Inventory places where we hand-roll fixed-size arrays with a count field
-- [ ] Decide: is the current approach sufficient, or does complexity justify a lib?
+- [ ] Inventory remaining hand-rolled fixed-size arrays with a count field
+- [ ] Convert candidates (FlagSet, BlueprintChild list, etc.) one at a time

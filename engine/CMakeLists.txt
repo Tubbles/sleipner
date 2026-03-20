@@ -21,6 +21,7 @@ add_library(engine STATIC
     src/rule.c
     src/shape.c
     src/toml_emitter.c
+    src/vec.c
 )
 target_include_directories(engine PUBLIC src)
 target_compile_definitions(engine PRIVATE _POSIX_C_SOURCE=199309L)

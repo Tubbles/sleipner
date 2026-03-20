@@ -18,6 +18,7 @@
 
 #define GAMEDATA_ARENA_SIZE (64UL * 1024)
 #define TOML_ERRBUF_SIZE 200
+#define MAX_COLLECT_EVENTS 32
 
 bool game_init(GameState *state, RectU32 game_bounds)
 {
@@ -277,8 +278,8 @@ void game_update(GameState *state, InputState input, float delta_time)
 
     update_child_positions(&state->current_level);
 
-    TriggerEvent trigger_events[MAX_TRIGGER_EVENTS];
-    int trigger_count = collect_trigger_events(state, input, trigger_events, MAX_TRIGGER_EVENTS);
+    TriggerEvent trigger_events[MAX_COLLECT_EVENTS];
+    int trigger_count = collect_trigger_events(state, input, trigger_events, MAX_COLLECT_EVENTS);
 
     if (trigger_count > 0) {
         rules_evaluate_batch(state->current_level.entities, state->current_level.entity_count, trigger_events,
