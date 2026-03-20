@@ -8,11 +8,8 @@
 #define NSEC_PER_MSEC 1000000L
 #define TM_YEAR_OFFSET 1900
 
-/* Static pointers to externally owned state */
-static char (*log_lines)[DEBUG_LOG_LINE_LEN] = NULL;
-static int *log_head = NULL;
-static int *log_count = NULL;
-static FILE **trace_file = NULL;
+/* Static pointer to externally owned DebugState */
+static DebugState *debug_state = NULL;
 
 static void write_timestamp(FILE *output)
 {
@@ -25,22 +22,19 @@ static void write_timestamp(FILE *output)
                   local.tm_mday, local.tm_hour, local.tm_min, local.tm_sec, now.tv_nsec / NSEC_PER_MSEC);
 }
 
-void debug_init(char (*external_log_lines)[DEBUG_LOG_LINE_LEN], int *external_log_head, int *external_log_count, FILE **external_trace_file, const char *trace_path)
+void debug_init(DebugState *state, const char *trace_path)
 {
-    /* Store pointers to externally owned state */
-    log_lines = external_log_lines;
-    log_head = external_log_head;
-    log_count = external_log_count;
-    trace_file = external_trace_file;
+    /* Store pointer to externally owned state */
+    debug_state = state;
 
     /* Initialize the state */
-    *log_head = 0;
-    *log_count = 0;
-    memset(log_lines, 0, sizeof(char) * DEBUG_LOG_LINES * DEBUG_LOG_LINE_LEN);
+    debug_state->log_head = 0;
+    debug_state->log_count = 0;
+    memset(debug_state->log_lines, 0, sizeof(debug_state->log_lines));
 
     if (trace_path) {
-        *trace_file = fopen(trace_path, "ae");
-        if (*trace_file) {
+        debug_state->trace_file = fopen(trace_path, "ae");
+        if (debug_state->trace_file) {
             debug_log("trace file opened: %s", trace_path);
         } else {
             debug_log("trace file FAILED to open: %s", trace_path);
@@ -50,15 +44,12 @@ void debug_init(char (*external_log_lines)[DEBUG_LOG_LINE_LEN], int *external_lo
 
 void debug_shutdown(void)
 {
-    if (trace_file && *trace_file) {
-        (void)fclose(*trace_file);
-        *trace_file = NULL;
+    if (debug_state && debug_state->trace_file) {
+        (void)fclose(debug_state->trace_file);
+        debug_state->trace_file = NULL;
     }
-    /* Clear pointers to avoid dangling references */
-    log_lines = NULL;
-    log_head = NULL;
-    log_count = NULL;
-    trace_file = NULL;
+    /* Clear pointer to avoid dangling reference */
+    debug_state = NULL;
 }
 
 void debug_log(const char *format, ...)
@@ -68,7 +59,7 @@ void debug_log(const char *format, ...)
     /* Write to ring buffer */
     va_start(args, format);
     /* NOLINTNEXTLINE(clang-analyzer-security.VAList) -- va_start is called above */
-    (void)vsnprintf(log_lines[*log_head], DEBUG_LOG_LINE_LEN, format, args);
+    (void)vsnprintf(debug_state->log_lines[debug_state->log_head], DEBUG_LOG_LINE_LEN, format, args);
     va_end(args);
 
     /* Write to stdout with timestamp */
@@ -79,28 +70,28 @@ void debug_log(const char *format, ...)
     (void)fputc('\n', stdout);
 
     /* Write to trace file with timestamp */
-    if (trace_file && *trace_file) {
-        write_timestamp(*trace_file);
+    if (debug_state->trace_file) {
+        write_timestamp(debug_state->trace_file);
         va_start(args, format);
-        (void)vfprintf(*trace_file, format, args);
+        (void)vfprintf(debug_state->trace_file, format, args);
         va_end(args);
-        (void)fputc('\n', *trace_file);
-        (void)fflush(*trace_file);
+        (void)fputc('\n', debug_state->trace_file);
+        (void)fflush(debug_state->trace_file);
     }
 
-    *log_head = (*log_head + 1) % DEBUG_LOG_LINES;
-    if (*log_count < DEBUG_LOG_LINES) {
-        (*log_count)++;
+    debug_state->log_head = (debug_state->log_head + 1) % DEBUG_LOG_LINES;
+    if (debug_state->log_count < DEBUG_LOG_LINES) {
+        debug_state->log_count++;
     }
 }
 
 const char *debug_get_line(int index)
 {
-    int actual = (*log_head - *log_count + index + DEBUG_LOG_LINES) % DEBUG_LOG_LINES;
-    return log_lines[actual];
+    int actual = (debug_state->log_head - debug_state->log_count + index + DEBUG_LOG_LINES) % DEBUG_LOG_LINES;
+    return debug_state->log_lines[actual];
 }
 
 int debug_get_line_count(void)
 {
-    return *log_count;
+    return debug_state->log_count;
 }

@@ -49,10 +49,7 @@ int screen_width = SCREEN_WIDTH_DEFAULT;
 int screen_height = SCREEN_HEIGHT_DEFAULT;
 
 /* Debug logging state - owned by main.c, passed to debug module */
-static char debug_log_lines[DEBUG_LOG_LINES][DEBUG_LOG_LINE_LEN];
-static int debug_log_head = 0;
-static int debug_log_count = 0;
-static FILE *debug_trace_file = NULL;
+static DebugState debug_state;
 
 /* Texture registry — maps texture filenames to loaded Texture2D handles */
 /* Now stored in GameState instead of static variables */
@@ -574,7 +571,7 @@ static void draw_entities_depth_sorted(const GameState *state)
 
 int main(void)
 {
-    debug_init(debug_log_lines, &debug_log_head, &debug_log_count, &debug_trace_file, TRACE_LOG_PATH);
+    debug_init(&debug_state, TRACE_LOG_PATH);
 
 #ifdef __ANDROID__
     SetConfigFlags(FLAG_FULLSCREEN_MODE);

@@ -7,13 +7,18 @@
 #define DEBUG_LOG_LINES 20
 #define DEBUG_LOG_LINE_LEN 128
 
-/* Initialize the debug logging system with external state pointers. Call once at startup.
- * log_lines: pointer to DEBUG_LOG_LINES x DEBUG_LOG_LINE_LEN char array
- * log_head: pointer to int for ring buffer head index
- * log_count: pointer to int for current line count
- * trace_file: pointer to FILE* for trace file handle
+/* Debug state - instantiated by owner (main.c), used by debug module */
+typedef struct {
+    char log_lines[DEBUG_LOG_LINES][DEBUG_LOG_LINE_LEN];
+    int log_head;
+    int log_count;
+    FILE *trace_file;
+} DebugState;
+
+/* Initialize the debug logging system. Call once at startup.
+ * state: pointer to DebugState struct (owned by caller)
  * trace_path: if non-NULL, opens a trace file at this path */
-void debug_init(char (*log_lines)[DEBUG_LOG_LINE_LEN], int *log_head, int *log_count, FILE **trace_file, const char *trace_path);
+void debug_init(DebugState *state, const char *trace_path);
 
 /* Shut down the debug logging system. Closes the trace file if open. */
 void debug_shutdown(void);
