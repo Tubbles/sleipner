@@ -6,6 +6,37 @@ void tearDown(void) {}
 /* test_stub.c */
 void test_stub_passes(void);
 
+/* test_vec.c */
+void test_vec_initial_state_count_is_zero(void);
+void test_vec_initial_state_capacity_is_zero(void);
+void test_vec_initial_state_data_is_null(void);
+void test_vec_push_increments_count(void);
+void test_vec_push_single_value_readable(void);
+void test_vec_push_multiple_values_in_order(void);
+void test_vec_push_returns_true_on_success(void);
+void test_vec_first_push_allocates_data(void);
+void test_vec_first_push_sets_initial_capacity(void);
+void test_vec_push_up_to_capacity_no_extra_alloc(void);
+void test_vec_push_one_past_capacity_triggers_growth(void);
+void test_vec_growth_preserves_existing_values(void);
+void test_vec_multiple_growths_all_values_intact(void);
+void test_vec_clear_resets_count_to_zero(void);
+void test_vec_clear_preserves_allocation(void);
+void test_vec_clear_allows_repush(void);
+void test_vec_clear_on_empty_is_safe(void);
+void test_vec_free_resets_count_to_zero(void);
+void test_vec_free_resets_capacity_to_zero(void);
+void test_vec_free_resets_data_to_null(void);
+void test_vec_free_on_empty_is_safe(void);
+void test_vec_free_allows_repush(void);
+void test_vec_data_is_contiguous_in_memory(void);
+void test_vec_float_push_and_read(void);
+void test_vec_bool_push_and_read(void);
+void test_vec_i64_push_and_read(void);
+void test_vec_u32_push_and_read(void);
+void test_vec_struct_push_and_read(void);
+void test_vec_struct_growth_preserves_fields(void);
+
 /* test_attribute.c */
 void test_attr_set_and_get_float(void);
 void test_attr_set_and_get_int(void);
@@ -213,6 +244,36 @@ int main(void)
     UNITY_BEGIN();
 
     RUN_TEST(test_stub_passes);
+
+    RUN_TEST(test_vec_initial_state_count_is_zero);
+    RUN_TEST(test_vec_initial_state_capacity_is_zero);
+    RUN_TEST(test_vec_initial_state_data_is_null);
+    RUN_TEST(test_vec_push_increments_count);
+    RUN_TEST(test_vec_push_single_value_readable);
+    RUN_TEST(test_vec_push_multiple_values_in_order);
+    RUN_TEST(test_vec_push_returns_true_on_success);
+    RUN_TEST(test_vec_first_push_allocates_data);
+    RUN_TEST(test_vec_first_push_sets_initial_capacity);
+    RUN_TEST(test_vec_push_up_to_capacity_no_extra_alloc);
+    RUN_TEST(test_vec_push_one_past_capacity_triggers_growth);
+    RUN_TEST(test_vec_growth_preserves_existing_values);
+    RUN_TEST(test_vec_multiple_growths_all_values_intact);
+    RUN_TEST(test_vec_clear_resets_count_to_zero);
+    RUN_TEST(test_vec_clear_preserves_allocation);
+    RUN_TEST(test_vec_clear_allows_repush);
+    RUN_TEST(test_vec_clear_on_empty_is_safe);
+    RUN_TEST(test_vec_free_resets_count_to_zero);
+    RUN_TEST(test_vec_free_resets_capacity_to_zero);
+    RUN_TEST(test_vec_free_resets_data_to_null);
+    RUN_TEST(test_vec_free_on_empty_is_safe);
+    RUN_TEST(test_vec_free_allows_repush);
+    RUN_TEST(test_vec_data_is_contiguous_in_memory);
+    RUN_TEST(test_vec_float_push_and_read);
+    RUN_TEST(test_vec_bool_push_and_read);
+    RUN_TEST(test_vec_i64_push_and_read);
+    RUN_TEST(test_vec_u32_push_and_read);
+    RUN_TEST(test_vec_struct_push_and_read);
+    RUN_TEST(test_vec_struct_growth_preserves_fields);
 
     RUN_TEST(test_attr_set_and_get_float);
     RUN_TEST(test_attr_set_and_get_int);
