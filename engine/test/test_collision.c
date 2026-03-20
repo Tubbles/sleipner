@@ -63,20 +63,20 @@ void test_rect_circle_no_overlap(void)
 
 void test_circle_rect_is_negated(void)
 {
-    Vector2 rc = resolve_rect_circle((Vector2){0, 0}, 0, 10, 10, (Vector2){15, 0}, 10);
-    Vector2 cr = resolve_circle_rect((Vector2){15, 0}, 10, (Vector2){0, 0}, 0, 10, 10);
-    TEST_ASSERT_FLOAT_WITHIN(0.01f, -rc.x, cr.x);
-    TEST_ASSERT_FLOAT_WITHIN(0.01f, -rc.y, cr.y);
+    Vector2 rect_circle_push = resolve_rect_circle((Vector2){0, 0}, 0, 10, 10, (Vector2){15, 0}, 10);
+    Vector2 circle_rect_push = resolve_circle_rect((Vector2){15, 0}, 10, (Vector2){0, 0}, 0, 10, 10);
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, -rect_circle_push.x, circle_rect_push.x);
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, -rect_circle_push.y, circle_rect_push.y);
 }
 
 /* --- Composite resolver tests --- */
 
 void test_composite_single_rect_matches_rect_rect(void)
 {
-    CollisionShape sa = {.count = 1, .prims = {{.kind = COLLIDER_RECT, .rect = {10, 10}}}};
-    CollisionShape sb = {.count = 1, .prims = {{.kind = COLLIDER_RECT, .rect = {10, 10}}}};
+    CollisionShape shape_a = {.count = 1, .prims = {{.kind = COLLIDER_RECT, .rect = {10, 10}}}};
+    CollisionShape shape_b = {.count = 1, .prims = {{.kind = COLLIDER_RECT, .rect = {10, 10}}}};
 
-    Vector2 push = resolve_composite(&sa, (Vector2){0, 0}, 0, &sb, (Vector2){15, 0}, 0);
+    Vector2 push = resolve_composite(&shape_a, (Vector2){0, 0}, 0, &shape_b, (Vector2){15, 0}, 0);
     Vector2 direct = resolve_rect_rect((Vector2){0, 0}, 0, 10, 10, (Vector2){15, 0}, 0, 10, 10);
     TEST_ASSERT_FLOAT_WITHIN(0.01f, direct.x, push.x);
     TEST_ASSERT_FLOAT_WITHIN(0.01f, direct.y, push.y);
@@ -84,11 +84,11 @@ void test_composite_single_rect_matches_rect_rect(void)
 
 void test_composite_overlap_bool(void)
 {
-    CollisionShape sa = {.count = 1, .prims = {{.kind = COLLIDER_CIRCLE, .circle = {20}}}};
-    CollisionShape sb = {.count = 1, .prims = {{.kind = COLLIDER_CIRCLE, .circle = {20}}}};
+    CollisionShape shape_a = {.count = 1, .prims = {{.kind = COLLIDER_CIRCLE, .circle = {20}}}};
+    CollisionShape shape_b = {.count = 1, .prims = {{.kind = COLLIDER_CIRCLE, .circle = {20}}}};
 
-    TEST_ASSERT_TRUE(composite_overlap(&sa, (Vector2){0, 0}, 0, &sb, (Vector2){30, 0}, 0));
-    TEST_ASSERT_FALSE(composite_overlap(&sa, (Vector2){0, 0}, 0, &sb, (Vector2){50, 0}, 0));
+    TEST_ASSERT_TRUE(composite_overlap(&shape_a, (Vector2){0, 0}, 0, &shape_b, (Vector2){30, 0}, 0));
+    TEST_ASSERT_FALSE(composite_overlap(&shape_a, (Vector2){0, 0}, 0, &shape_b, (Vector2){50, 0}, 0));
 }
 
 void test_composite_wall(void)
@@ -104,18 +104,18 @@ void test_composite_wall(void)
 
 void test_tri_tri_overlap(void)
 {
-    Vector2 va[3] = {{0, -10}, {-10, 10}, {10, 10}};
-    Vector2 vb[3] = {{0, -10}, {-10, 10}, {10, 10}};
-    Vector2 push = resolve_tri_tri((Vector2){0, 0}, va, (Vector2){5, 0}, vb);
+    Vector2 verts_a[3] = {{0, -10}, {-10, 10}, {10, 10}};
+    Vector2 verts_b[3] = {{0, -10}, {-10, 10}, {10, 10}};
+    Vector2 push = resolve_tri_tri((Vector2){0, 0}, verts_a, (Vector2){5, 0}, verts_b);
     float mag = sqrtf(push.x * push.x + push.y * push.y);
     TEST_ASSERT_TRUE(mag > 0.1f);
 }
 
 void test_tri_tri_no_overlap(void)
 {
-    Vector2 va[3] = {{0, -10}, {-10, 10}, {10, 10}};
-    Vector2 vb[3] = {{0, -10}, {-10, 10}, {10, 10}};
-    Vector2 push = resolve_tri_tri((Vector2){0, 0}, va, (Vector2){30, 0}, vb);
+    Vector2 verts_a[3] = {{0, -10}, {-10, 10}, {10, 10}};
+    Vector2 verts_b[3] = {{0, -10}, {-10, 10}, {10, 10}};
+    Vector2 push = resolve_tri_tri((Vector2){0, 0}, verts_a, (Vector2){30, 0}, verts_b);
     TEST_ASSERT_FLOAT_WITHIN(0.01f, 0.0f, push.x);
     TEST_ASSERT_FLOAT_WITHIN(0.01f, 0.0f, push.y);
 }

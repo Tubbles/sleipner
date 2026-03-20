@@ -1,0 +1,40 @@
+InheritParentConfig: true
+
+# Test files get a relaxed set of checks on top of the root config.
+# Each disabled check has a reason:
+#
+# misc-use-internal-linkage      — Unity test functions must be extern; they are
+#                                  called from test_main.c across TU boundaries.
+#                                  Clang-tidy analyses each TU in isolation so it
+#                                  cannot see the cross-file call and falsely
+#                                  suggests making them static.
+# readability-magic-numbers      — Inline literals are idiomatic in test assertions
+#                                  and carry obvious meaning from context.
+# readability-uppercase-literal-suffix
+#                                — 1.0f vs 1.0F is noise in test code.
+# readability-function-cognitive-complexity
+#                                — Long sequential assertion lists score high but
+#                                  are not genuinely complex; splitting them into
+#                                  smaller functions adds no clarity.
+# readability-math-missing-parentheses
+#                                — Expected-value arithmetic in assertions is
+#                                  self-evident without extra parentheses.
+# misc-include-cleaner           — Test files include module headers that
+#                                  transitively pull in stdint/stdbool etc.;
+#                                  requiring every transitive type to be directly
+#                                  included adds churn with no benefit.
+# readability-implicit-bool-conversion
+#                                — Unity macros use C integer semantics; the
+#                                  extra casts add noise.
+# cert-err33-c                   — snprintf/printf return values in test setup
+#                                  are intentionally ignored; test failure is
+#                                  caught by the assertion that follows.
+Checks: >
+  -misc-use-internal-linkage,
+  -readability-magic-numbers,
+  -readability-uppercase-literal-suffix,
+  -readability-function-cognitive-complexity,
+  -readability-math-missing-parentheses,
+  -misc-include-cleaner,
+  -readability-implicit-bool-conversion,
+  -cert-err33-c,

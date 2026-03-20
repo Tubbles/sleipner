@@ -24,8 +24,8 @@ VEC_IMPL(point, Point)
 #define CONTIGUOUS_A 100
 #define CONTIGUOUS_B 200
 #define CONTIGUOUS_C 300
-static const float float_val_a = 1.5F;
-static const float float_val_b = 2.5F;
+#define FLOAT_VAL_A 1.5F
+#define FLOAT_VAL_B 2.5F
 #define I64_LARGE_VAL 9000000000LL
 #define U32_BIT_PATTERN 0xDEADBEEFU
 #define POINT1_Y 7
@@ -266,10 +266,10 @@ void test_vec_data_is_contiguous_in_memory(void)
 void test_vec_float_push_and_read(void)
 {
     vec_float vector = {0};
-    TEST_ASSERT_TRUE(vec_float_push(&vector, float_val_a));
-    TEST_ASSERT_TRUE(vec_float_push(&vector, float_val_b));
-    TEST_ASSERT_EQUAL_FLOAT(float_val_a, vector.data[0]);
-    TEST_ASSERT_EQUAL_FLOAT(float_val_b, vector.data[1]);
+    TEST_ASSERT_TRUE(vec_float_push(&vector, FLOAT_VAL_A));
+    TEST_ASSERT_TRUE(vec_float_push(&vector, FLOAT_VAL_B));
+    TEST_ASSERT_EQUAL_FLOAT(FLOAT_VAL_A, vector.data[0]);
+    TEST_ASSERT_EQUAL_FLOAT(FLOAT_VAL_B, vector.data[1]);
     vec_float_free(&vector);
 }
 
