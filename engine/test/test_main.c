@@ -1,7 +1,43 @@
 #include "unity.h"
+#include "error.h"
+#include "debug.h"
+#include "game.h"
 
-void setUp(void) {}
-void tearDown(void) {}
+/* Test singleton states - owned by test harness */
+static ErrorState test_error_state;
+static DebugState test_debug_state;
+static GameState test_game_state;
+
+/* Initialize all singleton systems for testing */
+static void setup_nominal_state(void) {
+    // Initialize error system
+    error_init(&test_error_state);
+    
+    // Initialize debug system (with null trace path for tests)
+    debug_init(&test_debug_state, nullptr);
+    
+    // Initialize minimal game state for tests that need it
+    RectU32 test_bounds = {0, 0, 1024, 768};
+    if (!game_init(&test_game_state, test_bounds)) {
+        // If game init fails, at least have error system working
+        debug_log("warning: game_init failed in test setup");
+    }
+}
+
+/* Clean up all singleton systems after testing */
+static void teardown_nominal_state(void) {
+    game_free(&test_game_state);
+    debug_shutdown();
+    error_shutdown();
+}
+
+void setUp(void) {
+    setup_nominal_state();
+}
+
+void tearDown(void) {
+    teardown_nominal_state();
+}
 
 /* test_stub.c */
 void test_stub_passes(void);
