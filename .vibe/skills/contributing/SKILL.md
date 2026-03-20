@@ -1,6 +1,10 @@
-# Development Workflow
+---
+name: contributing
+description: Best practices when contributing to the project and editing files.
+license: MIT
+---
 
-**IMPORTANT:** This document is specifically for Mistral LLM (devstral-2). Anthropic LLMs do not need to read or follow CONTRIBUTING.md.
+# Contributing Workflow
 
 ## Feature Branches
 

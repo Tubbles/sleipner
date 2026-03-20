@@ -6,3 +6,4 @@ CMakeUserPresets.json
 android/.gradle/
 android/app/.cxx/
 android/app/build/
+/.claude/settings.local.json

@@ -1,7 +1,5 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
 **IMPORTANT:** This document applies to all LLMs working on this project. However, only Mistral LLM (devstral-2) shall also read and follow CONTRIBUTING.md.
 
 ## Project Overview
