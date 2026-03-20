@@ -237,30 +237,7 @@ For true singletons (global systems used across many modules), use a **static po
 - **Key insight**: Singleton module uses single static pointer to avoid global variables while maintaining single instance
 - **Examples**: Debug logging, asset manager, sound engine, input system
 
-**Best practice**: Wrap singleton state in a struct to minimize global data surface:
-
-```c
-// In debug.h:
-typedef struct {
-    char log_lines[DEBUG_LOG_LINES][DEBUG_LOG_LINE_LEN];
-    int log_head;
-    int log_count;
-    FILE *trace_file;
-} DebugState;
-
-// In main.c (owner):
-static DebugState debug_state;
-debug_init(&debug_state, TRACE_LOG_PATH);
-
-// In debug.c (singleton):
-static DebugState *debug_state = NULL;
-void debug_init(DebugState *state, const char *trace_path) {
-    debug_state = state;
-    // Initialize...
-}
-```
-
-This approach makes the singleton easier to refactor and test by reducing the global data surface from multiple variables to a single struct pointer.
+**Best practice**: Wrap singleton state in a struct to minimize global data surface and simplify refactoring.
 
 - **Prefer pure functions.** Functions should take inputs and return outputs without relying on or modifying static state. Use holder structs to group related data and pass them explicitly rather than using global variables.
 - **One subsystem at a time.** Implement features incrementally, one subsystem at a time. Get it working, tested, and integrated before moving to the next. Don't build multiple half-finished subsystems in parallel.
