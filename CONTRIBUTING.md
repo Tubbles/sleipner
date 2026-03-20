@@ -2,31 +2,19 @@
 
 ## Feature Branches
 
-All changes must use feature branches:
-```bash
-git checkout -b feature/<name>
-```
+All changes must use feature branches. Create a new branch for each feature or bug fix.
 
 ## Code Review Process
 
 1. **Create branch** from main
 2. **Implement changes** with focused commits
-3. **Push for review**: `git push origin feature/<name>`
+3. **Push for review**
 4. **Subagent reviews** against:
    - ✅ Exact match to original requirements
    - ✅ Code quality and style
    - ✅ Test coverage
    - ✅ No regressions
-5. **Merge** after approval:
-```bash
-git checkout main
-git pull
-git checkout feature/<name>
-git rebase main
-git checkout main
-git merge --ff-only feature/<name>
-git branch -d feature/<name>
-```
+5. **Merge** after approval using rebase and fast-forward
 
 ## Requirements
 
@@ -46,15 +34,10 @@ git branch -d feature/<name>
 - No compilation warnings
 - CI passes completely
 
-## Example
+## Example Workflow
 
-```bash
-# Start feature
-git checkout -b feature/control-flow
-# ... make changes ...
-git push origin feature/control-flow
-# After approval
-git checkout main
-git pull
-git merge --ff-only feature/control-flow
-```
+1. Create feature branch from main
+2. Implement changes with incremental commits
+3. Push branch for review
+4. Address review feedback
+5. After approval: rebase on main and fast-forward merge
