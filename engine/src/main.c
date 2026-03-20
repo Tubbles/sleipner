@@ -54,6 +54,7 @@ int screen_height = SCREEN_HEIGHT_DEFAULT;
 static void texture_registry_add(GameState *state, const char *filename, Texture2D texture)
 {
     if (state->texture_registry_count >= MAX_TEXTURES) {
+        debug_log("warning: texture registry full (%d max), cannot add '%s'", MAX_TEXTURES, filename);
         return;
     }
     TextureEntry *entry = &state->texture_registry[state->texture_registry_count];
@@ -99,6 +100,7 @@ static Texture2D load_embedded_texture(EmbeddedAsset asset)
 static void font_preview_add(GameState *state, const char *name, EmbeddedAsset asset)
 {
     if (state->font_preview_count >= MAX_PREVIEW_FONTS) {
+        debug_log("warning: font preview registry full (%d max), cannot add '%s'", MAX_PREVIEW_FONTS, name);
         return;
     }
     FontPreviewEntry *entry = &state->font_preview_entries[state->font_preview_count];

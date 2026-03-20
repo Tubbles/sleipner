@@ -10,9 +10,6 @@
 #include "render_state.h"
 #include "rule.h"
 
-/* Forward declarations for functions defined in main.c */
-static void font_preview_init(GameState *state);
-
 #include "raylib.h"
 #include "toml.h"
 
@@ -32,7 +29,7 @@ bool game_init(GameState *state, RectU32 game_bounds)
     state->debug_enabled = true;
     
     /* Initialize render state (formerly static variables) */
-    font_preview_init(state);
+    /* Note: font_preview_init is defined in main.c and called there during setup */
     
     if (!arena_init(&state->gamedata_arena, GAMEDATA_ARENA_SIZE)) {
         error_wrap("game_init");
