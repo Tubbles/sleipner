@@ -8,6 +8,7 @@
 #include "input.h"
 #include "level.h"
 #include "rect.h"
+#include "render_state.h"
 #include "screen.h"
 #include "toml_emitter.h"
 
@@ -48,61 +49,41 @@ int screen_width = SCREEN_WIDTH_DEFAULT;
 int screen_height = SCREEN_HEIGHT_DEFAULT;
 
 /* Texture registry — maps texture filenames to loaded Texture2D handles */
-#define MAX_TEXTURES 64
-#define MAX_TEXTURE_FILENAME 64
+/* Now stored in GameState instead of static variables */
 
-typedef struct {
-    char filename[MAX_TEXTURE_FILENAME];
-    Texture2D texture;
-} TextureEntry;
-
-static TextureEntry texture_registry[MAX_TEXTURES];
-static int texture_registry_count = 0;
-
-static void texture_registry_add(const char *filename, Texture2D texture)
+static void texture_registry_add(GameState *state, const char *filename, Texture2D texture)
 {
-    if (texture_registry_count >= MAX_TEXTURES) {
+    if (state->texture_registry_count >= MAX_TEXTURES) {
         return;
     }
-    TextureEntry *entry = &texture_registry[texture_registry_count];
+    TextureEntry *entry = &state->texture_registry[state->texture_registry_count];
     strncpy(entry->filename, filename, MAX_TEXTURE_FILENAME - 1);
     entry->filename[MAX_TEXTURE_FILENAME - 1] = '\0';
     entry->texture = texture;
-    texture_registry_count++;
+    state->texture_registry_count++;
 }
 
 static Texture2D *texture_registry_lookup(const char *filename, void *user_data)
 {
-    (void)user_data;
-    for (int index = 0; index < texture_registry_count; index++) {
-        if (strcmp(texture_registry[index].filename, filename) == 0) {
-            return &texture_registry[index].texture;
+    GameState *state = (GameState *)user_data;
+    for (int index = 0; index < state->texture_registry_count; index++) {
+        if (strcmp(state->texture_registry[index].filename, filename) == 0) {
+            return &state->texture_registry[index].texture;
         }
     }
     return NULL;
 }
 
 /* Font preview registry */
-#define MAX_PREVIEW_FONTS 16
-#define FONT_PREVIEW_SIZE 32
-#define FONT_NAME_LEN 64
+/* Font preview system — now stored in GameState instead of static variables */
 
-typedef struct {
-    char name[FONT_NAME_LEN];
-    Font font;
-    bool valid;
-} FontPreviewEntry;
-
-static FontPreviewEntry font_preview_entries[MAX_PREVIEW_FONTS];
-static int font_preview_count = 0;
-
-static void font_preview_init(void)
+static void font_preview_init(GameState *state)
 {
     /* Reset font preview system to clean state */
-    font_preview_count = 0;
+    state->font_preview_count = 0;
     for (int index = 0; index < MAX_PREVIEW_FONTS; index++) {
-        font_preview_entries[index].valid = false;
-        font_preview_entries[index].name[0] = '\0';
+        state->font_preview_entries[index].valid = false;
+        state->font_preview_entries[index].name[0] = '\0';
     }
     debug_log("font_preview: initialized (%d max entries)", MAX_PREVIEW_FONTS);
 }
@@ -115,22 +96,22 @@ static Texture2D load_embedded_texture(EmbeddedAsset asset)
     return texture;
 }
 
-static void font_preview_add(const char *name, EmbeddedAsset asset)
+static void font_preview_add(GameState *state, const char *name, EmbeddedAsset asset)
 {
-    if (font_preview_count >= MAX_PREVIEW_FONTS) {
+    if (state->font_preview_count >= MAX_PREVIEW_FONTS) {
         return;
     }
-    FontPreviewEntry *entry = &font_preview_entries[font_preview_count];
+    FontPreviewEntry *entry = &state->font_preview_entries[state->font_preview_count];
     strncpy(entry->name, name, FONT_NAME_LEN - 1);
     entry->name[FONT_NAME_LEN - 1] = '\0';
     entry->font = LoadFontFromMemory(".ttf", asset.data, asset.size, FONT_PREVIEW_SIZE, NULL, 0);
     entry->valid = IsFontValid(entry->font);
     if (entry->valid) {
-        debug_log("font[%d]: '%s' (%d bytes)", font_preview_count, name, asset.size);
+        debug_log("font[%d]: '%s' (%d bytes)", state->font_preview_count, name, asset.size);
     } else {
-        debug_log("font[%d]: '%s' failed to load", font_preview_count, name);
+        debug_log("font[%d]: '%s' failed to load", state->font_preview_count, name);
     }
-    font_preview_count++;
+    state->font_preview_count++;
 }
 
 static InputState merge_input(InputState base, InputState overlay)
@@ -312,21 +293,21 @@ static void draw_debug_info(const Entity *player, RectU32 game_bounds, int frame
     }
 }
 
-static void font_preview_cleanup(void)
+static void font_preview_cleanup(GameState *state)
 {
-    for (int index = 0; index < font_preview_count; index++) {
-        if (font_preview_entries[index].valid) {
-            UnloadFont(font_preview_entries[index].font);
+    for (int index = 0; index < state->font_preview_count; index++) {
+        if (state->font_preview_entries[index].valid) {
+            UnloadFont(state->font_preview_entries[index].font);
         }
     }
 }
 
-static void draw_font_preview(void)
+static void draw_font_preview(GameState *state)
 {
     int panel_x = screen_width / 2;
     int line_spacing = FONT_PREVIEW_SIZE + DEBUG_MARGIN;
     int panel_height =
-        (font_preview_count * (DEBUG_LINE_HEIGHT + line_spacing)) + DEBUG_MARGIN + (DEBUG_LINE_HEIGHT * 3);
+        (state->font_preview_count * (DEBUG_LINE_HEIGHT + line_spacing)) + DEBUG_MARGIN + (DEBUG_LINE_HEIGHT * 3);
     DrawRectangle(panel_x, 0, screen_width - panel_x, panel_height, debug_bg_color);
 
     int y_offset = DEBUG_MARGIN;
@@ -336,15 +317,15 @@ static void draw_font_preview(void)
     DrawText("(Visual size varies by font design)", panel_x + DEBUG_MARGIN, y_offset, DEBUG_FONT_SIZE,
              debug_text_color);
     y_offset += DEBUG_LINE_HEIGHT;
-    DrawText(TextFormat("Showing %d fonts total", font_preview_count), panel_x + DEBUG_MARGIN, y_offset,
+    DrawText(TextFormat("Showing %d fonts total", state->font_preview_count), panel_x + DEBUG_MARGIN, y_offset,
              DEBUG_FONT_SIZE, debug_text_color);
     y_offset += DEBUG_LINE_HEIGHT;
 
-    for (int index = 0; index < font_preview_count; index++) {
-        if (!font_preview_entries[index].valid) {
+    for (int index = 0; index < state->font_preview_count; index++) {
+        if (!state->font_preview_entries[index].valid) {
             continue;
         }
-        DrawText(TextFormat("%d. %s", index + 1, font_preview_entries[index].name), panel_x + DEBUG_MARGIN, y_offset,
+        DrawText(TextFormat("%d. %s", index + 1, state->font_preview_entries[index].name), panel_x + DEBUG_MARGIN, y_offset,
                  DEBUG_FONT_SIZE, debug_text_color);
         y_offset += DEBUG_LINE_HEIGHT;
         DrawTextEx(font_preview_entries[index].font, "The quick brown fox 0123456789",
@@ -621,41 +602,42 @@ int main(void)
     InitAudioDevice();
 
     /* Load textures from embedded assets */
-    texture_registry_add("player.png", load_embedded_texture(ASSET(player_png)));
-    texture_registry_add("grass.png", load_embedded_texture(ASSET(grass_png)));
-    texture_registry_add("tree.png", load_embedded_texture(ASSET(tree_png)));
-    texture_registry_add("chest.png", load_embedded_texture(ASSET(chest_png)));
-    texture_registry_add("house.png", load_embedded_texture(ASSET(house_png)));
-    texture_registry_add("fence.png", load_embedded_texture(ASSET(fence_png)));
-    for (int index = 0; index < texture_registry_count; index++) {
-        debug_log("texture[%d]: '%s' id=%u %dx%d", index, texture_registry[index].filename,
-                  texture_registry[index].texture.id, texture_registry[index].texture.width,
-                  texture_registry[index].texture.height);
+    texture_registry_add(&state, "player.png", load_embedded_texture(ASSET(player_png)));
+    texture_registry_add(&state, "grass.png", load_embedded_texture(ASSET(grass_png)));
+    texture_registry_add(&state, "tree.png", load_embedded_texture(ASSET(tree_png)));
+    texture_registry_add(&state, "chest.png", load_embedded_texture(ASSET(chest_png)));
+    texture_registry_add(&state, "house.png", load_embedded_texture(ASSET(house_png)));
+    texture_registry_add(&state, "fence.png", load_embedded_texture(ASSET(fence_png)));
+    for (int index = 0; index < state.texture_registry_count; index++) {
+        debug_log("texture[%d]: '%s' id=%u %dx%d", index, state.texture_registry[index].filename,
+                  state.texture_registry[index].texture.id, state.texture_registry[index].texture.width,
+                  state.texture_registry[index].texture.height);
     }
     /* Initialize and load fonts */
-    font_preview_init();
-    font_preview_add("Earth Illusion", ASSET(earth_illusion_ttf));
-    font_preview_add("Golden Apple", ASSET(golden_apple_ttf));
-    font_preview_add("MenuCard", ASSET(menucard_ttf));
-    font_preview_add("Nudge Orb", ASSET(nudge_orb_ttf));
-    font_preview_add("CardboardCrown", ASSET(cardboardcrown_ttf));
-    font_preview_add("RoyalFibre", ASSET(royalfibre_ttf));
+    font_preview_init(&state);
+    font_preview_add(&state, "Earth Illusion", ASSET(earth_illusion_ttf));
+    font_preview_add(&state, "Golden Apple", ASSET(golden_apple_ttf));
+    font_preview_add(&state, "MenuCard", ASSET(menucard_ttf));
+    font_preview_add(&state, "Nudge Orb", ASSET(nudge_orb_ttf));
+    font_preview_add(&state, "CardboardCrown", ASSET(cardboardcrown_ttf));
+    font_preview_add(&state, "RoyalFibre", ASSET(royalfibre_ttf));
 
     EmbeddedAsset bgm_asset = ASSET(bgm_mp3);
     Music bgm = LoadMusicStreamFromMemory(".mp3", bgm_asset.data, bgm_asset.size);
     bgm.looping = true;
     PlayMusicStream(bgm);
 
-    /* Render target at game resolution for pixel-perfect scaling */
+    /* Initialize game state early for texture/font loading */
     RectU32 game_bounds = {(uint32_t)screen_width / PIXEL_SCALE, (uint32_t)screen_height / PIXEL_SCALE};
-    RenderTexture2D target = LoadRenderTexture((int)game_bounds.width, (int)game_bounds.height);
-
     GameState state;
     if (!game_init(&state, game_bounds)) {
         debug_log("error: %s", error_get());
         error_clear();
         return 1;
     }
+
+    /* Render target at game resolution for pixel-perfect scaling */
+    RenderTexture2D target = LoadRenderTexture((int)game_bounds.width, (int)game_bounds.height);
 
     int prev_gamepads = -1;
     bool font_preview_enabled = false;
@@ -708,7 +690,7 @@ int main(void)
         BeginTextureMode(target);
         ClearBackground(BLACK);
 
-        draw_grass(*texture_registry_lookup("grass.png", NULL), game_bounds);
+        draw_grass(*texture_registry_lookup("grass.png", &state), game_bounds);
         draw_entities_depth_sorted(&state);
 
         EndTextureMode();
@@ -722,7 +704,7 @@ int main(void)
             draw_debug_info(game_get_player_const(&state), game_bounds, state.frame, state.elapsed);
         }
         if (font_preview_enabled) {
-            draw_font_preview();
+            draw_font_preview(&state);
         }
         EndDrawing();
     }
@@ -732,10 +714,10 @@ quit:
 
     UnloadMusicStream(bgm);
     UnloadRenderTexture(target);
-    for (int index = 0; index < texture_registry_count; index++) {
-        UnloadTexture(texture_registry[index].texture);
+    for (int index = 0; index < state.texture_registry_count; index++) {
+        UnloadTexture(state.texture_registry[index].texture);
     }
-    font_preview_cleanup();
+    font_preview_cleanup(&state);
     game_free(&state);
     debug_shutdown();
     CloseAudioDevice();

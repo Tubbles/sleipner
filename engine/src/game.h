@@ -6,6 +6,7 @@
 #include "input.h"
 #include "level.h"
 #include "rect.h"
+#include "render_state.h"
 #include "rule.h"
 
 #include <stdbool.h>
@@ -36,6 +37,12 @@ typedef struct {
     bool gamedata_loaded;
     bool debug_enabled;
     bool prev_interact;
+    
+    /* Render state - formerly static variables */
+    TextureEntry texture_registry[MAX_TEXTURES];
+    int texture_registry_count;
+    FontPreviewEntry font_preview_entries[MAX_PREVIEW_FONTS];
+    int font_preview_count;
 } GameState;
 
 typedef struct {

@@ -7,7 +7,11 @@
 #include "input.h"
 #include "level.h"
 #include "rect.h"
+#include "render_state.h"
 #include "rule.h"
+
+/* Forward declarations for functions defined in main.c */
+static void font_preview_init(GameState *state);
 
 #include "raylib.h"
 #include "toml.h"
@@ -26,6 +30,10 @@ bool game_init(GameState *state, RectU32 game_bounds)
     state->game_bounds = game_bounds;
     state->player_index = -1;
     state->debug_enabled = true;
+    
+    /* Initialize render state (formerly static variables) */
+    font_preview_init(state);
+    
     if (!arena_init(&state->gamedata_arena, GAMEDATA_ARENA_SIZE)) {
         error_wrap("game_init");
         return false;
