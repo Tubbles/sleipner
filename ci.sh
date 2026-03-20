@@ -25,7 +25,7 @@ run() {
 }
 
 ensure_image() {
-    if ! "$CONTAINER_CMD" image exists "$IMAGE" 2>/dev/null; then
+    if ! "$CONTAINER_CMD" image inspect "$IMAGE" > /dev/null 2>&1; then
         echo "Building toolchain image..."
         "$CONTAINER_CMD" build -t "$IMAGE" .
     fi
