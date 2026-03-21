@@ -44,66 +44,45 @@
 #define DEBUG_BG_ALPHA 180
 #define DEBUG_PANEL_WIDTH 420
 #define DEBUG_LINES 10
+#define FONT_PREVIEW_SIZE 32
 
 int screen_width = SCREEN_WIDTH_DEFAULT;
 int screen_height = SCREEN_HEIGHT_DEFAULT;
 
 /* Texture registry — maps texture filenames to loaded Texture2D handles */
-#define MAX_TEXTURES 64
-#define MAX_TEXTURE_FILENAME 64
-
-typedef struct {
-    char filename[MAX_TEXTURE_FILENAME];
-    Texture2D texture;
-} TextureEntry;
-
-static TextureEntry texture_registry[MAX_TEXTURES];
-static int texture_registry_count = 0;
-
-static void texture_registry_add(const char *filename, Texture2D texture)
+static void texture_registry_add(struct EngineContext *ctx, const char *filename, Texture2D texture)
 {
-    if (texture_registry_count >= MAX_TEXTURES) {
+    if (ctx->assets.texture_registry_count >= MAX_TEXTURES) {
         return;
     }
-    TextureEntry *entry = &texture_registry[texture_registry_count];
+    TextureEntry *entry = &ctx->assets.texture_registry[ctx->assets.texture_registry_count];
     strncpy(entry->filename, filename, MAX_TEXTURE_FILENAME - 1);
     entry->filename[MAX_TEXTURE_FILENAME - 1] = '\0';
     entry->texture = texture;
-    texture_registry_count++;
+    ctx->assets.texture_registry_count++;
 }
 
 static Texture2D *texture_registry_lookup(const char *filename, void *user_data)
 {
-    (void)user_data;
-    for (int index = 0; index < texture_registry_count; index++) {
-        if (strcmp(texture_registry[index].filename, filename) == 0) {
-            return &texture_registry[index].texture;
+    struct EngineContext *ctx = (struct EngineContext *)user_data;
+    if (!ctx) {
+        return NULL;
+    }
+    for (int index = 0; index < ctx->assets.texture_registry_count; index++) {
+        if (strcmp(ctx->assets.texture_registry[index].filename, filename) == 0) {
+            return &ctx->assets.texture_registry[index].texture;
         }
     }
     return NULL;
 }
 
-/* Font preview registry */
-#define MAX_PREVIEW_FONTS 16
-#define FONT_PREVIEW_SIZE 32
-#define FONT_NAME_LEN 64
-
-typedef struct {
-    char name[FONT_NAME_LEN];
-    Font font;
-    bool valid;
-} FontPreviewEntry;
-
-static FontPreviewEntry font_preview_entries[MAX_PREVIEW_FONTS];
-static int font_preview_count = 0;
-
 static void font_preview_init(struct EngineContext *ctx)
 {
     /* Reset font preview system to clean state */
-    font_preview_count = 0;
+    ctx->assets.font_preview_count = 0;
     for (int index = 0; index < MAX_PREVIEW_FONTS; index++) {
-        font_preview_entries[index].valid = false;
-        font_preview_entries[index].name[0] = '\0';
+        ctx->assets.font_preview_entries[index].valid = false;
+        ctx->assets.font_preview_entries[index].name[0] = '\0';
     }
     debug_log(ctx, "font_preview: initialized (%d max entries)", MAX_PREVIEW_FONTS);
 }
@@ -118,20 +97,20 @@ static Texture2D load_embedded_texture(EmbeddedAsset asset)
 
 static void font_preview_add(struct EngineContext *ctx, const char *name, EmbeddedAsset asset)
 {
-    if (font_preview_count >= MAX_PREVIEW_FONTS) {
+    if (ctx->assets.font_preview_count >= MAX_PREVIEW_FONTS) {
         return;
     }
-    FontPreviewEntry *entry = &font_preview_entries[font_preview_count];
+    FontPreviewEntry *entry = &ctx->assets.font_preview_entries[ctx->assets.font_preview_count];
     strncpy(entry->name, name, FONT_NAME_LEN - 1);
     entry->name[FONT_NAME_LEN - 1] = '\0';
     entry->font = LoadFontFromMemory(".ttf", asset.data, asset.size, FONT_PREVIEW_SIZE, NULL, 0);
     entry->valid = IsFontValid(entry->font);
     if (entry->valid) {
-        debug_log(ctx, "font[%d]: '%s' (%d bytes)", font_preview_count, name, asset.size);
+        debug_log(ctx, "font[%d]: '%s' (%d bytes)", ctx->assets.font_preview_count, name, asset.size);
     } else {
-        debug_log(ctx, "font[%d]: '%s' failed to load", font_preview_count, name);
+        debug_log(ctx, "font[%d]: '%s' failed to load", ctx->assets.font_preview_count, name);
     }
-    font_preview_count++;
+    ctx->assets.font_preview_count++;
 }
 
 static InputState merge_input(InputState base, InputState overlay)
@@ -314,21 +293,21 @@ draw_debug_info(struct EngineContext *ctx, const Entity *player, RectU32 game_bo
     }
 }
 
-static void font_preview_cleanup(void)
+static void font_preview_cleanup(struct EngineContext *ctx)
 {
-    for (int index = 0; index < font_preview_count; index++) {
-        if (font_preview_entries[index].valid) {
-            UnloadFont(font_preview_entries[index].font);
+    for (int index = 0; index < ctx->assets.font_preview_count; index++) {
+        if (ctx->assets.font_preview_entries[index].valid) {
+            UnloadFont(ctx->assets.font_preview_entries[index].font);
         }
     }
 }
 
-static void draw_font_preview(void)
+static void draw_font_preview(struct EngineContext *ctx)
 {
     int panel_x = screen_width / 2;
     int line_spacing = FONT_PREVIEW_SIZE + DEBUG_MARGIN;
     int panel_height =
-        (font_preview_count * (DEBUG_LINE_HEIGHT + line_spacing)) + DEBUG_MARGIN + (DEBUG_LINE_HEIGHT * 3);
+        (ctx->assets.font_preview_count * (DEBUG_LINE_HEIGHT + line_spacing)) + DEBUG_MARGIN + (DEBUG_LINE_HEIGHT * 3);
     DrawRectangle(panel_x, 0, screen_width - panel_x, panel_height, debug_bg_color);
 
     int y_offset = DEBUG_MARGIN;
@@ -338,24 +317,22 @@ static void draw_font_preview(void)
     DrawText("(Visual size varies by font design)", panel_x + DEBUG_MARGIN, y_offset, DEBUG_FONT_SIZE,
              debug_text_color);
     y_offset += DEBUG_LINE_HEIGHT;
-    DrawText(TextFormat("Showing %d fonts total", font_preview_count), panel_x + DEBUG_MARGIN, y_offset,
+    DrawText(TextFormat("Showing %d fonts total", ctx->assets.font_preview_count), panel_x + DEBUG_MARGIN, y_offset,
              DEBUG_FONT_SIZE, debug_text_color);
     y_offset += DEBUG_LINE_HEIGHT;
 
-    for (int index = 0; index < font_preview_count; index++) {
-        if (!font_preview_entries[index].valid) {
+    for (int index = 0; index < ctx->assets.font_preview_count; index++) {
+        if (!ctx->assets.font_preview_entries[index].valid) {
             continue;
         }
-        DrawText(TextFormat("%d. %s", index + 1, font_preview_entries[index].name), panel_x + DEBUG_MARGIN, y_offset,
-                 DEBUG_FONT_SIZE, debug_text_color);
+        DrawText(TextFormat("%d. %s", index + 1, ctx->assets.font_preview_entries[index].name), panel_x + DEBUG_MARGIN,
+                 y_offset, DEBUG_FONT_SIZE, debug_text_color);
         y_offset += DEBUG_LINE_HEIGHT;
-        DrawTextEx(font_preview_entries[index].font, "The quick brown fox 0123456789",
+        DrawTextEx(ctx->assets.font_preview_entries[index].font, "The quick brown fox 0123456789",
                    (Vector2){(float)(panel_x + DEBUG_MARGIN), (float)y_offset}, FONT_PREVIEW_SIZE, 1, WHITE);
         y_offset += line_spacing;
     }
 }
-
-static long gamedata_mtime = 0;
 
 #define MAX_GAMEDATA_SIZE (256UL * 1024)
 #define MAX_PATH_LEN 512
@@ -505,7 +482,8 @@ static void load_gamedata(struct EngineContext *ctx, GameState *state)
     debug_log(ctx, "gamedata: hex[0..%d]: %s", hex_count - 1, hexbuf);
 
     bool loaded = game_load_gamedata(
-        ctx, state, (GamedataParams){.toml_string = content, .texture_lookup = texture_registry_lookup});
+        ctx, state,
+        (GamedataParams){.toml_string = content, .texture_lookup = texture_registry_lookup, .texture_user_data = ctx});
     free(content);
 
     if (loaded) {
@@ -532,7 +510,7 @@ static void load_gamedata(struct EngineContext *ctx, GameState *state)
         error_clear(ctx);
     }
 
-    gamedata_mtime = GetFileModTime(GAMEDATA_PATH);
+    ctx->gamedata_mtime = GetFileModTime(GAMEDATA_PATH);
 }
 
 static void poll_hot_reload(struct EngineContext *ctx, GameState *state)
@@ -543,7 +521,7 @@ static void poll_hot_reload(struct EngineContext *ctx, GameState *state)
     }
 
     long current_mtime = GetFileModTime(GAMEDATA_PATH);
-    if (current_mtime > 0 && current_mtime != gamedata_mtime) {
+    if (current_mtime > 0 && current_mtime != ctx->gamedata_mtime) {
         debug_log(ctx, "gamedata: hot-reload triggered");
         load_gamedata(ctx, state);
     }
@@ -623,19 +601,19 @@ int main(void)
     input_load_mappings(ctx, (const char *)gamepad_asset.data, gamepad_asset.size);
 #endif
     SetTargetFPS(TARGET_FPS);
-    InitAudioDevice();
+    audio_init(ctx);
 
     /* Load textures from embedded assets */
-    texture_registry_add("player.png", load_embedded_texture(ASSET(player_png)));
-    texture_registry_add("grass.png", load_embedded_texture(ASSET(grass_png)));
-    texture_registry_add("tree.png", load_embedded_texture(ASSET(tree_png)));
-    texture_registry_add("chest.png", load_embedded_texture(ASSET(chest_png)));
-    texture_registry_add("house.png", load_embedded_texture(ASSET(house_png)));
-    texture_registry_add("fence.png", load_embedded_texture(ASSET(fence_png)));
-    for (int index = 0; index < texture_registry_count; index++) {
-        debug_log(ctx, "texture[%d]: '%s' id=%u %dx%d", index, texture_registry[index].filename,
-                  texture_registry[index].texture.id, texture_registry[index].texture.width,
-                  texture_registry[index].texture.height);
+    texture_registry_add(ctx, "player.png", load_embedded_texture(ASSET(player_png)));
+    texture_registry_add(ctx, "grass.png", load_embedded_texture(ASSET(grass_png)));
+    texture_registry_add(ctx, "tree.png", load_embedded_texture(ASSET(tree_png)));
+    texture_registry_add(ctx, "chest.png", load_embedded_texture(ASSET(chest_png)));
+    texture_registry_add(ctx, "house.png", load_embedded_texture(ASSET(house_png)));
+    texture_registry_add(ctx, "fence.png", load_embedded_texture(ASSET(fence_png)));
+    for (int index = 0; index < ctx->assets.texture_registry_count; index++) {
+        debug_log(ctx, "texture[%d]: '%s' id=%u %dx%d", index, ctx->assets.texture_registry[index].filename,
+                  ctx->assets.texture_registry[index].texture.id, ctx->assets.texture_registry[index].texture.width,
+                  ctx->assets.texture_registry[index].texture.height);
     }
     /* Initialize and load fonts */
     font_preview_init(ctx);
@@ -713,7 +691,7 @@ int main(void)
         BeginTextureMode(target);
         ClearBackground(BLACK);
 
-        draw_grass(*texture_registry_lookup("grass.png", NULL), game_bounds);
+        draw_grass(*texture_registry_lookup("grass.png", ctx), game_bounds);
         draw_entities_depth_sorted(&state);
 
         EndTextureMode();
@@ -727,7 +705,7 @@ int main(void)
             draw_debug_info(ctx, game_get_player_const(&state), game_bounds, state.frame, state.elapsed);
         }
         if (font_preview_enabled) {
-            draw_font_preview();
+            draw_font_preview(ctx);
         }
         EndDrawing();
     }
@@ -737,13 +715,13 @@ quit:
 
     UnloadMusicStream(bgm);
     UnloadRenderTexture(target);
-    for (int index = 0; index < texture_registry_count; index++) {
-        UnloadTexture(texture_registry[index].texture);
+    for (int index = 0; index < ctx->assets.texture_registry_count; index++) {
+        UnloadTexture(ctx->assets.texture_registry[index].texture);
     }
-    font_preview_cleanup();
+    font_preview_cleanup(ctx);
     game_free(&state);
+    audio_shutdown(ctx);
     debug_shutdown(ctx);
-    CloseAudioDevice();
     CloseWindow();
     return 0;
 }

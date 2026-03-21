@@ -1,4 +1,5 @@
 #include "audio.h"
+#include "engine_context.h"
 #include "raylib.h"
 #include <math.h>
 #include <stdlib.h>
@@ -17,13 +18,11 @@
 #define POP_DURATION_SEC 0.12F
 #define POP_VOLUME 0.3F
 
-static Sound sounds[SOUND_COUNT];
-
 // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 static Wave generate_tone(float freq, float duration, float volume)
 {
     int sample_count = (int)(SAMPLE_RATE * duration);
-    short *data = malloc(sizeof(short) * sample_count);
+    short *data = malloc(sizeof(short) * (size_t)sample_count);
 
     for (int index = 0; index < sample_count; index++) {
         float sample_time = (float)index / SAMPLE_RATE;
@@ -33,7 +32,7 @@ static Wave generate_tone(float freq, float duration, float volume)
     }
 
     Wave wave = {
-        .frameCount = sample_count,
+        .frameCount = (unsigned int)sample_count,
         .sampleRate = SAMPLE_RATE,
         .sampleSize = BITS_PER_SAMPLE,
         .channels = 1,
@@ -46,7 +45,7 @@ static Wave generate_tone(float freq, float duration, float volume)
 static Wave generate_bubble_pop(float duration, float volume)
 {
     int sample_count = (int)(SAMPLE_RATE * duration);
-    short *data = malloc(sizeof(short) * sample_count);
+    short *data = malloc(sizeof(short) * (size_t)sample_count);
 
     for (int index = 0; index < sample_count; index++) {
         float sample_time = (float)index / SAMPLE_RATE;
@@ -63,7 +62,7 @@ static Wave generate_bubble_pop(float duration, float volume)
     }
 
     Wave wave = {
-        .frameCount = sample_count,
+        .frameCount = (unsigned int)sample_count,
         .sampleRate = SAMPLE_RATE,
         .sampleSize = BITS_PER_SAMPLE,
         .channels = 1,
@@ -72,30 +71,30 @@ static Wave generate_bubble_pop(float duration, float volume)
     return wave;
 }
 
-void audio_init(void)
+void audio_init(struct EngineContext *ctx)
 {
     InitAudioDevice();
 
     Wave button_wave = generate_tone(TONE_FREQ_HZ, TONE_DURATION_SEC, TONE_VOLUME);
-    sounds[SOUND_BUTTON] = LoadSoundFromWave(button_wave);
+    ctx->audio.sounds[SOUND_BUTTON] = LoadSoundFromWave(button_wave);
     free(button_wave.data);
 
     Wave collision_wave = generate_bubble_pop(POP_DURATION_SEC, POP_VOLUME);
-    sounds[SOUND_COLLISION] = LoadSoundFromWave(collision_wave);
+    ctx->audio.sounds[SOUND_COLLISION] = LoadSoundFromWave(collision_wave);
     free(collision_wave.data);
 }
 
-void audio_play(SoundKind kind)
+void audio_play(struct EngineContext *ctx, SoundKind kind)
 {
-    if (kind >= 0 && kind < SOUND_COUNT) {
-        PlaySound(sounds[kind]);
+    if ((int)kind >= 0 && (int)kind < SOUND_COUNT) {
+        PlaySound(ctx->audio.sounds[kind]);
     }
 }
 
-void audio_shutdown(void)
+void audio_shutdown(struct EngineContext *ctx)
 {
     for (int index = 0; index < SOUND_COUNT; index++) {
-        UnloadSound(sounds[index]);
+        UnloadSound(ctx->audio.sounds[index]);
     }
     CloseAudioDevice();
 }

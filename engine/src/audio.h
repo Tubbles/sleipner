@@ -3,8 +3,10 @@
 
 typedef enum { SOUND_BUTTON, SOUND_COLLISION, SOUND_COUNT } SoundKind;
 
-void audio_init(void);
-void audio_play(SoundKind kind);
-void audio_shutdown(void);
+struct EngineContext;
+
+void audio_init(struct EngineContext *ctx);
+void audio_play(struct EngineContext *ctx, SoundKind kind);
+void audio_shutdown(struct EngineContext *ctx);
 
 #endif
