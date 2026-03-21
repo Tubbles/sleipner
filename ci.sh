@@ -21,7 +21,8 @@ CONTAINER_CMD="${CONTAINER_CMD:-podman}"
 SOURCES="engine/src/*.c engine/src/*.h engine/test/*.c"
 
 run() {
-    "$CONTAINER_CMD" run --rm -v "$(pwd)":"$(pwd)":Z -w "$(pwd)" "$IMAGE" "$@"
+    "$CONTAINER_CMD" run --rm -v "$(pwd)":"$(pwd)":Z -w "$(pwd)" \
+        -e CONAN_HOME="$(pwd)/build/.conan2" "$IMAGE" "$@"
 }
 
 ensure_image() {
@@ -31,7 +32,14 @@ ensure_image() {
     fi
 }
 
-conan_setup='conan install . --output-folder=build --build=missing'
+conan_profile_setup='conan profile detect --force \
+    && sed -i "s/compiler=gcc/compiler=clang/" "$CONAN_HOME/profiles/default" \
+    && sed -i "s/compiler.version=.*/compiler.version=22/" "$CONAN_HOME/profiles/default" \
+    && sed -i "/compiler.cppstd/d" "$CONAN_HOME/profiles/default" \
+    && printf "\n[conf]\ntools.build:compiler_executables={\"c\": \"clang\", \"cpp\": \"clang++\"}\n" >> "$CONAN_HOME/profiles/default" \
+    && sed -i "s/\"21\"]/\"21\", \"22\"]/" "$CONAN_HOME/settings.yml"'
+
+conan_setup="$conan_profile_setup && conan install . --output-folder=build --build=missing"
 
 do_format() {
     echo "=== format ==="
@@ -75,7 +83,7 @@ do_all() {
                  && cd build/Release && clang-tidy -p . ../../engine/src/*.c ../../engine/test/*.c"
 }
 
-android_conan_setup='conan install . --output-folder=build/android/arm64-v8a --build=missing \
+android_conan_setup="$conan_profile_setup"' && conan install . --output-folder=build/android/arm64-v8a --build=missing \
     -s os=Android -s os.api_level=27 -s arch=armv8 \
     -s compiler=clang -s compiler.version=18 -s compiler.libcxx=c++_static -s compiler.cppstd=17 \
     -s build_type=Release \
