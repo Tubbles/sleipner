@@ -26,13 +26,14 @@ typedef struct {
     Sound sounds[SOUND_COUNT];
 } AudioState;
 
-#define MAX_TEXTURES 64
 #define MAX_TEXTURE_FILENAME 64
 
 typedef struct {
     char filename[MAX_TEXTURE_FILENAME];
     Texture2D texture;
 } TextureEntry;
+
+VEC_DECL(texture_entry, TextureEntry)
 
 #define FONT_NAME_LEN 64
 #define SCREEN_WIDTH_DEFAULT 800
@@ -47,8 +48,7 @@ typedef struct {
 VEC_DECL(font_preview, FontPreviewEntry)
 
 typedef struct {
-    TextureEntry texture_registry[MAX_TEXTURES];
-    int texture_registry_count;
+    vec_texture_entry textures;
     vec_font_preview font_previews;
 } AssetRegistry;
 

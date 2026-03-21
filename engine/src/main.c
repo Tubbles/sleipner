@@ -23,6 +23,7 @@
 #include <sys/stat.h>
 
 VEC_IMPL(font_preview, FontPreviewEntry)
+VEC_IMPL(texture_entry, TextureEntry)
 
 #ifdef __ANDROID__
 #define SYNCTHING_PATH "/storage/emulated/0/Sync"
@@ -52,14 +53,11 @@ VEC_IMPL(font_preview, FontPreviewEntry)
 /* Texture registry — maps texture filenames to loaded Texture2D handles */
 static void texture_registry_add(struct EngineContext *ctx, const char *filename, Texture2D texture)
 {
-    if (ctx->assets.texture_registry_count >= MAX_TEXTURES) {
-        return;
-    }
-    TextureEntry *entry = &ctx->assets.texture_registry[ctx->assets.texture_registry_count];
-    strncpy(entry->filename, filename, MAX_TEXTURE_FILENAME - 1);
-    entry->filename[MAX_TEXTURE_FILENAME - 1] = '\0';
-    entry->texture = texture;
-    ctx->assets.texture_registry_count++;
+    TextureEntry entry = {0};
+    strncpy(entry.filename, filename, MAX_TEXTURE_FILENAME - 1);
+    entry.filename[MAX_TEXTURE_FILENAME - 1] = '\0';
+    entry.texture = texture;
+    (void)vec_texture_entry_push(&ctx->assets.textures, entry);
 }
 
 static Texture2D *texture_registry_lookup(const char *filename, void *user_data)
@@ -68,9 +66,9 @@ static Texture2D *texture_registry_lookup(const char *filename, void *user_data)
     if (!ctx) {
         return NULL;
     }
-    for (int index = 0; index < ctx->assets.texture_registry_count; index++) {
-        if (strcmp(ctx->assets.texture_registry[index].filename, filename) == 0) {
-            return &ctx->assets.texture_registry[index].texture;
+    for (int index = 0; index < ctx->assets.textures.count; index++) {
+        if (strcmp(ctx->assets.textures.data[index].filename, filename) == 0) {
+            return &ctx->assets.textures.data[index].texture;
         }
     }
     return NULL;
@@ -606,10 +604,10 @@ int main(void)
     texture_registry_add(ctx, "chest.png", load_embedded_texture(ASSET(chest_png)));
     texture_registry_add(ctx, "house.png", load_embedded_texture(ASSET(house_png)));
     texture_registry_add(ctx, "fence.png", load_embedded_texture(ASSET(fence_png)));
-    for (int index = 0; index < ctx->assets.texture_registry_count; index++) {
-        debug_log(ctx, "texture[%d]: '%s' id=%u %dx%d", index, ctx->assets.texture_registry[index].filename,
-                  ctx->assets.texture_registry[index].texture.id, ctx->assets.texture_registry[index].texture.width,
-                  ctx->assets.texture_registry[index].texture.height);
+    for (int index = 0; index < ctx->assets.textures.count; index++) {
+        debug_log(ctx, "texture[%d]: '%s' id=%u %dx%d", index, ctx->assets.textures.data[index].filename,
+                  ctx->assets.textures.data[index].texture.id, ctx->assets.textures.data[index].texture.width,
+                  ctx->assets.textures.data[index].texture.height);
     }
     /* Initialize and load fonts */
     font_preview_init(ctx);
@@ -712,9 +710,10 @@ quit:
 
     UnloadMusicStream(bgm);
     UnloadRenderTexture(target);
-    for (int index = 0; index < ctx->assets.texture_registry_count; index++) {
-        UnloadTexture(ctx->assets.texture_registry[index].texture);
+    for (int index = 0; index < ctx->assets.textures.count; index++) {
+        UnloadTexture(ctx->assets.textures.data[index].texture);
     }
+    vec_texture_entry_free(&ctx->assets.textures);
     font_preview_cleanup(ctx);
     game_free(&state);
     audio_shutdown(ctx);
