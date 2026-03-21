@@ -30,11 +30,12 @@ InheritParentConfig: true
 #                                  are intentionally ignored; test failure is
 #                                  caught by the assertion that follows.
 Checks: >
-  -misc-use-internal-linkage,
-  -readability-magic-numbers,
-  -readability-uppercase-literal-suffix,
-  -readability-function-cognitive-complexity,
-  -readability-math-missing-parentheses,
-  -misc-include-cleaner,
-  -readability-implicit-bool-conversion,
   -cert-err33-c,
+  -cppcoreguidelines-avoid-non-const-global-variables,
+  -misc-include-cleaner,
+  -misc-use-internal-linkage,
+  -readability-function-cognitive-complexity,
+  -readability-implicit-bool-conversion,
+  -readability-magic-numbers,
+  -readability-math-missing-parentheses,
+  -readability-uppercase-literal-suffix,
