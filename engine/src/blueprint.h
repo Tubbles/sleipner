@@ -8,6 +8,8 @@
 
 #include <stdbool.h>
 
+struct EngineContext;
+
 typedef struct {
     struct Rule *entries;
     int count;
@@ -46,7 +48,7 @@ typedef struct {
 /* Parse all [[blueprint]] entries from a tomlc99 root table into the blueprint table.
  * Arena is used for variable-length data (rule arrays).
  * Returns the number of blueprints loaded, or -1 on error. */
-int blueprints_load(BlueprintTable *table, void *toml_root, Arena *arena);
+int blueprints_load(struct EngineContext *ctx, BlueprintTable *table, void *toml_root, Arena *arena);
 
 /* Find a blueprint by name. Returns NULL if not found. */
 const Blueprint *blueprint_find(const BlueprintTable *table, const char *name);

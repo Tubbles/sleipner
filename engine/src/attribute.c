@@ -13,7 +13,7 @@ const Attribute *attr_get(const AttrSet *set, const char *name)
     return NULL;
 }
 
-static Attribute *find_or_append(AttrSet *set, const char *name)
+static Attribute *find_or_append(struct EngineContext *ctx, AttrSet *set, const char *name)
 {
     for (int index = 0; index < set->count; index++) {
         if (strcmp(set->entries[index].name, name) == 0) {
@@ -21,7 +21,7 @@ static Attribute *find_or_append(AttrSet *set, const char *name)
         }
     }
     if (set->count >= MAX_ATTRS) {
-        error_set("attribute set full (max %d), cannot add '%s'", MAX_ATTRS, name);
+        error_set(ctx, "attribute set full (max %d), cannot add '%s'", MAX_ATTRS, name);
         return NULL;
     }
     Attribute *entry = &set->entries[set->count];
@@ -31,9 +31,9 @@ static Attribute *find_or_append(AttrSet *set, const char *name)
     return entry;
 }
 
-bool attr_set_float(AttrSet *set, const char *name, float value)
+bool attr_set_float(struct EngineContext *ctx, AttrSet *set, const char *name, float value)
 {
-    Attribute *entry = find_or_append(set, name);
+    Attribute *entry = find_or_append(ctx, set, name);
     if (!entry) {
         return false;
     }
@@ -42,9 +42,9 @@ bool attr_set_float(AttrSet *set, const char *name, float value)
     return true;
 }
 
-bool attr_set_int(AttrSet *set, const char *name, int value)
+bool attr_set_int(struct EngineContext *ctx, AttrSet *set, const char *name, int value)
 {
-    Attribute *entry = find_or_append(set, name);
+    Attribute *entry = find_or_append(ctx, set, name);
     if (!entry) {
         return false;
     }
@@ -53,9 +53,9 @@ bool attr_set_int(AttrSet *set, const char *name, int value)
     return true;
 }
 
-bool attr_set_bool(AttrSet *set, const char *name, bool value)
+bool attr_set_bool(struct EngineContext *ctx, AttrSet *set, const char *name, bool value)
 {
-    Attribute *entry = find_or_append(set, name);
+    Attribute *entry = find_or_append(ctx, set, name);
     if (!entry) {
         return false;
     }
@@ -64,9 +64,9 @@ bool attr_set_bool(AttrSet *set, const char *name, bool value)
     return true;
 }
 
-bool attr_set_string(AttrSet *set, AttrStringPair pair)
+bool attr_set_string(struct EngineContext *ctx, AttrSet *set, AttrStringPair pair)
 {
-    Attribute *entry = find_or_append(set, pair.name);
+    Attribute *entry = find_or_append(ctx, set, pair.name);
     if (!entry) {
         return false;
     }

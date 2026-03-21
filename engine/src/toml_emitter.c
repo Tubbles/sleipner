@@ -95,8 +95,12 @@ static int emit_levels(char *buffer, int capacity, int offset, const Level *leve
     return offset;
 }
 
-int toml_emit_gamedata(
-    char *buffer, int capacity, const BlueprintTable *blueprints, const Level *levels, int level_count)
+int toml_emit_gamedata(struct EngineContext *ctx,
+                       char *buffer,
+                       int capacity,
+                       const BlueprintTable *blueprints,
+                       const Level *levels,
+                       int level_count)
 {
     int offset = 0;
 
@@ -104,7 +108,7 @@ int toml_emit_gamedata(
     offset = emit_levels(buffer, capacity, offset, levels, level_count);
 
     if (offset < 0) {
-        error_set("buffer too small (capacity %d)", capacity);
+        error_set(ctx, "buffer too small (capacity %d)", capacity);
     }
     return offset;
 }

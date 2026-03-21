@@ -1,4 +1,8 @@
 #include "unity.h"
+#include "engine_context.h"
+
+static struct EngineContext ctx;
+
 #include "arena.h"
 #include "attribute.h"
 #include "blueprint.h"
@@ -9,7 +13,7 @@
 
 static void with_arena(Arena *arena)
 {
-    TEST_ASSERT_TRUE(arena_init(arena, 4096));
+    TEST_ASSERT_TRUE(arena_init(&ctx, arena, 4096));
 }
 
 static toml_table_t *parse_toml(const char *input)
@@ -36,7 +40,7 @@ void test_blueprint_load_single(void)
                                     "collision_size = [24, 16]\n");
     TEST_ASSERT_NOT_NULL(root);
 
-    int count = blueprints_load(&table, root, &test_arena);
+    int count = blueprints_load(&ctx, &table, root, &test_arena);
     TEST_ASSERT_EQUAL_INT(1, count);
     TEST_ASSERT_EQUAL_INT(1, table.count);
 
@@ -76,7 +80,7 @@ void test_blueprint_load_multiple(void)
                                     "collision_size = [16, 16]\n");
     TEST_ASSERT_NOT_NULL(root);
 
-    int count = blueprints_load(&table, root, &test_arena);
+    int count = blueprints_load(&ctx, &table, root, &test_arena);
     TEST_ASSERT_EQUAL_INT(2, count);
     TEST_ASSERT_EQUAL_STRING("tree", table.entries[0].name);
     TEST_ASSERT_EQUAL_STRING("chest", table.entries[1].name);
@@ -106,7 +110,7 @@ void test_blueprint_find(void)
                                     "collision_size = [16, 16]\n");
     TEST_ASSERT_NOT_NULL(root);
 
-    blueprints_load(&table, root, &test_arena);
+    blueprints_load(&ctx, &table, root, &test_arena);
 
     const Blueprint *found = blueprint_find(&table, "chest");
     TEST_ASSERT_NOT_NULL(found);
@@ -137,7 +141,7 @@ void test_blueprint_skip_nameless(void)
                                     "collision_size = [16, 16]\n");
     TEST_ASSERT_NOT_NULL(root);
 
-    int count = blueprints_load(&table, root, &test_arena);
+    int count = blueprints_load(&ctx, &table, root, &test_arena);
     TEST_ASSERT_EQUAL_INT(1, count);
     TEST_ASSERT_EQUAL_STRING("chest", table.entries[0].name);
 
@@ -155,7 +159,7 @@ void test_blueprint_no_blueprints_section(void)
                                     "name = \"overworld\"\n");
     TEST_ASSERT_NOT_NULL(root);
 
-    int count = blueprints_load(&table, root, &test_arena);
+    int count = blueprints_load(&ctx, &table, root, &test_arena);
     TEST_ASSERT_EQUAL_INT(0, count);
 
     toml_free(root);
@@ -181,7 +185,7 @@ void test_blueprint_custom_attrs(void)
                                     "weight = 5\n");
     TEST_ASSERT_NOT_NULL(root);
 
-    blueprints_load(&table, root, &test_arena);
+    blueprints_load(&ctx, &table, root, &test_arena);
     const Blueprint *chest = blueprint_find(&table, "chest");
     TEST_ASSERT_NOT_NULL(chest);
 
@@ -210,7 +214,7 @@ void test_blueprint_health_parsed(void)
                                     "health = [3, 5]\n");
     TEST_ASSERT_NOT_NULL(root);
 
-    blueprints_load(&table, root, &test_arena);
+    blueprints_load(&ctx, &table, root, &test_arena);
     const Blueprint *enemy = blueprint_find(&table, "enemy");
     TEST_ASSERT_NOT_NULL(enemy);
 
@@ -244,7 +248,7 @@ void test_blueprint_extends(void)
                                     "loot_table = \"rare\"\n");
     TEST_ASSERT_NOT_NULL(root);
 
-    blueprints_load(&table, root, &test_arena);
+    blueprints_load(&ctx, &table, root, &test_arena);
     const Blueprint *locked = blueprint_find(&table, "locked_chest");
     TEST_ASSERT_NOT_NULL(locked);
 
@@ -284,7 +288,7 @@ void test_blueprint_child_parsed(void)
                                     "offset = [56, -8]\n");
     TEST_ASSERT_NOT_NULL(root);
 
-    blueprints_load(&table, root, &test_arena);
+    blueprints_load(&ctx, &table, root, &test_arena);
     const Blueprint *wagon = blueprint_find(&table, "wagon");
     TEST_ASSERT_NOT_NULL(wagon);
 
@@ -335,7 +339,7 @@ void test_blueprint_multiple_children(void)
                                     "offset = [48, 28]\n");
     TEST_ASSERT_NOT_NULL(root);
 
-    blueprints_load(&table, root, &test_arena);
+    blueprints_load(&ctx, &table, root, &test_arena);
     const Blueprint *wagon = blueprint_find(&table, "wagon");
     TEST_ASSERT_NOT_NULL(wagon);
 
@@ -371,7 +375,7 @@ void test_blueprint_child_no_tag(void)
                                     "offset = [10, 20]\n");
     TEST_ASSERT_NOT_NULL(root);
 
-    blueprints_load(&table, root, &test_arena);
+    blueprints_load(&ctx, &table, root, &test_arena);
     const Blueprint *parent = blueprint_find(&table, "parent");
     TEST_ASSERT_NOT_NULL(parent);
 
@@ -403,7 +407,7 @@ void test_blueprint_child_default_offset(void)
                                     "tag = \"center\"\n");
     TEST_ASSERT_NOT_NULL(root);
 
-    blueprints_load(&table, root, &test_arena);
+    blueprints_load(&ctx, &table, root, &test_arena);
     const Blueprint *parent = blueprint_find(&table, "parent");
     TEST_ASSERT_NOT_NULL(parent);
 
@@ -441,7 +445,7 @@ void test_blueprint_extends_chain(void)
                                     "tier = 3\n");
     TEST_ASSERT_NOT_NULL(root);
 
-    blueprints_load(&table, root, &test_arena);
+    blueprints_load(&ctx, &table, root, &test_arena);
     const Blueprint *top = blueprint_find(&table, "top");
     TEST_ASSERT_NOT_NULL(top);
 

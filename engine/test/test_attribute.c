@@ -1,4 +1,8 @@
 #include "unity.h"
+#include "engine_context.h"
+
+static struct EngineContext ctx;
+
 #include "attribute.h"
 
 #include <string.h>
@@ -6,7 +10,7 @@
 void test_attr_set_and_get_float(void)
 {
     AttrSet set = {0};
-    TEST_ASSERT_TRUE(attr_set_float(&set, "speed", 80.0F));
+    TEST_ASSERT_TRUE(attr_set_float(&ctx, &set, "speed", 80.0F));
     TEST_ASSERT_EQUAL_INT(1, set.count);
 
     const Attribute *entry = attr_get(&set, "speed");
@@ -18,7 +22,7 @@ void test_attr_set_and_get_float(void)
 void test_attr_set_and_get_int(void)
 {
     AttrSet set = {0};
-    TEST_ASSERT_TRUE(attr_set_int(&set, "health", 10));
+    TEST_ASSERT_TRUE(attr_set_int(&ctx, &set, "health", 10));
 
     TEST_ASSERT_EQUAL_INT(10, attr_get_int(&set, "health", 0));
 }
@@ -26,7 +30,7 @@ void test_attr_set_and_get_int(void)
 void test_attr_set_and_get_bool(void)
 {
     AttrSet set = {0};
-    TEST_ASSERT_TRUE(attr_set_bool(&set, "is_locked", true));
+    TEST_ASSERT_TRUE(attr_set_bool(&ctx, &set, "is_locked", true));
 
     TEST_ASSERT_TRUE(attr_get_bool(&set, "is_locked", false));
 }
@@ -34,7 +38,7 @@ void test_attr_set_and_get_bool(void)
 void test_attr_set_and_get_string(void)
 {
     AttrSet set = {0};
-    TEST_ASSERT_TRUE(attr_set_string(&set, (AttrStringPair){.name = "loot_table", .value = "common"}));
+    TEST_ASSERT_TRUE(attr_set_string(&ctx, &set, (AttrStringPair){.name = "loot_table", .value = "common"}));
 
     TEST_ASSERT_EQUAL_STRING("common", attr_get_string(&set, "loot_table"));
 }
@@ -42,8 +46,8 @@ void test_attr_set_and_get_string(void)
 void test_attr_overwrite_existing(void)
 {
     AttrSet set = {0};
-    TEST_ASSERT_TRUE(attr_set_int(&set, "health", 10));
-    TEST_ASSERT_TRUE(attr_set_int(&set, "health", 5));
+    TEST_ASSERT_TRUE(attr_set_int(&ctx, &set, "health", 10));
+    TEST_ASSERT_TRUE(attr_set_int(&ctx, &set, "health", 5));
 
     TEST_ASSERT_EQUAL_INT(1, set.count);
     TEST_ASSERT_EQUAL_INT(5, attr_get_int(&set, "health", 0));
@@ -66,18 +70,18 @@ void test_attr_full_set_returns_false(void)
 
     for (int index = 0; index < MAX_ATTRS; index++) {
         snprintf(name, sizeof(name), "attr_%d", index);
-        TEST_ASSERT_TRUE(attr_set_int(&set, name, index));
+        TEST_ASSERT_TRUE(attr_set_int(&ctx, &set, name, index));
     }
 
-    TEST_ASSERT_FALSE(attr_set_int(&set, "one_too_many", 0));
+    TEST_ASSERT_FALSE(attr_set_int(&ctx, &set, "one_too_many", 0));
     TEST_ASSERT_EQUAL_INT(MAX_ATTRS, set.count);
 }
 
 void test_attr_type_change(void)
 {
     AttrSet set = {0};
-    TEST_ASSERT_TRUE(attr_set_int(&set, "value", 42));
-    TEST_ASSERT_TRUE(attr_set_float(&set, "value", 3.14F));
+    TEST_ASSERT_TRUE(attr_set_int(&ctx, &set, "value", 42));
+    TEST_ASSERT_TRUE(attr_set_float(&ctx, &set, "value", 3.14F));
 
     TEST_ASSERT_EQUAL_INT(1, set.count);
     const Attribute *entry = attr_get(&set, "value");
@@ -88,11 +92,11 @@ void test_attr_type_change(void)
 void test_attr_scoped_instance_overrides_blueprint(void)
 {
     AttrSet blueprint = {0};
-    TEST_ASSERT_TRUE(attr_set_bool(&blueprint, "is_locked", true));
-    TEST_ASSERT_TRUE(attr_set_string(&blueprint, (AttrStringPair){.name = "loot_table", .value = "common"}));
+    TEST_ASSERT_TRUE(attr_set_bool(&ctx, &blueprint, "is_locked", true));
+    TEST_ASSERT_TRUE(attr_set_string(&ctx, &blueprint, (AttrStringPair){.name = "loot_table", .value = "common"}));
 
     AttrSet instance = {0};
-    TEST_ASSERT_TRUE(attr_set_bool(&instance, "is_locked", false));
+    TEST_ASSERT_TRUE(attr_set_bool(&ctx, &instance, "is_locked", false));
 
     /* Instance overrides blueprint */
     const Attribute *locked = attr_get_scoped(&instance, &blueprint, "is_locked");
@@ -112,10 +116,10 @@ void test_attr_scoped_instance_overrides_blueprint(void)
 void test_attr_multiple_types(void)
 {
     AttrSet set = {0};
-    TEST_ASSERT_TRUE(attr_set_float(&set, "speed", 80.0F));
-    TEST_ASSERT_TRUE(attr_set_int(&set, "health", 10));
-    TEST_ASSERT_TRUE(attr_set_bool(&set, "visible", true));
-    TEST_ASSERT_TRUE(attr_set_string(&set, (AttrStringPair){.name = "name", .value = "chest"}));
+    TEST_ASSERT_TRUE(attr_set_float(&ctx, &set, "speed", 80.0F));
+    TEST_ASSERT_TRUE(attr_set_int(&ctx, &set, "health", 10));
+    TEST_ASSERT_TRUE(attr_set_bool(&ctx, &set, "visible", true));
+    TEST_ASSERT_TRUE(attr_set_string(&ctx, &set, (AttrStringPair){.name = "name", .value = "chest"}));
 
     TEST_ASSERT_EQUAL_INT(4, set.count);
     TEST_ASSERT_FLOAT_WITHIN(0.01F, 80.0F, attr_get_float(&set, "speed", 0));

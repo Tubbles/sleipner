@@ -5,6 +5,8 @@
 
 #include <stdbool.h>
 
+struct EngineContext;
+
 #define MAX_LEVEL_NAME 64
 #define MAX_MUSIC_NAME 64
 #define MAX_LEVEL_ENTITIES 512
@@ -25,7 +27,8 @@ typedef struct {
 /* Parse the first [[level]] (or the one matching `level_name` if non-NULL)
  * from a tomlc99 root table. Instantiates entities from blueprints.
  * Returns true on success. */
-[[nodiscard]] bool level_load(Level *level,
+[[nodiscard]] bool level_load(struct EngineContext *ctx,
+                              Level *level,
                               void *toml_root,
                               const char *level_name,
                               const BlueprintTable *blueprints,

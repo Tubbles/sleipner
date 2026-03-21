@@ -1,4 +1,5 @@
 #include "debug.h"
+#include "engine_context.h"
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -7,11 +8,6 @@
 
 #define NSEC_PER_MSEC 1000000L
 #define TM_YEAR_OFFSET 1900
-
-static char log_lines[DEBUG_LOG_LINES][DEBUG_LOG_LINE_LEN];
-static int log_head = 0;
-static int log_count = 0;
-static FILE *trace_file = NULL;
 
 static void write_timestamp(FILE *output)
 {
@@ -24,38 +20,39 @@ static void write_timestamp(FILE *output)
                   local.tm_mday, local.tm_hour, local.tm_min, local.tm_sec, now.tv_nsec / NSEC_PER_MSEC);
 }
 
-void debug_init(const char *trace_path)
+void debug_init(struct EngineContext *ctx, const char *trace_path)
 {
-    log_head = 0;
-    log_count = 0;
-    memset(log_lines, 0, sizeof(log_lines));
+    ctx->debug.log_head = 0;
+    ctx->debug.log_count = 0;
+    memset(ctx->debug.log_lines, 0, sizeof(ctx->debug.log_lines));
+    ctx->debug.trace_file = NULL;
 
     if (trace_path) {
-        trace_file = fopen(trace_path, "ae");
-        if (trace_file) {
-            debug_log("trace file opened: %s", trace_path);
+        ctx->debug.trace_file = fopen(trace_path, "ae");
+        if (ctx->debug.trace_file) {
+            debug_log(ctx, "trace file opened: %s", trace_path);
         } else {
-            debug_log("trace file FAILED to open: %s", trace_path);
+            debug_log(ctx, "trace file FAILED to open: %s", trace_path);
         }
     }
 }
 
-void debug_shutdown(void)
+void debug_shutdown(struct EngineContext *ctx)
 {
-    if (trace_file) {
-        (void)fclose(trace_file);
-        trace_file = NULL;
+    if (ctx->debug.trace_file) {
+        (void)fclose(ctx->debug.trace_file);
+        ctx->debug.trace_file = NULL;
     }
 }
 
-void debug_log(const char *format, ...)
+void debug_log(struct EngineContext *ctx, const char *format, ...)
 {
     va_list args;
 
     /* Write to ring buffer */
     va_start(args, format);
     /* NOLINTNEXTLINE(clang-analyzer-security.VAList) -- va_start is called above */
-    (void)vsnprintf(log_lines[log_head], DEBUG_LOG_LINE_LEN, format, args);
+    (void)vsnprintf(ctx->debug.log_lines[ctx->debug.log_head], DEBUG_LOG_LINE_LEN, format, args);
     va_end(args);
 
     /* Write to stdout with timestamp */
@@ -66,28 +63,28 @@ void debug_log(const char *format, ...)
     (void)fputc('\n', stdout);
 
     /* Write to trace file with timestamp */
-    if (trace_file) {
-        write_timestamp(trace_file);
+    if (ctx->debug.trace_file) {
+        write_timestamp(ctx->debug.trace_file);
         va_start(args, format);
-        (void)vfprintf(trace_file, format, args);
+        (void)vfprintf(ctx->debug.trace_file, format, args);
         va_end(args);
-        (void)fputc('\n', trace_file);
-        (void)fflush(trace_file);
+        (void)fputc('\n', ctx->debug.trace_file);
+        (void)fflush(ctx->debug.trace_file);
     }
 
-    log_head = (log_head + 1) % DEBUG_LOG_LINES;
-    if (log_count < DEBUG_LOG_LINES) {
-        log_count++;
+    ctx->debug.log_head = (ctx->debug.log_head + 1) % DEBUG_LOG_LINES;
+    if (ctx->debug.log_count < DEBUG_LOG_LINES) {
+        ctx->debug.log_count++;
     }
 }
 
-const char *debug_get_line(int index)
+const char *debug_get_line(struct EngineContext *ctx, int index)
 {
-    int actual = (log_head - log_count + index + DEBUG_LOG_LINES) % DEBUG_LOG_LINES;
-    return log_lines[actual];
+    int actual = (ctx->debug.log_head - ctx->debug.log_count + index + DEBUG_LOG_LINES) % DEBUG_LOG_LINES;
+    return ctx->debug.log_lines[actual];
 }
 
-int debug_get_line_count(void)
+int debug_get_line_count(struct EngineContext *ctx)
 {
-    return log_count;
+    return ctx->debug.log_count;
 }

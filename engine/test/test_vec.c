@@ -1,6 +1,9 @@
 #include "vec.h"
 
 #include "unity.h"
+#include "engine_context.h"
+
+static struct EngineContext ctx;
 
 /* A small local struct to verify VEC_DECL/VEC_IMPL work for non-primitive types. */
 typedef struct {

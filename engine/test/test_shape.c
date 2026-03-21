@@ -1,4 +1,8 @@
 #include "unity.h"
+#include "engine_context.h"
+
+static struct EngineContext ctx;
+
 #include "shape.h"
 
 void test_circle_bounds_centered(void)

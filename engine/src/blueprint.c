@@ -45,26 +45,26 @@ static bool is_known_key(const char *key)
     return false;
 }
 
-static bool parse_custom_attr(AttrSet *attrs, toml_table_t *table, const char *key)
+static bool parse_custom_attr(struct EngineContext *ctx, AttrSet *attrs, toml_table_t *table, const char *key)
 {
     toml_datum_t bool_value = toml_bool_in(table, key);
     if (bool_value.ok) {
-        return attr_set_bool(attrs, key, (bool)bool_value.u.b);
+        return attr_set_bool(ctx, attrs, key, (bool)bool_value.u.b);
     }
 
     toml_datum_t int_value = toml_int_in(table, key);
     if (int_value.ok) {
-        return attr_set_int(attrs, key, (int)int_value.u.i);
+        return attr_set_int(ctx, attrs, key, (int)int_value.u.i);
     }
 
     toml_datum_t double_value = toml_double_in(table, key);
     if (double_value.ok) {
-        return attr_set_float(attrs, key, (float)double_value.u.d);
+        return attr_set_float(ctx, attrs, key, (float)double_value.u.d);
     }
 
     toml_datum_t string_value = toml_string_in(table, key);
     if (string_value.ok) {
-        bool result = attr_set_string(attrs, (AttrStringPair){.name = key, .value = string_value.u.s});
+        bool result = attr_set_string(ctx, attrs, (AttrStringPair){.name = key, .value = string_value.u.s});
         free(string_value.u.s);
         return result;
     }
@@ -177,23 +177,23 @@ static void parse_geometry(Blueprint *blueprint, toml_table_t *entry)
     }
 }
 
-static bool parse_health(Blueprint *blueprint, toml_table_t *entry)
+static bool parse_health(struct EngineContext *ctx, Blueprint *blueprint, toml_table_t *entry)
 {
     toml_array_t *health = toml_array_in(entry, "health");
     if (health && toml_array_nelem(health) == 2) {
         toml_datum_t current = toml_int_at(health, 0);
         toml_datum_t max = toml_int_at(health, 1);
-        if (current.ok && !attr_set_int(&blueprint->attrs, "health", (int)current.u.i)) {
+        if (current.ok && !attr_set_int(ctx, &blueprint->attrs, "health", (int)current.u.i)) {
             return false;
         }
-        if (max.ok && !attr_set_int(&blueprint->attrs, "max_health", (int)max.u.i)) {
+        if (max.ok && !attr_set_int(ctx, &blueprint->attrs, "max_health", (int)max.u.i)) {
             return false;
         }
     }
     return true;
 }
 
-static bool parse_custom_attrs(Blueprint *blueprint, toml_table_t *entry)
+static bool parse_custom_attrs(struct EngineContext *ctx, Blueprint *blueprint, toml_table_t *entry)
 {
     int key_count = toml_table_nkval(entry);
     for (int key_index = 0; key_index < key_count; key_index++) {
@@ -201,20 +201,20 @@ static bool parse_custom_attrs(Blueprint *blueprint, toml_table_t *entry)
         if (!key || is_known_key(key)) {
             continue;
         }
-        if (!parse_custom_attr(&blueprint->attrs, entry, key)) {
+        if (!parse_custom_attr(ctx, &blueprint->attrs, entry, key)) {
             return false;
         }
     }
     return true;
 }
 
-static bool parse_single_child(BlueprintChild *child, toml_table_t *entry)
+static bool parse_single_child(struct EngineContext *ctx, BlueprintChild *child, toml_table_t *entry)
 {
     memset(child, 0, sizeof(*child));
 
     toml_datum_t blueprint_name = toml_string_in(entry, "blueprint");
     if (!blueprint_name.ok) {
-        error_set("child missing required 'blueprint' key");
+        error_set(ctx, "child missing required 'blueprint' key");
         return false;
     }
     strncpy(child->blueprint_name, blueprint_name.u.s, MAX_BLUEPRINT_NAME - 1);
@@ -235,7 +235,7 @@ static bool parse_single_child(BlueprintChild *child, toml_table_t *entry)
     return true;
 }
 
-static bool parse_children(Blueprint *blueprint, toml_table_t *entry)
+static bool parse_children(struct EngineContext *ctx, Blueprint *blueprint, toml_table_t *entry)
 {
     toml_array_t *children = toml_array_in(entry, "child");
     if (!children) {
@@ -244,7 +244,7 @@ static bool parse_children(Blueprint *blueprint, toml_table_t *entry)
 
     int count = toml_array_nelem(children);
     if (count > MAX_BLUEPRINT_CHILDREN) {
-        error_set("blueprint '%s' has %d children (max %d)", blueprint->name, count, MAX_BLUEPRINT_CHILDREN);
+        error_set(ctx, "blueprint '%s' has %d children (max %d)", blueprint->name, count, MAX_BLUEPRINT_CHILDREN);
         return false;
     }
 
@@ -253,8 +253,8 @@ static bool parse_children(Blueprint *blueprint, toml_table_t *entry)
         if (!child_entry) {
             continue;
         }
-        if (!parse_single_child(&blueprint->children[blueprint->child_count], child_entry)) {
-            error_wrap("blueprint '%s' child[%d]", blueprint->name, index);
+        if (!parse_single_child(ctx, &blueprint->children[blueprint->child_count], child_entry)) {
+            error_wrap(ctx, "blueprint '%s' child[%d]", blueprint->name, index);
             return false;
         }
         blueprint->child_count++;
@@ -263,7 +263,7 @@ static bool parse_children(Blueprint *blueprint, toml_table_t *entry)
     return true;
 }
 
-static bool parse_single_blueprint(Blueprint *blueprint, toml_table_t *entry, Arena *arena)
+static bool parse_single_blueprint(struct EngineContext *ctx, Blueprint *blueprint, toml_table_t *entry, Arena *arena)
 {
     memset(blueprint, 0, sizeof(*blueprint));
 
@@ -276,61 +276,61 @@ static bool parse_single_blueprint(Blueprint *blueprint, toml_table_t *entry, Ar
 
     parse_optional_strings(blueprint, entry);
     parse_geometry(blueprint, entry);
-    if (!parse_health(blueprint, entry)) {
+    if (!parse_health(ctx, blueprint, entry)) {
         return false;
     }
-    if (!parse_custom_attrs(blueprint, entry)) {
+    if (!parse_custom_attrs(ctx, blueprint, entry)) {
         return false;
     }
-    if (!parse_children(blueprint, entry)) {
+    if (!parse_children(ctx, blueprint, entry)) {
         return false;
     }
-    if (!rules_parse(&blueprint->rules, entry, arena)) {
-        error_wrap("blueprint '%s'", blueprint->name);
+    if (!rules_parse(ctx, &blueprint->rules, entry, arena)) {
+        error_wrap(ctx, "blueprint '%s'", blueprint->name);
         return false;
     }
     return true;
 }
 
-int blueprints_load(BlueprintTable *table, void *toml_root, Arena *arena)
+int blueprints_load(struct EngineContext *ctx, BlueprintTable *table, void *toml_root, Arena *arena)
 {
     table->count = 0;
 
     toml_array_t *blueprints = toml_array_in(toml_root, "blueprint");
     if (!blueprints) {
-        debug_log("bp: no [[blueprint]] array in TOML root");
+        debug_log(ctx, "bp: no [[blueprint]] array in TOML root");
         return 0;
     }
 
     int count = toml_array_nelem(blueprints);
-    debug_log("bp: found %d blueprint entries in TOML", count);
+    debug_log(ctx, "bp: found %d blueprint entries in TOML", count);
 
     for (int index = 0; index < count && table->count < MAX_BLUEPRINTS; index++) {
         toml_table_t *entry = toml_table_at(blueprints, index);
         if (!entry) {
-            debug_log("bp[%d]: toml_table_at returned NULL", index);
+            debug_log(ctx, "bp[%d]: toml_table_at returned NULL", index);
             continue;
         }
 
         int nkval = toml_table_nkval(entry);
         int narr = toml_table_narr(entry);
         int ntab = toml_table_ntab(entry);
-        debug_log("bp[%d]: keys=%d arrays=%d tables=%d", index, nkval, narr, ntab);
+        debug_log(ctx, "bp[%d]: keys=%d arrays=%d tables=%d", index, nkval, narr, ntab);
 
         /* Log all keys in this entry for debugging */
         int total_keys = nkval + narr + ntab;
         for (int key_index = 0; key_index < total_keys; key_index++) {
             const char *key = toml_key_in(entry, key_index);
-            debug_log("bp[%d]: key[%d]='%s'", index, key_index, key ? key : "(null)");
+            debug_log(ctx, "bp[%d]: key[%d]='%s'", index, key_index, key ? key : "(null)");
         }
 
-        if (parse_single_blueprint(&table->entries[table->count], entry, arena)) {
-            debug_log("bp[%d]: parsed '%s' tex='%s'", index, table->entries[table->count].name,
+        if (parse_single_blueprint(ctx, &table->entries[table->count], entry, arena)) {
+            debug_log(ctx, "bp[%d]: parsed '%s' tex='%s'", index, table->entries[table->count].name,
                       table->entries[table->count].texture_name);
             table->count++;
         } else {
             toml_datum_t name = toml_string_in(entry, "name");
-            debug_log("bp[%d]: FAILED to parse (name=%s)", index, name.ok ? name.u.s : "missing");
+            debug_log(ctx, "bp[%d]: FAILED to parse (name=%s)", index, name.ok ? name.u.s : "missing");
             if (name.ok) {
                 free(name.u.s);
             }

@@ -2,6 +2,8 @@
 #define ARENA_H
 
 #include <stdbool.h>
+
+struct EngineContext;
 #include <stddef.h>
 #include <stdint.h>
 
@@ -17,11 +19,11 @@ typedef struct {
 } AllocRequest;
 
 /* Create an arena with the given capacity. Returns false on allocation failure. */
-[[nodiscard]] bool arena_init(Arena *arena, size_t capacity);
+[[nodiscard]] bool arena_init(struct EngineContext *ctx, Arena *arena, size_t capacity);
 
 /* Allocate from the arena per the given request.
  * Returns NULL if the arena is full. */
-[[nodiscard]] void *arena_alloc(Arena *arena, AllocRequest request);
+[[nodiscard]] void *arena_alloc(struct EngineContext *ctx, Arena *arena, AllocRequest request);
 
 /* Reset the arena — all previous allocations become invalid. */
 void arena_reset(Arena *arena);

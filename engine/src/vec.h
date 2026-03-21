@@ -22,9 +22,11 @@
  *   -DVEC_FREE=my_free
  * Both must be provided together if either is overridden. */
 
-#include <stdbool.h> // IWYU pragma: export
-#include <stddef.h>  // IWYU pragma: export
-#include <stdint.h>  // IWYU pragma: export
+#include <stdbool.h>
+
+struct EngineContext; // IWYU pragma: export
+#include <stddef.h>   // IWYU pragma: export
+#include <stdint.h>   // IWYU pragma: export
 
 #if !defined(VEC_REALLOC) || !defined(VEC_FREE)
 #include <stdlib.h>

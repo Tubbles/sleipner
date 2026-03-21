@@ -18,18 +18,18 @@ static Vector2 apply_deadzone(Vector2 stick, float deadzone)
     return (Vector2){stick.x * scale, stick.y * scale};
 }
 
-void input_load_mappings(const char *data, int size)
+void input_load_mappings(struct EngineContext *ctx, const char *data, int size)
 {
     char *mappings = malloc((size_t)size + 1);
     if (!mappings) {
-        debug_log("WARNING: could not allocate gamepad mappings buffer");
+        debug_log(ctx, "WARNING: could not allocate gamepad mappings buffer");
         return;
     }
     memcpy(mappings, data, (size_t)size);
     mappings[size] = '\0';
 
     int result = SetGamepadMappings(mappings);
-    debug_log("loaded gamepad mappings (%d bytes, result=%d)", size, result);
+    debug_log(ctx, "loaded gamepad mappings (%d bytes, result=%d)", size, result);
 
     free(mappings);
 }

@@ -4,11 +4,11 @@
 #include <stdlib.h>
 #include <string.h>
 
-bool arena_init(Arena *arena, size_t capacity)
+bool arena_init(struct EngineContext *ctx, Arena *arena, size_t capacity)
 {
     arena->buffer = malloc(capacity);
     if (!arena->buffer) {
-        error_set("malloc(%zu) failed", capacity);
+        error_set(ctx, "malloc(%zu) failed", capacity);
         arena->capacity = 0;
         arena->offset = 0;
         return false;
@@ -18,11 +18,11 @@ bool arena_init(Arena *arena, size_t capacity)
     return true;
 }
 
-void *arena_alloc(Arena *arena, AllocRequest request)
+void *arena_alloc(struct EngineContext *ctx, Arena *arena, AllocRequest request)
 {
     size_t aligned_offset = (arena->offset + request.alignment - 1) & ~(request.alignment - 1);
     if (aligned_offset + request.size > arena->capacity) {
-        error_set("arena full: need %zu bytes, %zu remaining", request.size, arena->capacity - aligned_offset);
+        error_set(ctx, "arena full: need %zu bytes, %zu remaining", request.size, arena->capacity - aligned_offset);
         return NULL;
     }
     void *pointer = arena->buffer + aligned_offset;

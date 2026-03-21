@@ -20,14 +20,14 @@
 #define TOML_ERRBUF_SIZE 200
 #define MAX_COLLECT_EVENTS 32
 
-bool game_init(GameState *state, RectU32 game_bounds)
+bool game_init(struct EngineContext *ctx, GameState *state, RectU32 game_bounds)
 {
     memset(state, 0, sizeof(*state));
     state->game_bounds = game_bounds;
     state->player_index = -1;
     state->debug_enabled = true;
-    if (!arena_init(&state->gamedata_arena, GAMEDATA_ARENA_SIZE)) {
-        error_wrap("game_init");
+    if (!arena_init(ctx, &state->gamedata_arena, GAMEDATA_ARENA_SIZE)) {
+        error_wrap(ctx, "game_init");
         return false;
     }
     return true;
@@ -44,13 +44,13 @@ static int find_player_entity(const Level *level)
     return -1;
 }
 
-bool game_load_gamedata(GameState *state, GamedataParams params)
+bool game_load_gamedata(struct EngineContext *ctx, GameState *state, GamedataParams params)
 {
     size_t length = strlen(params.toml_string);
     char *buffer = malloc(length + 1);
     if (!buffer) {
-        error_set("malloc failed for TOML buffer (%zu bytes)", length + 1);
-        error_wrap("game_load_gamedata");
+        error_set(ctx, "malloc failed for TOML buffer (%zu bytes)", length + 1);
+        error_wrap(ctx, "game_load_gamedata");
         return false;
     }
     memcpy(buffer, params.toml_string, length + 1);
@@ -60,15 +60,15 @@ bool game_load_gamedata(GameState *state, GamedataParams params)
     free(buffer);
 
     if (!root) {
-        error_set("toml_parse: %s", errbuf);
-        error_wrap("game_load_gamedata");
+        error_set(ctx, "toml_parse: %s", errbuf);
+        error_wrap(ctx, "game_load_gamedata");
         return false;
     }
 
     arena_reset(&state->gamedata_arena);
-    blueprints_load(&state->blueprints, root, &state->gamedata_arena);
+    blueprints_load(ctx, &state->blueprints, root, &state->gamedata_arena);
 
-    bool level_ok = level_load(&state->current_level, root, params.level_name, &state->blueprints,
+    bool level_ok = level_load(ctx, &state->current_level, root, params.level_name, &state->blueprints,
                                params.texture_lookup, params.texture_user_data);
 
     toml_free(root);
@@ -77,7 +77,7 @@ bool game_load_gamedata(GameState *state, GamedataParams params)
     if (level_ok) {
         state->player_index = find_player_entity(&state->current_level);
     } else {
-        error_wrap("game_load_gamedata");
+        error_wrap(ctx, "game_load_gamedata");
     }
 
     return level_ok;
@@ -209,7 +209,8 @@ static void update_child_positions(Level *level)
     }
 }
 
-static int detect_interact_targets(const Entity *player,
+static int detect_interact_targets(struct EngineContext *ctx,
+                                   const Entity *player,
                                    int player_index,
                                    const Entity *entities,
                                    int entity_count,
@@ -225,7 +226,8 @@ static int detect_interact_targets(const Entity *player,
         float delta_y = entities[index].position.y - player->position.y;
         float distance_sq = (delta_x * delta_x) + (delta_y * delta_y);
         if (distance_sq <= INTERACT_RANGE * INTERACT_RANGE) {
-            debug_log("Player within interact range of entity %d (type: %s)", index, entities[index].blueprint->name);
+            debug_log(ctx, "Player within interact range of entity %d (type: %s)", index,
+                      entities[index].blueprint->name);
             out_events[count] = (TriggerEvent){
                 .type = TRIGGER_INTERACT,
                 .entity_index = index,
@@ -236,7 +238,8 @@ static int detect_interact_targets(const Entity *player,
     return count;
 }
 
-static int collect_trigger_events(GameState *state, InputState input, TriggerEvent *out_events, int max_events)
+static int collect_trigger_events(
+    struct EngineContext *ctx, GameState *state, InputState input, TriggerEvent *out_events, int max_events)
 {
     int count = 0;
 
@@ -245,18 +248,18 @@ static int collect_trigger_events(GameState *state, InputState input, TriggerEve
     if (interact_pressed) {
         if (!state->prev_interact) {
             interact_edge = true;
-            debug_log("Interact button pressed");
+            debug_log(ctx, "Interact button pressed");
         }
     }
     state->prev_interact = interact_pressed;
 
     if (interact_edge) {
-        debug_log("Processing interact edge");
+        debug_log(ctx, "Processing interact edge");
         if (state->player_index >= 0) {
             const Entity *player = game_get_player_const(state);
             if (player) {
                 count +=
-                    detect_interact_targets(player, state->player_index, state->current_level.entities,
+                    detect_interact_targets(ctx, player, state->player_index, state->current_level.entities,
                                             state->current_level.entity_count, out_events + count, max_events - count);
             }
         }
@@ -265,7 +268,7 @@ static int collect_trigger_events(GameState *state, InputState input, TriggerEve
     return count;
 }
 
-void game_update(GameState *state, InputState input, float delta_time)
+void game_update(struct EngineContext *ctx, GameState *state, InputState input, float delta_time)
 {
     state->frame++;
     state->elapsed += delta_time;
@@ -279,10 +282,10 @@ void game_update(GameState *state, InputState input, float delta_time)
     update_child_positions(&state->current_level);
 
     TriggerEvent trigger_events[MAX_COLLECT_EVENTS];
-    int trigger_count = collect_trigger_events(state, input, trigger_events, MAX_COLLECT_EVENTS);
+    int trigger_count = collect_trigger_events(ctx, state, input, trigger_events, MAX_COLLECT_EVENTS);
 
     if (trigger_count > 0) {
-        rules_evaluate_batch(state->current_level.entities, state->current_level.entity_count, trigger_events,
+        rules_evaluate_batch(ctx, state->current_level.entities, state->current_level.entity_count, trigger_events,
                              trigger_count, &state->flags, &state->vars);
     }
 }

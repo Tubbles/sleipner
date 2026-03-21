@@ -7,6 +7,8 @@
 
 #include <stdbool.h>
 
+struct EngineContext;
+
 // Include actual TOML headers instead of forward declarations
 // This makes dependencies explicit and maintains module integrity
 #include "toml.h"
@@ -116,7 +118,7 @@ typedef struct {
 } FlagSet;
 
 bool flag_get(const FlagSet *flags, const char *name);
-void flag_set(FlagSet *flags, const char *name);
+void flag_set(struct EngineContext *ctx, FlagSet *flags, const char *name);
 void flag_clear(FlagSet *flags, const char *name);
 
 /* --- Trigger events --- */
@@ -129,10 +131,10 @@ typedef struct {
 VEC_DECL(trigger_event, TriggerEvent)
 
 /* --- Parsing (from TOML) --- */
-[[nodiscard]] bool trigger_parse(Trigger *trigger, const char *string);
-[[nodiscard]] bool condition_parse(Condition *condition, const char *string);
-[[nodiscard]] bool action_node_parse(ActionNode *node, toml_datum_t value, Arena *arena);
-[[nodiscard]] bool rules_parse(RuleSet *rules, void *toml_blueprint_table, Arena *arena);
+[[nodiscard]] bool trigger_parse(struct EngineContext *ctx, Trigger *trigger, const char *string);
+[[nodiscard]] bool condition_parse(struct EngineContext *ctx, Condition *condition, const char *string);
+[[nodiscard]] bool action_node_parse(struct EngineContext *ctx, ActionNode *node, toml_datum_t value, Arena *arena);
+[[nodiscard]] bool rules_parse(struct EngineContext *ctx, RuleSet *rules, void *toml_blueprint_table, Arena *arena);
 
 /* --- Trigger matching --- */
 bool trigger_matches(const Trigger *trigger, const TriggerEvent *event);
@@ -161,10 +163,11 @@ typedef struct {
     AttrSet *global_vars;
 } ActionContext;
 
-[[nodiscard]] bool action_node_execute(const ActionNode *node, ActionContext context);
+[[nodiscard]] bool action_node_execute(struct EngineContext *ctx, const ActionNode *node, ActionContext context);
 
 /* --- Evaluation loop --- */
-void rules_evaluate_batch(Entity *entities,
+void rules_evaluate_batch(struct EngineContext *ctx,
+                          Entity *entities,
                           int entity_count,
                           const TriggerEvent *events,
                           int event_count,

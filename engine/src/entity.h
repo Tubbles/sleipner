@@ -8,6 +8,8 @@
 
 #include <stdbool.h>
 
+struct EngineContext;
+
 #define MAX_ENTITIES 512
 
 typedef struct {

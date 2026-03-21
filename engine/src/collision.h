@@ -5,6 +5,8 @@
 #include "rect.h"
 #include <stdbool.h>
 
+struct EngineContext;
+
 #define MAX_COLLISION_PRIMITIVES 8
 
 typedef enum { COLLIDER_RECT, COLLIDER_CIRCLE, COLLIDER_TRIANGLE } ColliderKind;

@@ -10,6 +10,8 @@
 
 #include <stdbool.h>
 
+struct EngineContext;
+
 #define DEFAULT_PLAYER_SPEED 80.0F
 #define FRAME_SIZE 32
 #define WALK_FRAMES 6
@@ -45,9 +47,9 @@ typedef struct {
     void *texture_user_data;
 } GamedataParams;
 
-[[nodiscard]] bool game_init(GameState *state, RectU32 game_bounds);
-[[nodiscard]] bool game_load_gamedata(GameState *state, GamedataParams params);
-void game_update(GameState *state, InputState input, float delta_time);
+[[nodiscard]] bool game_init(struct EngineContext *ctx, GameState *state, RectU32 game_bounds);
+[[nodiscard]] bool game_load_gamedata(struct EngineContext *ctx, GameState *state, GamedataParams params);
+void game_update(struct EngineContext *ctx, GameState *state, InputState input, float delta_time);
 Entity *game_get_player(GameState *state);
 const Entity *game_get_player_const(const GameState *state);
 void game_free(GameState *state);

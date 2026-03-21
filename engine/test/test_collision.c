@@ -1,4 +1,8 @@
 #include "unity.h"
+#include "engine_context.h"
+
+static struct EngineContext ctx;
+
 #include "collision.h"
 
 #include <math.h>

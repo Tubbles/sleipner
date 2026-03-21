@@ -1,4 +1,8 @@
 #include "unity.h"
+#include "engine_context.h"
+
+static struct EngineContext ctx;
+
 #include "entity.h"
 
 #include <string.h>
@@ -12,11 +16,11 @@ static Blueprint make_test_blueprint(void)
     blueprint.collision_offset = (Vector2){2, 4};
     blueprint.collision_size = (Vector2){12, 8};
 
-    TEST_ASSERT_TRUE(attr_set_string(&blueprint.attrs, (AttrStringPair){.name = "behavior", .value = "static"}));
-    TEST_ASSERT_TRUE(attr_set_bool(&blueprint.attrs, "is_locked", true));
-    TEST_ASSERT_TRUE(attr_set_int(&blueprint.attrs, "health", 3));
-    TEST_ASSERT_TRUE(attr_set_int(&blueprint.attrs, "max_health", 5));
-    TEST_ASSERT_TRUE(attr_set_float(&blueprint.attrs, "speed", 0.0F));
+    TEST_ASSERT_TRUE(attr_set_string(&ctx, &blueprint.attrs, (AttrStringPair){.name = "behavior", .value = "static"}));
+    TEST_ASSERT_TRUE(attr_set_bool(&ctx, &blueprint.attrs, "is_locked", true));
+    TEST_ASSERT_TRUE(attr_set_int(&ctx, &blueprint.attrs, "health", 3));
+    TEST_ASSERT_TRUE(attr_set_int(&ctx, &blueprint.attrs, "max_health", 5));
+    TEST_ASSERT_TRUE(attr_set_float(&ctx, &blueprint.attrs, "speed", 0.0F));
 
     return blueprint;
 }
@@ -69,8 +73,8 @@ void test_entity_instance_overrides_blueprint(void)
     entity_init_from_blueprint(&entity, &blueprint, (Vector2){0, 0}, &dummy);
 
     /* Override at instance level */
-    TEST_ASSERT_TRUE(attr_set_bool(&entity.attrs, "is_locked", false));
-    TEST_ASSERT_TRUE(attr_set_float(&entity.attrs, "speed", 50.0F));
+    TEST_ASSERT_TRUE(attr_set_bool(&ctx, &entity.attrs, "is_locked", false));
+    TEST_ASSERT_TRUE(attr_set_float(&ctx, &entity.attrs, "speed", 50.0F));
 
     /* Instance wins */
     TEST_ASSERT_FALSE(entity_get_bool(&entity, "is_locked", true));
@@ -96,7 +100,7 @@ void test_entity_int_float_coercion(void)
 {
     Blueprint blueprint = {0};
     strncpy(blueprint.name, "test", MAX_BLUEPRINT_NAME);
-    TEST_ASSERT_TRUE(attr_set_int(&blueprint.attrs, "speed", 80));
+    TEST_ASSERT_TRUE(attr_set_int(&ctx, &blueprint.attrs, "speed", 80));
 
     Texture2D dummy = {0};
     Entity entity;
@@ -111,7 +115,7 @@ void test_entity_no_blueprint(void)
     Entity entity = {0};
     entity.parent_index = -1;
 
-    TEST_ASSERT_TRUE(attr_set_float(&entity.attrs, "speed", 100.0F));
+    TEST_ASSERT_TRUE(attr_set_float(&ctx, &entity.attrs, "speed", 100.0F));
 
     /* Works without a blueprint */
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 100.0F, entity_get_float(&entity, "speed", 0));

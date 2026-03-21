@@ -4,6 +4,8 @@
 #include "raylib.h"
 #include <stdbool.h>
 
+struct EngineContext;
+
 typedef struct {
     Vector2 left_stick;
     Vector2 right_stick;
@@ -12,7 +14,7 @@ typedef struct {
     float right_trigger;
 } InputState;
 
-void input_load_mappings(const char *data, int size);
+void input_load_mappings(struct EngineContext *ctx, const char *data, int size);
 InputState input_read(int gamepad_id);
 InputState input_read_keyboard(void);
 int input_count_gamepads(void);

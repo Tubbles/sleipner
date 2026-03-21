@@ -1,4 +1,7 @@
 #include "unity.h"
+#include "engine_context.h"
+
+static struct EngineContext ctx;
 
 void setUp(void) {}
 void tearDown(void) {}

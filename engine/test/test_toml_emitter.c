@@ -1,4 +1,8 @@
 #include "unity.h"
+#include "engine_context.h"
+
+static struct EngineContext ctx;
+
 #include "toml_emitter.h"
 #include "arena.h"
 #include "toml.h"
@@ -54,17 +58,17 @@ static toml_table_t *parse_toml(const char *input)
 void test_toml_emit_blueprints(void)
 {
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&arena, 4096));
+    TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 4096));
     BlueprintTable blueprints;
 
     toml_table_t *root = parse_toml(fixture_gamedata);
     TEST_ASSERT_NOT_NULL(root);
-    blueprints_load(&blueprints, root, &arena);
+    blueprints_load(&ctx, &blueprints, root, &arena);
     toml_free(root);
 
     char output[4096];
     Level empty_level = {0};
-    int written = toml_emit_gamedata(output, (int)sizeof(output), &blueprints, &empty_level, 0);
+    int written = toml_emit_gamedata(&ctx, output, (int)sizeof(output), &blueprints, &empty_level, 0);
     TEST_ASSERT_TRUE(written > 0);
 
     /* Verify the output contains the blueprint data */
@@ -81,18 +85,18 @@ void test_toml_emit_blueprints(void)
 void test_toml_emit_level_with_entities(void)
 {
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&arena, 4096));
+    TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 4096));
     BlueprintTable blueprints;
     Level level;
 
     toml_table_t *root = parse_toml(fixture_gamedata);
     TEST_ASSERT_NOT_NULL(root);
-    blueprints_load(&blueprints, root, &arena);
-    TEST_ASSERT_TRUE(level_load(&level, root, NULL, &blueprints, dummy_lookup, NULL));
+    blueprints_load(&ctx, &blueprints, root, &arena);
+    TEST_ASSERT_TRUE(level_load(&ctx, &level, root, NULL, &blueprints, dummy_lookup, NULL));
     toml_free(root);
 
     char output[4096];
-    int written = toml_emit_gamedata(output, (int)sizeof(output), &blueprints, &level, 1);
+    int written = toml_emit_gamedata(&ctx, output, (int)sizeof(output), &blueprints, &level, 1);
     TEST_ASSERT_TRUE(written > 0);
 
     TEST_ASSERT_NOT_NULL(strstr(output, "[[level]]"));
@@ -111,32 +115,32 @@ void test_toml_emit_level_with_entities(void)
 void test_toml_emit_round_trip(void)
 {
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&arena, 4096));
+    TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 4096));
     BlueprintTable blueprints;
     Level level;
 
     /* Parse original */
     toml_table_t *root = parse_toml(fixture_gamedata);
     TEST_ASSERT_NOT_NULL(root);
-    blueprints_load(&blueprints, root, &arena);
-    TEST_ASSERT_TRUE(level_load(&level, root, NULL, &blueprints, dummy_lookup, NULL));
+    blueprints_load(&ctx, &blueprints, root, &arena);
+    TEST_ASSERT_TRUE(level_load(&ctx, &level, root, NULL, &blueprints, dummy_lookup, NULL));
     toml_free(root);
 
     /* Emit */
     char output[8192];
-    int written = toml_emit_gamedata(output, (int)sizeof(output), &blueprints, &level, 1);
+    int written = toml_emit_gamedata(&ctx, output, (int)sizeof(output), &blueprints, &level, 1);
     TEST_ASSERT_TRUE(written > 0);
 
     /* Re-parse the emitted output */
     Arena arena2;
-    TEST_ASSERT_TRUE(arena_init(&arena2, 4096));
+    TEST_ASSERT_TRUE(arena_init(&ctx, &arena2, 4096));
     BlueprintTable blueprints2;
     Level level2;
 
     toml_table_t *root2 = parse_toml(output);
     TEST_ASSERT_NOT_NULL(root2);
-    blueprints_load(&blueprints2, root2, &arena2);
-    TEST_ASSERT_TRUE(level_load(&level2, root2, NULL, &blueprints2, dummy_lookup, NULL));
+    blueprints_load(&ctx, &blueprints2, root2, &arena2);
+    TEST_ASSERT_TRUE(level_load(&ctx, &level2, root2, NULL, &blueprints2, dummy_lookup, NULL));
     toml_free(root2);
 
     /* Verify round-trip preserves data */
@@ -171,7 +175,7 @@ void test_toml_emit_buffer_too_small(void)
     blueprints.count = 1;
 
     char tiny[10];
-    int written = toml_emit_gamedata(tiny, (int)sizeof(tiny), &blueprints, NULL, 0);
+    int written = toml_emit_gamedata(&ctx, tiny, (int)sizeof(tiny), &blueprints, NULL, 0);
     TEST_ASSERT_EQUAL_INT(-1, written);
 }
 
@@ -205,17 +209,17 @@ static const char *child_fixture = "[[blueprint]]\n"
 void test_toml_emit_blueprint_children(void)
 {
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&arena, 4096));
+    TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 4096));
     BlueprintTable blueprints;
 
     toml_table_t *root = parse_toml(child_fixture);
     TEST_ASSERT_NOT_NULL(root);
-    blueprints_load(&blueprints, root, &arena);
+    blueprints_load(&ctx, &blueprints, root, &arena);
     toml_free(root);
 
     char output[4096];
     Level empty_level = {0};
-    int written = toml_emit_gamedata(output, (int)sizeof(output), &blueprints, &empty_level, 0);
+    int written = toml_emit_gamedata(&ctx, output, (int)sizeof(output), &blueprints, &empty_level, 0);
     TEST_ASSERT_TRUE(written > 0);
 
     TEST_ASSERT_NOT_NULL(strstr(output, "[[blueprint.child]]"));
@@ -228,21 +232,21 @@ void test_toml_emit_blueprint_children(void)
 void test_toml_emit_skips_child_entities(void)
 {
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&arena, 4096));
+    TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 4096));
     BlueprintTable blueprints;
     Level level;
 
     toml_table_t *root = parse_toml(child_fixture);
     TEST_ASSERT_NOT_NULL(root);
-    blueprints_load(&blueprints, root, &arena);
-    TEST_ASSERT_TRUE(level_load(&level, root, "test", &blueprints, dummy_lookup, NULL));
+    blueprints_load(&ctx, &blueprints, root, &arena);
+    TEST_ASSERT_TRUE(level_load(&ctx, &level, root, "test", &blueprints, dummy_lookup, NULL));
     toml_free(root);
 
     /* Level has 2 entities (wagon + lantern child) */
     TEST_ASSERT_EQUAL_INT(2, level.entity_count);
 
     char output[4096];
-    int written = toml_emit_gamedata(output, (int)sizeof(output), &blueprints, &level, 1);
+    int written = toml_emit_gamedata(&ctx, output, (int)sizeof(output), &blueprints, &level, 1);
     TEST_ASSERT_TRUE(written > 0);
 
     /* Only the parent wagon should appear as a level.entity */
@@ -269,7 +273,7 @@ void test_toml_emit_no_music(void)
 
     BlueprintTable empty = {0};
     char output[1024];
-    int written = toml_emit_gamedata(output, (int)sizeof(output), &empty, &level, 1);
+    int written = toml_emit_gamedata(&ctx, output, (int)sizeof(output), &empty, &level, 1);
     TEST_ASSERT_TRUE(written > 0);
 
     /* Should not contain music line */
