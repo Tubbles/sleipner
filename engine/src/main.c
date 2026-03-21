@@ -22,6 +22,8 @@
 #include <string.h>
 #include <sys/stat.h>
 
+VEC_IMPL(font_preview, FontPreviewEntry)
+
 #ifdef __ANDROID__
 #define SYNCTHING_PATH "/storage/emulated/0/Sync"
 #define GAMEDATA_PATH SYNCTHING_PATH "/sleipner/gamedata.toml"
@@ -76,13 +78,8 @@ static Texture2D *texture_registry_lookup(const char *filename, void *user_data)
 
 static void font_preview_init(struct EngineContext *ctx)
 {
-    /* Reset font preview system to clean state */
-    ctx->assets.font_preview_count = 0;
-    for (int index = 0; index < MAX_PREVIEW_FONTS; index++) {
-        ctx->assets.font_preview_entries[index].valid = false;
-        ctx->assets.font_preview_entries[index].name[0] = '\0';
-    }
-    debug_log(ctx, "font_preview: initialized (%d max entries)", MAX_PREVIEW_FONTS);
+    vec_font_preview_free(&ctx->assets.font_previews);
+    debug_log(ctx, "font_preview: initialized");
 }
 
 static Texture2D load_embedded_texture(EmbeddedAsset asset)
@@ -95,20 +92,16 @@ static Texture2D load_embedded_texture(EmbeddedAsset asset)
 
 static void font_preview_add(struct EngineContext *ctx, const char *name, EmbeddedAsset asset)
 {
-    if (ctx->assets.font_preview_count >= MAX_PREVIEW_FONTS) {
-        return;
-    }
-    FontPreviewEntry *entry = &ctx->assets.font_preview_entries[ctx->assets.font_preview_count];
-    strncpy(entry->name, name, FONT_NAME_LEN - 1);
-    entry->name[FONT_NAME_LEN - 1] = '\0';
-    entry->font = LoadFontFromMemory(".ttf", asset.data, asset.size, FONT_PREVIEW_SIZE, NULL, 0);
-    entry->valid = IsFontValid(entry->font);
-    if (entry->valid) {
-        debug_log(ctx, "font[%d]: '%s' (%d bytes)", ctx->assets.font_preview_count, name, asset.size);
+    FontPreviewEntry entry = {0};
+    strncpy(entry.name, name, FONT_NAME_LEN - 1);
+    entry.font = LoadFontFromMemory(".ttf", asset.data, asset.size, FONT_PREVIEW_SIZE, NULL, 0);
+    entry.valid = IsFontValid(entry.font);
+    if (entry.valid) {
+        debug_log(ctx, "font[%d]: '%s' (%d bytes)", ctx->assets.font_previews.count, name, asset.size);
     } else {
-        debug_log(ctx, "font[%d]: '%s' failed to load", ctx->assets.font_preview_count, name);
+        debug_log(ctx, "font[%d]: '%s' failed to load", ctx->assets.font_previews.count, name);
     }
-    ctx->assets.font_preview_count++;
+    (void)vec_font_preview_push(&ctx->assets.font_previews, entry);
 }
 
 static InputState merge_input(InputState base, InputState overlay)
@@ -295,11 +288,12 @@ draw_debug_info(struct EngineContext *ctx, const Entity *player, RectU32 game_bo
 
 static void font_preview_cleanup(struct EngineContext *ctx)
 {
-    for (int index = 0; index < ctx->assets.font_preview_count; index++) {
-        if (ctx->assets.font_preview_entries[index].valid) {
-            UnloadFont(ctx->assets.font_preview_entries[index].font);
+    for (int index = 0; index < ctx->assets.font_previews.count; index++) {
+        if (ctx->assets.font_previews.data[index].valid) {
+            UnloadFont(ctx->assets.font_previews.data[index].font);
         }
     }
+    vec_font_preview_free(&ctx->assets.font_previews);
 }
 
 static void draw_font_preview(struct EngineContext *ctx)
@@ -307,7 +301,7 @@ static void draw_font_preview(struct EngineContext *ctx)
     int panel_x = ctx->screen_width / 2;
     int line_spacing = FONT_PREVIEW_SIZE + DEBUG_MARGIN;
     int panel_height =
-        (ctx->assets.font_preview_count * (DEBUG_LINE_HEIGHT + line_spacing)) + DEBUG_MARGIN + (DEBUG_LINE_HEIGHT * 3);
+        (ctx->assets.font_previews.count * (DEBUG_LINE_HEIGHT + line_spacing)) + DEBUG_MARGIN + (DEBUG_LINE_HEIGHT * 3);
     DrawRectangle(panel_x, 0, ctx->screen_width - panel_x, panel_height, debug_bg_color);
 
     int y_offset = DEBUG_MARGIN;
@@ -317,18 +311,18 @@ static void draw_font_preview(struct EngineContext *ctx)
     DrawText("(Visual size varies by font design)", panel_x + DEBUG_MARGIN, y_offset, DEBUG_FONT_SIZE,
              debug_text_color);
     y_offset += DEBUG_LINE_HEIGHT;
-    DrawText(TextFormat("Showing %d fonts total", ctx->assets.font_preview_count), panel_x + DEBUG_MARGIN, y_offset,
+    DrawText(TextFormat("Showing %d fonts total", ctx->assets.font_previews.count), panel_x + DEBUG_MARGIN, y_offset,
              DEBUG_FONT_SIZE, debug_text_color);
     y_offset += DEBUG_LINE_HEIGHT;
 
-    for (int index = 0; index < ctx->assets.font_preview_count; index++) {
-        if (!ctx->assets.font_preview_entries[index].valid) {
+    for (int index = 0; index < ctx->assets.font_previews.count; index++) {
+        if (!ctx->assets.font_previews.data[index].valid) {
             continue;
         }
-        DrawText(TextFormat("%d. %s", index + 1, ctx->assets.font_preview_entries[index].name), panel_x + DEBUG_MARGIN,
+        DrawText(TextFormat("%d. %s", index + 1, ctx->assets.font_previews.data[index].name), panel_x + DEBUG_MARGIN,
                  y_offset, DEBUG_FONT_SIZE, debug_text_color);
         y_offset += DEBUG_LINE_HEIGHT;
-        DrawTextEx(ctx->assets.font_preview_entries[index].font, "The quick brown fox 0123456789",
+        DrawTextEx(ctx->assets.font_previews.data[index].font, "The quick brown fox 0123456789",
                    (Vector2){(float)(panel_x + DEBUG_MARGIN), (float)y_offset}, FONT_PREVIEW_SIZE, 1, WHITE);
         y_offset += line_spacing;
     }

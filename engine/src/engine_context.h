@@ -4,6 +4,7 @@
 #include "audio.h"
 #include "game.h"
 #include "raylib.h"
+#include "vec.h" // IWYU pragma: export
 #include <stdio.h>
 
 #define ERROR_MSG_LEN 512
@@ -33,7 +34,6 @@ typedef struct {
     Texture2D texture;
 } TextureEntry;
 
-#define MAX_PREVIEW_FONTS 16
 #define FONT_NAME_LEN 64
 #define SCREEN_WIDTH_DEFAULT 800
 #define SCREEN_HEIGHT_DEFAULT 600
@@ -44,11 +44,12 @@ typedef struct {
     bool valid;
 } FontPreviewEntry;
 
+VEC_DECL(font_preview, FontPreviewEntry)
+
 typedef struct {
     TextureEntry texture_registry[MAX_TEXTURES];
     int texture_registry_count;
-    FontPreviewEntry font_preview_entries[MAX_PREVIEW_FONTS];
-    int font_preview_count;
+    vec_font_preview font_previews;
 } AssetRegistry;
 
 /* The root engine context holding all state to avoid static variables. */
