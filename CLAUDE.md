@@ -91,7 +91,9 @@ Two separate concerns, one header (`debug.h`):
 
 ### Logging (`debug_log`)
 
-For events worth observing: `debug_log("loaded %d blueprints", count)`. Goes to stdout (timestamped), the in-game debug overlay (ring buffer), and the trace file. Not for errors — use the error system for failures.
+For events worth observing. Goes to stdout (timestamped), the in-game debug overlay (ring buffer), and the trace file. Not for errors — use the error system for failures.
+
+**Zero Static State:** The logging system must use explicit context passing. We do not use a global `static FILE *trace_file`. To log an event, the function must be passed an `EngineContext` (or logging context) pointer: `debug_log(ctx, "loaded %d blueprints", count)`. This "context poisoning" is intentional to guarantee that hot-reloads leave no stale file pointers and headless tests can run in complete isolation.
 
 ### Error Handling
 
@@ -112,31 +114,31 @@ Go-style error propagation: every function that can fail must report *why* it fa
 
 To intentionally discard an error (rare, must be justified), use an explicit `(void)` cast — the same pattern we already use for stdio functions. This makes the decision visible in code review.
 
-**Global error context module (`error.h`).** A singleton that holds the current error chain. Since the engine is single-threaded, a static buffer is sufficient. If multi-threading is added later, this extends naturally to an error context handle that callers pass around — the call-site API shape stays the same.
+**Contextual error propagation (`error.h`).** The error chain must be stored in the explicit `EngineContext` (or `ErrorContext`), not a static buffer. We strictly avoid global singletons.
 
 ```c
 // At the point of failure — set the root cause:
-error_set("fopen(%s): %s", path, strerror(errno));
+error_set(ctx, "fopen(%s): %s", path, strerror(errno));
 return false;
 
 // Intermediate caller — wrap with context:
-if (!level_load(&level, ...)) {
-    error_wrap("load_gamedata");
+if (!level_load(ctx, &level, ...)) {
+    error_wrap(ctx, "load_gamedata");
     return false;
 }
 
 // Top-level caller — log the full chain:
-if (!game_load_gamedata(&state, params)) {
-    debug_log("error: %s", error_get());
+if (!game_load_gamedata(ctx, &state, params)) {
+    debug_log(ctx, "error: %s", error_get(ctx));
     // prints: "load_gamedata: level_load: fopen(/path): Permission denied"
 }
 ```
 
 **API surface:**
-- `error_set(format, ...)` — set the root error (clears any previous chain).
-- `error_wrap(format, ...)` — prepend context to the existing error.
-- `error_get()` — return the full error chain as a string.
-- `error_clear()` — explicitly clear the error state.
+- `error_set(ctx, format, ...)` — set the root error (clears any previous chain).
+- `error_wrap(ctx, format, ...)` — prepend context to the existing error.
+- `error_get(ctx)` — return the full error chain as a string.
+- `error_clear(ctx)` — explicitly clear the error state.
 
 **Migration:** existing functions are migrated incrementally. When touching a function that returns `bool` or a pointer, add `[[nodiscard]]` to its declaration, replace `debug_log` + `return false` with `error_set` + `return false`, and update callers to wrap with `error_wrap` instead of logging directly.
 
@@ -225,9 +227,9 @@ Android requires APK updates to be signed with the same key as the original inst
 - **Continuous refactoring.** Refactor as you go, not as a separate pass. If adding a feature reveals that an existing function does too much, split it now. If a struct gains a field that makes an old field redundant, remove the old field now.
 - **Keep the delta clear.** DESIGN.md tracks what is designed. The roadmap in DESIGN.md tracks what is actually implemented. When completing a feature, update the roadmap in the same commit. The gap between "designed" and "implemented" should always be visible and accurate.
 - **Remove before adding.** Before writing new code, check if existing code already handles part of the task, or if existing code will become dead after the change. Remove or update it first, then add the new code. This prevents accumulation of unused code paths.
-- **Reset state on initialization.** Be vigilant about resetting static variables, counters, and state arrays during game initialization. Failure to reset can cause bugs across game restarts (e.g., the font preview bug where fonts appeared twice because `font_preview_count` wasn't reset). Audit initialization code when adding new stateful features.
+- **Reset state on initialization.** Be vigilant about resetting counters, registries, and state arrays during game initialization. Failure to reset can cause bugs across game restarts (e.g., the font preview bug where fonts appeared twice because `font_preview_count` wasn't reset). Audit initialization code when adding new stateful features.
 
-- **Minimize static data.** Strive for zero static variables. Use explicit state passing and holder structs instead. Static variables should be extremely rare exceptions, not the norm. When static data is truly unavoidable (e.g., a one-time platform registration that has no caller-owned home), it must have a matching reset function called during game init, and its lifetime must be clearly documented. This is a last resort — if you find yourself reaching for a static, first ask whether it can live in an existing holder struct.
+- **Minimize static data.** Strive for zero static variables. Use explicit state passing and holder structs instead. Global state should not exist, not even for logging, error handling, or registries. Any state must live in a holder struct (like an `EngineContext` or `GameState`) that is explicitly passed to functions that need it. If you find yourself reaching for a `static` variable or a global array, restructure the architecture to pass a context pointer instead.
 
 - **Prefer pure functions.** Functions should take inputs and return outputs without relying on or modifying static state. Use holder structs to group related data and pass them explicitly rather than using global variables.
 - **One subsystem at a time.** Implement features incrementally, one subsystem at a time. Get it working, tested, and integrated before moving to the next. Don't build multiple half-finished subsystems in parallel.

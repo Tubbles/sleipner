@@ -1,14 +1,13 @@
 # Sleipner TODO
 
-## Static data audit
-Audit all static variables in the codebase. Goal: understand the current
-landscape, then eliminate or document each one.
+## Eradicate Static State (The "Context Passing" Migration)
+Audit and eliminate all static variables in the codebase to ensure mathematically pure functions, flawless hot-reloading, and completely isolated headless testing. No static state is allowed—not even for logging or error reporting.
 
-- [ ] Search for all `static` variable declarations in `engine/src/`
-- [ ] For each: can it live in an existing holder struct (GameState, Level, etc.)?
-  - If yes: move it — pass the struct explicitly
-  - If no: document why it must be static and add a reset call in game_init
-- [ ] Known candidates: font preview system, texture registry
+- [ ] Create a root `EngineContext` (or `LogContext`/`ErrorContext`) struct to hold all state.
+- [ ] Move the `trace_file` and `log_lines` ring buffer from `debug.c` into the context.
+- [ ] Move the static error string buffer from `error.c` into the context.
+- [ ] Thread the context pointer through all sub-systems, specifically updating every `debug_log` and `error_set`/`error_wrap` call to take the context pointer.
+- [ ] Move the asset registries (texture, font preview, audio) into the `EngineContext`.
 
 ## Code reuse
 Convert remaining fixed-size array + count patterns to `vec_<name>` using the
