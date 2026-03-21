@@ -292,5 +292,8 @@ void game_update(struct EngineContext *ctx, GameState *state, InputState input, 
 
 void game_free(GameState *state)
 {
+    for (int index = 0; index < state->blueprints.count; index++) {
+        vec_blueprint_child_free(&state->blueprints.entries[index].children);
+    }
     arena_free(&state->gamedata_arena);
 }

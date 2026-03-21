@@ -3,6 +3,7 @@
 
 #include "arena.h"
 #include "attribute.h"
+#include "vec.h"
 
 #include "raylib.h"
 
@@ -18,7 +19,6 @@ typedef struct {
 #define MAX_BLUEPRINTS 256
 #define MAX_BLUEPRINT_NAME 64
 #define MAX_TEXTURE_NAME 64
-#define MAX_BLUEPRINT_CHILDREN 8
 #define MAX_TAG 32
 
 typedef struct {
@@ -26,6 +26,8 @@ typedef struct {
     char tag[MAX_TAG];
     Vector2 offset;
 } BlueprintChild;
+
+VEC_DECL(blueprint_child, BlueprintChild)
 
 typedef struct {
     char name[MAX_BLUEPRINT_NAME];
@@ -35,8 +37,7 @@ typedef struct {
     Vector2 collision_offset;
     Vector2 collision_size;
     AttrSet attrs;
-    BlueprintChild children[MAX_BLUEPRINT_CHILDREN];
-    int child_count;
+    vec_blueprint_child children;
     RuleSet rules;
 } Blueprint;
 

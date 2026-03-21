@@ -292,11 +292,11 @@ void test_blueprint_child_parsed(void)
     const Blueprint *wagon = blueprint_find(&table, "wagon");
     TEST_ASSERT_NOT_NULL(wagon);
 
-    TEST_ASSERT_EQUAL_INT(1, wagon->child_count);
-    TEST_ASSERT_EQUAL_STRING("lantern", wagon->children[0].blueprint_name);
-    TEST_ASSERT_EQUAL_STRING("front_light", wagon->children[0].tag);
-    TEST_ASSERT_FLOAT_WITHIN(0.1F, 56.0F, wagon->children[0].offset.x);
-    TEST_ASSERT_FLOAT_WITHIN(0.1F, -8.0F, wagon->children[0].offset.y);
+    TEST_ASSERT_EQUAL_INT(1, wagon->children.count);
+    TEST_ASSERT_EQUAL_STRING("lantern", wagon->children.data[0].blueprint_name);
+    TEST_ASSERT_EQUAL_STRING("front_light", wagon->children.data[0].tag);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 56.0F, wagon->children.data[0].offset.x);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, -8.0F, wagon->children.data[0].offset.y);
 
     toml_free(root);
     arena_free(&test_arena);
@@ -343,12 +343,12 @@ void test_blueprint_multiple_children(void)
     const Blueprint *wagon = blueprint_find(&table, "wagon");
     TEST_ASSERT_NOT_NULL(wagon);
 
-    TEST_ASSERT_EQUAL_INT(3, wagon->child_count);
-    TEST_ASSERT_EQUAL_STRING("lantern", wagon->children[0].blueprint_name);
-    TEST_ASSERT_EQUAL_STRING("wheel", wagon->children[1].blueprint_name);
-    TEST_ASSERT_EQUAL_STRING("front_wheel", wagon->children[1].tag);
-    TEST_ASSERT_EQUAL_STRING("wheel", wagon->children[2].blueprint_name);
-    TEST_ASSERT_EQUAL_STRING("rear_wheel", wagon->children[2].tag);
+    TEST_ASSERT_EQUAL_INT(3, wagon->children.count);
+    TEST_ASSERT_EQUAL_STRING("lantern", wagon->children.data[0].blueprint_name);
+    TEST_ASSERT_EQUAL_STRING("wheel", wagon->children.data[1].blueprint_name);
+    TEST_ASSERT_EQUAL_STRING("front_wheel", wagon->children.data[1].tag);
+    TEST_ASSERT_EQUAL_STRING("wheel", wagon->children.data[2].blueprint_name);
+    TEST_ASSERT_EQUAL_STRING("rear_wheel", wagon->children.data[2].tag);
 
     toml_free(root);
     arena_free(&test_arena);
@@ -379,8 +379,8 @@ void test_blueprint_child_no_tag(void)
     const Blueprint *parent = blueprint_find(&table, "parent");
     TEST_ASSERT_NOT_NULL(parent);
 
-    TEST_ASSERT_EQUAL_INT(1, parent->child_count);
-    TEST_ASSERT_EQUAL_STRING("", parent->children[0].tag);
+    TEST_ASSERT_EQUAL_INT(1, parent->children.count);
+    TEST_ASSERT_EQUAL_STRING("", parent->children.data[0].tag);
 
     toml_free(root);
     arena_free(&test_arena);
@@ -411,9 +411,9 @@ void test_blueprint_child_default_offset(void)
     const Blueprint *parent = blueprint_find(&table, "parent");
     TEST_ASSERT_NOT_NULL(parent);
 
-    TEST_ASSERT_EQUAL_INT(1, parent->child_count);
-    TEST_ASSERT_FLOAT_WITHIN(0.1F, 0.0F, parent->children[0].offset.x);
-    TEST_ASSERT_FLOAT_WITHIN(0.1F, 0.0F, parent->children[0].offset.y);
+    TEST_ASSERT_EQUAL_INT(1, parent->children.count);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 0.0F, parent->children.data[0].offset.x);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 0.0F, parent->children.data[0].offset.y);
 
     toml_free(root);
     arena_free(&test_arena);

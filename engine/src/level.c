@@ -75,8 +75,8 @@ static bool spawn_children_for(struct EngineContext *ctx,
     const Entity *parent = &level->entities[parent_index];
     const Blueprint *parent_blueprint = parent->blueprint;
 
-    for (int index = 0; index < parent_blueprint->child_count; index++) {
-        const BlueprintChild *child_def = &parent_blueprint->children[index];
+    for (int index = 0; index < parent_blueprint->children.count; index++) {
+        const BlueprintChild *child_def = &parent_blueprint->children.data[index];
 
         const Blueprint *child_blueprint = blueprint_find(blueprints, child_def->blueprint_name);
         if (!child_blueprint) {
@@ -119,7 +119,7 @@ static bool instantiate_children(struct EngineContext *ctx,
     int scan_index = start_index;
     while (scan_index < level->entity_count) {
         const Entity *entity = &level->entities[scan_index];
-        if (entity->blueprint && entity->blueprint->child_count > 0) {
+        if (entity->blueprint && entity->blueprint->children.count > 0) {
             int depth = entity_depth(level->entities, scan_index);
             if (depth >= MAX_CHILD_DEPTH) {
                 error_set(ctx, "child nesting exceeds max depth %d", MAX_CHILD_DEPTH);

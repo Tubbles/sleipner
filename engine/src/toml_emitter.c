@@ -46,8 +46,8 @@ static int emit_blueprints(char *buffer, int capacity, int offset, const Bluepri
                              (int)blueprint->collision_size.y);
         offset = emit_append(buffer, capacity, offset, "\n");
 
-        for (int child_index = 0; child_index < blueprint->child_count; child_index++) {
-            const BlueprintChild *child = &blueprint->children[child_index];
+        for (int child_index = 0; child_index < blueprint->children.count; child_index++) {
+            const BlueprintChild *child = &blueprint->children.data[child_index];
             offset = emit_append(buffer, capacity, offset, "[[blueprint.child]]\n");
             offset = emit_append(buffer, capacity, offset, "blueprint = \"%s\"\n", child->blueprint_name);
             if (child->tag[0] != '\0') {

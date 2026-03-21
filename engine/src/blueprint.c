@@ -4,11 +4,14 @@
 #include "debug.h"
 #include "error.h"
 #include "rule.h"
+#include "vec.h"
 
 #include "toml.h"
 
 #include <stdlib.h>
 #include <string.h>
+
+VEC_IMPL(blueprint_child, BlueprintChild)
 
 static bool parse_float_array(toml_array_t *array, float *out, int expected_count)
 {
@@ -243,21 +246,21 @@ static bool parse_children(struct EngineContext *ctx, Blueprint *blueprint, toml
     }
 
     int count = toml_array_nelem(children);
-    if (count > MAX_BLUEPRINT_CHILDREN) {
-        error_set(ctx, "blueprint '%s' has %d children (max %d)", blueprint->name, count, MAX_BLUEPRINT_CHILDREN);
-        return false;
-    }
 
     for (int index = 0; index < count; index++) {
         toml_table_t *child_entry = toml_table_at(children, index);
         if (!child_entry) {
             continue;
         }
-        if (!parse_single_child(ctx, &blueprint->children[blueprint->child_count], child_entry)) {
+        BlueprintChild child_entry_data = {0};
+        if (!parse_single_child(ctx, &child_entry_data, child_entry)) {
             error_wrap(ctx, "blueprint '%s' child[%d]", blueprint->name, index);
             return false;
         }
-        blueprint->child_count++;
+        if (!vec_blueprint_child_push(&blueprint->children, child_entry_data)) {
+            error_set(ctx, "blueprint '%s' child[%d]: out of memory", blueprint->name, index);
+            return false;
+        }
     }
 
     return true;
