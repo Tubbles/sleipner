@@ -347,6 +347,7 @@ void test_condition_attr_truthy(void)
     FlagSet flags = {0};
     ConditionContext context = {.entity = &entity, .flags = &flags};
     TEST_ASSERT_TRUE(conditions_evaluate(&condition, 1, context));
+    vec_attribute_free(&entity.attrs.entries);
 }
 
 void test_condition_attr_falsy(void)
@@ -360,6 +361,7 @@ void test_condition_attr_falsy(void)
     FlagSet flags = {0};
     ConditionContext context = {.entity = &entity, .flags = &flags};
     TEST_ASSERT_FALSE(conditions_evaluate(&condition, 1, context));
+    vec_attribute_free(&entity.attrs.entries);
 }
 
 void test_condition_attr_missing(void)
@@ -385,6 +387,7 @@ void test_condition_attr_less_than(void)
     FlagSet flags = {0};
     ConditionContext context = {.entity = &entity, .flags = &flags};
     TEST_ASSERT_TRUE(conditions_evaluate(&condition, 1, context));
+    vec_attribute_free(&entity.attrs.entries);
 }
 
 void test_condition_attr_greater_than(void)
@@ -398,6 +401,7 @@ void test_condition_attr_greater_than(void)
     FlagSet flags = {0};
     ConditionContext context = {.entity = &entity, .flags = &flags};
     TEST_ASSERT_TRUE(conditions_evaluate(&condition, 1, context));
+    vec_attribute_free(&entity.attrs.entries);
 }
 
 void test_condition_and_logic_all_pass(void)
@@ -499,6 +503,7 @@ void test_action_set_attr_bool(void)
     TEST_ASSERT_NOT_NULL(attr);
     TEST_ASSERT_EQUAL_INT(ATTR_BOOL, attr->type);
     TEST_ASSERT_FALSE(attr->value.b);
+    vec_attribute_free(&entity.attrs.entries);
 }
 
 void test_action_set_attr_int(void)
@@ -520,6 +525,7 @@ void test_action_set_attr_int(void)
     };
     TEST_ASSERT_TRUE(action_node_execute(&ctx, &action, context));
     TEST_ASSERT_EQUAL_INT(42, entity_get_int(&entity, "health", 0));
+    vec_attribute_free(&entity.attrs.entries);
 }
 
 void test_action_add_attr(void)
@@ -542,6 +548,7 @@ void test_action_add_attr(void)
     };
     TEST_ASSERT_TRUE(action_node_execute(&ctx, &action, context));
     TEST_ASSERT_EQUAL_INT(7, entity_get_int(&entity, "health", 0));
+    vec_attribute_free(&entity.attrs.entries);
 }
 
 void test_action_toggle_attr(void)
@@ -563,6 +570,7 @@ void test_action_toggle_attr(void)
     };
     TEST_ASSERT_TRUE(action_node_execute(&ctx, &action, context));
     TEST_ASSERT_FALSE(entity_get_bool(&entity, "visible", true));
+    vec_attribute_free(&entity.attrs.entries);
 }
 
 void test_action_destroy(void)
@@ -887,6 +895,7 @@ void test_var_set_local(void)
     TEST_ASSERT_TRUE(action_node_execute(&ctx, &action, context));
     TEST_ASSERT_EQUAL_INT(42, attr_get_int(&local_vars, "damage", 0));
     TEST_ASSERT_NULL(attr_get(&global_vars, "damage"));
+    vec_attribute_free(&local_vars.entries);
 }
 
 void test_var_set_global(void)
@@ -913,6 +922,7 @@ void test_var_set_global(void)
     TEST_ASSERT_TRUE(action_node_execute(&ctx, &action, context));
     TEST_ASSERT_EQUAL_INT(100, attr_get_int(&global_vars, "score", 0));
     TEST_ASSERT_NULL(attr_get(&local_vars, "score"));
+    vec_attribute_free(&global_vars.entries);
 }
 
 void test_var_condition_truthy(void)
@@ -935,6 +945,7 @@ void test_var_condition_truthy(void)
         .global_vars = &global_vars,
     };
     TEST_ASSERT_TRUE(conditions_evaluate(&cond, 1, context));
+    vec_attribute_free(&local_vars.entries);
 }
 
 void test_var_condition_falsy_when_unset(void)
@@ -982,6 +993,8 @@ void test_var_substitution_in_set_attr(void)
     };
     TEST_ASSERT_TRUE(action_node_execute(&ctx, &action, context));
     TEST_ASSERT_EQUAL_INT(5, entity_get_int(&entity, "health", 0));
+    vec_attribute_free(&local_vars.entries);
+    vec_attribute_free(&entity.attrs.entries);
 }
 
 void test_local_var_scoped_per_rule(void)
@@ -1009,6 +1022,7 @@ void test_local_var_scoped_per_rule(void)
     TEST_ASSERT_TRUE(action_node_execute(&ctx, &action, context_a));
     TEST_ASSERT_EQUAL_INT(99, attr_get_int(&local_vars_a, "temp", 0));
     TEST_ASSERT_NULL(attr_get(&local_vars_b, "temp"));
+    vec_attribute_free(&local_vars_a.entries);
 }
 
 /* ---- Integration: blueprint with rules parsed from gamedata ---- */

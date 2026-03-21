@@ -1041,6 +1041,7 @@ static void evaluate_entity_rules(struct EngineContext *ctx,
         for (int action_index = 0; action_index < rule->action_tree.count; action_index++) {
             (void)action_node_execute(ctx, &rule->action_tree.nodes[action_index], act_ctx);
         }
+        vec_attribute_free(&local_vars.entries);
     }
 }
 

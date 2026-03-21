@@ -483,7 +483,7 @@ static void load_gamedata(struct EngineContext *ctx, GameState *state)
         for (int index = 0; index < state->blueprints.count; index++) {
             const Blueprint *blueprint = &state->blueprints.entries[index];
             debug_log(ctx, "  bp[%d]: '%s' tex='%s' attrs=%d", index, blueprint->name, blueprint->texture_name,
-                      blueprint->attrs.count);
+                      blueprint->attrs.entries.count);
         }
         debug_log(ctx, "gamedata: level '%s' (%dx%d, %d entities)", state->current_level.name,
                   state->current_level.width, state->current_level.height, state->current_level.entity_count);

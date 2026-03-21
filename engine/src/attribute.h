@@ -1,13 +1,13 @@
 #ifndef ATTRIBUTE_H
 #define ATTRIBUTE_H
 
+#include "vec.h"
 #include <stdbool.h>
 
 struct EngineContext;
 
 #define MAX_ATTR_NAME 32
 #define MAX_ATTR_STRING 64
-#define MAX_ATTRS 32
 
 typedef enum {
     ATTR_FLOAT,
@@ -29,9 +29,10 @@ typedef struct {
     AttrValue value;
 } Attribute;
 
+VEC_DECL(attribute, Attribute)
+
 typedef struct {
-    Attribute entries[MAX_ATTRS];
-    int count;
+    vec_attribute entries;
 } AttrSet;
 
 /* Find an attribute by name. Returns NULL if not found. */

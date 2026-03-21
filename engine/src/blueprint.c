@@ -101,11 +101,10 @@ static bool inherit_attributes(Blueprint *child, const Blueprint *parent)
 {
     bool changed = false;
 
-    for (int attr_index = 0; attr_index < parent->attrs.count; attr_index++) {
-        const Attribute *parent_attr = &parent->attrs.entries[attr_index];
-        if (!attr_get(&child->attrs, parent_attr->name) && child->attrs.count < MAX_ATTRS) {
-            child->attrs.entries[child->attrs.count] = *parent_attr;
-            child->attrs.count++;
+    for (int attr_index = 0; attr_index < parent->attrs.entries.count; attr_index++) {
+        const Attribute *parent_attr = &parent->attrs.entries.data[attr_index];
+        if (!attr_get(&child->attrs, parent_attr->name)) {
+            (void)vec_attribute_push(&child->attrs.entries, *parent_attr);
             changed = true;
         }
     }

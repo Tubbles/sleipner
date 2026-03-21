@@ -47,7 +47,7 @@ void test_attr_set_and_get_bool(void);
 void test_attr_set_and_get_string(void);
 void test_attr_overwrite_existing(void);
 void test_attr_get_missing_returns_fallback(void);
-void test_attr_full_set_returns_false(void);
+void test_attr_push_many_entries(void);
 void test_attr_type_change(void);
 void test_attr_scoped_instance_overrides_blueprint(void);
 void test_attr_multiple_types(void);
@@ -284,7 +284,7 @@ int main(void)
     RUN_TEST(test_attr_set_and_get_string);
     RUN_TEST(test_attr_overwrite_existing);
     RUN_TEST(test_attr_get_missing_returns_fallback);
-    RUN_TEST(test_attr_full_set_returns_false);
+    RUN_TEST(test_attr_push_many_entries);
     RUN_TEST(test_attr_type_change);
     RUN_TEST(test_attr_scoped_instance_overrides_blueprint);
     RUN_TEST(test_attr_multiple_types);

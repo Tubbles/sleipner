@@ -1,13 +1,16 @@
 #include "attribute.h"
 #include "error.h"
+#include "vec.h"
 
 #include <string.h>
 
+VEC_IMPL(attribute, Attribute)
+
 const Attribute *attr_get(const AttrSet *set, const char *name)
 {
-    for (int index = 0; index < set->count; index++) {
-        if (strcmp(set->entries[index].name, name) == 0) {
-            return &set->entries[index];
+    for (int index = 0; index < set->entries.count; index++) {
+        if (strcmp(set->entries.data[index].name, name) == 0) {
+            return &set->entries.data[index];
         }
     }
     return NULL;
@@ -15,20 +18,19 @@ const Attribute *attr_get(const AttrSet *set, const char *name)
 
 static Attribute *find_or_append(struct EngineContext *ctx, AttrSet *set, const char *name)
 {
-    for (int index = 0; index < set->count; index++) {
-        if (strcmp(set->entries[index].name, name) == 0) {
-            return &set->entries[index];
+    for (int index = 0; index < set->entries.count; index++) {
+        if (strcmp(set->entries.data[index].name, name) == 0) {
+            return &set->entries.data[index];
         }
     }
-    if (set->count >= MAX_ATTRS) {
-        error_set(ctx, "attribute set full (max %d), cannot add '%s'", MAX_ATTRS, name);
+    Attribute new_entry = {0};
+    strncpy(new_entry.name, name, MAX_ATTR_NAME - 1);
+    new_entry.name[MAX_ATTR_NAME - 1] = '\0';
+    if (!vec_attribute_push(&set->entries, new_entry)) {
+        error_set(ctx, "attribute push failed for '%s'", name);
         return NULL;
     }
-    Attribute *entry = &set->entries[set->count];
-    strncpy(entry->name, name, MAX_ATTR_NAME - 1);
-    entry->name[MAX_ATTR_NAME - 1] = '\0';
-    set->count++;
-    return entry;
+    return &set->entries.data[set->entries.count - 1];
 }
 
 bool attr_set_float(struct EngineContext *ctx, AttrSet *set, const char *name, float value)

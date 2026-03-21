@@ -11,12 +11,13 @@ void test_attr_set_and_get_float(void)
 {
     AttrSet set = {0};
     TEST_ASSERT_TRUE(attr_set_float(&ctx, &set, "speed", 80.0F));
-    TEST_ASSERT_EQUAL_INT(1, set.count);
+    TEST_ASSERT_EQUAL_INT(1, set.entries.count);
 
     const Attribute *entry = attr_get(&set, "speed");
     TEST_ASSERT_NOT_NULL(entry);
     TEST_ASSERT_EQUAL_INT(ATTR_FLOAT, entry->type);
     TEST_ASSERT_FLOAT_WITHIN(0.01F, 80.0F, entry->value.f);
+    vec_attribute_free(&set.entries);
 }
 
 void test_attr_set_and_get_int(void)
@@ -25,6 +26,7 @@ void test_attr_set_and_get_int(void)
     TEST_ASSERT_TRUE(attr_set_int(&ctx, &set, "health", 10));
 
     TEST_ASSERT_EQUAL_INT(10, attr_get_int(&set, "health", 0));
+    vec_attribute_free(&set.entries);
 }
 
 void test_attr_set_and_get_bool(void)
@@ -33,6 +35,7 @@ void test_attr_set_and_get_bool(void)
     TEST_ASSERT_TRUE(attr_set_bool(&ctx, &set, "is_locked", true));
 
     TEST_ASSERT_TRUE(attr_get_bool(&set, "is_locked", false));
+    vec_attribute_free(&set.entries);
 }
 
 void test_attr_set_and_get_string(void)
@@ -41,6 +44,7 @@ void test_attr_set_and_get_string(void)
     TEST_ASSERT_TRUE(attr_set_string(&ctx, &set, (AttrStringPair){.name = "loot_table", .value = "common"}));
 
     TEST_ASSERT_EQUAL_STRING("common", attr_get_string(&set, "loot_table"));
+    vec_attribute_free(&set.entries);
 }
 
 void test_attr_overwrite_existing(void)
@@ -49,8 +53,9 @@ void test_attr_overwrite_existing(void)
     TEST_ASSERT_TRUE(attr_set_int(&ctx, &set, "health", 10));
     TEST_ASSERT_TRUE(attr_set_int(&ctx, &set, "health", 5));
 
-    TEST_ASSERT_EQUAL_INT(1, set.count);
+    TEST_ASSERT_EQUAL_INT(1, set.entries.count);
     TEST_ASSERT_EQUAL_INT(5, attr_get_int(&set, "health", 0));
+    vec_attribute_free(&set.entries);
 }
 
 void test_attr_get_missing_returns_fallback(void)
@@ -63,18 +68,22 @@ void test_attr_get_missing_returns_fallback(void)
     TEST_ASSERT_NULL(attr_get_string(&set, "missing"));
 }
 
-void test_attr_full_set_returns_false(void)
+void test_attr_push_many_entries(void)
 {
     AttrSet set = {0};
     char name[MAX_ATTR_NAME];
 
-    for (int index = 0; index < MAX_ATTRS; index++) {
+    for (int index = 0; index < 64; index++) {
         snprintf(name, sizeof(name), "attr_%d", index);
         TEST_ASSERT_TRUE(attr_set_int(&ctx, &set, name, index));
     }
 
-    TEST_ASSERT_FALSE(attr_set_int(&ctx, &set, "one_too_many", 0));
-    TEST_ASSERT_EQUAL_INT(MAX_ATTRS, set.count);
+    TEST_ASSERT_EQUAL_INT(64, set.entries.count);
+    for (int index = 0; index < 64; index++) {
+        snprintf(name, sizeof(name), "attr_%d", index);
+        TEST_ASSERT_EQUAL_INT(index, attr_get_int(&set, name, -1));
+    }
+    vec_attribute_free(&set.entries);
 }
 
 void test_attr_type_change(void)
@@ -83,10 +92,11 @@ void test_attr_type_change(void)
     TEST_ASSERT_TRUE(attr_set_int(&ctx, &set, "value", 42));
     TEST_ASSERT_TRUE(attr_set_float(&ctx, &set, "value", 3.14F));
 
-    TEST_ASSERT_EQUAL_INT(1, set.count);
+    TEST_ASSERT_EQUAL_INT(1, set.entries.count);
     const Attribute *entry = attr_get(&set, "value");
     TEST_ASSERT_EQUAL_INT(ATTR_FLOAT, entry->type);
     TEST_ASSERT_FLOAT_WITHIN(0.01F, 3.14F, entry->value.f);
+    vec_attribute_free(&set.entries);
 }
 
 void test_attr_scoped_instance_overrides_blueprint(void)
@@ -111,6 +121,8 @@ void test_attr_scoped_instance_overrides_blueprint(void)
     /* Missing in both */
     const Attribute *missing = attr_get_scoped(&instance, &blueprint, "nonexistent");
     TEST_ASSERT_NULL(missing);
+    vec_attribute_free(&blueprint.entries);
+    vec_attribute_free(&instance.entries);
 }
 
 void test_attr_multiple_types(void)
@@ -121,9 +133,10 @@ void test_attr_multiple_types(void)
     TEST_ASSERT_TRUE(attr_set_bool(&ctx, &set, "visible", true));
     TEST_ASSERT_TRUE(attr_set_string(&ctx, &set, (AttrStringPair){.name = "name", .value = "chest"}));
 
-    TEST_ASSERT_EQUAL_INT(4, set.count);
+    TEST_ASSERT_EQUAL_INT(4, set.entries.count);
     TEST_ASSERT_FLOAT_WITHIN(0.01F, 80.0F, attr_get_float(&set, "speed", 0));
     TEST_ASSERT_EQUAL_INT(10, attr_get_int(&set, "health", 0));
     TEST_ASSERT_TRUE(attr_get_bool(&set, "visible", false));
     TEST_ASSERT_EQUAL_STRING("chest", attr_get_string(&set, "name"));
+    vec_attribute_free(&set.entries);
 }

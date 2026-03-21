@@ -294,7 +294,12 @@ void game_free(GameState *state)
 {
     for (int index = 0; index < state->blueprints.count; index++) {
         vec_blueprint_child_free(&state->blueprints.entries[index].children);
+        vec_attribute_free(&state->blueprints.entries[index].attrs.entries);
+    }
+    for (int index = 0; index < state->current_level.entity_count; index++) {
+        vec_attribute_free(&state->current_level.entities[index].attrs.entries);
     }
     vec_flag_name_free(&state->flags.names);
+    vec_attribute_free(&state->vars.entries);
     arena_free(&state->gamedata_arena);
 }
