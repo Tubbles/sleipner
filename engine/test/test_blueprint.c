@@ -6,6 +6,7 @@ static struct EngineContext ctx;
 #include "arena.h"
 #include "attribute.h"
 #include "blueprint.h"
+#include "test_helpers.h"
 
 #include "toml.h"
 
@@ -30,7 +31,7 @@ void test_blueprint_load_single(void)
 {
     Arena test_arena;
     with_arena(&test_arena);
-    BlueprintTable table;
+    BlueprintTable table = {0};
 
     toml_table_t *root = parse_toml("[[blueprint]]\n"
                                     "name = \"tree\"\n"
@@ -42,20 +43,21 @@ void test_blueprint_load_single(void)
 
     int count = blueprints_load(&ctx, &table, root, &test_arena);
     TEST_ASSERT_EQUAL_INT(1, count);
-    TEST_ASSERT_EQUAL_INT(1, table.count);
+    TEST_ASSERT_EQUAL_INT(1, table.entries.count);
 
-    TEST_ASSERT_EQUAL_STRING("tree", table.entries[0].name);
-    TEST_ASSERT_EQUAL_STRING("tree.png", table.entries[0].texture_name);
-    TEST_ASSERT_FLOAT_WITHIN(0.1f, 0.0f, table.entries[0].source.x);
-    TEST_ASSERT_FLOAT_WITHIN(0.1f, 0.0f, table.entries[0].source.y);
-    TEST_ASSERT_FLOAT_WITHIN(0.1f, 64.0f, table.entries[0].source.width);
-    TEST_ASSERT_FLOAT_WITHIN(0.1f, 80.0f, table.entries[0].source.height);
-    TEST_ASSERT_FLOAT_WITHIN(0.1f, 20.0f, table.entries[0].collision_offset.x);
-    TEST_ASSERT_FLOAT_WITHIN(0.1f, 60.0f, table.entries[0].collision_offset.y);
-    TEST_ASSERT_FLOAT_WITHIN(0.1f, 24.0f, table.entries[0].collision_size.x);
-    TEST_ASSERT_FLOAT_WITHIN(0.1f, 16.0f, table.entries[0].collision_size.y);
+    TEST_ASSERT_EQUAL_STRING("tree", table.entries.data[0].name);
+    TEST_ASSERT_EQUAL_STRING("tree.png", table.entries.data[0].texture_name);
+    TEST_ASSERT_FLOAT_WITHIN(0.1f, 0.0f, table.entries.data[0].source.x);
+    TEST_ASSERT_FLOAT_WITHIN(0.1f, 0.0f, table.entries.data[0].source.y);
+    TEST_ASSERT_FLOAT_WITHIN(0.1f, 64.0f, table.entries.data[0].source.width);
+    TEST_ASSERT_FLOAT_WITHIN(0.1f, 80.0f, table.entries.data[0].source.height);
+    TEST_ASSERT_FLOAT_WITHIN(0.1f, 20.0f, table.entries.data[0].collision_offset.x);
+    TEST_ASSERT_FLOAT_WITHIN(0.1f, 60.0f, table.entries.data[0].collision_offset.y);
+    TEST_ASSERT_FLOAT_WITHIN(0.1f, 24.0f, table.entries.data[0].collision_size.x);
+    TEST_ASSERT_FLOAT_WITHIN(0.1f, 16.0f, table.entries.data[0].collision_size.y);
 
     toml_free(root);
+    test_blueprint_table_free(&table);
     arena_free(&test_arena);
 }
 
@@ -63,7 +65,7 @@ void test_blueprint_load_multiple(void)
 {
     Arena test_arena;
     with_arena(&test_arena);
-    BlueprintTable table;
+    BlueprintTable table = {0};
 
     toml_table_t *root = parse_toml("[[blueprint]]\n"
                                     "name = \"tree\"\n"
@@ -82,10 +84,11 @@ void test_blueprint_load_multiple(void)
 
     int count = blueprints_load(&ctx, &table, root, &test_arena);
     TEST_ASSERT_EQUAL_INT(2, count);
-    TEST_ASSERT_EQUAL_STRING("tree", table.entries[0].name);
-    TEST_ASSERT_EQUAL_STRING("chest", table.entries[1].name);
+    TEST_ASSERT_EQUAL_STRING("tree", table.entries.data[0].name);
+    TEST_ASSERT_EQUAL_STRING("chest", table.entries.data[1].name);
 
     toml_free(root);
+    test_blueprint_table_free(&table);
     arena_free(&test_arena);
 }
 
@@ -93,7 +96,7 @@ void test_blueprint_find(void)
 {
     Arena test_arena;
     with_arena(&test_arena);
-    BlueprintTable table;
+    BlueprintTable table = {0};
 
     toml_table_t *root = parse_toml("[[blueprint]]\n"
                                     "name = \"tree\"\n"
@@ -121,6 +124,7 @@ void test_blueprint_find(void)
     TEST_ASSERT_NULL(not_found);
 
     toml_free(root);
+    test_blueprint_table_free(&table);
     arena_free(&test_arena);
 }
 
@@ -128,7 +132,7 @@ void test_blueprint_skip_nameless(void)
 {
     Arena test_arena;
     with_arena(&test_arena);
-    BlueprintTable table;
+    BlueprintTable table = {0};
 
     toml_table_t *root = parse_toml("[[blueprint]]\n"
                                     "texture = \"tree.png\"\n"
@@ -143,9 +147,10 @@ void test_blueprint_skip_nameless(void)
 
     int count = blueprints_load(&ctx, &table, root, &test_arena);
     TEST_ASSERT_EQUAL_INT(1, count);
-    TEST_ASSERT_EQUAL_STRING("chest", table.entries[0].name);
+    TEST_ASSERT_EQUAL_STRING("chest", table.entries.data[0].name);
 
     toml_free(root);
+    test_blueprint_table_free(&table);
     arena_free(&test_arena);
 }
 
@@ -153,7 +158,7 @@ void test_blueprint_no_blueprints_section(void)
 {
     Arena test_arena;
     with_arena(&test_arena);
-    BlueprintTable table;
+    BlueprintTable table = {0};
 
     toml_table_t *root = parse_toml("[[level]]\n"
                                     "name = \"overworld\"\n");
@@ -163,6 +168,7 @@ void test_blueprint_no_blueprints_section(void)
     TEST_ASSERT_EQUAL_INT(0, count);
 
     toml_free(root);
+    test_blueprint_table_free(&table);
     arena_free(&test_arena);
 }
 
@@ -170,7 +176,7 @@ void test_blueprint_custom_attrs(void)
 {
     Arena test_arena;
     with_arena(&test_arena);
-    BlueprintTable table;
+    BlueprintTable table = {0};
 
     toml_table_t *root = parse_toml("[[blueprint]]\n"
                                     "name = \"chest\"\n"
@@ -196,6 +202,7 @@ void test_blueprint_custom_attrs(void)
     TEST_ASSERT_EQUAL_INT(5, attr_get_int(&chest->attrs, "weight", 0));
 
     toml_free(root);
+    test_blueprint_table_free(&table);
     arena_free(&test_arena);
 }
 
@@ -203,7 +210,7 @@ void test_blueprint_health_parsed(void)
 {
     Arena test_arena;
     with_arena(&test_arena);
-    BlueprintTable table;
+    BlueprintTable table = {0};
 
     toml_table_t *root = parse_toml("[[blueprint]]\n"
                                     "name = \"enemy\"\n"
@@ -222,6 +229,7 @@ void test_blueprint_health_parsed(void)
     TEST_ASSERT_EQUAL_INT(5, attr_get_int(&enemy->attrs, "max_health", 0));
 
     toml_free(root);
+    test_blueprint_table_free(&table);
     arena_free(&test_arena);
 }
 
@@ -229,7 +237,7 @@ void test_blueprint_extends(void)
 {
     Arena test_arena;
     with_arena(&test_arena);
-    BlueprintTable table;
+    BlueprintTable table = {0};
 
     toml_table_t *root = parse_toml("[[blueprint]]\n"
                                     "name = \"chest\"\n"
@@ -263,6 +271,7 @@ void test_blueprint_extends(void)
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 16.0F, locked->collision_size.x);
 
     toml_free(root);
+    test_blueprint_table_free(&table);
     arena_free(&test_arena);
 }
 
@@ -270,7 +279,7 @@ void test_blueprint_child_parsed(void)
 {
     Arena test_arena;
     with_arena(&test_arena);
-    BlueprintTable table;
+    BlueprintTable table = {0};
 
     toml_table_t *root = parse_toml("[[blueprint]]\n"
                                     "name = \"lantern\"\n"
@@ -299,6 +308,7 @@ void test_blueprint_child_parsed(void)
     TEST_ASSERT_FLOAT_WITHIN(0.1F, -8.0F, wagon->children.data[0].offset.y);
 
     toml_free(root);
+    test_blueprint_table_free(&table);
     arena_free(&test_arena);
 }
 
@@ -306,7 +316,7 @@ void test_blueprint_multiple_children(void)
 {
     Arena test_arena;
     with_arena(&test_arena);
-    BlueprintTable table;
+    BlueprintTable table = {0};
 
     toml_table_t *root = parse_toml("[[blueprint]]\n"
                                     "name = \"wheel\"\n"
@@ -351,6 +361,7 @@ void test_blueprint_multiple_children(void)
     TEST_ASSERT_EQUAL_STRING("rear_wheel", wagon->children.data[2].tag);
 
     toml_free(root);
+    test_blueprint_table_free(&table);
     arena_free(&test_arena);
 }
 
@@ -358,7 +369,7 @@ void test_blueprint_child_no_tag(void)
 {
     Arena test_arena;
     with_arena(&test_arena);
-    BlueprintTable table;
+    BlueprintTable table = {0};
 
     toml_table_t *root = parse_toml("[[blueprint]]\n"
                                     "name = \"part\"\n"
@@ -383,6 +394,7 @@ void test_blueprint_child_no_tag(void)
     TEST_ASSERT_EQUAL_STRING("", parent->children.data[0].tag);
 
     toml_free(root);
+    test_blueprint_table_free(&table);
     arena_free(&test_arena);
 }
 
@@ -390,7 +402,7 @@ void test_blueprint_child_default_offset(void)
 {
     Arena test_arena;
     with_arena(&test_arena);
-    BlueprintTable table;
+    BlueprintTable table = {0};
 
     toml_table_t *root = parse_toml("[[blueprint]]\n"
                                     "name = \"part\"\n"
@@ -416,6 +428,7 @@ void test_blueprint_child_default_offset(void)
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 0.0F, parent->children.data[0].offset.y);
 
     toml_free(root);
+    test_blueprint_table_free(&table);
     arena_free(&test_arena);
 }
 
@@ -423,7 +436,7 @@ void test_blueprint_extends_chain(void)
 {
     Arena test_arena;
     with_arena(&test_arena);
-    BlueprintTable table;
+    BlueprintTable table = {0};
 
     toml_table_t *root = parse_toml("[[blueprint]]\n"
                                     "name = \"base\"\n"
@@ -457,5 +470,6 @@ void test_blueprint_extends_chain(void)
     TEST_ASSERT_EQUAL_STRING("base.png", top->texture_name);
 
     toml_free(root);
+    test_blueprint_table_free(&table);
     arena_free(&test_arena);
 }

@@ -16,7 +16,6 @@ typedef struct {
     int count;
 } RuleSet;
 
-#define MAX_BLUEPRINTS 256
 #define MAX_BLUEPRINT_NAME 64
 #define MAX_TEXTURE_NAME 64
 #define MAX_TAG 32
@@ -41,9 +40,10 @@ typedef struct {
     RuleSet rules;
 } Blueprint;
 
+VEC_DECL(blueprint, Blueprint)
+
 typedef struct {
-    Blueprint entries[MAX_BLUEPRINTS];
-    int count;
+    vec_blueprint entries;
 } BlueprintTable;
 
 /* Parse all [[blueprint]] entries from a tomlc99 root table into the blueprint table.

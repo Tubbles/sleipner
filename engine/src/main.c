@@ -479,9 +479,9 @@ static void load_gamedata(struct EngineContext *ctx, GameState *state)
     free(content);
 
     if (loaded) {
-        debug_log(ctx, "gamedata: %d blueprints", state->blueprints.count);
-        for (int index = 0; index < state->blueprints.count; index++) {
-            const Blueprint *blueprint = &state->blueprints.entries[index];
+        debug_log(ctx, "gamedata: %d blueprints", state->blueprints.entries.count);
+        for (int index = 0; index < state->blueprints.entries.count; index++) {
+            const Blueprint *blueprint = &state->blueprints.entries.data[index];
             debug_log(ctx, "  bp[%d]: '%s' tex='%s' attrs=%d", index, blueprint->name, blueprint->texture_name,
                       blueprint->attrs.entries.count);
         }

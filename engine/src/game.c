@@ -292,10 +292,11 @@ void game_update(struct EngineContext *ctx, GameState *state, InputState input, 
 
 void game_free(GameState *state)
 {
-    for (int index = 0; index < state->blueprints.count; index++) {
-        vec_blueprint_child_free(&state->blueprints.entries[index].children);
-        vec_attribute_free(&state->blueprints.entries[index].attrs.entries);
+    for (int index = 0; index < state->blueprints.entries.count; index++) {
+        vec_blueprint_child_free(&state->blueprints.entries.data[index].children);
+        vec_attribute_free(&state->blueprints.entries.data[index].attrs.entries);
     }
+    vec_blueprint_free(&state->blueprints.entries);
     for (int index = 0; index < state->current_level.entity_count; index++) {
         vec_attribute_free(&state->current_level.entities[index].attrs.entries);
     }

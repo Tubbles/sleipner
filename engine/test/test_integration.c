@@ -77,7 +77,7 @@ void test_integration_load_gamedata(void)
     TEST_ASSERT_TRUE(state.gamedata_loaded);
     TEST_ASSERT_EQUAL_STRING("field", state.current_level.name);
     TEST_ASSERT_EQUAL_INT(3, state.current_level.entity_count);
-    TEST_ASSERT_EQUAL_INT(3, state.blueprints.count);
+    TEST_ASSERT_EQUAL_INT(3, state.blueprints.entries.count);
     TEST_ASSERT_TRUE(state.player_index >= 0);
 
     game_free(&state);

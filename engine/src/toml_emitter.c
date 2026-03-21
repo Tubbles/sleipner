@@ -32,8 +32,8 @@ static int emit_append(char *buffer, int capacity, int offset, const char *forma
 
 static int emit_blueprints(char *buffer, int capacity, int offset, const BlueprintTable *blueprints)
 {
-    for (int index = 0; index < blueprints->count; index++) {
-        const Blueprint *blueprint = &blueprints->entries[index];
+    for (int index = 0; index < blueprints->entries.count; index++) {
+        const Blueprint *blueprint = &blueprints->entries.data[index];
 
         offset = emit_append(buffer, capacity, offset, "[[blueprint]]\n");
         offset = emit_append(buffer, capacity, offset, "name = \"%s\"\n", blueprint->name);

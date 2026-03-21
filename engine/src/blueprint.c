@@ -12,6 +12,7 @@
 #include <string.h>
 
 VEC_IMPL(blueprint_child, BlueprintChild)
+VEC_IMPL(blueprint, Blueprint)
 
 static bool parse_float_array(toml_array_t *array, float *out, int expected_count)
 {
@@ -130,11 +131,11 @@ static bool inherit_from_parent(Blueprint *child, const BlueprintTable *table)
 
 static void resolve_inheritance(BlueprintTable *table)
 {
-    for (int pass = 0; pass < table->count; pass++) {
+    for (int pass = 0; pass < table->entries.count; pass++) {
         bool changed = false;
 
-        for (int index = 0; index < table->count; index++) {
-            changed = (bool)(inherit_from_parent(&table->entries[index], table) || changed);
+        for (int index = 0; index < table->entries.count; index++) {
+            changed = (bool)(inherit_from_parent(&table->entries.data[index], table) || changed);
         }
 
         if (!changed) {
@@ -296,7 +297,11 @@ static bool parse_single_blueprint(struct EngineContext *ctx, Blueprint *bluepri
 
 int blueprints_load(struct EngineContext *ctx, BlueprintTable *table, void *toml_root, Arena *arena)
 {
-    table->count = 0;
+    for (int index = 0; index < table->entries.count; index++) {
+        vec_blueprint_child_free(&table->entries.data[index].children);
+        vec_attribute_free(&table->entries.data[index].attrs.entries);
+    }
+    vec_blueprint_clear(&table->entries);
 
     toml_array_t *blueprints = toml_array_in(toml_root, "blueprint");
     if (!blueprints) {
@@ -307,7 +312,7 @@ int blueprints_load(struct EngineContext *ctx, BlueprintTable *table, void *toml
     int count = toml_array_nelem(blueprints);
     debug_log(ctx, "bp: found %d blueprint entries in TOML", count);
 
-    for (int index = 0; index < count && table->count < MAX_BLUEPRINTS; index++) {
+    for (int index = 0; index < count; index++) {
         toml_table_t *entry = toml_table_at(blueprints, index);
         if (!entry) {
             debug_log(ctx, "bp[%d]: toml_table_at returned NULL", index);
@@ -319,17 +324,16 @@ int blueprints_load(struct EngineContext *ctx, BlueprintTable *table, void *toml
         int ntab = toml_table_ntab(entry);
         debug_log(ctx, "bp[%d]: keys=%d arrays=%d tables=%d", index, nkval, narr, ntab);
 
-        /* Log all keys in this entry for debugging */
         int total_keys = nkval + narr + ntab;
         for (int key_index = 0; key_index < total_keys; key_index++) {
             const char *key = toml_key_in(entry, key_index);
             debug_log(ctx, "bp[%d]: key[%d]='%s'", index, key_index, key ? key : "(null)");
         }
 
-        if (parse_single_blueprint(ctx, &table->entries[table->count], entry, arena)) {
-            debug_log(ctx, "bp[%d]: parsed '%s' tex='%s'", index, table->entries[table->count].name,
-                      table->entries[table->count].texture_name);
-            table->count++;
+        Blueprint temp = {0};
+        if (parse_single_blueprint(ctx, &temp, entry, arena)) {
+            debug_log(ctx, "bp[%d]: parsed '%s' tex='%s'", index, temp.name, temp.texture_name);
+            (void)vec_blueprint_push(&table->entries, temp);
         } else {
             toml_datum_t name = toml_string_in(entry, "name");
             debug_log(ctx, "bp[%d]: FAILED to parse (name=%s)", index, name.ok ? name.u.s : "missing");
@@ -341,14 +345,14 @@ int blueprints_load(struct EngineContext *ctx, BlueprintTable *table, void *toml
 
     resolve_inheritance(table);
 
-    return table->count;
+    return table->entries.count;
 }
 
 const Blueprint *blueprint_find(const BlueprintTable *table, const char *name)
 {
-    for (int index = 0; index < table->count; index++) {
-        if (strcmp(table->entries[index].name, name) == 0) {
-            return &table->entries[index];
+    for (int index = 0; index < table->entries.count; index++) {
+        if (strcmp(table->entries.data[index].name, name) == 0) {
+            return &table->entries.data[index];
         }
     }
     return NULL;

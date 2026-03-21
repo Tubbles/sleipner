@@ -4,6 +4,7 @@
 static struct EngineContext ctx;
 
 #include "toml_emitter.h"
+#include "test_helpers.h"
 #include "arena.h"
 #include "toml.h"
 
@@ -59,7 +60,7 @@ void test_toml_emit_blueprints(void)
 {
     Arena arena;
     TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 4096));
-    BlueprintTable blueprints;
+    BlueprintTable blueprints = {0};
 
     toml_table_t *root = parse_toml(fixture_gamedata);
     TEST_ASSERT_NOT_NULL(root);
@@ -79,6 +80,7 @@ void test_toml_emit_blueprints(void)
     TEST_ASSERT_NOT_NULL(strstr(output, "collision_offset = [20, 60]"));
     TEST_ASSERT_NOT_NULL(strstr(output, "collision_size = [24, 16]"));
 
+    test_blueprint_table_free(&blueprints);
     arena_free(&arena);
 }
 
@@ -86,7 +88,7 @@ void test_toml_emit_level_with_entities(void)
 {
     Arena arena;
     TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 4096));
-    BlueprintTable blueprints;
+    BlueprintTable blueprints = {0};
     Level level;
 
     toml_table_t *root = parse_toml(fixture_gamedata);
@@ -109,6 +111,8 @@ void test_toml_emit_level_with_entities(void)
     TEST_ASSERT_NOT_NULL(strstr(output, "blueprint = \"chest\""));
     TEST_ASSERT_NOT_NULL(strstr(output, "pos = [300, 100]"));
 
+    test_level_free(&level);
+    test_blueprint_table_free(&blueprints);
     arena_free(&arena);
 }
 
@@ -116,7 +120,7 @@ void test_toml_emit_round_trip(void)
 {
     Arena arena;
     TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 4096));
-    BlueprintTable blueprints;
+    BlueprintTable blueprints = {0};
     Level level;
 
     /* Parse original */
@@ -134,7 +138,7 @@ void test_toml_emit_round_trip(void)
     /* Re-parse the emitted output */
     Arena arena2;
     TEST_ASSERT_TRUE(arena_init(&ctx, &arena2, 4096));
-    BlueprintTable blueprints2;
+    BlueprintTable blueprints2 = {0};
     Level level2;
 
     toml_table_t *root2 = parse_toml(output);
@@ -144,11 +148,13 @@ void test_toml_emit_round_trip(void)
     toml_free(root2);
 
     /* Verify round-trip preserves data */
-    TEST_ASSERT_EQUAL_INT(blueprints.count, blueprints2.count);
-    for (int index = 0; index < blueprints.count; index++) {
-        TEST_ASSERT_EQUAL_STRING(blueprints.entries[index].name, blueprints2.entries[index].name);
-        TEST_ASSERT_EQUAL_STRING(blueprints.entries[index].texture_name, blueprints2.entries[index].texture_name);
-        TEST_ASSERT_FLOAT_WITHIN(0.1F, blueprints.entries[index].source.width, blueprints2.entries[index].source.width);
+    TEST_ASSERT_EQUAL_INT(blueprints.entries.count, blueprints2.entries.count);
+    for (int index = 0; index < blueprints.entries.count; index++) {
+        TEST_ASSERT_EQUAL_STRING(blueprints.entries.data[index].name, blueprints2.entries.data[index].name);
+        TEST_ASSERT_EQUAL_STRING(blueprints.entries.data[index].texture_name,
+                                 blueprints2.entries.data[index].texture_name);
+        TEST_ASSERT_FLOAT_WITHIN(0.1F, blueprints.entries.data[index].source.width,
+                                 blueprints2.entries.data[index].source.width);
     }
 
     TEST_ASSERT_EQUAL_STRING(level.name, level2.name);
@@ -163,6 +169,10 @@ void test_toml_emit_round_trip(void)
         TEST_ASSERT_EQUAL_STRING(level.entities[index].blueprint_name, level2.entities[index].blueprint_name);
     }
 
+    test_level_free(&level);
+    test_level_free(&level2);
+    test_blueprint_table_free(&blueprints);
+    test_blueprint_table_free(&blueprints2);
     arena_free(&arena);
     arena_free(&arena2);
 }
@@ -170,13 +180,15 @@ void test_toml_emit_round_trip(void)
 void test_toml_emit_buffer_too_small(void)
 {
     BlueprintTable blueprints = {0};
-    strncpy(blueprints.entries[0].name, "test", 64);
-    strncpy(blueprints.entries[0].texture_name, "test.png", 64);
-    blueprints.count = 1;
+    Blueprint temp = {0};
+    strncpy(temp.name, "test", MAX_BLUEPRINT_NAME - 1);
+    strncpy(temp.texture_name, "test.png", MAX_TEXTURE_NAME - 1);
+    (void)vec_blueprint_push(&blueprints.entries, temp);
 
     char tiny[10];
     int written = toml_emit_gamedata(&ctx, tiny, (int)sizeof(tiny), &blueprints, NULL, 0);
     TEST_ASSERT_EQUAL_INT(-1, written);
+    vec_blueprint_free(&blueprints.entries);
 }
 
 static const char *child_fixture = "[[blueprint]]\n"
@@ -210,7 +222,7 @@ void test_toml_emit_blueprint_children(void)
 {
     Arena arena;
     TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 4096));
-    BlueprintTable blueprints;
+    BlueprintTable blueprints = {0};
 
     toml_table_t *root = parse_toml(child_fixture);
     TEST_ASSERT_NOT_NULL(root);
@@ -226,6 +238,7 @@ void test_toml_emit_blueprint_children(void)
     TEST_ASSERT_NOT_NULL(strstr(output, "tag = \"light\""));
     TEST_ASSERT_NOT_NULL(strstr(output, "offset = [56, -8]"));
 
+    test_blueprint_table_free(&blueprints);
     arena_free(&arena);
 }
 
@@ -233,7 +246,7 @@ void test_toml_emit_skips_child_entities(void)
 {
     Arena arena;
     TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 4096));
-    BlueprintTable blueprints;
+    BlueprintTable blueprints = {0};
     Level level;
 
     toml_table_t *root = parse_toml(child_fixture);
@@ -261,6 +274,8 @@ void test_toml_emit_skips_child_entities(void)
     }
     TEST_ASSERT_EQUAL_INT(1, count);
 
+    test_level_free(&level);
+    test_blueprint_table_free(&blueprints);
     arena_free(&arena);
 }
 
