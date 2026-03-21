@@ -118,6 +118,11 @@ do_apk() {
         && ./gradlew assembleRelease"
 }
 
+mkdir -p tmp
+logfile="${2:-log.log}"
+echo "Logging to tmp/$logfile"
+exec > tmp/"$logfile" 2>&1
+
 ensure_image
 
 case "${1:-all}" in
