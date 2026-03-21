@@ -2,6 +2,7 @@
 #include "raylib.h"
 
 #include "assets.h"
+#include "audio.h"
 #include "blueprint.h"
 #include "debug.h"
 #include "entity.h"
@@ -9,7 +10,7 @@
 #include "input.h"
 #include "level.h"
 #include "rect.h"
-#include "screen.h"
+
 #include "toml_emitter.h"
 
 #include "error.h"
@@ -45,9 +46,6 @@
 #define DEBUG_PANEL_WIDTH 420
 #define DEBUG_LINES 10
 #define FONT_PREVIEW_SIZE 32
-
-int screen_width = SCREEN_WIDTH_DEFAULT;
-int screen_height = SCREEN_HEIGHT_DEFAULT;
 
 /* Texture registry — maps texture filenames to loaded Texture2D handles */
 static void texture_registry_add(struct EngineContext *ctx, const char *filename, Texture2D texture)
@@ -128,7 +126,9 @@ static InputState merge_input(InputState base, InputState overlay)
         base.right_stick.y = overlay.right_stick.y;
     }
     for (int index = 0; index < 4; index++) {
-        base.buttons[index] = (bool)(base.buttons[index] || overlay.buttons[index]);
+        if (overlay.buttons[index]) {
+            base.buttons[index] = true;
+        }
     }
     if (overlay.left_trigger > base.left_trigger) {
         base.left_trigger = overlay.left_trigger;
@@ -254,7 +254,7 @@ draw_debug_info(struct EngineContext *ctx, const Entity *player, RectU32 game_bo
 
     DrawText(TextFormat("FPS: %d  frame: %d  t: %.1fs", GetFPS(), frame, elapsed), DEBUG_MARGIN,
              DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, debug_text_color);
-    DrawText(TextFormat("screen: %dx%d", screen_width, screen_height), DEBUG_MARGIN,
+    DrawText(TextFormat("screen: %dx%d", ctx->screen_width, ctx->screen_height), DEBUG_MARGIN,
              DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, debug_text_color);
     DrawText(TextFormat("GetScreen: %dx%d  GetRender: %dx%d", screen_w, screen_h, render_w, render_h), DEBUG_MARGIN,
              DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, debug_text_color);
@@ -283,8 +283,8 @@ draw_debug_info(struct EngineContext *ctx, const Entity *player, RectU32 game_bo
     int line_count = debug_get_line_count(ctx);
     if (line_count > 0) {
         int log_height = (line_count * DEBUG_LINE_HEIGHT) + (DEBUG_MARGIN * 2);
-        int log_y = screen_height - log_height;
-        DrawRectangle(0, log_y, screen_width, log_height, debug_bg_color);
+        int log_y = ctx->screen_height - log_height;
+        DrawRectangle(0, log_y, ctx->screen_width, log_height, debug_bg_color);
 
         for (int index = 0; index < line_count; index++) {
             DrawText(debug_get_line(ctx, index), DEBUG_MARGIN, log_y + DEBUG_MARGIN + (index * DEBUG_LINE_HEIGHT),
@@ -304,11 +304,11 @@ static void font_preview_cleanup(struct EngineContext *ctx)
 
 static void draw_font_preview(struct EngineContext *ctx)
 {
-    int panel_x = screen_width / 2;
+    int panel_x = ctx->screen_width / 2;
     int line_spacing = FONT_PREVIEW_SIZE + DEBUG_MARGIN;
     int panel_height =
         (ctx->assets.font_preview_count * (DEBUG_LINE_HEIGHT + line_spacing)) + DEBUG_MARGIN + (DEBUG_LINE_HEIGHT * 3);
-    DrawRectangle(panel_x, 0, screen_width - panel_x, panel_height, debug_bg_color);
+    DrawRectangle(panel_x, 0, ctx->screen_width - panel_x, panel_height, debug_bg_color);
 
     int y_offset = DEBUG_MARGIN;
     DrawText("Font Preview - All fonts loaded at 32px", panel_x + DEBUG_MARGIN, y_offset, DEBUG_FONT_SIZE,
@@ -567,14 +567,16 @@ int main(void)
 {
     struct EngineContext ctx_val = {0};
     struct EngineContext *ctx = &ctx_val;
+    ctx->screen_width = SCREEN_WIDTH_DEFAULT;
+    ctx->screen_height = SCREEN_HEIGHT_DEFAULT;
 
     debug_init(ctx, TRACE_LOG_PATH);
 
 #ifdef __ANDROID__
     SetConfigFlags(FLAG_FULLSCREEN_MODE);
     InitWindow(1920, 1080, "Sleipner");
-    screen_width = 1920;
-    screen_height = 1080;
+    ctx->screen_width = 1920;
+    ctx->screen_height = 1080;
 #else
     InitWindow(SCREEN_WIDTH_DEFAULT, SCREEN_HEIGHT_DEFAULT, "Sleipner");
 #endif
@@ -586,15 +588,15 @@ int main(void)
     int mon_height = GetMonitorHeight(monitor);
     debug_log(ctx, "monitor=%d resolution=%dx%d", monitor, mon_width, mon_height);
     if (mon_width > 0 && mon_height > 0) {
-        screen_width = mon_width;
-        screen_height = mon_height;
-        SetWindowSize(screen_width, screen_height);
+        ctx->screen_width = mon_width;
+        ctx->screen_height = mon_height;
+        SetWindowSize(ctx->screen_width, ctx->screen_height);
     }
 #endif
 #ifndef __ANDROID__
     ToggleBorderlessWindowed();
 #endif
-    debug_log(ctx, "screen_width=%d screen_height=%d", screen_width, screen_height);
+    debug_log(ctx, "ctx->screen_width=%d ctx->screen_height=%d", ctx->screen_width, ctx->screen_height);
 
 #ifndef __ANDROID__
     EmbeddedAsset gamepad_asset = ASSET(gamecontrollerdb_txt);
@@ -630,7 +632,7 @@ int main(void)
     PlayMusicStream(bgm);
 
     /* Render target at game resolution for pixel-perfect scaling */
-    RectU32 game_bounds = {(uint32_t)screen_width / PIXEL_SCALE, (uint32_t)screen_height / PIXEL_SCALE};
+    RectU32 game_bounds = {(uint32_t)ctx->screen_width / PIXEL_SCALE, (uint32_t)ctx->screen_height / PIXEL_SCALE};
     RenderTexture2D target = LoadRenderTexture((int)game_bounds.width, (int)game_bounds.height);
 
     GameState state;
@@ -644,7 +646,7 @@ int main(void)
     bool font_preview_enabled = false;
 
     debug_log(ctx, "gamedata path: %s", GAMEDATA_PATH);
-    debug_log(ctx, "screen %dx%d  game %ux%u  scale %d", screen_width, screen_height, game_bounds.width,
+    debug_log(ctx, "screen %dx%d  game %ux%u  scale %d", ctx->screen_width, ctx->screen_height, game_bounds.width,
               game_bounds.height, PIXEL_SCALE);
     debug_log(ctx, "GetScreen %dx%d  GetRender %dx%d", GetScreenWidth(), GetScreenHeight(), GetRenderWidth(),
               GetRenderHeight());
@@ -699,7 +701,8 @@ int main(void)
         /* Scale game render to screen */
         BeginDrawing();
         DrawTexturePro(target.texture, (Rectangle){0, 0, (float)game_bounds.width, -(float)game_bounds.height},
-                       (Rectangle){0, 0, (float)screen_width, (float)screen_height}, (Vector2){0, 0}, 0.0F, WHITE);
+                       (Rectangle){0, 0, (float)ctx->screen_width, (float)ctx->screen_height}, (Vector2){0, 0}, 0.0F,
+                       WHITE);
 
         if (state.debug_enabled) {
             draw_debug_info(ctx, game_get_player_const(&state), game_bounds, state.frame, state.elapsed);

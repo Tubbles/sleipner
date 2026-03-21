@@ -35,6 +35,8 @@ typedef struct {
 
 #define MAX_PREVIEW_FONTS 16
 #define FONT_NAME_LEN 64
+#define SCREEN_WIDTH_DEFAULT 800
+#define SCREEN_HEIGHT_DEFAULT 600
 
 typedef struct {
     char name[FONT_NAME_LEN];
@@ -57,6 +59,8 @@ typedef struct EngineContext {
     AudioState audio;
     AssetRegistry assets;
     long gamedata_mtime;
+    int screen_width;
+    int screen_height;
 } EngineContext;
 
 #endif

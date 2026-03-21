@@ -12,6 +12,7 @@ Checks: >
   -altera-*,
   -boost-*,
   -cppcoreguidelines-*,
+  cppcoreguidelines-avoid-non-const-global-variables,
   -darwin-*,
   -fuchsia-*,
   -google-*,
