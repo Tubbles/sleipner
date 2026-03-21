@@ -20,13 +20,14 @@
 #define RADIX_DECIMAL 10
 
 VEC_IMPL(trigger_event, TriggerEvent)
+VEC_IMPL(flag_name, FlagName)
 
 /* ---- FlagSet ---- */
 
 static int flag_find(const FlagSet *flags, const char *name)
 {
-    for (int index = 0; index < flags->count; index++) {
-        if (strcmp(flags->names[index], name) == 0) {
+    for (int index = 0; index < flags->names.count; index++) {
+        if (strcmp(flags->names.data[index].value, name) == 0) {
             return index;
         }
     }
@@ -43,13 +44,12 @@ void flag_set(struct EngineContext *ctx, FlagSet *flags, const char *name)
     if (flag_find(flags, name) >= 0) {
         return;
     }
-    if (flags->count >= MAX_FLAGS) {
-        debug_log(ctx, "flag_set: flag table full (%d), cannot add '%s'", MAX_FLAGS, name);
-        return;
+    FlagName entry = {0};
+    strncpy(entry.value, name, MAX_FLAG_NAME - 1);
+    entry.value[MAX_FLAG_NAME - 1] = '\0';
+    if (!vec_flag_name_push(&flags->names, entry)) {
+        debug_log(ctx, "flag_set: allocation failed for '%s'", name);
     }
-    strncpy(flags->names[flags->count], name, MAX_FLAG_NAME - 1);
-    flags->names[flags->count][MAX_FLAG_NAME - 1] = '\0';
-    flags->count++;
 }
 
 void flag_clear(FlagSet *flags, const char *name)
@@ -58,9 +58,9 @@ void flag_clear(FlagSet *flags, const char *name)
     if (index < 0) {
         return;
     }
-    flags->count--;
-    if (index < flags->count) {
-        memcpy(flags->names[index], flags->names[flags->count], MAX_FLAG_NAME);
+    flags->names.count--;
+    if (index < flags->names.count) {
+        flags->names.data[index] = flags->names.data[flags->names.count];
     }
 }
 

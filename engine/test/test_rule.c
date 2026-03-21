@@ -46,14 +46,14 @@ void test_flag_set_idempotent(void)
     FlagSet flags = {0};
     flag_set(&ctx, &flags, "test_flag");
     flag_set(&ctx, &flags, "test_flag");
-    TEST_ASSERT_EQUAL_INT(1, flags.count);
+    TEST_ASSERT_EQUAL_INT(1, flags.names.count);
 }
 
 void test_flag_clear_nonexistent(void)
 {
     FlagSet flags = {0};
     flag_clear(&flags, "nonexistent");
-    TEST_ASSERT_EQUAL_INT(0, flags.count);
+    TEST_ASSERT_EQUAL_INT(0, flags.names.count);
 }
 
 /* ---- Trigger parsing tests ---- */
@@ -627,7 +627,7 @@ void test_action_execution_order(void)
 
     TEST_ASSERT_TRUE(flag_get(&flags, "first"));
     TEST_ASSERT_TRUE(flag_get(&flags, "second"));
-    TEST_ASSERT_EQUAL_INT(2, flags.count);
+    TEST_ASSERT_EQUAL_INT(2, flags.names.count);
 }
 
 /* ---- TOML round-trip parsing tests ---- */

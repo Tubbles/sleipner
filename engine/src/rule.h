@@ -13,7 +13,6 @@ struct EngineContext;
 // This makes dependencies explicit and maintains module integrity
 #include "toml.h"
 
-#define MAX_FLAGS 64
 #define MAX_FLAG_NAME 32
 #define MAX_CONDITIONS 8
 #define MAX_ACTIONS 16
@@ -113,8 +112,13 @@ typedef struct Rule {
 
 /* --- FlagSet (global boolean flags) --- */
 typedef struct {
-    char names[MAX_FLAGS][MAX_FLAG_NAME];
-    int count;
+    char value[MAX_FLAG_NAME];
+} FlagName;
+
+VEC_DECL(flag_name, FlagName)
+
+typedef struct {
+    vec_flag_name names;
 } FlagSet;
 
 bool flag_get(const FlagSet *flags, const char *name);
