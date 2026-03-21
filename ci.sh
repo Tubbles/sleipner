@@ -52,7 +52,9 @@ do_build() {
 do_test() {
     echo "=== test ==="
     mkdir -p build/Release
-    run bash -c "$conan_setup && conan build . && ./build/Release/engine/test/engine_tests"
+    run bash -c "export ASAN_OPTIONS=detect_leaks=1 && \
+                 export UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 && \
+                 $conan_setup && conan build . && ./build/Release/engine/test/engine_tests"
 }
 
 do_lint() {
@@ -65,10 +67,12 @@ do_lint() {
 do_all() {
     echo "=== all ==="
     mkdir -p build/Release
-    run bash -c "$conan_setup && conan build . \
-        && ./build/Release/engine/test/engine_tests \
-        && clang-format --dry-run --Werror $SOURCES \
-        && cd build/Release && clang-tidy -p . ../../engine/src/*.c ../../engine/test/*.c"
+    run bash -c "export ASAN_OPTIONS=detect_leaks=1 && \
+                 export UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 && \
+                 $conan_setup && conan build . \
+                 && ./build/Release/engine/test/engine_tests \
+                 && clang-format --dry-run --Werror $SOURCES \
+                 && cd build/Release && clang-tidy -p . ../../engine/src/*.c ../../engine/test/*.c"
 }
 
 android_conan_setup='conan install . --output-folder=build/android/arm64-v8a --build=missing \
