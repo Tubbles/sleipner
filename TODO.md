@@ -3,11 +3,11 @@
 ## Eradicate Static State (The "Context Passing" Migration)
 Audit and eliminate all static variables in the codebase to ensure mathematically pure functions, flawless hot-reloading, and completely isolated headless testing. No static state is allowed—not even for logging or error reporting.
 
-- [ ] Create a root `EngineContext` (or `LogContext`/`ErrorContext`) struct to hold all state.
-- [ ] Move the `trace_file` and `log_lines` ring buffer from `debug.c` into the context.
-- [ ] Move the static error string buffer from `error.c` into the context.
-- [ ] Thread the context pointer through all sub-systems, specifically updating every `debug_log` and `error_set`/`error_wrap` call to take the context pointer.
-- [ ] Move the asset registries (texture, font preview, audio) into the `EngineContext`.
+- [x] Create a root `EngineContext` (or `LogContext`/`ErrorContext`) struct to hold all state.
+- [x] Move the `trace_file` and `log_lines` ring buffer from `debug.c` into the context.
+- [x] Move the static error string buffer from `error.c` into the context.
+- [x] Thread the context pointer through all sub-systems, specifically updating every `debug_log` and `error_set`/`error_wrap` call to take the context pointer.
+- [x] Move the asset registries (texture, font preview, audio) into the `EngineContext`.
 
 ## Code reuse
 Convert remaining fixed-size array + count patterns to `vec_<name>` using the
