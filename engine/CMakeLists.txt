@@ -20,6 +20,7 @@ add_library(engine STATIC
     src/render.c
     src/rule.c
     src/shape.c
+    src/strv.c
     src/toml_emitter.c
     src/vec.c
 )

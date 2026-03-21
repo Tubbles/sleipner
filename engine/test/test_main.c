@@ -148,6 +148,22 @@ void test_particle_position_updates(void);
 void test_particle_capacity_grows(void);
 void test_particle_free_cleans_up(void);
 
+/* test_strv.c */
+void test_strv_from_cstr(void);
+void test_strv_shrink_left(void);
+void test_strv_shrink_left_clamp(void);
+void test_strv_shrink_right(void);
+void test_strv_shrink_right_clamp(void);
+void test_strv_trim_left(void);
+void test_strv_trim_right(void);
+void test_strv_trim(void);
+void test_strv_trim_all_whitespace(void);
+void test_strv_split_found(void);
+void test_strv_split_not_found(void);
+void test_strv_split_delim_first(void);
+void test_strv_split_delim_last(void);
+void test_strv_split_multi(void);
+
 /* test_toml_emitter.c */
 void test_toml_emit_blueprints(void);
 void test_toml_emit_level_with_entities(void);
@@ -458,6 +474,21 @@ int main(void)
     RUN_TEST(test_tri_tri_no_overlap);
     RUN_TEST(test_tri_circle_overlap);
     RUN_TEST(test_tri_rect_overlap);
+
+    RUN_TEST(test_strv_from_cstr);
+    RUN_TEST(test_strv_shrink_left);
+    RUN_TEST(test_strv_shrink_left_clamp);
+    RUN_TEST(test_strv_shrink_right);
+    RUN_TEST(test_strv_shrink_right_clamp);
+    RUN_TEST(test_strv_trim_left);
+    RUN_TEST(test_strv_trim_right);
+    RUN_TEST(test_strv_trim);
+    RUN_TEST(test_strv_trim_all_whitespace);
+    RUN_TEST(test_strv_split_found);
+    RUN_TEST(test_strv_split_not_found);
+    RUN_TEST(test_strv_split_delim_first);
+    RUN_TEST(test_strv_split_delim_last);
+    RUN_TEST(test_strv_split_multi);
 
     RUN_TEST(test_toml_emit_blueprints);
     RUN_TEST(test_toml_emit_level_with_entities);
