@@ -1,7 +1,10 @@
 #include "collision.h"
 #include "rect.h"
+#include "vec.h"
 
 #include "raylib.h"
+
+VEC_IMPL(collision_prim, CollisionPrimitive)
 
 #include <float.h>
 #include <math.h>
@@ -389,12 +392,12 @@ Vector2 resolve_composite(const CollisionShape *shape_a,
     Vector2 best = {0, 0};
     float best_mag = 0;
 
-    for (int outer = 0; outer < shape_a->count; outer++) {
-        Vector2 world_pos_a = prim_world_pos(pos_a, angle_a, shape_a->prims[outer].offset);
-        for (int inner = 0; inner < shape_b->count; inner++) {
-            Vector2 world_pos_b = prim_world_pos(pos_b, angle_b, shape_b->prims[inner].offset);
-            Vector2 push = resolve_prim_pair(&shape_a->prims[outer], world_pos_a, angle_a, &shape_b->prims[inner],
-                                             world_pos_b, angle_b);
+    for (int outer = 0; outer < shape_a->prims.count; outer++) {
+        Vector2 world_pos_a = prim_world_pos(pos_a, angle_a, shape_a->prims.data[outer].offset);
+        for (int inner = 0; inner < shape_b->prims.count; inner++) {
+            Vector2 world_pos_b = prim_world_pos(pos_b, angle_b, shape_b->prims.data[inner].offset);
+            Vector2 push = resolve_prim_pair(&shape_a->prims.data[outer], world_pos_a, angle_a,
+                                             &shape_b->prims.data[inner], world_pos_b, angle_b);
             float magnitude = (push.x * push.x) + (push.y * push.y);
             if (magnitude > best_mag) {
                 best_mag = magnitude;
@@ -419,15 +422,19 @@ bool composite_overlap(const CollisionShape *shape_a,
 Vector2 resolve_composite_wall(const CollisionShape *shape, Vector2 pos, float angle, Rectangle wall)
 {
     CollisionShape wall_shape = {0};
-    wall_shape.count = 1;
-    wall_shape.prims[0].kind = COLLIDER_RECT;
-    wall_shape.prims[0].offset = (Vector2){0, 0};
-    wall_shape.prims[0].angle_offset = 0;
-    wall_shape.prims[0].rect.half_w = wall.width / 2;
-    wall_shape.prims[0].rect.half_h = wall.height / 2;
+    CollisionPrimitive wall_prim = {
+        .kind = COLLIDER_RECT,
+        .offset = {0, 0},
+        .angle_offset = 0,
+    };
+    wall_prim.rect.half_w = wall.width / 2;
+    wall_prim.rect.half_h = wall.height / 2;
+    (void)vec_collision_prim_push(&wall_shape.prims, wall_prim);
 
     Vector2 wall_center = {wall.x + (wall.width / 2), wall.y + (wall.height / 2)};
-    return resolve_composite(shape, pos, angle, &wall_shape, wall_center, 0);
+    Vector2 result = resolve_composite(shape, pos, angle, &wall_shape, wall_center, 0);
+    vec_collision_prim_free(&wall_shape.prims);
+    return result;
 }
 
 // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
@@ -528,9 +535,9 @@ resolve_arena_corners(const CollisionShape *shape, Vector2 *pos, float angle, Re
         {width - ARENA_PAD - corner_radius, height - ARENA_PAD - corner_radius},
     };
     for (int corner_index = 0; corner_index < 4; corner_index++) {
-        for (int prim_index = 0; prim_index < shape->count; prim_index++) {
-            Vector2 world_pos = prim_world_pos(*pos, angle, shape->prims[prim_index].offset);
-            const CollisionPrimitive *prim = &shape->prims[prim_index];
+        for (int prim_index = 0; prim_index < shape->prims.count; prim_index++) {
+            Vector2 world_pos = prim_world_pos(*pos, angle, shape->prims.data[prim_index].offset);
+            const CollisionPrimitive *prim = &shape->prims.data[prim_index];
 
             if (prim->kind == COLLIDER_RECT) {
                 resolve_arena_corner_rect(prim, world_pos, angle, pos, corner_centers[corner_index], corner_radius,

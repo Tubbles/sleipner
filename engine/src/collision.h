@@ -3,11 +3,10 @@
 
 #include "raylib.h"
 #include "rect.h"
+#include "vec.h"
 #include <stdbool.h>
 
 struct EngineContext;
-
-#define MAX_COLLISION_PRIMITIVES 8
 
 typedef enum { COLLIDER_RECT, COLLIDER_CIRCLE, COLLIDER_TRIANGLE } ColliderKind;
 
@@ -28,9 +27,10 @@ typedef struct {
     };
 } CollisionPrimitive;
 
+VEC_DECL(collision_prim, CollisionPrimitive)
+
 typedef struct {
-    CollisionPrimitive prims[MAX_COLLISION_PRIMITIVES];
-    int count;
+    vec_collision_prim prims;
 } CollisionShape;
 
 /* Pairwise primitive collision resolvers — return push vector for first arg */
