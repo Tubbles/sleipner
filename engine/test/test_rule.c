@@ -460,7 +460,7 @@ void test_condition_and_logic_one_fails(void)
 void test_action_set_flag_executes(void)
 {
     FlagSet flags = {0};
-    vec_trigger_event queue = {0};
+    TriggerEventQueue queue = {0};
     Entity entity = {0};
     entity.active = true;
 
@@ -475,14 +475,13 @@ void test_action_set_flag_executes(void)
     TEST_ASSERT_TRUE(action_node_execute(&ctx, NULL, &action, context));
     TEST_ASSERT_TRUE(flag_get(&flags, "chest_opened"));
     test_flag_set_free(&flags);
-    vec_trigger_event_free(&queue, NULL);
 }
 
 void test_action_clear_flag_executes(void)
 {
     FlagSet flags = {0};
     flag_set(NULL, &flags, "door_locked");
-    vec_trigger_event queue = {0};
+    TriggerEventQueue queue = {0};
     Entity entity = {0};
 
     ActionNode action = {.type = ACTION_CLEAR_FLAG};
@@ -496,13 +495,12 @@ void test_action_clear_flag_executes(void)
     TEST_ASSERT_TRUE(action_node_execute(&ctx, NULL, &action, context));
     TEST_ASSERT_FALSE(flag_get(&flags, "door_locked"));
     test_flag_set_free(&flags);
-    vec_trigger_event_free(&queue, NULL);
 }
 
 void test_action_set_attr_bool(void)
 {
     FlagSet flags = {0};
-    vec_trigger_event queue = {0};
+    TriggerEventQueue queue = {0};
     Entity entity = {0};
     (void)attr_set_bool(NULL, &entity.attrs, "is_locked", true);
 
@@ -525,13 +523,12 @@ void test_action_set_attr_bool(void)
     TEST_ASSERT_FALSE(attr->value.b);
     attr_set_free(NULL, &entity.attrs);
     test_flag_set_free(&flags);
-    vec_trigger_event_free(&queue, NULL);
 }
 
 void test_action_set_attr_int(void)
 {
     FlagSet flags = {0};
-    vec_trigger_event queue = {0};
+    TriggerEventQueue queue = {0};
     Entity entity = {0};
 
     ActionNode action = {.type = ACTION_SET_ATTR};
@@ -549,13 +546,12 @@ void test_action_set_attr_int(void)
     TEST_ASSERT_EQUAL_INT(42, entity_get_int(&entity, "health", 0));
     attr_set_free(NULL, &entity.attrs);
     test_flag_set_free(&flags);
-    vec_trigger_event_free(&queue, NULL);
 }
 
 void test_action_add_attr(void)
 {
     FlagSet flags = {0};
-    vec_trigger_event queue = {0};
+    TriggerEventQueue queue = {0};
     Entity entity = {0};
     (void)attr_set_int(NULL, &entity.attrs, "health", 10);
 
@@ -574,13 +570,12 @@ void test_action_add_attr(void)
     TEST_ASSERT_EQUAL_INT(7, entity_get_int(&entity, "health", 0));
     attr_set_free(NULL, &entity.attrs);
     test_flag_set_free(&flags);
-    vec_trigger_event_free(&queue, NULL);
 }
 
 void test_action_toggle_attr(void)
 {
     FlagSet flags = {0};
-    vec_trigger_event queue = {0};
+    TriggerEventQueue queue = {0};
     Entity entity = {0};
     (void)attr_set_bool(NULL, &entity.attrs, "visible", true);
 
@@ -598,13 +593,12 @@ void test_action_toggle_attr(void)
     TEST_ASSERT_FALSE(entity_get_bool(&entity, "visible", true));
     attr_set_free(NULL, &entity.attrs);
     test_flag_set_free(&flags);
-    vec_trigger_event_free(&queue, NULL);
 }
 
 void test_action_destroy(void)
 {
     FlagSet flags = {0};
-    vec_trigger_event queue = {0};
+    TriggerEventQueue queue = {0};
     Entity entity = {0};
     entity.active = true;
 
@@ -618,13 +612,12 @@ void test_action_destroy(void)
     TEST_ASSERT_TRUE(action_node_execute(&ctx, NULL, &action, context));
     TEST_ASSERT_FALSE(entity.active);
     test_flag_set_free(&flags);
-    vec_trigger_event_free(&queue, NULL);
 }
 
 void test_action_fire_event_queues(void)
 {
     FlagSet flags = {0};
-    vec_trigger_event queue = {0};
+    TriggerEventQueue queue = {0};
     Entity entity = {0};
 
     ActionNode action = {.type = ACTION_FIRE_EVENT};
@@ -637,16 +630,15 @@ void test_action_fire_event_queues(void)
     };
     TEST_ASSERT_TRUE(action_node_execute(&ctx, NULL, &action, context));
     TEST_ASSERT_EQUAL_INT(1, queue.count);
-    TEST_ASSERT_EQUAL_INT(TRIGGER_EVENT, queue.data[0].type);
-    TEST_ASSERT_EQUAL_STRING("boss_defeated", queue.data[0].argument);
-    vec_trigger_event_free(&queue, NULL);
+    TEST_ASSERT_EQUAL_INT(TRIGGER_EVENT, queue.events[0].type);
+    TEST_ASSERT_EQUAL_STRING("boss_defeated", queue.events[0].argument);
     test_flag_set_free(&flags);
 }
 
 void test_action_execution_order(void)
 {
     FlagSet flags = {0};
-    vec_trigger_event queue = {0};
+    TriggerEventQueue queue = {0};
     Entity entity = {0};
 
     ActionNode actions[2] = {
@@ -668,7 +660,6 @@ void test_action_execution_order(void)
     TEST_ASSERT_TRUE(flag_get(&flags, "second"));
     TEST_ASSERT_EQUAL_INT(2, flags.names.count);
     test_flag_set_free(&flags);
-    vec_trigger_event_free(&queue, NULL);
 }
 
 /* ---- TOML round-trip parsing tests ---- */
@@ -919,7 +910,7 @@ void test_evaluate_fire_event_cascading(void)
 void test_var_set_local(void)
 {
     FlagSet flags = {0};
-    vec_trigger_event queue = {0};
+    TriggerEventQueue queue = {0};
     Entity entity = {0};
     AttrSet local_vars = {0};
     AttrSet global_vars = {0};
@@ -942,14 +933,13 @@ void test_var_set_local(void)
     TEST_ASSERT_NULL(attr_get(&global_vars, "damage"));
     attr_set_free(NULL, &local_vars);
     test_flag_set_free(&flags);
-    vec_trigger_event_free(&queue, NULL);
     test_attr_set_free(&local_vars);
 }
 
 void test_var_set_global(void)
 {
     FlagSet flags = {0};
-    vec_trigger_event queue = {0};
+    TriggerEventQueue queue = {0};
     Entity entity = {0};
     AttrSet local_vars = {0};
     AttrSet global_vars = {0};
@@ -972,7 +962,6 @@ void test_var_set_global(void)
     TEST_ASSERT_NULL(attr_get(&local_vars, "score"));
     attr_set_free(NULL, &global_vars);
     test_flag_set_free(&flags);
-    vec_trigger_event_free(&queue, NULL);
     test_attr_set_free(&local_vars);
 }
 
@@ -1027,7 +1016,7 @@ void test_var_condition_falsy_when_unset(void)
 void test_var_substitution_in_set_attr(void)
 {
     FlagSet flags = {0};
-    vec_trigger_event queue = {0};
+    TriggerEventQueue queue = {0};
     Entity entity = {0};
     AttrSet local_vars = {0};
     AttrSet global_vars = {0};
@@ -1051,14 +1040,13 @@ void test_var_substitution_in_set_attr(void)
     attr_set_free(NULL, &local_vars);
     attr_set_free(NULL, &entity.attrs);
     test_flag_set_free(&flags);
-    vec_trigger_event_free(&queue, NULL);
     test_attr_set_free(&local_vars);
 }
 
 void test_local_var_scoped_per_rule(void)
 {
     FlagSet flags = {0};
-    vec_trigger_event queue = {0};
+    TriggerEventQueue queue = {0};
     Entity entity = {0};
     AttrSet local_vars_a = {0};
     AttrSet local_vars_b = {0};
@@ -1082,7 +1070,6 @@ void test_local_var_scoped_per_rule(void)
     TEST_ASSERT_NULL(attr_get(&local_vars_b, "temp"));
     attr_set_free(NULL, &local_vars_a);
     test_flag_set_free(&flags);
-    vec_trigger_event_free(&queue, NULL);
     test_attr_set_free(&global_vars);
 }
 

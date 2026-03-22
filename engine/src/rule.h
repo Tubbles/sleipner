@@ -134,7 +134,22 @@ typedef struct {
     char argument[MAX_ARG];
 } TriggerEvent;
 
-VEC_DECL(trigger_event, TriggerEvent)
+#define MAX_CASCADE_EVENTS 64
+
+typedef struct {
+    TriggerEvent events[MAX_CASCADE_EVENTS];
+    int count;
+} TriggerEventQueue;
+
+[[nodiscard]] static inline bool trigger_event_queue_push(TriggerEventQueue *queue, TriggerEvent event)
+{
+    if (queue->count >= MAX_CASCADE_EVENTS) {
+        return false;
+    }
+    queue->events[queue->count] = event;
+    queue->count++;
+    return true;
+}
 
 /* --- Parsing (from TOML) --- */
 [[nodiscard]] bool trigger_parse(struct EngineContext *ctx, Trigger *trigger, const char *string);
@@ -164,7 +179,7 @@ typedef struct {
     Entity *entities;
     int entity_count;
     FlagSet *flags;
-    vec_trigger_event *event_queue;
+    TriggerEventQueue *event_queue;
     AttrSet *local_vars;
     AttrSet *global_vars;
 } ActionContext;

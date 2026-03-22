@@ -16,7 +16,7 @@ No static/global data — already done.
 All allocations are already routable through `Allocator *`. These are the remaining
 raw `malloc`/`realloc`/`free` calls that still bypass it.
 
-- [ ] **`particle.c`** — `malloc`/`realloc` for pool growth → convert `ParticlePool` to
+- [x] **`particle.c`** — `malloc`/`realloc` for pool growth → convert `ParticlePool` to
   use `vec_particle` backed by gamedata_arena (thread `Allocator *` through
   `particles_init` / `particles_free`)
 
@@ -30,7 +30,7 @@ raw `malloc`/`realloc`/`free` calls that still bypass it.
   alloc with `arena_save` / `arena_restore` so the temporary buffer is reclaimed
   immediately after the parse step completes
 
-- [ ] **`rule.c`** — `vec_trigger_event` with `NULL` alloc in `rules_evaluate_batch` →
+- [x] **`rule.c`** — `vec_trigger_event` with `NULL` alloc in `rules_evaluate_batch` →
   arena alloc with save/restore so per-batch event queue memory is reclaimed after
   each call (flags/attrs set during the batch are written before the restore point)
 
