@@ -52,6 +52,6 @@ typedef struct {
 void game_update(struct EngineContext *ctx, GameState *state, InputState input, float delta_time);
 Entity *game_get_player(GameState *state);
 const Entity *game_get_player_const(const GameState *state);
-void game_free(GameState *state);
+void game_free(struct EngineContext *ctx, GameState *state);
 
 #endif

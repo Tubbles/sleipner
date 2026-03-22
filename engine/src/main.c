@@ -715,7 +715,7 @@ quit:
     }
     vec_texture_entry_free(&ctx->assets.textures);
     font_preview_cleanup(ctx);
-    game_free(&state);
+    game_free(ctx, &state);
     audio_shutdown(ctx);
     debug_shutdown(ctx);
     CloseWindow();

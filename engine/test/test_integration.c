@@ -80,7 +80,7 @@ void test_integration_load_gamedata(void)
     TEST_ASSERT_EQUAL_INT(3, state.blueprints.entries.count);
     TEST_ASSERT_TRUE(state.player_index >= 0);
 
-    game_free(&state);
+    game_free(&ctx, &state);
 }
 
 void test_integration_load_specific_level(void)
@@ -96,7 +96,7 @@ void test_integration_load_specific_level(void)
     TEST_ASSERT_EQUAL_INT(2, state.current_level.entity_count);
     TEST_ASSERT_TRUE(state.player_index >= 0);
 
-    game_free(&state);
+    game_free(&ctx, &state);
 }
 
 void test_integration_walk_and_collide(void)
@@ -121,7 +121,7 @@ void test_integration_walk_and_collide(void)
     Rectangle rock = state.current_level.entities[1].collision;
     TEST_ASSERT_TRUE(player->collision.x + player->collision.width <= rock.x + 0.1F);
 
-    game_free(&state);
+    game_free(&ctx, &state);
 }
 
 void test_integration_walk_freely(void)
@@ -149,7 +149,7 @@ void test_integration_walk_freely(void)
     TEST_ASSERT_TRUE(player->position.y > start_y);
     TEST_ASSERT_EQUAL_INT(30, state.frame);
 
-    game_free(&state);
+    game_free(&ctx, &state);
 }
 
 void test_integration_boundary_all_directions(void)
@@ -191,7 +191,7 @@ void test_integration_boundary_all_directions(void)
     }
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 240.0F - half, game_get_player_const(&state)->position.y);
 
-    game_free(&state);
+    game_free(&ctx, &state);
 }
 
 void test_integration_player_entity_spawns(void)
@@ -230,5 +230,5 @@ void test_integration_player_entity_spawns(void)
     }
     TEST_ASSERT_TRUE(game_get_player_const(&state)->position.x > start_x);
 
-    game_free(&state);
+    game_free(&ctx, &state);
 }

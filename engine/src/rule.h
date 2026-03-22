@@ -3,6 +3,7 @@
 
 #include "arena.h"
 #include "entity.h"
+#include "str.h"
 #include "vec.h" // IWYU pragma: export
 
 #include <stdbool.h>
@@ -13,7 +14,6 @@ struct EngineContext;
 // This makes dependencies explicit and maintains module integrity
 #include "toml.h"
 
-#define MAX_FLAG_NAME 32
 #define MAX_CONDITIONS 8
 #define MAX_ACTIONS 16
 #define MAX_RULES 16
@@ -112,7 +112,7 @@ typedef struct Rule {
 
 /* --- FlagSet (global boolean flags) --- */
 typedef struct {
-    char value[MAX_FLAG_NAME];
+    Str name;
 } FlagName;
 
 VEC_DECL(flag_name, FlagName)
@@ -123,7 +123,8 @@ typedef struct {
 
 bool flag_get(const FlagSet *flags, const char *name);
 void flag_set(struct EngineContext *ctx, FlagSet *flags, const char *name);
-void flag_clear(FlagSet *flags, const char *name);
+void flag_clear(struct EngineContext *ctx, FlagSet *flags, const char *name);
+void flag_set_free(struct EngineContext *ctx, FlagSet *flags);
 
 /* --- Trigger events --- */
 typedef struct {

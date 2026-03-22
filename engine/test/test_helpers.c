@@ -26,9 +26,9 @@ void test_entity_free(Entity *entity)
     test_attr_set_free(&entity->attrs);
 }
 
-void test_flag_set_free(FlagSet *flags)
+void test_flag_set_free(struct EngineContext *ctx, FlagSet *flags)
 {
-    vec_flag_name_free(&flags->names);
+    flag_set_free(ctx, flags);
 }
 
 void test_attr_set_free(AttrSet *set)

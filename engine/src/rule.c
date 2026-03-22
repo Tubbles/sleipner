@@ -6,6 +6,7 @@
 #include "debug.h"
 #include "entity.h"
 #include "error.h"
+#include "str.h"
 #include "strv.h"
 
 #include "toml.h"
@@ -28,7 +29,7 @@ VEC_IMPL(flag_name, FlagName)
 static int flag_find(const FlagSet *flags, const char *name)
 {
     for (int index = 0; index < flags->names.count; index++) {
-        if (strcmp(flags->names.data[index].value, name) == 0) {
+        if (strv_eq_cstr(str_to_strv(flags->names.data[index].name), name)) {
             return index;
         }
     }
@@ -46,22 +47,36 @@ void flag_set(struct EngineContext *ctx, FlagSet *flags, const char *name)
         return;
     }
     FlagName entry = {0};
-    strv_copy_to_cstr(strv_from_cstr(name), entry.value, MAX_FLAG_NAME);
-    if (!vec_flag_name_push(&flags->names, entry)) {
+    if (!str_from_cstr(ctx, &entry.name, name)) {
         debug_log(ctx, "flag_set: allocation failed for '%s'", name);
+        return;
+    }
+    if (!vec_flag_name_push(&flags->names, entry)) {
+        str_free(ctx, &entry.name);
+        debug_log(ctx, "flag_set: vec push failed for '%s'", name);
     }
 }
 
-void flag_clear(FlagSet *flags, const char *name)
+void flag_clear(struct EngineContext *ctx, FlagSet *flags, const char *name)
 {
     int index = flag_find(flags, name);
     if (index < 0) {
         return;
     }
+    str_free(ctx, &flags->names.data[index].name);
     flags->names.count--;
     if (index < flags->names.count) {
         flags->names.data[index] = flags->names.data[flags->names.count];
     }
+}
+
+void flag_set_free(struct EngineContext *ctx, FlagSet *flags)
+{
+    for (int index = 0; index < flags->names.count; index++) {
+        str_free(ctx, &flags->names.data[index].name);
+    }
+    vec_flag_name_free(&flags->names);
+    *flags = (FlagSet){0};
 }
 
 /* ---- Parsing helpers ---- */
@@ -912,7 +927,7 @@ static bool dispatch_simple_action(struct EngineContext *ctx, const ActionNode *
         flag_set(ctx, context.flags, node->argument);
         return true;
     case ACTION_CLEAR_FLAG:
-        flag_clear(context.flags, node->argument);
+        flag_clear(ctx, context.flags, node->argument);
         return true;
     case ACTION_SET_ATTR:
         return execute_set_attr_action(ctx, node, context);

@@ -24,7 +24,7 @@ void test_flag_set_and_get(void)
 
     flag_set(&ctx, &flags, "chest_opened");
     TEST_ASSERT_TRUE(flag_get(&flags, "chest_opened"));
-    test_flag_set_free(&flags);
+    test_flag_set_free(&ctx, &flags);
 }
 
 void test_flag_clear(void)
@@ -33,16 +33,16 @@ void test_flag_clear(void)
     flag_set(&ctx, &flags, "door_locked");
     TEST_ASSERT_TRUE(flag_get(&flags, "door_locked"));
 
-    flag_clear(&flags, "door_locked");
+    flag_clear(&ctx, &flags, "door_locked");
     TEST_ASSERT_FALSE(flag_get(&flags, "door_locked"));
-    test_flag_set_free(&flags);
+    test_flag_set_free(&ctx, &flags);
 }
 
 void test_flag_unset_returns_false(void)
 {
     FlagSet flags = {0};
     TEST_ASSERT_FALSE(flag_get(&flags, "never_set"));
-    test_flag_set_free(&flags);
+    test_flag_set_free(&ctx, &flags);
 }
 
 void test_flag_set_idempotent(void)
@@ -51,15 +51,15 @@ void test_flag_set_idempotent(void)
     flag_set(&ctx, &flags, "test_flag");
     flag_set(&ctx, &flags, "test_flag");
     TEST_ASSERT_EQUAL_INT(1, flags.names.count);
-    test_flag_set_free(&flags);
+    test_flag_set_free(&ctx, &flags);
 }
 
 void test_flag_clear_nonexistent(void)
 {
     FlagSet flags = {0};
-    flag_clear(&flags, "nonexistent");
+    flag_clear(&ctx, &flags, "nonexistent");
     TEST_ASSERT_EQUAL_INT(0, flags.names.count);
-    test_flag_set_free(&flags);
+    test_flag_set_free(&ctx, &flags);
 }
 
 /* ---- Trigger parsing tests ---- */
@@ -316,7 +316,7 @@ void test_condition_flag_true(void)
     Entity entity = {0};
     ConditionContext context = {.entity = &entity, .flags = &flags};
     TEST_ASSERT_TRUE(conditions_evaluate(&condition, 1, context));
-    test_flag_set_free(&flags);
+    test_flag_set_free(&ctx, &flags);
 }
 
 void test_condition_flag_false(void)
@@ -329,7 +329,7 @@ void test_condition_flag_false(void)
     Entity entity = {0};
     ConditionContext context = {.entity = &entity, .flags = &flags};
     TEST_ASSERT_FALSE(conditions_evaluate(&condition, 1, context));
-    test_flag_set_free(&flags);
+    test_flag_set_free(&ctx, &flags);
 }
 
 void test_condition_not_flag(void)
@@ -342,7 +342,7 @@ void test_condition_not_flag(void)
     Entity entity = {0};
     ConditionContext context = {.entity = &entity, .flags = &flags};
     TEST_ASSERT_TRUE(conditions_evaluate(&condition, 1, context));
-    test_flag_set_free(&flags);
+    test_flag_set_free(&ctx, &flags);
 }
 
 void test_condition_attr_truthy(void)
@@ -357,7 +357,7 @@ void test_condition_attr_truthy(void)
     ConditionContext context = {.entity = &entity, .flags = &flags};
     TEST_ASSERT_TRUE(conditions_evaluate(&condition, 1, context));
     vec_attribute_free(&entity.attrs.entries);
-    test_flag_set_free(&flags);
+    test_flag_set_free(&ctx, &flags);
 }
 
 void test_condition_attr_falsy(void)
@@ -372,7 +372,7 @@ void test_condition_attr_falsy(void)
     ConditionContext context = {.entity = &entity, .flags = &flags};
     TEST_ASSERT_FALSE(conditions_evaluate(&condition, 1, context));
     vec_attribute_free(&entity.attrs.entries);
-    test_flag_set_free(&flags);
+    test_flag_set_free(&ctx, &flags);
 }
 
 void test_condition_attr_missing(void)
@@ -385,7 +385,7 @@ void test_condition_attr_missing(void)
     FlagSet flags = {0};
     ConditionContext context = {.entity = &entity, .flags = &flags};
     TEST_ASSERT_FALSE(conditions_evaluate(&condition, 1, context));
-    test_flag_set_free(&flags);
+    test_flag_set_free(&ctx, &flags);
 }
 
 void test_condition_attr_less_than(void)
@@ -400,7 +400,7 @@ void test_condition_attr_less_than(void)
     ConditionContext context = {.entity = &entity, .flags = &flags};
     TEST_ASSERT_TRUE(conditions_evaluate(&condition, 1, context));
     vec_attribute_free(&entity.attrs.entries);
-    test_flag_set_free(&flags);
+    test_flag_set_free(&ctx, &flags);
 }
 
 void test_condition_attr_greater_than(void)
@@ -415,7 +415,7 @@ void test_condition_attr_greater_than(void)
     ConditionContext context = {.entity = &entity, .flags = &flags};
     TEST_ASSERT_TRUE(conditions_evaluate(&condition, 1, context));
     vec_attribute_free(&entity.attrs.entries);
-    test_flag_set_free(&flags);
+    test_flag_set_free(&ctx, &flags);
 }
 
 void test_condition_and_logic_all_pass(void)
@@ -434,7 +434,7 @@ void test_condition_and_logic_all_pass(void)
     Entity entity = {0};
     ConditionContext context = {.entity = &entity, .flags = &flags};
     TEST_ASSERT_TRUE(conditions_evaluate(conditions, 2, context));
-    test_flag_set_free(&flags);
+    test_flag_set_free(&ctx, &flags);
 }
 
 void test_condition_and_logic_one_fails(void)
@@ -452,7 +452,7 @@ void test_condition_and_logic_one_fails(void)
     Entity entity = {0};
     ConditionContext context = {.entity = &entity, .flags = &flags};
     TEST_ASSERT_FALSE(conditions_evaluate(conditions, 2, context));
-    test_flag_set_free(&flags);
+    test_flag_set_free(&ctx, &flags);
 }
 
 /* ---- Action execution tests ---- */
@@ -474,7 +474,7 @@ void test_action_set_flag_executes(void)
     };
     TEST_ASSERT_TRUE(action_node_execute(&ctx, &action, context));
     TEST_ASSERT_TRUE(flag_get(&flags, "chest_opened"));
-    test_flag_set_free(&flags);
+    test_flag_set_free(&ctx, &flags);
     vec_trigger_event_free(&queue);
 }
 
@@ -495,7 +495,7 @@ void test_action_clear_flag_executes(void)
     };
     TEST_ASSERT_TRUE(action_node_execute(&ctx, &action, context));
     TEST_ASSERT_FALSE(flag_get(&flags, "door_locked"));
-    test_flag_set_free(&flags);
+    test_flag_set_free(&ctx, &flags);
     vec_trigger_event_free(&queue);
 }
 
@@ -524,7 +524,7 @@ void test_action_set_attr_bool(void)
     TEST_ASSERT_EQUAL_INT(ATTR_BOOL, attr->type);
     TEST_ASSERT_FALSE(attr->value.b);
     vec_attribute_free(&entity.attrs.entries);
-    test_flag_set_free(&flags);
+    test_flag_set_free(&ctx, &flags);
     vec_trigger_event_free(&queue);
 }
 
@@ -548,7 +548,7 @@ void test_action_set_attr_int(void)
     TEST_ASSERT_TRUE(action_node_execute(&ctx, &action, context));
     TEST_ASSERT_EQUAL_INT(42, entity_get_int(&entity, "health", 0));
     vec_attribute_free(&entity.attrs.entries);
-    test_flag_set_free(&flags);
+    test_flag_set_free(&ctx, &flags);
     vec_trigger_event_free(&queue);
 }
 
@@ -573,7 +573,7 @@ void test_action_add_attr(void)
     TEST_ASSERT_TRUE(action_node_execute(&ctx, &action, context));
     TEST_ASSERT_EQUAL_INT(7, entity_get_int(&entity, "health", 0));
     vec_attribute_free(&entity.attrs.entries);
-    test_flag_set_free(&flags);
+    test_flag_set_free(&ctx, &flags);
     vec_trigger_event_free(&queue);
 }
 
@@ -597,7 +597,7 @@ void test_action_toggle_attr(void)
     TEST_ASSERT_TRUE(action_node_execute(&ctx, &action, context));
     TEST_ASSERT_FALSE(entity_get_bool(&entity, "visible", true));
     vec_attribute_free(&entity.attrs.entries);
-    test_flag_set_free(&flags);
+    test_flag_set_free(&ctx, &flags);
     vec_trigger_event_free(&queue);
 }
 
@@ -617,7 +617,7 @@ void test_action_destroy(void)
     };
     TEST_ASSERT_TRUE(action_node_execute(&ctx, &action, context));
     TEST_ASSERT_FALSE(entity.active);
-    test_flag_set_free(&flags);
+    test_flag_set_free(&ctx, &flags);
     vec_trigger_event_free(&queue);
 }
 
@@ -640,7 +640,7 @@ void test_action_fire_event_queues(void)
     TEST_ASSERT_EQUAL_INT(TRIGGER_EVENT, queue.data[0].type);
     TEST_ASSERT_EQUAL_STRING("boss_defeated", queue.data[0].argument);
     vec_trigger_event_free(&queue);
-    test_flag_set_free(&flags);
+    test_flag_set_free(&ctx, &flags);
 }
 
 void test_action_execution_order(void)
@@ -667,7 +667,7 @@ void test_action_execution_order(void)
     TEST_ASSERT_TRUE(flag_get(&flags, "first"));
     TEST_ASSERT_TRUE(flag_get(&flags, "second"));
     TEST_ASSERT_EQUAL_INT(2, flags.names.count);
-    test_flag_set_free(&flags);
+    test_flag_set_free(&ctx, &flags);
     vec_trigger_event_free(&queue);
 }
 
@@ -801,7 +801,7 @@ void test_evaluate_interact_sets_flag(void)
     TEST_ASSERT_TRUE(flag_get(&flags, "chest_opened"));
 
     arena_free(&arena);
-    test_flag_set_free(&flags);
+    test_flag_set_free(&ctx, &flags);
     test_attr_set_free(&global_vars);
 }
 
@@ -844,7 +844,7 @@ void test_evaluate_condition_blocks_action(void)
     TEST_ASSERT_FALSE(flag_get(&flags, "chest_opened"));
 
     arena_free(&arena);
-    test_flag_set_free(&flags);
+    test_flag_set_free(&ctx, &flags);
     test_attr_set_free(&global_vars);
 }
 
@@ -904,7 +904,7 @@ void test_evaluate_fire_event_cascading(void)
     TEST_ASSERT_TRUE(flag_get(&flags, "door_opened"));
 
     arena_free(&arena);
-    test_flag_set_free(&flags);
+    test_flag_set_free(&ctx, &flags);
     test_attr_set_free(&global_vars);
 }
 
@@ -935,7 +935,7 @@ void test_var_set_local(void)
     TEST_ASSERT_EQUAL_INT(42, attr_get_int(&local_vars, "damage", 0));
     TEST_ASSERT_NULL(attr_get(&global_vars, "damage"));
     vec_attribute_free(&local_vars.entries);
-    test_flag_set_free(&flags);
+    test_flag_set_free(&ctx, &flags);
     vec_trigger_event_free(&queue);
     test_attr_set_free(&local_vars);
 }
@@ -965,7 +965,7 @@ void test_var_set_global(void)
     TEST_ASSERT_EQUAL_INT(100, attr_get_int(&global_vars, "score", 0));
     TEST_ASSERT_NULL(attr_get(&local_vars, "score"));
     vec_attribute_free(&global_vars.entries);
-    test_flag_set_free(&flags);
+    test_flag_set_free(&ctx, &flags);
     vec_trigger_event_free(&queue);
     test_attr_set_free(&local_vars);
 }
@@ -991,7 +991,7 @@ void test_var_condition_truthy(void)
     };
     TEST_ASSERT_TRUE(conditions_evaluate(&cond, 1, context));
     vec_attribute_free(&local_vars.entries);
-    test_flag_set_free(&flags);
+    test_flag_set_free(&ctx, &flags);
     test_attr_set_free(&local_vars);
 }
 
@@ -1014,7 +1014,7 @@ void test_var_condition_falsy_when_unset(void)
         .global_vars = &global_vars,
     };
     TEST_ASSERT_FALSE(conditions_evaluate(&cond, 1, context));
-    test_flag_set_free(&flags);
+    test_flag_set_free(&ctx, &flags);
     test_attr_set_free(&local_vars);
 }
 
@@ -1044,7 +1044,7 @@ void test_var_substitution_in_set_attr(void)
     TEST_ASSERT_EQUAL_INT(5, entity_get_int(&entity, "health", 0));
     vec_attribute_free(&local_vars.entries);
     vec_attribute_free(&entity.attrs.entries);
-    test_flag_set_free(&flags);
+    test_flag_set_free(&ctx, &flags);
     vec_trigger_event_free(&queue);
     test_attr_set_free(&local_vars);
 }
@@ -1075,7 +1075,7 @@ void test_local_var_scoped_per_rule(void)
     TEST_ASSERT_EQUAL_INT(99, attr_get_int(&local_vars_a, "temp", 0));
     TEST_ASSERT_NULL(attr_get(&local_vars_b, "temp"));
     vec_attribute_free(&local_vars_a.entries);
-    test_flag_set_free(&flags);
+    test_flag_set_free(&ctx, &flags);
     vec_trigger_event_free(&queue);
     test_attr_set_free(&global_vars);
 }
@@ -1146,7 +1146,7 @@ void test_integration_interact_rule(void)
 
     TEST_ASSERT_TRUE(flag_get(&state.flags, "chest_opened"));
 
-    game_free(&state);
+    game_free(&ctx, &state);
 }
 
 void test_integration_condition_blocks_interact(void)
@@ -1202,5 +1202,5 @@ void test_integration_condition_blocks_interact(void)
 
     TEST_ASSERT_TRUE(flag_get(&state.flags, "chest_opened"));
 
-    game_free(&state);
+    game_free(&ctx, &state);
 }

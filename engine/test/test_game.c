@@ -72,7 +72,7 @@ void test_game_init_defaults(void)
     TEST_ASSERT_FALSE(state.gamedata_loaded);
     TEST_ASSERT_TRUE(state.debug_enabled);
 
-    game_free(&state);
+    game_free(&ctx, &state);
 }
 
 void test_game_update_increments_frame(void)
@@ -87,7 +87,7 @@ void test_game_update_increments_frame(void)
     game_update(&ctx, &state, input, 1.0F / 60.0F);
     TEST_ASSERT_EQUAL_INT(2, state.frame);
 
-    game_free(&state);
+    game_free(&ctx, &state);
 }
 
 void test_game_update_accumulates_elapsed(void)
@@ -101,7 +101,7 @@ void test_game_update_accumulates_elapsed(void)
 
     TEST_ASSERT_FLOAT_WITHIN(0.001F, 0.75F, state.elapsed);
 
-    game_free(&state);
+    game_free(&ctx, &state);
 }
 
 void test_game_update_player_moves_right(void)
@@ -126,7 +126,7 @@ void test_game_update_player_moves_right(void)
     TEST_ASSERT_EQUAL_INT(ANIM_WALK_SIDE, player->anim_row);
     TEST_ASSERT_FALSE(player->flip);
 
-    game_free(&state);
+    game_free(&ctx, &state);
 }
 
 void test_game_update_player_moves_left(void)
@@ -147,7 +147,7 @@ void test_game_update_player_moves_left(void)
     TEST_ASSERT_EQUAL_INT(ANIM_WALK_SIDE, player->anim_row);
     TEST_ASSERT_TRUE(player->flip);
 
-    game_free(&state);
+    game_free(&ctx, &state);
 }
 
 void test_game_update_no_input_no_movement(void)
@@ -170,7 +170,7 @@ void test_game_update_no_input_no_movement(void)
     TEST_ASSERT_FLOAT_WITHIN(0.01F, start_y, player->position.y);
     TEST_ASSERT_FALSE(player->moving);
 
-    game_free(&state);
+    game_free(&ctx, &state);
 }
 
 void test_game_player_clamps_to_bounds(void)
@@ -191,7 +191,7 @@ void test_game_player_clamps_to_bounds(void)
     float half = FRAME_SIZE / 2.0F;
     TEST_ASSERT_FLOAT_WITHIN(0.1F, half, player->position.x);
 
-    game_free(&state);
+    game_free(&ctx, &state);
 }
 
 void test_game_player_collision_from_blueprint(void)
@@ -210,7 +210,7 @@ void test_game_player_collision_from_blueprint(void)
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 10.0F, player->collision.width);
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 10.0F, player->collision.height);
 
-    game_free(&state);
+    game_free(&ctx, &state);
 }
 
 void test_game_update_resolves_obstacle_collision(void)
@@ -233,5 +233,5 @@ void test_game_update_resolves_obstacle_collision(void)
     const Entity *player = game_get_player_const(&state);
     TEST_ASSERT_TRUE(player->collision.x + player->collision.width <= 170.0F + 0.1F);
 
-    game_free(&state);
+    game_free(&ctx, &state);
 }
