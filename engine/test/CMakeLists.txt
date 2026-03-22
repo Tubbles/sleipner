@@ -4,6 +4,7 @@ add_executable(engine_tests
     test_stub.c
     test_vec.c
     test_arena.c
+    test_alloc.c
     test_attribute.c
     test_blueprint.c
     test_entity.c

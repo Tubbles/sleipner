@@ -28,7 +28,6 @@ enum {
 typedef struct {
     int player_index;
     Arena gamedata_arena;
-    Arena scratch_arena;
     BlueprintTable blueprints;
     Level current_level;
     FlagSet flags;

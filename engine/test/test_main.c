@@ -67,6 +67,17 @@ void test_arena_strdup_null_returns_null(void);
 void test_arena_strdup_empty_string(void);
 void test_arena_memdup_content(void);
 void test_arena_memdup_null_returns_null(void);
+void test_arena_realloc_null_ptr_acts_as_alloc(void);
+void test_arena_realloc_shrink_returns_same_ptr(void);
+void test_arena_realloc_in_place_when_at_top(void);
+void test_arena_realloc_copies_when_not_at_top(void);
+
+/* test_alloc.c */
+void test_alloc_heap_malloc_and_free(void);
+void test_alloc_heap_realloc(void);
+void test_alloc_arena_malloc(void);
+void test_alloc_arena_free_is_noop(void);
+void test_alloc_arena_realloc_in_place(void);
 
 /* test_blueprint.c */
 void test_blueprint_load_single(void);
@@ -368,6 +379,16 @@ int main(void)
     RUN_TEST(test_arena_strdup_empty_string);
     RUN_TEST(test_arena_memdup_content);
     RUN_TEST(test_arena_memdup_null_returns_null);
+    RUN_TEST(test_arena_realloc_null_ptr_acts_as_alloc);
+    RUN_TEST(test_arena_realloc_shrink_returns_same_ptr);
+    RUN_TEST(test_arena_realloc_in_place_when_at_top);
+    RUN_TEST(test_arena_realloc_copies_when_not_at_top);
+
+    RUN_TEST(test_alloc_heap_malloc_and_free);
+    RUN_TEST(test_alloc_heap_realloc);
+    RUN_TEST(test_alloc_arena_malloc);
+    RUN_TEST(test_alloc_arena_free_is_noop);
+    RUN_TEST(test_alloc_arena_realloc_in_place);
 
     RUN_TEST(test_blueprint_load_single);
     RUN_TEST(test_blueprint_load_multiple);

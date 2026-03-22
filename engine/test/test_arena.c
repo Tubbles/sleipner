@@ -249,3 +249,71 @@ void test_arena_memdup_null_returns_null(void)
 
     arena_free(&arena);
 }
+
+void test_arena_realloc_null_ptr_acts_as_alloc(void)
+{
+    Arena arena;
+    TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 128));
+
+    void *ptr = arena_realloc(&ctx, &arena, NULL, 0, (AllocRequest){.size = 32, .alignment = 1});
+    TEST_ASSERT_NOT_NULL(ptr);
+    TEST_ASSERT_EQUAL_size_t(32, arena_used(&arena));
+
+    arena_free(&arena);
+}
+
+void test_arena_realloc_shrink_returns_same_ptr(void)
+{
+    Arena arena;
+    TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 128));
+
+    void *ptr = arena_alloc(&ctx, &arena, (AllocRequest){.size = 64, .alignment = 1});
+    size_t used_before = arena_used(&arena);
+
+    void *shrunk = arena_realloc(&ctx, &arena, ptr, 64, (AllocRequest){.size = 32, .alignment = 1});
+    TEST_ASSERT_EQUAL_PTR(ptr, shrunk);
+    TEST_ASSERT_EQUAL_size_t(used_before, arena_used(&arena));
+
+    arena_free(&arena);
+}
+
+void test_arena_realloc_in_place_when_at_top(void)
+{
+    Arena arena;
+    TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 128));
+
+    int *values = arena_alloc(&ctx, &arena, (AllocRequest){.size = 2 * sizeof(int), .alignment = _Alignof(int)});
+    values[0] = 10;
+    values[1] = 20;
+
+    int *grown = arena_realloc(&ctx, &arena, values, 2 * sizeof(int),
+                               (AllocRequest){.size = 4 * sizeof(int), .alignment = _Alignof(int)});
+    TEST_ASSERT_EQUAL_PTR(values, grown);
+    TEST_ASSERT_EQUAL_INT(10, grown[0]);
+    TEST_ASSERT_EQUAL_INT(20, grown[1]);
+    TEST_ASSERT_EQUAL_size_t(4 * sizeof(int), arena_used(&arena));
+
+    arena_free(&arena);
+}
+
+void test_arena_realloc_copies_when_not_at_top(void)
+{
+    Arena arena;
+    TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 256));
+
+    int *first = arena_alloc(&ctx, &arena, (AllocRequest){.size = 2 * sizeof(int), .alignment = _Alignof(int)});
+    first[0] = 42;
+    first[1] = 99;
+
+    /* Allocate something else to push first off the top */
+    (void)arena_alloc(&ctx, &arena, (AllocRequest){.size = 16, .alignment = 1});
+
+    int *moved = arena_realloc(&ctx, &arena, first, 2 * sizeof(int),
+                               (AllocRequest){.size = 4 * sizeof(int), .alignment = _Alignof(int)});
+    TEST_ASSERT_NOT_NULL(moved);
+    TEST_ASSERT_NOT_EQUAL(first, moved);
+    TEST_ASSERT_EQUAL_INT(42, moved[0]);
+    TEST_ASSERT_EQUAL_INT(99, moved[1]);
+
+    arena_free(&arena);
+}

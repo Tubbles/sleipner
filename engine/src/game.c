@@ -18,7 +18,6 @@
 #include <string.h>
 
 #define GAMEDATA_ARENA_SIZE (256UL * 1024)
-#define SCRATCH_ARENA_SIZE (1024UL * 1024)
 #define TOML_ERRBUF_SIZE 200
 #define MAX_COLLECT_EVENTS 32
 
@@ -29,11 +28,6 @@ bool game_init(struct EngineContext *ctx, GameState *state, RectU32 game_bounds)
     state->player_index = -1;
     state->debug_enabled = true;
     if (!arena_init(ctx, &state->gamedata_arena, GAMEDATA_ARENA_SIZE)) {
-        error_wrap(ctx, "game_init");
-        return false;
-    }
-    if (!arena_init(ctx, &state->scratch_arena, SCRATCH_ARENA_SIZE)) {
-        arena_free(&state->gamedata_arena);
         error_wrap(ctx, "game_init");
         return false;
     }
@@ -304,5 +298,4 @@ void game_free(struct EngineContext *ctx, GameState *state)
     flag_set_free(ctx, &state->flags);
     attr_set_free(ctx, &state->vars);
     arena_free(&state->gamedata_arena);
-    arena_free(&state->scratch_arena);
 }

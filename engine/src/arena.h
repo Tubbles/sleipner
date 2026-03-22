@@ -7,7 +7,7 @@
 
 struct EngineContext;
 
-typedef struct {
+typedef struct Arena {
     uint8_t *buffer;
     size_t capacity;
     size_t offset;
@@ -54,5 +54,14 @@ void arena_restore(Arena *arena, ArenaCheckpoint checkpoint);
 /* Copy size bytes from src into the arena.
  * Returns NULL if src is NULL or the arena is full. */
 [[nodiscard]] void *arena_memdup(struct EngineContext *ctx, Arena *arena, const void *src, size_t size);
+
+/* Reallocate an existing arena allocation.
+ * If old_ptr is NULL, behaves like arena_alloc.
+ * If request.size <= old_size, returns old_ptr unchanged.
+ * If old_ptr is at the top of the arena, extends in-place.
+ * Otherwise, allocates new space, copies, and returns new pointer (old space leaked).
+ * Returns NULL on allocation failure. */
+[[nodiscard]] void *
+arena_realloc(struct EngineContext *ctx, Arena *arena, void *old_ptr, size_t old_size, AllocRequest request);
 
 #endif

@@ -8,6 +8,7 @@
 #   embed_all_assets(target root)    — embed all standard assets; root is absolute project root
 
 set(ENGINE_SOURCE_FILES
+    alloc.c
     arena.c
     attribute.c
     audio.c

@@ -89,3 +89,31 @@ void *arena_memdup(struct EngineContext *ctx, Arena *arena, const void *src, siz
     memcpy(dest, src, size);
     return dest;
 }
+
+void *arena_realloc(struct EngineContext *ctx, Arena *arena, void *old_ptr, size_t old_size, AllocRequest request)
+{
+    if (!old_ptr) {
+        return arena_alloc(ctx, arena, request);
+    }
+    if (request.size <= old_size) {
+        return old_ptr;
+    }
+    /* Extend in-place if this allocation is at the top of the arena */
+    if ((uint8_t *)old_ptr + old_size == arena->buffer + arena->offset) {
+        size_t additional = request.size - old_size;
+        if (arena->offset + additional > arena->capacity) {
+            error_set(ctx, "arena full: need %zu more bytes, %zu remaining", additional,
+                      arena->capacity - arena->offset);
+            return NULL;
+        }
+        arena->offset += additional;
+        return old_ptr;
+    }
+    /* Not at top — allocate new space and copy */
+    void *new_ptr = arena_alloc(ctx, arena, request);
+    if (!new_ptr) {
+        return NULL;
+    }
+    memcpy(new_ptr, old_ptr, old_size);
+    return new_ptr;
+}
