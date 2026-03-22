@@ -10,8 +10,8 @@ fun gitVersionCode(): Int = try {
     process.inputStream.bufferedReader().readText().trim().toIntOrNull() ?: 1
 } catch (_: Exception) { 1 }
 
-fun gitShortHash(): String = try {
-    val process = ProcessBuilder("git", "rev-parse", "--short", "HEAD")
+fun gitDescribe(): String = try {
+    val process = ProcessBuilder("git", "describe", "--tags", "--always", "--dirty")
         .directory(rootProject.projectDir)
         .redirectErrorStream(true)
         .start()
@@ -28,7 +28,7 @@ android {
         minSdk = 27
         targetSdk = 35
         versionCode = gitVersionCode()
-        versionName = "0.1.0-${gitShortHash()}"
+        versionName = gitDescribe()
 
         ndk {
             abiFilters += listOf("arm64-v8a")
@@ -39,7 +39,8 @@ android {
                 arguments += listOf(
                     "-DCMAKE_BUILD_TYPE=Release",
                     "-DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH",
-                    "-Draylib_DIR=${rootProject.projectDir.parentFile}/build/android/arm64-v8a/build/Release/generators"
+                    "-Draylib_DIR=${rootProject.projectDir.parentFile}/build/android/arm64-v8a/build/Release/generators",
+                    "-DSLEIPNER_GIT_VERSION=${gitDescribe()}"
                 )
             }
         }
