@@ -104,7 +104,8 @@ do_android() {
 do_apk() {
     echo "=== apk ==="
     mkdir -p build/android/arm64-v8a
-    run bash -c "$android_conan_setup \
+    run bash -c "git config --global --add safe.directory \$(pwd) \
+        && $android_conan_setup \
         && [ -f android/keystore.jks ] || keytool -genkeypair -v \
             -keystore android/keystore.jks -keyalg RSA -keysize 2048 \
             -validity 10000 -alias sleipner \

@@ -50,7 +50,6 @@ VEC_IMPL(texture_entry, TextureEntry)
 #define DEBUG_PANEL_WIDTH 420
 #define DEBUG_LINES 14
 #define FONT_PREVIEW_SIZE 32
-#define BYTES_PER_KB 1024u
 
 /* Texture registry — maps texture filenames to loaded Texture2D handles */
 static void texture_registry_add(struct EngineContext *ctx, const char *filename, Texture2D texture)
@@ -249,8 +248,7 @@ static void draw_debug_info(struct EngineContext *ctx, const GameState *state, R
              DEBUG_FONT_SIZE, debug_text_color);
     DrawText(TextFormat("FPS: %d  frame: %d  t: %.1fs", GetFPS(), state->frame, state->elapsed), DEBUG_MARGIN,
              DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, debug_text_color);
-    DrawText(TextFormat("arena: %zuKB / %zuKB", arena_used(&state->gamedata_arena) / BYTES_PER_KB,
-                        state->gamedata_arena.capacity / BYTES_PER_KB),
+    DrawText(TextFormat("arena: %zu / %zu bytes", arena_used(&state->gamedata_arena), state->gamedata_arena.capacity),
              DEBUG_MARGIN, DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, debug_text_color);
     DrawText(TextFormat("screen: %dx%d", ctx->screen_width, ctx->screen_height), DEBUG_MARGIN,
              DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, debug_text_color);
