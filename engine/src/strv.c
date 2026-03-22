@@ -1,6 +1,7 @@
 #include "strv.h"
 
 #include <ctype.h>
+#include <stdbool.h>
 #include <string.h>
 
 Strv strv_from_cstr(const char *cstr)
@@ -58,4 +59,27 @@ Strv strv_split(Strv *strv, char delim)
     Strv head = *strv;
     *strv = (Strv){nullptr, 0};
     return head;
+}
+
+bool strv_eq(Strv lhs, Strv rhs)
+{
+    return (bool)(lhs.len == rhs.len && memcmp(lhs.ptr, rhs.ptr, lhs.len) == 0);
+}
+
+bool strv_eq_cstr(Strv strv, const char *cstr)
+{
+    return strv_eq(strv, strv_from_cstr(cstr));
+}
+
+bool strv_starts_with_cstr(Strv strv, const char *prefix)
+{
+    size_t prefix_len = strlen(prefix);
+    return (bool)(strv.len >= prefix_len && memcmp(strv.ptr, prefix, prefix_len) == 0);
+}
+
+void strv_copy_to_cstr(Strv strv, char *dest, size_t dest_size)
+{
+    size_t copy_len = strv.len < dest_size - 1 ? strv.len : dest_size - 1;
+    memcpy(dest, strv.ptr, copy_len);
+    dest[copy_len] = '\0';
 }

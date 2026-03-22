@@ -126,3 +126,104 @@ void test_strv_split_multi(void)
     TEST_ASSERT_EQUAL_CHAR('c', third.ptr[0]);
     TEST_ASSERT_NULL(strv.ptr);
 }
+
+void test_strv_eq_equal(void)
+{
+    Strv strv_a = strv_from_cstr("hello");
+    Strv strv_b = strv_from_cstr("hello");
+    TEST_ASSERT_TRUE(strv_eq(strv_a, strv_b));
+}
+
+void test_strv_eq_different_content(void)
+{
+    Strv strv_a = strv_from_cstr("hello");
+    Strv strv_b = strv_from_cstr("world");
+    TEST_ASSERT_FALSE(strv_eq(strv_a, strv_b));
+}
+
+void test_strv_eq_different_length(void)
+{
+    Strv strv_a = strv_from_cstr("hello");
+    Strv strv_b = strv_from_cstr("hell");
+    TEST_ASSERT_FALSE(strv_eq(strv_a, strv_b));
+}
+
+void test_strv_eq_subview(void)
+{
+    /* Two views into the same buffer but different lengths must not be equal */
+    Strv strv_a = strv_from_cstr("foobar");
+    strv_shrink_right(&strv_a, 3);
+    Strv strv_b = strv_from_cstr("foobar");
+    TEST_ASSERT_FALSE(strv_eq(strv_a, strv_b));
+}
+
+void test_strv_eq_cstr_match(void)
+{
+    Strv strv = strv_from_cstr("player");
+    TEST_ASSERT_TRUE(strv_eq_cstr(strv, "player"));
+}
+
+void test_strv_eq_cstr_no_match(void)
+{
+    Strv strv = strv_from_cstr("player");
+    TEST_ASSERT_FALSE(strv_eq_cstr(strv, "enemy"));
+}
+
+void test_strv_eq_cstr_subview(void)
+{
+    /* View over just "foo" from "foobar" must not equal "foobar" */
+    Strv strv = strv_from_cstr("foobar");
+    strv_shrink_right(&strv, 3);
+    TEST_ASSERT_FALSE(strv_eq_cstr(strv, "foobar"));
+    TEST_ASSERT_TRUE(strv_eq_cstr(strv, "foo"));
+}
+
+void test_strv_starts_with_cstr_match(void)
+{
+    Strv strv = strv_from_cstr("event:player_died");
+    TEST_ASSERT_TRUE(strv_starts_with_cstr(strv, "event:"));
+}
+
+void test_strv_starts_with_cstr_no_match(void)
+{
+    Strv strv = strv_from_cstr("event:player_died");
+    TEST_ASSERT_FALSE(strv_starts_with_cstr(strv, "flag:"));
+}
+
+void test_strv_starts_with_cstr_exact(void)
+{
+    Strv strv = strv_from_cstr("hello");
+    TEST_ASSERT_TRUE(strv_starts_with_cstr(strv, "hello"));
+}
+
+void test_strv_starts_with_cstr_longer_prefix(void)
+{
+    Strv strv = strv_from_cstr("hi");
+    TEST_ASSERT_FALSE(strv_starts_with_cstr(strv, "hello"));
+}
+
+void test_strv_copy_to_cstr(void)
+{
+    Strv strv = strv_from_cstr("hello");
+    char buf[8] = {0};
+    strv_copy_to_cstr(strv, buf, sizeof(buf));
+    TEST_ASSERT_EQUAL_STRING("hello", buf);
+}
+
+void test_strv_copy_to_cstr_truncates(void)
+{
+    Strv strv = strv_from_cstr("hello");
+    char buf[4] = {0};
+    strv_copy_to_cstr(strv, buf, sizeof(buf));
+    TEST_ASSERT_EQUAL_STRING("hel", buf);
+}
+
+void test_strv_copy_to_cstr_subview(void)
+{
+    /* Copy only the "foo" part of "foo:bar" */
+    Strv strv = strv_from_cstr("foo:bar");
+    Strv head = strv_split(&strv, ':');
+    char buf[8] = {0};
+    strv_copy_to_cstr(head, buf, sizeof(buf));
+    TEST_ASSERT_EQUAL_STRING("foo", buf);
+}

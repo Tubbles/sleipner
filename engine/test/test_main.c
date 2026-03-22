@@ -163,6 +163,20 @@ void test_strv_split_not_found(void);
 void test_strv_split_delim_first(void);
 void test_strv_split_delim_last(void);
 void test_strv_split_multi(void);
+void test_strv_eq_equal(void);
+void test_strv_eq_different_content(void);
+void test_strv_eq_different_length(void);
+void test_strv_eq_subview(void);
+void test_strv_eq_cstr_match(void);
+void test_strv_eq_cstr_no_match(void);
+void test_strv_eq_cstr_subview(void);
+void test_strv_starts_with_cstr_match(void);
+void test_strv_starts_with_cstr_no_match(void);
+void test_strv_starts_with_cstr_exact(void);
+void test_strv_starts_with_cstr_longer_prefix(void);
+void test_strv_copy_to_cstr(void);
+void test_strv_copy_to_cstr_truncates(void);
+void test_strv_copy_to_cstr_subview(void);
 
 /* test_toml_emitter.c */
 void test_toml_emit_blueprints(void);
@@ -489,6 +503,20 @@ int main(void)
     RUN_TEST(test_strv_split_delim_first);
     RUN_TEST(test_strv_split_delim_last);
     RUN_TEST(test_strv_split_multi);
+    RUN_TEST(test_strv_eq_equal);
+    RUN_TEST(test_strv_eq_different_content);
+    RUN_TEST(test_strv_eq_different_length);
+    RUN_TEST(test_strv_eq_subview);
+    RUN_TEST(test_strv_eq_cstr_match);
+    RUN_TEST(test_strv_eq_cstr_no_match);
+    RUN_TEST(test_strv_eq_cstr_subview);
+    RUN_TEST(test_strv_starts_with_cstr_match);
+    RUN_TEST(test_strv_starts_with_cstr_no_match);
+    RUN_TEST(test_strv_starts_with_cstr_exact);
+    RUN_TEST(test_strv_starts_with_cstr_longer_prefix);
+    RUN_TEST(test_strv_copy_to_cstr);
+    RUN_TEST(test_strv_copy_to_cstr_truncates);
+    RUN_TEST(test_strv_copy_to_cstr_subview);
 
     RUN_TEST(test_toml_emit_blueprints);
     RUN_TEST(test_toml_emit_level_with_entities);

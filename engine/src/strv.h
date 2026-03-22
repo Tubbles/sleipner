@@ -31,4 +31,17 @@ void strv_trim(Strv *strv);
  * entire view and sets strv to {nullptr, 0}. */
 Strv strv_split(Strv *strv, char delim);
 
+/* Return true if a and b have the same length and content. */
+bool strv_eq(Strv lhs, Strv rhs);
+
+/* Return true if strv has the same content as the null-terminated cstr. */
+bool strv_eq_cstr(Strv strv, const char *cstr);
+
+/* Return true if strv begins with the null-terminated prefix. */
+bool strv_starts_with_cstr(Strv strv, const char *prefix);
+
+/* Copy at most dest_size-1 bytes from strv into dest and null-terminate.
+ * dest_size must be at least 1. */
+void strv_copy_to_cstr(Strv strv, char *dest, size_t dest_size);
+
 #endif
