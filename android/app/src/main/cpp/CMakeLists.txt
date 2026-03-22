@@ -50,3 +50,18 @@ target_link_libraries(sleipner PRIVATE
 )
 
 embed_all_assets(sleipner ${PROJECT_ROOT})
+
+find_package(Git QUIET)
+if(GIT_FOUND)
+    execute_process(
+        COMMAND ${GIT_EXECUTABLE} describe --tags --always --dirty
+        WORKING_DIRECTORY ${PROJECT_ROOT}
+        OUTPUT_VARIABLE SLEIPNER_GIT_VERSION
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+    )
+endif()
+if(NOT SLEIPNER_GIT_VERSION)
+    set(SLEIPNER_GIT_VERSION "unknown")
+endif()
+target_compile_definitions(sleipner PRIVATE SLEIPNER_VERSION="${SLEIPNER_GIT_VERSION}")
