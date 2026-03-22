@@ -1,12 +1,12 @@
 #ifndef ATTRIBUTE_H
 #define ATTRIBUTE_H
 
+#include "str.h"
 #include "vec.h"
 #include <stdbool.h>
 
 struct EngineContext;
 
-#define MAX_ATTR_NAME 32
 #define MAX_ATTR_STRING 64
 
 typedef enum {
@@ -24,7 +24,7 @@ typedef union {
 } AttrValue;
 
 typedef struct {
-    char name[MAX_ATTR_NAME];
+    Str name;
     AttrType type;
     AttrValue value;
 } Attribute;
@@ -37,6 +37,9 @@ typedef struct {
 
 /* Find an attribute by name. Returns NULL if not found. */
 const Attribute *attr_get(const AttrSet *set, const char *name);
+
+/* Free all name allocations and the underlying vec. */
+void attr_set_free(struct EngineContext *ctx, AttrSet *set);
 
 /* Set an attribute. Overwrites if name exists, appends if new.
  * Returns true on success, false if the set is full. */

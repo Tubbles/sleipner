@@ -57,7 +57,7 @@ void test_blueprint_load_single(void)
     TEST_ASSERT_FLOAT_WITHIN(0.1f, 16.0f, table.entries.data[0].collision_size.y);
 
     toml_free(root);
-    test_blueprint_table_free(&table);
+    test_blueprint_table_free(&ctx, &table);
     arena_free(&test_arena);
 }
 
@@ -88,7 +88,7 @@ void test_blueprint_load_multiple(void)
     TEST_ASSERT_EQUAL_STRING("chest", table.entries.data[1].name);
 
     toml_free(root);
-    test_blueprint_table_free(&table);
+    test_blueprint_table_free(&ctx, &table);
     arena_free(&test_arena);
 }
 
@@ -124,7 +124,7 @@ void test_blueprint_find(void)
     TEST_ASSERT_NULL(not_found);
 
     toml_free(root);
-    test_blueprint_table_free(&table);
+    test_blueprint_table_free(&ctx, &table);
     arena_free(&test_arena);
 }
 
@@ -150,7 +150,7 @@ void test_blueprint_skip_nameless(void)
     TEST_ASSERT_EQUAL_STRING("chest", table.entries.data[0].name);
 
     toml_free(root);
-    test_blueprint_table_free(&table);
+    test_blueprint_table_free(&ctx, &table);
     arena_free(&test_arena);
 }
 
@@ -168,7 +168,7 @@ void test_blueprint_no_blueprints_section(void)
     TEST_ASSERT_EQUAL_INT(0, count);
 
     toml_free(root);
-    test_blueprint_table_free(&table);
+    test_blueprint_table_free(&ctx, &table);
     arena_free(&test_arena);
 }
 
@@ -202,7 +202,7 @@ void test_blueprint_custom_attrs(void)
     TEST_ASSERT_EQUAL_INT(5, attr_get_int(&chest->attrs, "weight", 0));
 
     toml_free(root);
-    test_blueprint_table_free(&table);
+    test_blueprint_table_free(&ctx, &table);
     arena_free(&test_arena);
 }
 
@@ -229,7 +229,7 @@ void test_blueprint_health_parsed(void)
     TEST_ASSERT_EQUAL_INT(5, attr_get_int(&enemy->attrs, "max_health", 0));
 
     toml_free(root);
-    test_blueprint_table_free(&table);
+    test_blueprint_table_free(&ctx, &table);
     arena_free(&test_arena);
 }
 
@@ -271,7 +271,7 @@ void test_blueprint_extends(void)
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 16.0F, locked->collision_size.x);
 
     toml_free(root);
-    test_blueprint_table_free(&table);
+    test_blueprint_table_free(&ctx, &table);
     arena_free(&test_arena);
 }
 
@@ -308,7 +308,7 @@ void test_blueprint_child_parsed(void)
     TEST_ASSERT_FLOAT_WITHIN(0.1F, -8.0F, wagon->children.data[0].offset.y);
 
     toml_free(root);
-    test_blueprint_table_free(&table);
+    test_blueprint_table_free(&ctx, &table);
     arena_free(&test_arena);
 }
 
@@ -361,7 +361,7 @@ void test_blueprint_multiple_children(void)
     TEST_ASSERT_EQUAL_STRING("rear_wheel", wagon->children.data[2].tag);
 
     toml_free(root);
-    test_blueprint_table_free(&table);
+    test_blueprint_table_free(&ctx, &table);
     arena_free(&test_arena);
 }
 
@@ -394,7 +394,7 @@ void test_blueprint_child_no_tag(void)
     TEST_ASSERT_EQUAL_STRING("", parent->children.data[0].tag);
 
     toml_free(root);
-    test_blueprint_table_free(&table);
+    test_blueprint_table_free(&ctx, &table);
     arena_free(&test_arena);
 }
 
@@ -428,7 +428,7 @@ void test_blueprint_child_default_offset(void)
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 0.0F, parent->children.data[0].offset.y);
 
     toml_free(root);
-    test_blueprint_table_free(&table);
+    test_blueprint_table_free(&ctx, &table);
     arena_free(&test_arena);
 }
 
@@ -470,6 +470,6 @@ void test_blueprint_extends_chain(void)
     TEST_ASSERT_EQUAL_STRING("base.png", top->texture_name);
 
     toml_free(root);
-    test_blueprint_table_free(&table);
+    test_blueprint_table_free(&ctx, &table);
     arena_free(&test_arena);
 }

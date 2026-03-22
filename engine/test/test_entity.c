@@ -49,8 +49,8 @@ void test_entity_init_from_blueprint(void)
     TEST_ASSERT_TRUE(entity.solid);
     TEST_ASSERT_FLOAT_WITHIN(0.01F, 1.0F, entity.opacity);
     TEST_ASSERT_EQUAL_INT(-1, entity.parent_index);
-    test_blueprint_free(&blueprint);
-    test_entity_free(&entity);
+    test_blueprint_free(&ctx, &blueprint);
+    test_entity_free(&ctx, &entity);
 }
 
 void test_entity_get_attr_from_blueprint(void)
@@ -65,8 +65,8 @@ void test_entity_get_attr_from_blueprint(void)
     TEST_ASSERT_EQUAL_STRING("static", entity_get_string(&entity, "behavior"));
     TEST_ASSERT_TRUE(entity_get_bool(&entity, "is_locked", false));
     TEST_ASSERT_FLOAT_WITHIN(0.01F, 0.0F, entity_get_float(&entity, "speed", -1.0F));
-    test_blueprint_free(&blueprint);
-    test_entity_free(&entity);
+    test_blueprint_free(&ctx, &blueprint);
+    test_entity_free(&ctx, &entity);
 }
 
 void test_entity_instance_overrides_blueprint(void)
@@ -87,8 +87,8 @@ void test_entity_instance_overrides_blueprint(void)
 
     /* Blueprint still provides unoverridden attrs */
     TEST_ASSERT_EQUAL_STRING("static", entity_get_string(&entity, "behavior"));
-    test_blueprint_free(&blueprint);
-    test_entity_free(&entity);
+    test_blueprint_free(&ctx, &blueprint);
+    test_entity_free(&ctx, &entity);
 }
 
 void test_entity_get_missing_attr(void)
@@ -101,8 +101,8 @@ void test_entity_get_missing_attr(void)
 
     TEST_ASSERT_EQUAL_INT(42, entity_get_int(&entity, "nonexistent", 42));
     TEST_ASSERT_NULL(entity_get_string(&entity, "nope"));
-    test_blueprint_free(&blueprint);
-    test_entity_free(&entity);
+    test_blueprint_free(&ctx, &blueprint);
+    test_entity_free(&ctx, &entity);
 }
 
 void test_entity_int_float_coercion(void)
@@ -117,8 +117,8 @@ void test_entity_int_float_coercion(void)
 
     /* Int attr retrieved as float via coercion */
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 80.0F, entity_get_float(&entity, "speed", 0));
-    test_blueprint_free(&blueprint);
-    test_entity_free(&entity);
+    test_blueprint_free(&ctx, &blueprint);
+    test_entity_free(&ctx, &entity);
 }
 
 void test_entity_no_blueprint(void)
@@ -131,7 +131,7 @@ void test_entity_no_blueprint(void)
     /* Works without a blueprint */
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 100.0F, entity_get_float(&entity, "speed", 0));
     TEST_ASSERT_EQUAL_INT(0, entity_get_int(&entity, "missing", 0));
-    test_entity_free(&entity);
+    test_entity_free(&ctx, &entity);
 }
 
 void test_entity_solid_from_collision(void)
@@ -145,8 +145,8 @@ void test_entity_solid_from_collision(void)
     entity_init_from_blueprint(&entity, &no_collision, (Vector2){0, 0}, &dummy);
 
     TEST_ASSERT_FALSE(entity.solid);
-    test_blueprint_free(&no_collision);
-    test_entity_free(&entity);
+    test_blueprint_free(&ctx, &no_collision);
+    test_entity_free(&ctx, &entity);
 }
 
 /* Helper: set up a 3-entity tree (parent -> child -> grandchild) */

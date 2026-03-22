@@ -1,5 +1,7 @@
 #include "attribute.h"
 #include "error.h"
+#include "str.h"
+#include "strv.h"
 #include "vec.h"
 
 #include <string.h>
@@ -9,7 +11,7 @@ VEC_IMPL(attribute, Attribute)
 const Attribute *attr_get(const AttrSet *set, const char *name)
 {
     for (int index = 0; index < set->entries.count; index++) {
-        if (strcmp(set->entries.data[index].name, name) == 0) {
+        if (strv_eq_cstr(str_to_strv(set->entries.data[index].name), name)) {
             return &set->entries.data[index];
         }
     }
@@ -19,18 +21,30 @@ const Attribute *attr_get(const AttrSet *set, const char *name)
 static Attribute *find_or_append(struct EngineContext *ctx, AttrSet *set, const char *name)
 {
     for (int index = 0; index < set->entries.count; index++) {
-        if (strcmp(set->entries.data[index].name, name) == 0) {
+        if (strv_eq_cstr(str_to_strv(set->entries.data[index].name), name)) {
             return &set->entries.data[index];
         }
     }
     Attribute new_entry = {0};
-    strncpy(new_entry.name, name, MAX_ATTR_NAME - 1);
-    new_entry.name[MAX_ATTR_NAME - 1] = '\0';
+    if (!str_from_cstr(ctx, &new_entry.name, name)) {
+        error_set(ctx, "attribute name alloc failed for '%s'", name);
+        return NULL;
+    }
     if (!vec_attribute_push(&set->entries, new_entry)) {
+        str_free(ctx, &new_entry.name);
         error_set(ctx, "attribute push failed for '%s'", name);
         return NULL;
     }
     return &set->entries.data[set->entries.count - 1];
+}
+
+void attr_set_free(struct EngineContext *ctx, AttrSet *set)
+{
+    for (int index = 0; index < set->entries.count; index++) {
+        str_free(ctx, &set->entries.data[index].name);
+    }
+    vec_attribute_free(&set->entries);
+    *set = (AttrSet){0};
 }
 
 bool attr_set_float(struct EngineContext *ctx, AttrSet *set, const char *name, float value)

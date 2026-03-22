@@ -80,7 +80,7 @@ void test_toml_emit_blueprints(void)
     TEST_ASSERT_NOT_NULL(strstr(output, "collision_offset = [20, 60]"));
     TEST_ASSERT_NOT_NULL(strstr(output, "collision_size = [24, 16]"));
 
-    test_blueprint_table_free(&blueprints);
+    test_blueprint_table_free(&ctx, &blueprints);
     arena_free(&arena);
 }
 
@@ -111,8 +111,8 @@ void test_toml_emit_level_with_entities(void)
     TEST_ASSERT_NOT_NULL(strstr(output, "blueprint = \"chest\""));
     TEST_ASSERT_NOT_NULL(strstr(output, "pos = [300, 100]"));
 
-    test_level_free(&level);
-    test_blueprint_table_free(&blueprints);
+    test_level_free(&ctx, &level);
+    test_blueprint_table_free(&ctx, &blueprints);
     arena_free(&arena);
 }
 
@@ -169,10 +169,10 @@ void test_toml_emit_round_trip(void)
         TEST_ASSERT_EQUAL_STRING(level.entities[index].blueprint_name, level2.entities[index].blueprint_name);
     }
 
-    test_level_free(&level);
-    test_level_free(&level2);
-    test_blueprint_table_free(&blueprints);
-    test_blueprint_table_free(&blueprints2);
+    test_level_free(&ctx, &level);
+    test_level_free(&ctx, &level2);
+    test_blueprint_table_free(&ctx, &blueprints);
+    test_blueprint_table_free(&ctx, &blueprints2);
     arena_free(&arena);
     arena_free(&arena2);
 }
@@ -238,7 +238,7 @@ void test_toml_emit_blueprint_children(void)
     TEST_ASSERT_NOT_NULL(strstr(output, "tag = \"light\""));
     TEST_ASSERT_NOT_NULL(strstr(output, "offset = [56, -8]"));
 
-    test_blueprint_table_free(&blueprints);
+    test_blueprint_table_free(&ctx, &blueprints);
     arena_free(&arena);
 }
 
@@ -274,8 +274,8 @@ void test_toml_emit_skips_child_entities(void)
     }
     TEST_ASSERT_EQUAL_INT(1, count);
 
-    test_level_free(&level);
-    test_blueprint_table_free(&blueprints);
+    test_level_free(&ctx, &level);
+    test_blueprint_table_free(&ctx, &blueprints);
     arena_free(&arena);
 }
 

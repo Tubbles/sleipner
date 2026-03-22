@@ -295,13 +295,13 @@ void game_free(struct EngineContext *ctx, GameState *state)
 {
     for (int index = 0; index < state->blueprints.entries.count; index++) {
         vec_blueprint_child_free(&state->blueprints.entries.data[index].children);
-        vec_attribute_free(&state->blueprints.entries.data[index].attrs.entries);
+        attr_set_free(ctx, &state->blueprints.entries.data[index].attrs);
     }
     vec_blueprint_free(&state->blueprints.entries);
     for (int index = 0; index < state->current_level.entity_count; index++) {
-        vec_attribute_free(&state->current_level.entities[index].attrs.entries);
+        attr_set_free(ctx, &state->current_level.entities[index].attrs);
     }
     flag_set_free(ctx, &state->flags);
-    vec_attribute_free(&state->vars.entries);
+    attr_set_free(ctx, &state->vars);
     arena_free(&state->gamedata_arena);
 }

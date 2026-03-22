@@ -108,8 +108,8 @@ void test_level_load_first(void)
     TEST_ASSERT_EQUAL_INT(360, level.height);
     TEST_ASSERT_EQUAL_INT(2, level.entity_count);
 
-    test_level_free(&level);
-    test_blueprint_table_free(&blueprints);
+    test_level_free(&ctx, &level);
+    test_blueprint_table_free(&ctx, &blueprints);
     toml_free(root);
     arena_free(&arena);
 }
@@ -133,8 +133,8 @@ void test_level_load_by_name(void)
     TEST_ASSERT_EQUAL_INT(240, level.height);
     TEST_ASSERT_EQUAL_INT(1, level.entity_count);
 
-    test_level_free(&level);
-    test_blueprint_table_free(&blueprints);
+    test_level_free(&ctx, &level);
+    test_blueprint_table_free(&ctx, &blueprints);
     toml_free(root);
     arena_free(&arena);
 }
@@ -154,8 +154,8 @@ void test_level_load_nonexistent(void)
     bool loaded = level_load(&ctx, &level, root, "nonexistent", &blueprints, test_texture_lookup, NULL);
     TEST_ASSERT_FALSE(loaded);
 
-    test_level_free(&level);
-    test_blueprint_table_free(&blueprints);
+    test_level_free(&ctx, &level);
+    test_blueprint_table_free(&ctx, &blueprints);
     toml_free(root);
     arena_free(&arena);
 }
@@ -189,8 +189,8 @@ void test_level_entity_positions(void)
     TEST_ASSERT_FLOAT_WITHIN(0.1f, 100.0f, level.entities[1].collision.y);
     TEST_ASSERT_TRUE(level.entities[1].texture == &dummy_chest_texture);
 
-    test_level_free(&level);
-    test_blueprint_table_free(&blueprints);
+    test_level_free(&ctx, &level);
+    test_blueprint_table_free(&ctx, &blueprints);
     toml_free(root);
     arena_free(&arena);
 }
@@ -218,8 +218,8 @@ void test_level_entity_source_rects(void)
     TEST_ASSERT_FLOAT_WITHIN(0.1f, 16.0f, level.entities[1].source.width);
     TEST_ASSERT_FLOAT_WITHIN(0.1f, 16.0f, level.entities[1].source.height);
 
-    test_level_free(&level);
-    test_blueprint_table_free(&blueprints);
+    test_level_free(&ctx, &level);
+    test_blueprint_table_free(&ctx, &blueprints);
     toml_free(root);
     arena_free(&arena);
 }
@@ -280,8 +280,8 @@ void test_level_child_entities_instantiated(void)
     TEST_ASSERT_EQUAL_INT(0, level.entities[1].parent_index);
     TEST_ASSERT_EQUAL_INT(0, level.entities[2].parent_index);
 
-    test_level_free(&level);
-    test_blueprint_table_free(&blueprints);
+    test_level_free(&ctx, &level);
+    test_blueprint_table_free(&ctx, &blueprints);
     toml_free(root);
     arena_free(&arena);
 }
@@ -307,8 +307,8 @@ void test_level_child_entity_positions(void)
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 108.0F, level.entities[2].position.x);
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 78.0F, level.entities[2].position.y);
 
-    test_level_free(&level);
-    test_blueprint_table_free(&blueprints);
+    test_level_free(&ctx, &level);
+    test_blueprint_table_free(&ctx, &blueprints);
     toml_free(root);
     arena_free(&arena);
 }
@@ -329,8 +329,8 @@ void test_level_child_entity_tags(void)
     TEST_ASSERT_EQUAL_STRING("light", level.entities[1].tag);
     TEST_ASSERT_EQUAL_STRING("front_wheel", level.entities[2].tag);
 
-    test_level_free(&level);
-    test_blueprint_table_free(&blueprints);
+    test_level_free(&ctx, &level);
+    test_blueprint_table_free(&ctx, &blueprints);
     toml_free(root);
     arena_free(&arena);
 }
@@ -399,8 +399,8 @@ void test_level_nested_children(void)
     TEST_ASSERT_EQUAL_STRING("middle", level.entities[1].tag);
     TEST_ASSERT_EQUAL_STRING("inner", level.entities[2].tag);
 
-    test_level_free(&level);
-    test_blueprint_table_free(&blueprints);
+    test_level_free(&ctx, &level);
+    test_blueprint_table_free(&ctx, &blueprints);
     toml_free(root);
     arena_free(&arena);
 }

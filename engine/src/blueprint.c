@@ -1,6 +1,7 @@
 #include "blueprint.h"
 #include "arena.h"
 #include "attribute.h"
+#include "str.h"
 #include "debug.h"
 #include "error.h"
 #include "rule.h"
@@ -98,22 +99,32 @@ static bool inherit_rendering_fields(Blueprint *child, const Blueprint *parent)
     return changed;
 }
 
-static bool inherit_attributes(Blueprint *child, const Blueprint *parent)
+static bool inherit_attributes(struct EngineContext *ctx, Blueprint *child, const Blueprint *parent)
 {
     bool changed = false;
 
     for (int attr_index = 0; attr_index < parent->attrs.entries.count; attr_index++) {
         const Attribute *parent_attr = &parent->attrs.entries.data[attr_index];
-        if (!attr_get(&child->attrs, parent_attr->name)) {
-            (void)vec_attribute_push(&child->attrs.entries, *parent_attr);
-            changed = true;
+        if (attr_get(&child->attrs, parent_attr->name.ptr)) {
+            continue;
         }
+        /* Deep copy: allocate a new name Str so child and parent own independent strings. */
+        Attribute new_entry = *parent_attr;
+        new_entry.name = (Str){0};
+        if (!str_from_strv(ctx, &new_entry.name, str_to_strv(parent_attr->name))) {
+            continue;
+        }
+        if (!vec_attribute_push(&child->attrs.entries, new_entry)) {
+            str_free(ctx, &new_entry.name);
+            continue;
+        }
+        changed = true;
     }
 
     return changed;
 }
 
-static bool inherit_from_parent(Blueprint *child, const BlueprintTable *table)
+static bool inherit_from_parent(struct EngineContext *ctx, Blueprint *child, const BlueprintTable *table)
 {
     if (child->extends_name[0] == '\0') {
         return false;
@@ -125,17 +136,17 @@ static bool inherit_from_parent(Blueprint *child, const BlueprintTable *table)
     }
 
     bool changed = inherit_rendering_fields(child, parent);
-    changed = (bool)(inherit_attributes(child, parent) || changed);
+    changed = (bool)(inherit_attributes(ctx, child, parent) || changed);
     return changed;
 }
 
-static void resolve_inheritance(BlueprintTable *table)
+static void resolve_inheritance(struct EngineContext *ctx, BlueprintTable *table)
 {
     for (int pass = 0; pass < table->entries.count; pass++) {
         bool changed = false;
 
         for (int index = 0; index < table->entries.count; index++) {
-            changed = (bool)(inherit_from_parent(&table->entries.data[index], table) || changed);
+            changed = (bool)(inherit_from_parent(ctx, &table->entries.data[index], table) || changed);
         }
 
         if (!changed) {
@@ -299,7 +310,7 @@ int blueprints_load(struct EngineContext *ctx, BlueprintTable *table, void *toml
 {
     for (int index = 0; index < table->entries.count; index++) {
         vec_blueprint_child_free(&table->entries.data[index].children);
-        vec_attribute_free(&table->entries.data[index].attrs.entries);
+        attr_set_free(ctx, &table->entries.data[index].attrs);
     }
     vec_blueprint_clear(&table->entries);
 
@@ -343,7 +354,7 @@ int blueprints_load(struct EngineContext *ctx, BlueprintTable *table, void *toml
         }
     }
 
-    resolve_inheritance(table);
+    resolve_inheritance(ctx, table);
 
     return table->entries.count;
 }

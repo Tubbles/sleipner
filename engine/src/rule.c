@@ -778,8 +778,8 @@ static void resolve_arg(char *out, int out_size, const char *arg, ActionContext 
 
 static bool execute_set_attr_action(struct EngineContext *ctx, const ActionNode *node, ActionContext context)
 {
-    char attr_name[MAX_ATTR_NAME];
-    Entity *target = resolve_target(node->argument, context, attr_name, MAX_ATTR_NAME);
+    char attr_name[MAX_ARG];
+    Entity *target = resolve_target(node->argument, context, attr_name, MAX_ARG);
     if (!target) {
         debug_log(ctx, "set_attr: target not found: %s", node->argument);
         return true;
@@ -801,8 +801,8 @@ static bool execute_set_attr_action(struct EngineContext *ctx, const ActionNode 
 
 static bool execute_add_attr_action(struct EngineContext *ctx, const ActionNode *node, ActionContext context)
 {
-    char attr_name[MAX_ATTR_NAME];
-    Entity *target = resolve_target(node->argument, context, attr_name, MAX_ATTR_NAME);
+    char attr_name[MAX_ARG];
+    Entity *target = resolve_target(node->argument, context, attr_name, MAX_ARG);
     if (!target) {
         debug_log(ctx, "add_attr: target not found: %s", node->argument);
         return true;
@@ -820,8 +820,8 @@ static bool execute_add_attr_action(struct EngineContext *ctx, const ActionNode 
 
 static bool execute_toggle_attr_action(struct EngineContext *ctx, const ActionNode *node, ActionContext context)
 {
-    char attr_name[MAX_ATTR_NAME];
-    Entity *target = resolve_target(node->argument, context, attr_name, MAX_ATTR_NAME);
+    char attr_name[MAX_ARG];
+    Entity *target = resolve_target(node->argument, context, attr_name, MAX_ARG);
     if (!target) {
         debug_log(ctx, "toggle_attr: target not found: %s", node->argument);
         return true;
@@ -1037,7 +1037,7 @@ static void evaluate_entity_rules(struct EngineContext *ctx,
         for (int action_index = 0; action_index < rule->action_tree.count; action_index++) {
             (void)action_node_execute(ctx, &rule->action_tree.nodes[action_index], act_ctx);
         }
-        vec_attribute_free(&local_vars.entries);
+        attr_set_free(ctx, &local_vars);
     }
 }
 
