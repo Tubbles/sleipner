@@ -5,7 +5,6 @@ plugins {
 fun gitVersionCode(): Int = try {
     val process = ProcessBuilder("git", "rev-list", "--count", "HEAD")
         .directory(rootProject.projectDir)
-        .redirectErrorStream(true)
         .start()
     process.inputStream.bufferedReader().readText().trim().toIntOrNull() ?: 1
 } catch (_: Exception) { 1 }
@@ -13,7 +12,6 @@ fun gitVersionCode(): Int = try {
 fun gitDescribe(): String = try {
     val process = ProcessBuilder("git", "describe", "--tags", "--always", "--dirty")
         .directory(rootProject.projectDir)
-        .redirectErrorStream(true)
         .start()
     process.inputStream.bufferedReader().readText().trim().ifEmpty { "unknown" }
 } catch (_: Exception) { "unknown" }
