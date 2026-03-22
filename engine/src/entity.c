@@ -67,9 +67,10 @@ const char *entity_get_string(const Entity *entity, const char *name)
 bool entity_init_from_blueprint(
     struct EngineContext *ctx, Entity *entity, const Blueprint *blueprint, Vector2 position, Texture2D *texture)
 {
+    (void)ctx;
     memset(entity, 0, sizeof(*entity));
 
-    if (!str_from_strv(ctx, &entity->blueprint_name, str_to_strv(blueprint->name))) {
+    if (!str_from_strv(NULL, &entity->blueprint_name, str_to_strv(blueprint->name))) {
         return false;
     }
     entity->blueprint = blueprint;

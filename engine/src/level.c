@@ -102,7 +102,7 @@ static bool spawn_children_for(struct EngineContext *ctx,
         }
         child->parent_index = parent_index;
         child->offset = child_def->offset;
-        if (child_def->tag.len > 0 && !str_from_strv(ctx, &child->tag, str_to_strv(child_def->tag))) {
+        if (child_def->tag.len > 0 && !str_from_strv(NULL, &child->tag, str_to_strv(child_def->tag))) {
             return false;
         }
         level->entity_count++;
@@ -218,11 +218,11 @@ static toml_table_t *find_level_table(toml_array_t *levels, const char *level_na
 
 void level_free(struct EngineContext *ctx, Level *level)
 {
-    str_free(ctx, &level->name);
-    str_free(ctx, &level->music_name);
+    str_free(NULL, &level->name);
+    str_free(NULL, &level->music_name);
     for (int index = 0; index < level->entity_count; index++) {
-        str_free(ctx, &level->entities[index].blueprint_name);
-        str_free(ctx, &level->entities[index].tag);
+        str_free(NULL, &level->entities[index].blueprint_name);
+        str_free(NULL, &level->entities[index].tag);
         attr_set_free(ctx, &level->entities[index].attrs);
     }
 }
@@ -252,13 +252,13 @@ bool level_load(struct EngineContext *ctx,
 
     /* Level name */
     toml_datum_t name = toml_string_in(level_table, "name");
-    if (name.ok && !str_from_toml_datum(ctx, &level->name, &name)) {
+    if (name.ok && !str_from_toml_datum(NULL, &level->name, &name)) {
         return false;
     }
 
     /* Level music */
     toml_datum_t music = toml_string_in(level_table, "music");
-    if (music.ok && !str_from_toml_datum(ctx, &level->music_name, &music)) {
+    if (music.ok && !str_from_toml_datum(NULL, &level->music_name, &music)) {
         return false;
     }
 

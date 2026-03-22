@@ -1,11 +1,8 @@
 #include "unity.h"
 
-#include "engine_context.h"
 #include "str.h"
 #include "toml.h"
 #include "toml_str.h"
-
-static struct EngineContext ctx;
 
 /* Parse a tiny TOML table and return the string datum for key "val".
  * Caller must toml_free(table) after the test. */
@@ -29,10 +26,10 @@ void test_toml_str_content_is_copied(void)
     TEST_ASSERT_NOT_NULL(table);
     TEST_ASSERT_TRUE((bool)datum.ok);
     Str str = {0};
-    TEST_ASSERT_TRUE(str_from_toml_datum(&ctx, &str, &datum));
+    TEST_ASSERT_TRUE(str_from_toml_datum(NULL, &str, &datum));
     TEST_ASSERT_EQUAL_STRING("hello", str.ptr);
     TEST_ASSERT_EQUAL_size_t(5, str.len);
-    str_free(&ctx, &str);
+    str_free(NULL, &str);
     toml_free(table);
 }
 
@@ -43,8 +40,8 @@ void test_toml_str_datum_nulled_after_call(void)
     TEST_ASSERT_NOT_NULL(table);
     TEST_ASSERT_TRUE((bool)datum.ok);
     Str str = {0};
-    TEST_ASSERT_TRUE(str_from_toml_datum(&ctx, &str, &datum));
+    TEST_ASSERT_TRUE(str_from_toml_datum(NULL, &str, &datum));
     TEST_ASSERT_NULL(datum.u.s);
-    str_free(&ctx, &str);
+    str_free(NULL, &str);
     toml_free(table);
 }

@@ -11,12 +11,12 @@ void test_blueprint_table_free(struct EngineContext *ctx, BlueprintTable *table)
 
 void test_blueprint_free(struct EngineContext *ctx, Blueprint *blueprint)
 {
-    str_free(ctx, &blueprint->name);
-    str_free(ctx, &blueprint->extends_name);
-    str_free(ctx, &blueprint->texture_name);
+    str_free(NULL, &blueprint->name);
+    str_free(NULL, &blueprint->extends_name);
+    str_free(NULL, &blueprint->texture_name);
     for (int index = 0; index < blueprint->children.count; index++) {
-        str_free(ctx, &blueprint->children.data[index].blueprint_name);
-        str_free(ctx, &blueprint->children.data[index].tag);
+        str_free(NULL, &blueprint->children.data[index].blueprint_name);
+        str_free(NULL, &blueprint->children.data[index].tag);
     }
     vec_blueprint_child_free(&blueprint->children, NULL);
     test_attr_set_free(ctx, &blueprint->attrs);
@@ -29,8 +29,8 @@ void test_level_free(struct EngineContext *ctx, Level *level)
 
 void test_entity_free(struct EngineContext *ctx, Entity *entity)
 {
-    str_free(ctx, &entity->blueprint_name);
-    str_free(ctx, &entity->tag);
+    str_free(NULL, &entity->blueprint_name);
+    str_free(NULL, &entity->tag);
     test_attr_set_free(ctx, &entity->attrs);
 }
 

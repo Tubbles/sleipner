@@ -25,19 +25,19 @@ static Attribute *find_or_append(struct EngineContext *ctx, AttrSet *set, const 
             Attribute *entry = &set->entries.data[index];
             /* Free old string value so callers can safely overwrite with any type. */
             if (entry->type == ATTR_STRING) {
-                str_free(ctx, &entry->value.str);
+                str_free(NULL, &entry->value.str);
                 entry->value = (AttrValue){0};
             }
             return entry;
         }
     }
     Attribute new_entry = {0};
-    if (!str_from_cstr(ctx, &new_entry.name, name)) {
+    if (!str_from_cstr(NULL, &new_entry.name, name)) {
         error_set(ctx, "attribute name alloc failed for '%s'", name);
         return NULL;
     }
     if (!vec_attribute_push(&set->entries, new_entry, NULL)) {
-        str_free(ctx, &new_entry.name);
+        str_free(NULL, &new_entry.name);
         error_set(ctx, "attribute push failed for '%s'", name);
         return NULL;
     }
@@ -47,9 +47,9 @@ static Attribute *find_or_append(struct EngineContext *ctx, AttrSet *set, const 
 void attr_set_free(struct EngineContext *ctx, AttrSet *set)
 {
     for (int index = 0; index < set->entries.count; index++) {
-        str_free(ctx, &set->entries.data[index].name);
+        str_free(NULL, &set->entries.data[index].name);
         if (set->entries.data[index].type == ATTR_STRING) {
-            str_free(ctx, &set->entries.data[index].value.str);
+            str_free(NULL, &set->entries.data[index].value.str);
         }
     }
     vec_attribute_free(&set->entries, NULL);
@@ -96,7 +96,7 @@ bool attr_set_string(struct EngineContext *ctx, AttrSet *set, AttrStringPair pai
         return false;
     }
     entry->type = ATTR_STRING;
-    return str_from_cstr(ctx, &entry->value.str, pair.value);
+    return str_from_cstr(NULL, &entry->value.str, pair.value);
 }
 
 float attr_get_float(const AttrSet *set, const char *name, float fallback)

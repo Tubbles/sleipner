@@ -12,8 +12,8 @@ static struct EngineContext ctx;
 static Blueprint make_test_blueprint(void)
 {
     Blueprint blueprint = {0};
-    TEST_ASSERT_TRUE(str_from_cstr(&ctx, &blueprint.name, "chest"));
-    TEST_ASSERT_TRUE(str_from_cstr(&ctx, &blueprint.texture_name, "chest.png"));
+    TEST_ASSERT_TRUE(str_from_cstr(NULL, &blueprint.name, "chest"));
+    TEST_ASSERT_TRUE(str_from_cstr(NULL, &blueprint.texture_name, "chest.png"));
     blueprint.source = (Rectangle){0, 0, 16, 16};
     blueprint.collision_offset = (Vector2){2, 4};
     blueprint.collision_size = (Vector2){12, 8};
@@ -109,7 +109,7 @@ void test_entity_get_missing_attr(void)
 void test_entity_int_float_coercion(void)
 {
     Blueprint blueprint = {0};
-    TEST_ASSERT_TRUE(str_from_cstr(&ctx, &blueprint.name, "test"));
+    TEST_ASSERT_TRUE(str_from_cstr(NULL, &blueprint.name, "test"));
     TEST_ASSERT_TRUE(attr_set_int(&ctx, &blueprint.attrs, "speed", 80));
 
     Texture2D dummy = {0};
@@ -138,7 +138,7 @@ void test_entity_no_blueprint(void)
 void test_entity_solid_from_collision(void)
 {
     Blueprint no_collision = {0};
-    TEST_ASSERT_TRUE(str_from_cstr(&ctx, &no_collision.name, "ghost"));
+    TEST_ASSERT_TRUE(str_from_cstr(NULL, &no_collision.name, "ghost"));
     /* collision_size is (0, 0) */
 
     Texture2D dummy = {0};
@@ -155,19 +155,19 @@ static void make_entity_tree(Entity *entities)
 {
     memset(entities, 0, 3 * sizeof(Entity));
 
-    TEST_ASSERT_TRUE(str_from_cstr(&ctx, &entities[0].blueprint_name, "wagon"));
+    TEST_ASSERT_TRUE(str_from_cstr(NULL, &entities[0].blueprint_name, "wagon"));
     entities[0].parent_index = -1;
     entities[0].visible = true;
     entities[0].active = true;
 
-    TEST_ASSERT_TRUE(str_from_cstr(&ctx, &entities[1].blueprint_name, "lantern"));
-    TEST_ASSERT_TRUE(str_from_cstr(&ctx, &entities[1].tag, "light"));
+    TEST_ASSERT_TRUE(str_from_cstr(NULL, &entities[1].blueprint_name, "lantern"));
+    TEST_ASSERT_TRUE(str_from_cstr(NULL, &entities[1].tag, "light"));
     entities[1].parent_index = 0;
     entities[1].visible = true;
     entities[1].active = true;
 
-    TEST_ASSERT_TRUE(str_from_cstr(&ctx, &entities[2].blueprint_name, "wheel"));
-    TEST_ASSERT_TRUE(str_from_cstr(&ctx, &entities[2].tag, "front_wheel"));
+    TEST_ASSERT_TRUE(str_from_cstr(NULL, &entities[2].blueprint_name, "wheel"));
+    TEST_ASSERT_TRUE(str_from_cstr(NULL, &entities[2].tag, "front_wheel"));
     entities[2].parent_index = 0;
     entities[2].visible = true;
     entities[2].active = true;

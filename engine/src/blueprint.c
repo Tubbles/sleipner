@@ -80,10 +80,11 @@ static bool parse_custom_attr(struct EngineContext *ctx, AttrSet *attrs, toml_ta
 
 static bool inherit_rendering_fields(struct EngineContext *ctx, Blueprint *child, const Blueprint *parent)
 {
+    (void)ctx;
     bool changed = false;
 
     if (child->texture_name.len == 0 && parent->texture_name.len > 0) {
-        if (!str_from_strv(ctx, &child->texture_name, str_to_strv(parent->texture_name))) {
+        if (!str_from_strv(NULL, &child->texture_name, str_to_strv(parent->texture_name))) {
             return changed;
         }
         changed = true;
@@ -105,6 +106,7 @@ static bool inherit_rendering_fields(struct EngineContext *ctx, Blueprint *child
 
 static bool inherit_attributes(struct EngineContext *ctx, Blueprint *child, const Blueprint *parent)
 {
+    (void)ctx;
     bool changed = false;
 
     for (int attr_index = 0; attr_index < parent->attrs.entries.count; attr_index++) {
@@ -115,20 +117,20 @@ static bool inherit_attributes(struct EngineContext *ctx, Blueprint *child, cons
         /* Deep copy: allocate independent Strs for name and (if ATTR_STRING) value. */
         Attribute new_entry = *parent_attr;
         new_entry.name = (Str){0};
-        if (!str_from_strv(ctx, &new_entry.name, str_to_strv(parent_attr->name))) {
+        if (!str_from_strv(NULL, &new_entry.name, str_to_strv(parent_attr->name))) {
             continue;
         }
         if (parent_attr->type == ATTR_STRING) {
             new_entry.value.str = (Str){0};
-            if (!str_from_strv(ctx, &new_entry.value.str, str_to_strv(parent_attr->value.str))) {
-                str_free(ctx, &new_entry.name);
+            if (!str_from_strv(NULL, &new_entry.value.str, str_to_strv(parent_attr->value.str))) {
+                str_free(NULL, &new_entry.name);
                 continue;
             }
         }
         if (!vec_attribute_push(&child->attrs.entries, new_entry, NULL)) {
-            str_free(ctx, &new_entry.name);
+            str_free(NULL, &new_entry.name);
             if (parent_attr->type == ATTR_STRING) {
-                str_free(ctx, &new_entry.value.str);
+                str_free(NULL, &new_entry.value.str);
             }
             continue;
         }
@@ -171,14 +173,15 @@ static void resolve_inheritance(struct EngineContext *ctx, BlueprintTable *table
 
 static bool parse_optional_strings(struct EngineContext *ctx, Blueprint *blueprint, toml_table_t *entry)
 {
+    (void)ctx;
     toml_datum_t extends = toml_string_in(entry, "extends");
-    if (extends.ok && !str_from_toml_datum(ctx, &blueprint->extends_name, &extends)) {
+    if (extends.ok && !str_from_toml_datum(NULL, &blueprint->extends_name, &extends)) {
         return false;
     }
 
     toml_datum_t texture = toml_string_in(entry, "texture");
     if (texture.ok) {
-        return str_from_toml_datum(ctx, &blueprint->texture_name, &texture);
+        return str_from_toml_datum(NULL, &blueprint->texture_name, &texture);
     }
     return true;
 }
@@ -244,12 +247,12 @@ static bool parse_single_child(struct EngineContext *ctx, BlueprintChild *child,
         error_set(ctx, "child missing required 'blueprint' key");
         return false;
     }
-    if (!str_from_toml_datum(ctx, &child->blueprint_name, &blueprint_name)) {
+    if (!str_from_toml_datum(NULL, &child->blueprint_name, &blueprint_name)) {
         return false;
     }
 
     toml_datum_t tag = toml_string_in(entry, "tag");
-    if (tag.ok && !str_from_toml_datum(ctx, &child->tag, &tag)) {
+    if (tag.ok && !str_from_toml_datum(NULL, &child->tag, &tag)) {
         return false;
     }
 
@@ -298,7 +301,7 @@ static bool parse_single_blueprint(struct EngineContext *ctx, Blueprint *bluepri
     if (!name.ok) {
         return false;
     }
-    if (!str_from_toml_datum(ctx, &blueprint->name, &name)) {
+    if (!str_from_toml_datum(NULL, &blueprint->name, &name)) {
         return false;
     }
 
@@ -324,12 +327,12 @@ static bool parse_single_blueprint(struct EngineContext *ctx, Blueprint *bluepri
 
 static void blueprint_cleanup(struct EngineContext *ctx, Blueprint *blp)
 {
-    str_free(ctx, &blp->name);
-    str_free(ctx, &blp->extends_name);
-    str_free(ctx, &blp->texture_name);
+    str_free(NULL, &blp->name);
+    str_free(NULL, &blp->extends_name);
+    str_free(NULL, &blp->texture_name);
     for (int child_index = 0; child_index < blp->children.count; child_index++) {
-        str_free(ctx, &blp->children.data[child_index].blueprint_name);
-        str_free(ctx, &blp->children.data[child_index].tag);
+        str_free(NULL, &blp->children.data[child_index].blueprint_name);
+        str_free(NULL, &blp->children.data[child_index].tag);
     }
     vec_blueprint_child_free(&blp->children, NULL);
     attr_set_free(ctx, &blp->attrs);

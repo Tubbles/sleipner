@@ -182,8 +182,8 @@ void test_toml_emit_buffer_too_small(void)
     BlueprintTable blueprints = {0};
     TEST_ASSERT_TRUE(vec_blueprint_push(&blueprints.entries, (Blueprint){0}, NULL));
     Blueprint *entry = &blueprints.entries.data[0];
-    TEST_ASSERT_TRUE(str_from_cstr(&ctx, &entry->name, "test"));
-    TEST_ASSERT_TRUE(str_from_cstr(&ctx, &entry->texture_name, "test.png"));
+    TEST_ASSERT_TRUE(str_from_cstr(NULL, &entry->name, "test"));
+    TEST_ASSERT_TRUE(str_from_cstr(NULL, &entry->texture_name, "test.png"));
 
     char tiny[10];
     int written = toml_emit_gamedata(&ctx, tiny, (int)sizeof(tiny), &blueprints, NULL, 0);
@@ -282,7 +282,7 @@ void test_toml_emit_skips_child_entities(void)
 void test_toml_emit_no_music(void)
 {
     Level level = {0};
-    TEST_ASSERT_TRUE(str_from_cstr(&ctx, &level.name, "silent"));
+    TEST_ASSERT_TRUE(str_from_cstr(NULL, &level.name, "silent"));
     level.width = 100;
     level.height = 100;
 

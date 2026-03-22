@@ -47,23 +47,24 @@ void flag_set(struct EngineContext *ctx, FlagSet *flags, const char *name)
         return;
     }
     FlagName entry = {0};
-    if (!str_from_cstr(ctx, &entry.name, name)) {
+    if (!str_from_cstr(NULL, &entry.name, name)) {
         debug_log(ctx, "flag_set: allocation failed for '%s'", name);
         return;
     }
     if (!vec_flag_name_push(&flags->names, entry, NULL)) {
-        str_free(ctx, &entry.name);
+        str_free(NULL, &entry.name);
         debug_log(ctx, "flag_set: vec push failed for '%s'", name);
     }
 }
 
 void flag_clear(struct EngineContext *ctx, FlagSet *flags, const char *name)
 {
+    (void)ctx;
     int index = flag_find(flags, name);
     if (index < 0) {
         return;
     }
-    str_free(ctx, &flags->names.data[index].name);
+    str_free(NULL, &flags->names.data[index].name);
     flags->names.count--;
     if (index < flags->names.count) {
         flags->names.data[index] = flags->names.data[flags->names.count];
@@ -72,8 +73,9 @@ void flag_clear(struct EngineContext *ctx, FlagSet *flags, const char *name)
 
 void flag_set_free(struct EngineContext *ctx, FlagSet *flags)
 {
+    (void)ctx;
     for (int index = 0; index < flags->names.count; index++) {
-        str_free(ctx, &flags->names.data[index].name);
+        str_free(NULL, &flags->names.data[index].name);
     }
     vec_flag_name_free(&flags->names, NULL);
     *flags = (FlagSet){0};
