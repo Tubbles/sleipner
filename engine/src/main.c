@@ -50,7 +50,6 @@ VEC_IMPL(texture_entry, TextureEntry)
 #define DEBUG_PANEL_WIDTH 420
 #define DEBUG_LINES 14
 #define FONT_PREVIEW_SIZE 32
-#define SLEIPNER_VERSION "0.1.0"
 #define BYTES_PER_KB 1024u
 
 /* Texture registry — maps texture filenames to loaded Texture2D handles */
