@@ -201,6 +201,10 @@ void test_strv_copy_to_cstr(void);
 void test_strv_copy_to_cstr_truncates(void);
 void test_strv_copy_to_cstr_subview(void);
 
+/* test_toml_str.c */
+void test_toml_str_content_is_copied(void);
+void test_toml_str_datum_nulled_after_call(void);
+
 /* test_toml_emitter.c */
 void test_toml_emit_blueprints(void);
 void test_toml_emit_level_with_entities(void);
@@ -562,6 +566,9 @@ int main(void)
     RUN_TEST(test_strv_copy_to_cstr);
     RUN_TEST(test_strv_copy_to_cstr_truncates);
     RUN_TEST(test_strv_copy_to_cstr_subview);
+
+    RUN_TEST(test_toml_str_content_is_copied);
+    RUN_TEST(test_toml_str_datum_nulled_after_call);
 
     RUN_TEST(test_toml_emit_blueprints);
     RUN_TEST(test_toml_emit_level_with_entities);

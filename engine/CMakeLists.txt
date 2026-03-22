@@ -23,6 +23,7 @@ add_library(engine STATIC
     src/str.c
     src/strv.c
     src/toml_emitter.c
+    src/toml_str.c
     src/vec.c
 )
 target_include_directories(engine PUBLIC src)

@@ -18,5 +18,6 @@ add_executable(engine_tests
     test_rule.c
     test_str.c
     test_strv.c
+    test_toml_str.c
 )
 target_link_libraries(engine_tests PRIVATE engine unity m)
