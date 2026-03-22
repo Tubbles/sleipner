@@ -22,7 +22,13 @@ static Attribute *find_or_append(struct EngineContext *ctx, AttrSet *set, const 
 {
     for (int index = 0; index < set->entries.count; index++) {
         if (strv_eq_cstr(str_to_strv(set->entries.data[index].name), name)) {
-            return &set->entries.data[index];
+            Attribute *entry = &set->entries.data[index];
+            /* Free old string value so callers can safely overwrite with any type. */
+            if (entry->type == ATTR_STRING) {
+                str_free(ctx, &entry->value.str);
+                entry->value = (AttrValue){0};
+            }
+            return entry;
         }
     }
     Attribute new_entry = {0};
@@ -42,6 +48,9 @@ void attr_set_free(struct EngineContext *ctx, AttrSet *set)
 {
     for (int index = 0; index < set->entries.count; index++) {
         str_free(ctx, &set->entries.data[index].name);
+        if (set->entries.data[index].type == ATTR_STRING) {
+            str_free(ctx, &set->entries.data[index].value.str);
+        }
     }
     vec_attribute_free(&set->entries);
     *set = (AttrSet){0};
@@ -87,9 +96,7 @@ bool attr_set_string(struct EngineContext *ctx, AttrSet *set, AttrStringPair pai
         return false;
     }
     entry->type = ATTR_STRING;
-    strncpy(entry->value.s, pair.value, MAX_ATTR_STRING - 1);
-    entry->value.s[MAX_ATTR_STRING - 1] = '\0';
-    return true;
+    return str_from_cstr(ctx, &entry->value.str, pair.value);
 }
 
 float attr_get_float(const AttrSet *set, const char *name, float fallback)
@@ -123,7 +130,7 @@ const char *attr_get_string(const AttrSet *set, const char *name)
 {
     const Attribute *entry = attr_get(set, name);
     if (entry && entry->type == ATTR_STRING) {
-        return entry->value.s;
+        return entry->value.str.ptr;
     }
     return NULL;
 }

@@ -7,8 +7,6 @@
 
 struct EngineContext;
 
-#define MAX_ATTR_STRING 64
-
 typedef enum {
     ATTR_FLOAT,
     ATTR_INT,
@@ -20,7 +18,7 @@ typedef union {
     float f;
     int i;
     bool b;
-    char s[MAX_ATTR_STRING];
+    Str str;
 } AttrValue;
 
 typedef struct {

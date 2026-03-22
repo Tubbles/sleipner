@@ -116,7 +116,7 @@ void test_attr_scoped_instance_overrides_blueprint(void)
     /* Falls back to blueprint */
     const Attribute *loot = attr_get_scoped(&instance, &blueprint, "loot_table");
     TEST_ASSERT_NOT_NULL(loot);
-    TEST_ASSERT_EQUAL_STRING("common", loot->value.s);
+    TEST_ASSERT_EQUAL_STRING("common", loot->value.str.ptr);
 
     /* Missing in both */
     const Attribute *missing = attr_get_scoped(&instance, &blueprint, "nonexistent");

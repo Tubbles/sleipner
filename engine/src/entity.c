@@ -57,7 +57,7 @@ const char *entity_get_string(const Entity *entity, const char *name)
 {
     const Attribute *entry = entity_get_attr(entity, name);
     if (entry && entry->type == ATTR_STRING) {
-        return entry->value.s;
+        return entry->value.str.ptr;
     }
     return NULL;
 }

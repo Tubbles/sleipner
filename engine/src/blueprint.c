@@ -108,14 +108,24 @@ static bool inherit_attributes(struct EngineContext *ctx, Blueprint *child, cons
         if (attr_get(&child->attrs, parent_attr->name.ptr)) {
             continue;
         }
-        /* Deep copy: allocate a new name Str so child and parent own independent strings. */
+        /* Deep copy: allocate independent Strs for name and (if ATTR_STRING) value. */
         Attribute new_entry = *parent_attr;
         new_entry.name = (Str){0};
         if (!str_from_strv(ctx, &new_entry.name, str_to_strv(parent_attr->name))) {
             continue;
         }
+        if (parent_attr->type == ATTR_STRING) {
+            new_entry.value.str = (Str){0};
+            if (!str_from_strv(ctx, &new_entry.value.str, str_to_strv(parent_attr->value.str))) {
+                str_free(ctx, &new_entry.name);
+                continue;
+            }
+        }
         if (!vec_attribute_push(&child->attrs.entries, new_entry)) {
             str_free(ctx, &new_entry.name);
+            if (parent_attr->type == ATTR_STRING) {
+                str_free(ctx, &new_entry.value.str);
+            }
             continue;
         }
         changed = true;

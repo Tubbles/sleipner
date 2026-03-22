@@ -595,7 +595,7 @@ static bool attr_is_truthy(const Attribute *attr)
         return attr->value.f != 0.0F;
     }
     if (attr->type == ATTR_STRING) {
-        return attr->value.s[0] != '\0';
+        return attr->value.str.len > 0;
     }
     return false;
 }
@@ -656,7 +656,7 @@ static bool evaluate_single_condition(const Condition *condition, ConditionConte
             return false;
         }
         if (var->type == ATTR_STRING) {
-            return var->value.s[0] != '\0';
+            return var->value.str.len > 0;
         }
         return attr_to_float(var) != 0.0F;
     }
@@ -729,7 +729,7 @@ static void format_var_value(char *out, int out_size, const Attribute *var)
         }
         out[out_size - 1] = '\0';
     } else {
-        strncpy(out, var->value.s, (size_t)(out_size - 1));
+        strncpy(out, var->value.str.ptr, (size_t)(out_size - 1));
         out[out_size - 1] = '\0';
     }
 }
