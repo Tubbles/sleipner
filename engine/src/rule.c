@@ -6,6 +6,7 @@
 #include "debug.h"
 #include "entity.h"
 #include "error.h"
+#include "strv.h"
 
 #include "toml.h"
 
@@ -45,8 +46,7 @@ void flag_set(struct EngineContext *ctx, FlagSet *flags, const char *name)
         return;
     }
     FlagName entry = {0};
-    strncpy(entry.value, name, MAX_FLAG_NAME - 1);
-    entry.value[MAX_FLAG_NAME - 1] = '\0';
+    strv_copy_to_cstr(strv_from_cstr(name), entry.value, MAX_FLAG_NAME);
     if (!vec_flag_name_push(&flags->names, entry)) {
         debug_log(ctx, "flag_set: allocation failed for '%s'", name);
     }
@@ -66,44 +66,35 @@ void flag_clear(FlagSet *flags, const char *name)
 
 /* ---- Parsing helpers ---- */
 
-static bool starts_with(const char *string, const char *prefix)
-{
-    return strncmp(string, prefix, strlen(prefix)) == 0;
-}
-
-static void copy_after_colon(const char *string, char *out, int max_len)
-{
-    const char *colon = strchr(string, ':');
-    if (colon) {
-        strncpy(out, colon + 1, (size_t)(max_len - 1));
-        out[max_len - 1] = '\0';
-    }
-}
-
 bool trigger_parse(struct EngineContext *ctx, Trigger *trigger, const char *string)
 {
     memset(trigger, 0, sizeof(*trigger));
+    Strv strv = strv_from_cstr(string);
 
-    if (strcmp(string, "interact") == 0) {
+    if (strv_eq_cstr(strv, "interact")) {
         trigger->type = TRIGGER_INTERACT;
         return true;
     }
-    if (strcmp(string, "enter") == 0) {
+    if (strv_eq_cstr(strv, "enter")) {
         trigger->type = TRIGGER_ENTER;
         return true;
     }
-    if (strcmp(string, "on_spawn") == 0) {
+    if (strv_eq_cstr(strv, "on_spawn")) {
         trigger->type = TRIGGER_ON_SPAWN;
         return true;
     }
-    if (starts_with(string, "event:")) {
+    if (strv_starts_with_cstr(strv, "event:")) {
         trigger->type = TRIGGER_EVENT;
-        copy_after_colon(string, trigger->argument, MAX_ARG);
+        Strv rest = strv;
+        (void)strv_split(&rest, ':');
+        strv_copy_to_cstr(rest, trigger->argument, MAX_ARG);
         return true;
     }
-    if (starts_with(string, "attr_changed:")) {
+    if (strv_starts_with_cstr(strv, "attr_changed:")) {
         trigger->type = TRIGGER_ATTR_CHANGED;
-        copy_after_colon(string, trigger->argument, MAX_ARG);
+        Strv rest = strv;
+        (void)strv_split(&rest, ':');
+        strv_copy_to_cstr(rest, trigger->argument, MAX_ARG);
         return true;
     }
 
@@ -157,48 +148,53 @@ static bool parse_condition_attr_comparison(Condition *condition, const char *ar
 bool condition_parse(struct EngineContext *ctx, Condition *condition, const char *string)
 {
     memset(condition, 0, sizeof(*condition));
+    Strv strv = strv_from_cstr(string);
 
-    if (starts_with(string, "not_flag:")) {
+    if (strv_starts_with_cstr(strv, "not_flag:")) {
         condition->type = COND_NOT_FLAG;
-        copy_after_colon(string, condition->argument, MAX_ARG);
+        Strv rest = strv;
+        (void)strv_split(&rest, ':');
+        strv_copy_to_cstr(rest, condition->argument, MAX_ARG);
         return true;
     }
-    if (starts_with(string, "flag:")) {
+    if (strv_starts_with_cstr(strv, "flag:")) {
         condition->type = COND_FLAG;
-        copy_after_colon(string, condition->argument, MAX_ARG);
+        Strv rest = strv;
+        (void)strv_split(&rest, ':');
+        strv_copy_to_cstr(rest, condition->argument, MAX_ARG);
         return true;
     }
-    if (starts_with(string, "has_item:")) {
+    if (strv_starts_with_cstr(strv, "has_item:")) {
         condition->type = COND_HAS_ITEM;
-        copy_after_colon(string, condition->argument, MAX_ARG);
+        Strv rest = strv;
+        (void)strv_split(&rest, ':');
+        strv_copy_to_cstr(rest, condition->argument, MAX_ARG);
         return true;
     }
-    if (starts_with(string, "var:")) {
+    if (strv_starts_with_cstr(strv, "var:")) {
         condition->type = COND_VAR;
-        copy_after_colon(string, condition->argument, MAX_ARG);
+        Strv rest = strv;
+        (void)strv_split(&rest, ':');
+        strv_copy_to_cstr(rest, condition->argument, MAX_ARG);
         return true;
     }
-    if (starts_with(string, "not_attr:")) {
+    if (strv_starts_with_cstr(strv, "not_attr:")) {
         condition->type = COND_NOT_ATTR;
-        copy_after_colon(string, condition->argument, MAX_ARG);
+        Strv rest = strv;
+        (void)strv_split(&rest, ':');
+        strv_copy_to_cstr(rest, condition->argument, MAX_ARG);
         return true;
     }
-    if (starts_with(string, "self.attr:")) {
-        const char *attr_arg = strchr(string, ':') + 1;
+    if ((int)strv_starts_with_cstr(strv, "self.attr:") || (int)strv_starts_with_cstr(strv, "attr:")) {
+        Strv rest = strv;
+        (void)strv_split(&rest, ':');
+        char attr_arg[MAX_ARG];
+        strv_copy_to_cstr(rest, attr_arg, MAX_ARG);
         if (parse_condition_attr_comparison(condition, attr_arg)) {
             return true;
         }
         condition->type = COND_ATTR;
-        strncpy(condition->argument, attr_arg, MAX_ARG - 1);
-        return true;
-    }
-    if (starts_with(string, "attr:")) {
-        const char *attr_arg = strchr(string, ':') + 1;
-        if (parse_condition_attr_comparison(condition, attr_arg)) {
-            return true;
-        }
-        condition->type = COND_ATTR;
-        strncpy(condition->argument, attr_arg, MAX_ARG - 1);
+        strv_copy_to_cstr(rest, condition->argument, MAX_ARG);
         return true;
     }
 
@@ -206,22 +202,13 @@ bool condition_parse(struct EngineContext *ctx, Condition *condition, const char
     return false;
 }
 
-static bool parse_action_two_args(ActionNode *node, const char *after_colon)
+static bool parse_action_two_args(ActionNode *node, Strv strv)
 {
-    const char *comma = strchr(after_colon, ',');
-    if (!comma) {
-        strncpy(node->argument, after_colon, MAX_ARG - 1);
-        return true;
+    Strv first = strv_split(&strv, ',');
+    strv_copy_to_cstr(first, node->argument, MAX_ARG);
+    if (strv.ptr) {
+        strv_copy_to_cstr(strv, node->second_argument, MAX_ARG);
     }
-
-    size_t first_len = (size_t)(comma - after_colon);
-    if (first_len >= MAX_ARG) {
-        first_len = MAX_ARG - 1;
-    }
-    memcpy(node->argument, after_colon, first_len);
-    node->argument[first_len] = '\0';
-
-    strncpy(node->second_argument, comma + 1, MAX_ARG - 1);
     return true;
 }
 
@@ -259,20 +246,22 @@ static const ActionMapping action_mappings[] = {
 static bool parse_simple_action(struct EngineContext *ctx, ActionNode *node, const char *string)
 {
     memset(node, 0, sizeof(*node));
+    Strv strv = strv_from_cstr(string);
 
     for (int index = 0; action_mappings[index].prefix; index++) {
         const ActionMapping *mapping = &action_mappings[index];
         if (!mapping->has_args) {
-            if (strcmp(string, mapping->prefix) == 0) {
+            if (strv_eq_cstr(strv, mapping->prefix)) {
                 node->type = mapping->type;
                 return true;
             }
             continue;
         }
-        if (starts_with(string, mapping->prefix)) {
+        if (strv_starts_with_cstr(strv, mapping->prefix)) {
             node->type = mapping->type;
-            const char *after_prefix = string + strlen(mapping->prefix);
-            return parse_action_two_args(node, after_prefix);
+            Strv rest = strv;
+            (void)strv_split(&rest, ':');
+            return parse_action_two_args(node, rest);
         }
     }
 
@@ -674,24 +663,16 @@ bool conditions_evaluate(const Condition *conditions, int count, ConditionContex
 
 static Entity *resolve_target(const char *target_spec, ActionContext context, char *attr_name_out, int attr_name_max)
 {
-    const char *dot = strchr(target_spec, '.');
-    if (!dot) {
-        strncpy(attr_name_out, target_spec, (size_t)(attr_name_max - 1));
-        attr_name_out[attr_name_max - 1] = '\0';
+    Strv strv = strv_from_cstr(target_spec);
+    Strv head = strv_split(&strv, '.');
+    if (!strv.ptr) {
+        strv_copy_to_cstr(head, attr_name_out, (size_t)attr_name_max);
         return context.entity;
     }
 
-    size_t tag_len = (size_t)(dot - target_spec);
     char tag[MAX_TAG];
-    if (tag_len >= MAX_TAG) {
-        tag_len = MAX_TAG - 1;
-    }
-    memcpy(tag, target_spec, tag_len);
-    tag[tag_len] = '\0';
-
-    strncpy(attr_name_out, dot + 1, (size_t)(attr_name_max - 1));
-    attr_name_out[attr_name_max - 1] = '\0';
-
+    strv_copy_to_cstr(head, tag, MAX_TAG);
+    strv_copy_to_cstr(strv, attr_name_out, (size_t)attr_name_max);
     return entity_find_by_tag_mut(context.entity, tag, context.entities, context.entity_count);
 }
 
@@ -841,9 +822,9 @@ static bool execute_set_var_action(struct EngineContext *ctx, const ActionNode *
 
     AttrSet *target_vars;
     const char *var_name;
-    if (strncmp(node->argument, GLOBAL_VAR_PREFIX, sizeof(GLOBAL_VAR_PREFIX) - 1) == 0) {
+    if (strv_starts_with_cstr(strv_from_cstr(node->argument), GLOBAL_VAR_PREFIX)) {
         target_vars = context.global_vars;
-        var_name = node->argument + sizeof(GLOBAL_VAR_PREFIX) - 1;
+        var_name = node->argument + strlen(GLOBAL_VAR_PREFIX);
     } else {
         target_vars = context.local_vars;
         var_name = node->argument;
