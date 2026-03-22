@@ -685,8 +685,8 @@ static Entity *resolve_target(const char *target_spec, ActionContext context, ch
         return context.entity;
     }
 
-    char tag[MAX_TAG];
-    strv_copy_to_cstr(head, tag, MAX_TAG);
+    char tag[MAX_ARG];
+    strv_copy_to_cstr(head, tag, MAX_ARG);
     strv_copy_to_cstr(strv, attr_name_out, (size_t)attr_name_max);
     return entity_find_by_tag_mut(context.entity, tag, context.entities, context.entity_count);
 }
@@ -1025,15 +1025,15 @@ static void evaluate_entity_rules(struct EngineContext *ctx,
             .local_vars = &local_vars,
             .global_vars = global_vars,
         };
-        debug_log(ctx, "Rule triggered for entity %d (type: %s), rule %d", entity_index, entity->blueprint->name,
+        debug_log(ctx, "Rule triggered for entity %d (type: %s), rule %d", entity_index, entity->blueprint->name.ptr,
                   rule_index);
         if (!conditions_evaluate(rule->conditions, rule->condition_count, cond_ctx)) {
             debug_log(ctx, "Conditions not met for rule %d on entity %d (type: %s)", rule_index, entity_index,
-                      entity->blueprint->name);
+                      entity->blueprint->name.ptr);
             continue;
         }
         debug_log(ctx, "Executing actions for rule %d on entity %d (type: %s)", rule_index, entity_index,
-                  entity->blueprint->name);
+                  entity->blueprint->name.ptr);
         for (int action_index = 0; action_index < rule->action_tree.count; action_index++) {
             (void)action_node_execute(ctx, &rule->action_tree.nodes[action_index], act_ctx);
         }

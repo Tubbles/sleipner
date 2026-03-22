@@ -3,6 +3,7 @@
 
 #include "attribute.h"
 #include "blueprint.h"
+#include "str.h"
 
 #include "raylib.h"
 
@@ -14,9 +15,9 @@ struct EngineContext;
 
 typedef struct {
     /* Identity */
-    char blueprint_name[MAX_BLUEPRINT_NAME];
+    Str blueprint_name;
     const Blueprint *blueprint;
-    char tag[MAX_TAG];
+    Str tag;
 
     /* Built-in attributes */
     Vector2 position;
@@ -58,8 +59,10 @@ bool entity_get_bool(const Entity *entity, const char *name, bool fallback);
 const char *entity_get_string(const Entity *entity, const char *name);
 
 /* Initialize an entity from a blueprint. Sets built-in attributes
- * from blueprint defaults and copies rendering fields. */
-void entity_init_from_blueprint(Entity *entity, const Blueprint *blueprint, Vector2 position, Texture2D *texture);
+ * from blueprint defaults and copies rendering fields.
+ * Returns false on allocation failure. */
+[[nodiscard]] bool entity_init_from_blueprint(
+    struct EngineContext *ctx, Entity *entity, const Blueprint *blueprint, Vector2 position, Texture2D *texture);
 
 /* Recompute collision rect from position + blueprint offsets.
  * Call after moving an entity. */

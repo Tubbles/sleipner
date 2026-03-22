@@ -1,6 +1,8 @@
 #include "entity.h"
 #include "attribute.h"
 #include "blueprint.h"
+#include "str.h"
+#include "strv.h"
 
 #include "raylib.h"
 
@@ -62,11 +64,14 @@ const char *entity_get_string(const Entity *entity, const char *name)
     return NULL;
 }
 
-void entity_init_from_blueprint(Entity *entity, const Blueprint *blueprint, Vector2 position, Texture2D *texture)
+bool entity_init_from_blueprint(
+    struct EngineContext *ctx, Entity *entity, const Blueprint *blueprint, Vector2 position, Texture2D *texture)
 {
     memset(entity, 0, sizeof(*entity));
 
-    strncpy(entity->blueprint_name, blueprint->name, MAX_BLUEPRINT_NAME - 1);
+    if (!str_from_strv(ctx, &entity->blueprint_name, str_to_strv(blueprint->name))) {
+        return false;
+    }
     entity->blueprint = blueprint;
 
     entity->position = position;
@@ -87,6 +92,7 @@ void entity_init_from_blueprint(Entity *entity, const Blueprint *blueprint, Vect
     entity->solid = (bool)((blueprint->collision_size.x > 0.0F) || (blueprint->collision_size.y > 0.0F));
     entity->opacity = 1.0F;
     entity->parent_index = -1;
+    return true;
 }
 
 void entity_update_collision(Entity *entity)
@@ -140,8 +146,8 @@ const Entity *entity_find_by_tag(const Entity *source, const char *tag, const En
 
     int root_index = find_root_index(entities, source_index);
     for (int index = 0; index < entity_count; index++) {
-        if (find_root_index(entities, index) == root_index && entities[index].tag[0] != '\0' &&
-            strcmp(entities[index].tag, tag) == 0) {
+        if (find_root_index(entities, index) == root_index && entities[index].tag.len > 0 &&
+            (int)strv_eq_cstr(str_to_strv(entities[index].tag), tag)) {
             return &entities[index];
         }
     }

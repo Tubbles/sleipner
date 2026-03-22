@@ -93,7 +93,7 @@ void test_level_load_first(void)
     Arena arena;
     TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 4096));
     BlueprintTable blueprints;
-    Level level;
+    Level level = {0};
 
     toml_table_t *root = parse_toml(test_gamedata);
     TEST_ASSERT_NOT_NULL(root);
@@ -102,8 +102,8 @@ void test_level_load_first(void)
 
     bool loaded = level_load(&ctx, &level, root, NULL, &blueprints, test_texture_lookup, NULL);
     TEST_ASSERT_TRUE(loaded);
-    TEST_ASSERT_EQUAL_STRING("overworld", level.name);
-    TEST_ASSERT_EQUAL_STRING("bgm.mp3", level.music_name);
+    TEST_ASSERT_EQUAL_STRING("overworld", level.name.ptr);
+    TEST_ASSERT_EQUAL_STRING("bgm.mp3", level.music_name.ptr);
     TEST_ASSERT_EQUAL_INT(640, level.width);
     TEST_ASSERT_EQUAL_INT(360, level.height);
     TEST_ASSERT_EQUAL_INT(2, level.entity_count);
@@ -119,7 +119,7 @@ void test_level_load_by_name(void)
     Arena arena;
     TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 4096));
     BlueprintTable blueprints;
-    Level level;
+    Level level = {0};
 
     toml_table_t *root = parse_toml(test_gamedata);
     TEST_ASSERT_NOT_NULL(root);
@@ -128,7 +128,7 @@ void test_level_load_by_name(void)
 
     bool loaded = level_load(&ctx, &level, root, "dungeon", &blueprints, test_texture_lookup, NULL);
     TEST_ASSERT_TRUE(loaded);
-    TEST_ASSERT_EQUAL_STRING("dungeon", level.name);
+    TEST_ASSERT_EQUAL_STRING("dungeon", level.name.ptr);
     TEST_ASSERT_EQUAL_INT(320, level.width);
     TEST_ASSERT_EQUAL_INT(240, level.height);
     TEST_ASSERT_EQUAL_INT(1, level.entity_count);
@@ -144,7 +144,7 @@ void test_level_load_nonexistent(void)
     Arena arena;
     TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 4096));
     BlueprintTable blueprints;
-    Level level;
+    Level level = {0};
 
     toml_table_t *root = parse_toml(test_gamedata);
     TEST_ASSERT_NOT_NULL(root);
@@ -165,7 +165,7 @@ void test_level_entity_positions(void)
     Arena arena;
     TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 4096));
     BlueprintTable blueprints;
-    Level level;
+    Level level = {0};
 
     toml_table_t *root = parse_toml(test_gamedata);
     TEST_ASSERT_NOT_NULL(root);
@@ -200,7 +200,7 @@ void test_level_entity_source_rects(void)
     Arena arena;
     TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 4096));
     BlueprintTable blueprints;
-    Level level;
+    Level level = {0};
 
     toml_table_t *root = parse_toml(test_gamedata);
     TEST_ASSERT_NOT_NULL(root);
@@ -262,7 +262,7 @@ void test_level_child_entities_instantiated(void)
     Arena arena;
     TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 4096));
     BlueprintTable blueprints;
-    Level level;
+    Level level = {0};
 
     toml_table_t *root = parse_toml(child_gamedata);
     TEST_ASSERT_NOT_NULL(root);
@@ -291,7 +291,7 @@ void test_level_child_entity_positions(void)
     Arena arena;
     TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 4096));
     BlueprintTable blueprints;
-    Level level;
+    Level level = {0};
 
     toml_table_t *root = parse_toml(child_gamedata);
     TEST_ASSERT_NOT_NULL(root);
@@ -318,7 +318,7 @@ void test_level_child_entity_tags(void)
     Arena arena;
     TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 4096));
     BlueprintTable blueprints;
-    Level level;
+    Level level = {0};
 
     toml_table_t *root = parse_toml(child_gamedata);
     TEST_ASSERT_NOT_NULL(root);
@@ -326,8 +326,8 @@ void test_level_child_entity_tags(void)
     blueprints_load(&ctx, &blueprints, root, &arena);
     TEST_ASSERT_TRUE(level_load(&ctx, &level, root, "test", &blueprints, test_texture_lookup, NULL));
 
-    TEST_ASSERT_EQUAL_STRING("light", level.entities[1].tag);
-    TEST_ASSERT_EQUAL_STRING("front_wheel", level.entities[2].tag);
+    TEST_ASSERT_EQUAL_STRING("light", level.entities[1].tag.ptr);
+    TEST_ASSERT_EQUAL_STRING("front_wheel", level.entities[2].tag.ptr);
 
     test_level_free(&ctx, &level);
     test_blueprint_table_free(&ctx, &blueprints);
@@ -340,7 +340,7 @@ void test_level_nested_children(void)
     Arena arena;
     TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 4096));
     BlueprintTable blueprints;
-    Level level;
+    Level level = {0};
 
     const char *nested_data = "[[blueprint]]\n"
                               "name = \"part\"\n"
@@ -396,8 +396,8 @@ void test_level_nested_children(void)
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 16.0F, level.entities[2].position.x);
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 16.0F, level.entities[2].position.y);
 
-    TEST_ASSERT_EQUAL_STRING("middle", level.entities[1].tag);
-    TEST_ASSERT_EQUAL_STRING("inner", level.entities[2].tag);
+    TEST_ASSERT_EQUAL_STRING("middle", level.entities[1].tag.ptr);
+    TEST_ASSERT_EQUAL_STRING("inner", level.entities[2].tag.ptr);
 
     test_level_free(&ctx, &level);
     test_blueprint_table_free(&ctx, &blueprints);

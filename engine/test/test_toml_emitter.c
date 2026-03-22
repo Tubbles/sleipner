@@ -89,7 +89,7 @@ void test_toml_emit_level_with_entities(void)
     Arena arena;
     TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 4096));
     BlueprintTable blueprints = {0};
-    Level level;
+    Level level = {0};
 
     toml_table_t *root = parse_toml(fixture_gamedata);
     TEST_ASSERT_NOT_NULL(root);
@@ -121,7 +121,7 @@ void test_toml_emit_round_trip(void)
     Arena arena;
     TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 4096));
     BlueprintTable blueprints = {0};
-    Level level;
+    Level level = {0};
 
     /* Parse original */
     toml_table_t *root = parse_toml(fixture_gamedata);
@@ -139,7 +139,7 @@ void test_toml_emit_round_trip(void)
     Arena arena2;
     TEST_ASSERT_TRUE(arena_init(&ctx, &arena2, 4096));
     BlueprintTable blueprints2 = {0};
-    Level level2;
+    Level level2 = {0};
 
     toml_table_t *root2 = parse_toml(output);
     TEST_ASSERT_NOT_NULL(root2);
@@ -150,15 +150,15 @@ void test_toml_emit_round_trip(void)
     /* Verify round-trip preserves data */
     TEST_ASSERT_EQUAL_INT(blueprints.entries.count, blueprints2.entries.count);
     for (int index = 0; index < blueprints.entries.count; index++) {
-        TEST_ASSERT_EQUAL_STRING(blueprints.entries.data[index].name, blueprints2.entries.data[index].name);
-        TEST_ASSERT_EQUAL_STRING(blueprints.entries.data[index].texture_name,
-                                 blueprints2.entries.data[index].texture_name);
+        TEST_ASSERT_EQUAL_STRING(blueprints.entries.data[index].name.ptr, blueprints2.entries.data[index].name.ptr);
+        TEST_ASSERT_EQUAL_STRING(blueprints.entries.data[index].texture_name.ptr,
+                                 blueprints2.entries.data[index].texture_name.ptr);
         TEST_ASSERT_FLOAT_WITHIN(0.1F, blueprints.entries.data[index].source.width,
                                  blueprints2.entries.data[index].source.width);
     }
 
-    TEST_ASSERT_EQUAL_STRING(level.name, level2.name);
-    TEST_ASSERT_EQUAL_STRING(level.music_name, level2.music_name);
+    TEST_ASSERT_EQUAL_STRING(level.name.ptr, level2.name.ptr);
+    TEST_ASSERT_EQUAL_STRING(level.music_name.ptr, level2.music_name.ptr);
     TEST_ASSERT_EQUAL_INT(level.width, level2.width);
     TEST_ASSERT_EQUAL_INT(level.height, level2.height);
     TEST_ASSERT_EQUAL_INT(level.entity_count, level2.entity_count);
@@ -166,7 +166,7 @@ void test_toml_emit_round_trip(void)
     for (int index = 0; index < level.entity_count; index++) {
         TEST_ASSERT_FLOAT_WITHIN(0.1F, level.entities[index].position.x, level2.entities[index].position.x);
         TEST_ASSERT_FLOAT_WITHIN(0.1F, level.entities[index].position.y, level2.entities[index].position.y);
-        TEST_ASSERT_EQUAL_STRING(level.entities[index].blueprint_name, level2.entities[index].blueprint_name);
+        TEST_ASSERT_EQUAL_STRING(level.entities[index].blueprint_name.ptr, level2.entities[index].blueprint_name.ptr);
     }
 
     test_level_free(&ctx, &level);
@@ -180,15 +180,15 @@ void test_toml_emit_round_trip(void)
 void test_toml_emit_buffer_too_small(void)
 {
     BlueprintTable blueprints = {0};
-    Blueprint temp = {0};
-    strncpy(temp.name, "test", MAX_BLUEPRINT_NAME - 1);
-    strncpy(temp.texture_name, "test.png", MAX_TEXTURE_NAME - 1);
-    (void)vec_blueprint_push(&blueprints.entries, temp);
+    TEST_ASSERT_TRUE(vec_blueprint_push(&blueprints.entries, (Blueprint){0}));
+    Blueprint *entry = &blueprints.entries.data[0];
+    TEST_ASSERT_TRUE(str_from_cstr(&ctx, &entry->name, "test"));
+    TEST_ASSERT_TRUE(str_from_cstr(&ctx, &entry->texture_name, "test.png"));
 
     char tiny[10];
     int written = toml_emit_gamedata(&ctx, tiny, (int)sizeof(tiny), &blueprints, NULL, 0);
     TEST_ASSERT_EQUAL_INT(-1, written);
-    vec_blueprint_free(&blueprints.entries);
+    test_blueprint_table_free(&ctx, &blueprints);
 }
 
 static const char *child_fixture = "[[blueprint]]\n"
@@ -247,7 +247,7 @@ void test_toml_emit_skips_child_entities(void)
     Arena arena;
     TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 4096));
     BlueprintTable blueprints = {0};
-    Level level;
+    Level level = {0};
 
     toml_table_t *root = parse_toml(child_fixture);
     TEST_ASSERT_NOT_NULL(root);
@@ -282,7 +282,7 @@ void test_toml_emit_skips_child_entities(void)
 void test_toml_emit_no_music(void)
 {
     Level level = {0};
-    strncpy(level.name, "silent", MAX_LEVEL_NAME);
+    TEST_ASSERT_TRUE(str_from_cstr(&ctx, &level.name, "silent"));
     level.width = 100;
     level.height = 100;
 
@@ -294,4 +294,5 @@ void test_toml_emit_no_music(void)
     /* Should not contain music line */
     TEST_ASSERT_NULL(strstr(output, "music"));
     TEST_ASSERT_NOT_NULL(strstr(output, "name = \"silent\""));
+    test_level_free(&ctx, &level);
 }

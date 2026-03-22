@@ -482,14 +482,14 @@ static void load_gamedata(struct EngineContext *ctx, GameState *state)
         debug_log(ctx, "gamedata: %d blueprints", state->blueprints.entries.count);
         for (int index = 0; index < state->blueprints.entries.count; index++) {
             const Blueprint *blueprint = &state->blueprints.entries.data[index];
-            debug_log(ctx, "  bp[%d]: '%s' tex='%s' attrs=%d", index, blueprint->name, blueprint->texture_name,
+            debug_log(ctx, "  bp[%d]: '%s' tex='%s' attrs=%d", index, blueprint->name.ptr, blueprint->texture_name.ptr,
                       blueprint->attrs.entries.count);
         }
-        debug_log(ctx, "gamedata: level '%s' (%dx%d, %d entities)", state->current_level.name,
+        debug_log(ctx, "gamedata: level '%s' (%dx%d, %d entities)", state->current_level.name.ptr,
                   state->current_level.width, state->current_level.height, state->current_level.entity_count);
         for (int index = 0; index < state->current_level.entity_count; index++) {
             const Entity *entity = &state->current_level.entities[index];
-            debug_log(ctx, "  ent[%d]: bp='%s' pos=(%.0f,%.0f) tex=%s", index, entity->blueprint_name,
+            debug_log(ctx, "  ent[%d]: bp='%s' pos=(%.0f,%.0f) tex=%s", index, entity->blueprint_name.ptr,
                       entity->position.x, entity->position.y, entity->texture ? "ok" : "NULL");
         }
         if (state->player_index >= 0) {

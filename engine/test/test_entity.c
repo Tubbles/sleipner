@@ -4,6 +4,7 @@
 static struct EngineContext ctx;
 
 #include "entity.h"
+#include "str.h"
 #include "test_helpers.h"
 
 #include <string.h>
@@ -11,8 +12,8 @@ static struct EngineContext ctx;
 static Blueprint make_test_blueprint(void)
 {
     Blueprint blueprint = {0};
-    strncpy(blueprint.name, "chest", MAX_BLUEPRINT_NAME);
-    strncpy(blueprint.texture_name, "chest.png", MAX_TEXTURE_NAME);
+    TEST_ASSERT_TRUE(str_from_cstr(&ctx, &blueprint.name, "chest"));
+    TEST_ASSERT_TRUE(str_from_cstr(&ctx, &blueprint.texture_name, "chest.png"));
     blueprint.source = (Rectangle){0, 0, 16, 16};
     blueprint.collision_offset = (Vector2){2, 4};
     blueprint.collision_size = (Vector2){12, 8};
@@ -32,9 +33,9 @@ void test_entity_init_from_blueprint(void)
     Texture2D dummy = {0};
     Entity entity;
 
-    entity_init_from_blueprint(&entity, &blueprint, (Vector2){100, 200}, &dummy);
+    TEST_ASSERT_TRUE(entity_init_from_blueprint(&ctx, &entity, &blueprint, (Vector2){100, 200}, &dummy));
 
-    TEST_ASSERT_EQUAL_STRING("chest", entity.blueprint_name);
+    TEST_ASSERT_EQUAL_STRING("chest", entity.blueprint_name.ptr);
     TEST_ASSERT_TRUE(entity.blueprint == &blueprint);
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 100.0F, entity.position.x);
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 200.0F, entity.position.y);
@@ -59,7 +60,7 @@ void test_entity_get_attr_from_blueprint(void)
     Texture2D dummy = {0};
     Entity entity;
 
-    entity_init_from_blueprint(&entity, &blueprint, (Vector2){0, 0}, &dummy);
+    TEST_ASSERT_TRUE(entity_init_from_blueprint(&ctx, &entity, &blueprint, (Vector2){0, 0}, &dummy));
 
     /* No instance overrides — falls back to blueprint */
     TEST_ASSERT_EQUAL_STRING("static", entity_get_string(&entity, "behavior"));
@@ -75,7 +76,7 @@ void test_entity_instance_overrides_blueprint(void)
     Texture2D dummy = {0};
     Entity entity;
 
-    entity_init_from_blueprint(&entity, &blueprint, (Vector2){0, 0}, &dummy);
+    TEST_ASSERT_TRUE(entity_init_from_blueprint(&ctx, &entity, &blueprint, (Vector2){0, 0}, &dummy));
 
     /* Override at instance level */
     TEST_ASSERT_TRUE(attr_set_bool(&ctx, &entity.attrs, "is_locked", false));
@@ -97,7 +98,7 @@ void test_entity_get_missing_attr(void)
     Texture2D dummy = {0};
     Entity entity;
 
-    entity_init_from_blueprint(&entity, &blueprint, (Vector2){0, 0}, &dummy);
+    TEST_ASSERT_TRUE(entity_init_from_blueprint(&ctx, &entity, &blueprint, (Vector2){0, 0}, &dummy));
 
     TEST_ASSERT_EQUAL_INT(42, entity_get_int(&entity, "nonexistent", 42));
     TEST_ASSERT_NULL(entity_get_string(&entity, "nope"));
@@ -108,12 +109,12 @@ void test_entity_get_missing_attr(void)
 void test_entity_int_float_coercion(void)
 {
     Blueprint blueprint = {0};
-    strncpy(blueprint.name, "test", MAX_BLUEPRINT_NAME);
+    TEST_ASSERT_TRUE(str_from_cstr(&ctx, &blueprint.name, "test"));
     TEST_ASSERT_TRUE(attr_set_int(&ctx, &blueprint.attrs, "speed", 80));
 
     Texture2D dummy = {0};
     Entity entity;
-    entity_init_from_blueprint(&entity, &blueprint, (Vector2){0, 0}, &dummy);
+    TEST_ASSERT_TRUE(entity_init_from_blueprint(&ctx, &entity, &blueprint, (Vector2){0, 0}, &dummy));
 
     /* Int attr retrieved as float via coercion */
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 80.0F, entity_get_float(&entity, "speed", 0));
@@ -137,12 +138,12 @@ void test_entity_no_blueprint(void)
 void test_entity_solid_from_collision(void)
 {
     Blueprint no_collision = {0};
-    strncpy(no_collision.name, "ghost", MAX_BLUEPRINT_NAME);
+    TEST_ASSERT_TRUE(str_from_cstr(&ctx, &no_collision.name, "ghost"));
     /* collision_size is (0, 0) */
 
     Texture2D dummy = {0};
     Entity entity;
-    entity_init_from_blueprint(&entity, &no_collision, (Vector2){0, 0}, &dummy);
+    TEST_ASSERT_TRUE(entity_init_from_blueprint(&ctx, &entity, &no_collision, (Vector2){0, 0}, &dummy));
 
     TEST_ASSERT_FALSE(entity.solid);
     test_blueprint_free(&ctx, &no_collision);
@@ -154,22 +155,29 @@ static void make_entity_tree(Entity *entities)
 {
     memset(entities, 0, 3 * sizeof(Entity));
 
-    strncpy(entities[0].blueprint_name, "wagon", MAX_BLUEPRINT_NAME);
+    TEST_ASSERT_TRUE(str_from_cstr(&ctx, &entities[0].blueprint_name, "wagon"));
     entities[0].parent_index = -1;
     entities[0].visible = true;
     entities[0].active = true;
 
-    strncpy(entities[1].blueprint_name, "lantern", MAX_BLUEPRINT_NAME);
-    strncpy(entities[1].tag, "light", MAX_TAG);
+    TEST_ASSERT_TRUE(str_from_cstr(&ctx, &entities[1].blueprint_name, "lantern"));
+    TEST_ASSERT_TRUE(str_from_cstr(&ctx, &entities[1].tag, "light"));
     entities[1].parent_index = 0;
     entities[1].visible = true;
     entities[1].active = true;
 
-    strncpy(entities[2].blueprint_name, "wheel", MAX_BLUEPRINT_NAME);
-    strncpy(entities[2].tag, "front_wheel", MAX_TAG);
+    TEST_ASSERT_TRUE(str_from_cstr(&ctx, &entities[2].blueprint_name, "wheel"));
+    TEST_ASSERT_TRUE(str_from_cstr(&ctx, &entities[2].tag, "front_wheel"));
     entities[2].parent_index = 0;
     entities[2].visible = true;
     entities[2].active = true;
+}
+
+static void free_entity_tree(Entity *entities)
+{
+    for (int index = 0; index < 3; index++) {
+        test_entity_free(&ctx, &entities[index]);
+    }
 }
 
 void test_entity_find_by_tag_self(void)
@@ -179,6 +187,7 @@ void test_entity_find_by_tag_self(void)
 
     const Entity *result = entity_find_by_tag(&entities[1], "self", entities, 3);
     TEST_ASSERT_TRUE(result == &entities[1]);
+    free_entity_tree(entities);
 }
 
 void test_entity_find_by_tag_parent(void)
@@ -188,6 +197,7 @@ void test_entity_find_by_tag_parent(void)
 
     const Entity *result = entity_find_by_tag(&entities[1], "parent", entities, 3);
     TEST_ASSERT_TRUE(result == &entities[0]);
+    free_entity_tree(entities);
 }
 
 void test_entity_find_by_tag_parent_of_root(void)
@@ -197,6 +207,7 @@ void test_entity_find_by_tag_parent_of_root(void)
 
     const Entity *result = entity_find_by_tag(&entities[0], "parent", entities, 3);
     TEST_ASSERT_NULL(result);
+    free_entity_tree(entities);
 }
 
 void test_entity_find_by_tag_root(void)
@@ -206,6 +217,7 @@ void test_entity_find_by_tag_root(void)
 
     const Entity *result = entity_find_by_tag(&entities[1], "root", entities, 3);
     TEST_ASSERT_TRUE(result == &entities[0]);
+    free_entity_tree(entities);
 }
 
 void test_entity_find_by_tag_custom(void)
@@ -215,6 +227,7 @@ void test_entity_find_by_tag_custom(void)
 
     const Entity *result = entity_find_by_tag(&entities[1], "front_wheel", entities, 3);
     TEST_ASSERT_TRUE(result == &entities[2]);
+    free_entity_tree(entities);
 }
 
 void test_entity_find_by_tag_not_found(void)
@@ -224,6 +237,7 @@ void test_entity_find_by_tag_not_found(void)
 
     const Entity *result = entity_find_by_tag(&entities[1], "nonexistent", entities, 3);
     TEST_ASSERT_NULL(result);
+    free_entity_tree(entities);
 }
 
 void test_entity_is_visible_standalone(void)
@@ -233,6 +247,7 @@ void test_entity_is_visible_standalone(void)
     entity.visible = true;
 
     TEST_ASSERT_TRUE(entity_is_visible(0, &entity));
+    test_entity_free(&ctx, &entity);
 }
 
 void test_entity_is_visible_parent_hidden(void)
@@ -244,6 +259,7 @@ void test_entity_is_visible_parent_hidden(void)
     entities[0].visible = false;
 
     TEST_ASSERT_FALSE(entity_is_visible(1, entities));
+    free_entity_tree(entities);
 }
 
 void test_entity_is_visible_both_visible(void)
@@ -252,6 +268,7 @@ void test_entity_is_visible_both_visible(void)
     make_entity_tree(entities);
 
     TEST_ASSERT_TRUE(entity_is_visible(1, entities));
+    free_entity_tree(entities);
 }
 
 void test_entity_is_active_parent_inactive(void)
@@ -262,6 +279,7 @@ void test_entity_is_active_parent_inactive(void)
     entities[0].active = false;
 
     TEST_ASSERT_FALSE(entity_is_active(1, entities));
+    free_entity_tree(entities);
 }
 
 void test_entity_is_active_both_active(void)
@@ -270,4 +288,5 @@ void test_entity_is_active_both_active(void)
     make_entity_tree(entities);
 
     TEST_ASSERT_TRUE(entity_is_active(1, entities));
+    free_entity_tree(entities);
 }

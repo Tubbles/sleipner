@@ -75,7 +75,7 @@ void test_integration_load_gamedata(void)
                                      (GamedataParams){.toml_string = fixture_gamedata, .texture_lookup = dummy_lookup});
     TEST_ASSERT_TRUE(loaded);
     TEST_ASSERT_TRUE(state.gamedata_loaded);
-    TEST_ASSERT_EQUAL_STRING("field", state.current_level.name);
+    TEST_ASSERT_EQUAL_STRING("field", state.current_level.name.ptr);
     TEST_ASSERT_EQUAL_INT(3, state.current_level.entity_count);
     TEST_ASSERT_EQUAL_INT(3, state.blueprints.entries.count);
     TEST_ASSERT_TRUE(state.player_index >= 0);
@@ -92,7 +92,7 @@ void test_integration_load_specific_level(void)
         &ctx, &state,
         (GamedataParams){.toml_string = fixture_gamedata, .level_name = "cave", .texture_lookup = dummy_lookup});
     TEST_ASSERT_TRUE(loaded);
-    TEST_ASSERT_EQUAL_STRING("cave", state.current_level.name);
+    TEST_ASSERT_EQUAL_STRING("cave", state.current_level.name.ptr);
     TEST_ASSERT_EQUAL_INT(2, state.current_level.entity_count);
     TEST_ASSERT_TRUE(state.player_index >= 0);
 
@@ -215,7 +215,7 @@ void test_integration_player_entity_spawns(void)
     /* Player must have a valid texture and blueprint */
     TEST_ASSERT_NOT_NULL(player->blueprint);
     TEST_ASSERT_NOT_NULL(player->texture);
-    TEST_ASSERT_EQUAL_STRING("player", player->blueprint_name);
+    TEST_ASSERT_EQUAL_STRING("player", player->blueprint_name.ptr);
 
     /* Player must be at the spawned position */
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 160.0F, player->position.x);

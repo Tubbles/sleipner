@@ -45,8 +45,8 @@ void test_blueprint_load_single(void)
     TEST_ASSERT_EQUAL_INT(1, count);
     TEST_ASSERT_EQUAL_INT(1, table.entries.count);
 
-    TEST_ASSERT_EQUAL_STRING("tree", table.entries.data[0].name);
-    TEST_ASSERT_EQUAL_STRING("tree.png", table.entries.data[0].texture_name);
+    TEST_ASSERT_EQUAL_STRING("tree", table.entries.data[0].name.ptr);
+    TEST_ASSERT_EQUAL_STRING("tree.png", table.entries.data[0].texture_name.ptr);
     TEST_ASSERT_FLOAT_WITHIN(0.1f, 0.0f, table.entries.data[0].source.x);
     TEST_ASSERT_FLOAT_WITHIN(0.1f, 0.0f, table.entries.data[0].source.y);
     TEST_ASSERT_FLOAT_WITHIN(0.1f, 64.0f, table.entries.data[0].source.width);
@@ -84,8 +84,8 @@ void test_blueprint_load_multiple(void)
 
     int count = blueprints_load(&ctx, &table, root, &test_arena);
     TEST_ASSERT_EQUAL_INT(2, count);
-    TEST_ASSERT_EQUAL_STRING("tree", table.entries.data[0].name);
-    TEST_ASSERT_EQUAL_STRING("chest", table.entries.data[1].name);
+    TEST_ASSERT_EQUAL_STRING("tree", table.entries.data[0].name.ptr);
+    TEST_ASSERT_EQUAL_STRING("chest", table.entries.data[1].name.ptr);
 
     toml_free(root);
     test_blueprint_table_free(&ctx, &table);
@@ -117,8 +117,8 @@ void test_blueprint_find(void)
 
     const Blueprint *found = blueprint_find(&table, "chest");
     TEST_ASSERT_NOT_NULL(found);
-    TEST_ASSERT_EQUAL_STRING("chest", found->name);
-    TEST_ASSERT_EQUAL_STRING("chest.png", found->texture_name);
+    TEST_ASSERT_EQUAL_STRING("chest", found->name.ptr);
+    TEST_ASSERT_EQUAL_STRING("chest.png", found->texture_name.ptr);
 
     const Blueprint *not_found = blueprint_find(&table, "nonexistent");
     TEST_ASSERT_NULL(not_found);
@@ -147,7 +147,7 @@ void test_blueprint_skip_nameless(void)
 
     int count = blueprints_load(&ctx, &table, root, &test_arena);
     TEST_ASSERT_EQUAL_INT(1, count);
-    TEST_ASSERT_EQUAL_STRING("chest", table.entries.data[0].name);
+    TEST_ASSERT_EQUAL_STRING("chest", table.entries.data[0].name.ptr);
 
     toml_free(root);
     test_blueprint_table_free(&ctx, &table);
@@ -266,7 +266,7 @@ void test_blueprint_extends(void)
 
     /* Inherited from parent */
     TEST_ASSERT_EQUAL_STRING("static", attr_get_string(&locked->attrs, "behavior"));
-    TEST_ASSERT_EQUAL_STRING("chest.png", locked->texture_name);
+    TEST_ASSERT_EQUAL_STRING("chest.png", locked->texture_name.ptr);
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 16.0F, locked->source.width);
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 16.0F, locked->collision_size.x);
 
@@ -302,8 +302,8 @@ void test_blueprint_child_parsed(void)
     TEST_ASSERT_NOT_NULL(wagon);
 
     TEST_ASSERT_EQUAL_INT(1, wagon->children.count);
-    TEST_ASSERT_EQUAL_STRING("lantern", wagon->children.data[0].blueprint_name);
-    TEST_ASSERT_EQUAL_STRING("front_light", wagon->children.data[0].tag);
+    TEST_ASSERT_EQUAL_STRING("lantern", wagon->children.data[0].blueprint_name.ptr);
+    TEST_ASSERT_EQUAL_STRING("front_light", wagon->children.data[0].tag.ptr);
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 56.0F, wagon->children.data[0].offset.x);
     TEST_ASSERT_FLOAT_WITHIN(0.1F, -8.0F, wagon->children.data[0].offset.y);
 
@@ -354,11 +354,11 @@ void test_blueprint_multiple_children(void)
     TEST_ASSERT_NOT_NULL(wagon);
 
     TEST_ASSERT_EQUAL_INT(3, wagon->children.count);
-    TEST_ASSERT_EQUAL_STRING("lantern", wagon->children.data[0].blueprint_name);
-    TEST_ASSERT_EQUAL_STRING("wheel", wagon->children.data[1].blueprint_name);
-    TEST_ASSERT_EQUAL_STRING("front_wheel", wagon->children.data[1].tag);
-    TEST_ASSERT_EQUAL_STRING("wheel", wagon->children.data[2].blueprint_name);
-    TEST_ASSERT_EQUAL_STRING("rear_wheel", wagon->children.data[2].tag);
+    TEST_ASSERT_EQUAL_STRING("lantern", wagon->children.data[0].blueprint_name.ptr);
+    TEST_ASSERT_EQUAL_STRING("wheel", wagon->children.data[1].blueprint_name.ptr);
+    TEST_ASSERT_EQUAL_STRING("front_wheel", wagon->children.data[1].tag.ptr);
+    TEST_ASSERT_EQUAL_STRING("wheel", wagon->children.data[2].blueprint_name.ptr);
+    TEST_ASSERT_EQUAL_STRING("rear_wheel", wagon->children.data[2].tag.ptr);
 
     toml_free(root);
     test_blueprint_table_free(&ctx, &table);
@@ -391,7 +391,7 @@ void test_blueprint_child_no_tag(void)
     TEST_ASSERT_NOT_NULL(parent);
 
     TEST_ASSERT_EQUAL_INT(1, parent->children.count);
-    TEST_ASSERT_EQUAL_STRING("", parent->children.data[0].tag);
+    TEST_ASSERT_EQUAL_INT(0, parent->children.data[0].tag.len);
 
     toml_free(root);
     test_blueprint_table_free(&ctx, &table);
@@ -467,7 +467,7 @@ void test_blueprint_extends_chain(void)
 
     /* Inherited through chain */
     TEST_ASSERT_EQUAL_STRING("static", attr_get_string(&top->attrs, "behavior"));
-    TEST_ASSERT_EQUAL_STRING("base.png", top->texture_name);
+    TEST_ASSERT_EQUAL_STRING("base.png", top->texture_name.ptr);
 
     toml_free(root);
     test_blueprint_table_free(&ctx, &table);

@@ -228,7 +228,7 @@ static int detect_interact_targets(struct EngineContext *ctx,
         float distance_sq = (delta_x * delta_x) + (delta_y * delta_y);
         if (distance_sq <= INTERACT_RANGE * INTERACT_RANGE) {
             debug_log(ctx, "Player within interact range of entity %d (type: %s)", index,
-                      entities[index].blueprint->name);
+                      entities[index].blueprint->name.ptr);
             out_events[count] = (TriggerEvent){
                 .type = TRIGGER_INTERACT,
                 .entity_index = index,
@@ -293,14 +293,8 @@ void game_update(struct EngineContext *ctx, GameState *state, InputState input, 
 
 void game_free(struct EngineContext *ctx, GameState *state)
 {
-    for (int index = 0; index < state->blueprints.entries.count; index++) {
-        vec_blueprint_child_free(&state->blueprints.entries.data[index].children);
-        attr_set_free(ctx, &state->blueprints.entries.data[index].attrs);
-    }
-    vec_blueprint_free(&state->blueprints.entries);
-    for (int index = 0; index < state->current_level.entity_count; index++) {
-        attr_set_free(ctx, &state->current_level.entities[index].attrs);
-    }
+    blueprint_table_free(ctx, &state->blueprints);
+    level_free(ctx, &state->current_level);
     flag_set_free(ctx, &state->flags);
     attr_set_free(ctx, &state->vars);
     arena_free(&state->gamedata_arena);

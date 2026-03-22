@@ -36,8 +36,8 @@ static int emit_blueprints(char *buffer, int capacity, int offset, const Bluepri
         const Blueprint *blueprint = &blueprints->entries.data[index];
 
         offset = emit_append(buffer, capacity, offset, "[[blueprint]]\n");
-        offset = emit_append(buffer, capacity, offset, "name = \"%s\"\n", blueprint->name);
-        offset = emit_append(buffer, capacity, offset, "texture = \"%s\"\n", blueprint->texture_name);
+        offset = emit_append(buffer, capacity, offset, "name = \"%s\"\n", blueprint->name.ptr);
+        offset = emit_append(buffer, capacity, offset, "texture = \"%s\"\n", blueprint->texture_name.ptr);
         offset = emit_append(buffer, capacity, offset, "src = [%d, %d, %d, %d]\n", (int)blueprint->source.x,
                              (int)blueprint->source.y, (int)blueprint->source.width, (int)blueprint->source.height);
         offset = emit_append(buffer, capacity, offset, "collision_offset = [%d, %d]\n",
@@ -49,9 +49,9 @@ static int emit_blueprints(char *buffer, int capacity, int offset, const Bluepri
         for (int child_index = 0; child_index < blueprint->children.count; child_index++) {
             const BlueprintChild *child = &blueprint->children.data[child_index];
             offset = emit_append(buffer, capacity, offset, "[[blueprint.child]]\n");
-            offset = emit_append(buffer, capacity, offset, "blueprint = \"%s\"\n", child->blueprint_name);
-            if (child->tag[0] != '\0') {
-                offset = emit_append(buffer, capacity, offset, "tag = \"%s\"\n", child->tag);
+            offset = emit_append(buffer, capacity, offset, "blueprint = \"%s\"\n", child->blueprint_name.ptr);
+            if (child->tag.len > 0) {
+                offset = emit_append(buffer, capacity, offset, "tag = \"%s\"\n", child->tag.ptr);
             }
             if (child->offset.x != 0.0F || child->offset.y != 0.0F) {
                 offset = emit_append(buffer, capacity, offset, "offset = [%d, %d]\n", (int)child->offset.x,
@@ -69,11 +69,11 @@ static int emit_levels(char *buffer, int capacity, int offset, const Level *leve
         const Level *level = &levels[level_index];
 
         offset = emit_append(buffer, capacity, offset, "[[level]]\n");
-        offset = emit_append(buffer, capacity, offset, "name = \"%s\"\n", level->name);
+        offset = emit_append(buffer, capacity, offset, "name = \"%s\"\n", level->name.ptr);
         offset = emit_append(buffer, capacity, offset, "size = [%d, %d]\n", level->width, level->height);
 
-        if (level->music_name[0] != '\0') {
-            offset = emit_append(buffer, capacity, offset, "music = \"%s\"\n", level->music_name);
+        if (level->music_name.len > 0) {
+            offset = emit_append(buffer, capacity, offset, "music = \"%s\"\n", level->music_name.ptr);
         }
         offset = emit_append(buffer, capacity, offset, "\n");
 
@@ -86,7 +86,7 @@ static int emit_levels(char *buffer, int capacity, int offset, const Level *leve
             }
 
             offset = emit_append(buffer, capacity, offset, "[[level.entity]]\n");
-            offset = emit_append(buffer, capacity, offset, "blueprint = \"%s\"\n", entity->blueprint_name);
+            offset = emit_append(buffer, capacity, offset, "blueprint = \"%s\"\n", entity->blueprint_name.ptr);
             offset = emit_append(buffer, capacity, offset, "pos = [%d, %d]\n", (int)entity->position.x,
                                  (int)entity->position.y);
             offset = emit_append(buffer, capacity, offset, "\n");

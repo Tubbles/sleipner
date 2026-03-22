@@ -2,8 +2,10 @@
 #include "attribute.h"
 #include "blueprint.h"
 #include "debug.h"
-#include "error.h"
 #include "entity.h"
+#include "error.h"
+#include "str.h"
+#include "toml_str.h"
 
 #include "raylib.h"
 #include "toml.h"
@@ -78,10 +80,10 @@ static bool spawn_children_for(struct EngineContext *ctx,
     for (int index = 0; index < parent_blueprint->children.count; index++) {
         const BlueprintChild *child_def = &parent_blueprint->children.data[index];
 
-        const Blueprint *child_blueprint = blueprint_find(blueprints, child_def->blueprint_name);
+        const Blueprint *child_blueprint = blueprint_find(blueprints, child_def->blueprint_name.ptr);
         if (!child_blueprint) {
-            error_set(ctx, "child blueprint '%s' not found", child_def->blueprint_name);
-            error_wrap(ctx, "parent '%s' child[%d]", parent_blueprint->name, index);
+            error_set(ctx, "child blueprint '%s' not found", child_def->blueprint_name.ptr);
+            error_wrap(ctx, "parent '%s' child[%d]", parent_blueprint->name.ptr, index);
             return false;
         }
 
@@ -90,15 +92,18 @@ static bool spawn_children_for(struct EngineContext *ctx,
             return false;
         }
 
-        Texture2D *texture = texture_lookup(child_blueprint->texture_name, texture_user_data);
+        Texture2D *texture = texture_lookup(child_blueprint->texture_name.ptr, texture_user_data);
         Vector2 child_position = {parent->position.x + child_def->offset.x, parent->position.y + child_def->offset.y};
 
         Entity *child = &level->entities[level->entity_count];
-        entity_init_from_blueprint(child, child_blueprint, child_position, texture);
+        if (!entity_init_from_blueprint(ctx, child, child_blueprint, child_position, texture)) {
+            error_set(ctx, "entity_init_from_blueprint failed for child blueprint '%s'", child_blueprint->name.ptr);
+            return false;
+        }
         child->parent_index = parent_index;
         child->offset = child_def->offset;
-        if (child_def->tag[0] != '\0') {
-            strncpy(child->tag, child_def->tag, MAX_TAG - 1);
+        if (child_def->tag.len > 0 && !str_from_strv(ctx, &child->tag, str_to_strv(child_def->tag))) {
+            return false;
         }
         level->entity_count++;
     }
@@ -171,15 +176,18 @@ static void parse_entity(struct EngineContext *ctx,
         position_y = (float)pos_y.u.i;
     }
 
-    Texture2D *texture = texture_lookup(blueprint->texture_name, texture_user_data);
+    Texture2D *texture = texture_lookup(blueprint->texture_name.ptr, texture_user_data);
     if (!texture) {
-        debug_log(ctx, "ent[%d]: texture '%s' not found", entity_index, blueprint->texture_name);
+        debug_log(ctx, "ent[%d]: texture '%s' not found", entity_index, blueprint->texture_name.ptr);
         return;
     }
 
     int parent_index = level->entity_count;
     Entity *entity = &level->entities[parent_index];
-    entity_init_from_blueprint(entity, blueprint, (Vector2){position_x, position_y}, texture);
+    if (!entity_init_from_blueprint(ctx, entity, blueprint, (Vector2){position_x, position_y}, texture)) {
+        debug_log(ctx, "ent[%d]: entity_init_from_blueprint failed", entity_index);
+        return;
+    }
     parse_instance_overrides(ctx, entity, entity_table);
     level->entity_count++;
 
@@ -208,6 +216,17 @@ static toml_table_t *find_level_table(toml_array_t *levels, const char *level_na
     return NULL;
 }
 
+void level_free(struct EngineContext *ctx, Level *level)
+{
+    str_free(ctx, &level->name);
+    str_free(ctx, &level->music_name);
+    for (int index = 0; index < level->entity_count; index++) {
+        str_free(ctx, &level->entities[index].blueprint_name);
+        str_free(ctx, &level->entities[index].tag);
+        attr_set_free(ctx, &level->entities[index].attrs);
+    }
+}
+
 bool level_load(struct EngineContext *ctx,
                 Level *level,
                 void *toml_root,
@@ -216,6 +235,7 @@ bool level_load(struct EngineContext *ctx,
                 TextureLookupFn texture_lookup,
                 void *texture_user_data)
 {
+    level_free(ctx, level);
     memset(level, 0, sizeof(*level));
 
     toml_array_t *levels = toml_array_in(toml_root, "level");
@@ -232,16 +252,14 @@ bool level_load(struct EngineContext *ctx,
 
     /* Level name */
     toml_datum_t name = toml_string_in(level_table, "name");
-    if (name.ok) {
-        strncpy(level->name, name.u.s, MAX_LEVEL_NAME - 1);
-        free(name.u.s);
+    if (name.ok && !str_from_toml_datum(ctx, &level->name, &name)) {
+        return false;
     }
 
     /* Level music */
     toml_datum_t music = toml_string_in(level_table, "music");
-    if (music.ok) {
-        strncpy(level->music_name, music.u.s, MAX_MUSIC_NAME - 1);
-        free(music.u.s);
+    if (music.ok && !str_from_toml_datum(ctx, &level->music_name, &music)) {
+        return false;
     }
 
     /* Level size */

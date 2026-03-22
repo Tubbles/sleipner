@@ -2,13 +2,12 @@
 #define LEVEL_H
 
 #include "entity.h"
+#include "str.h"
 
 #include <stdbool.h>
 
 struct EngineContext;
 
-#define MAX_LEVEL_NAME 64
-#define MAX_MUSIC_NAME 64
 #define MAX_LEVEL_ENTITIES 512
 
 /* Callback for resolving a texture name to a Texture2D pointer.
@@ -16,13 +15,16 @@ struct EngineContext;
 typedef Texture2D *(*TextureLookupFn)(const char *texture_name, void *user_data);
 
 typedef struct {
-    char name[MAX_LEVEL_NAME];
-    char music_name[MAX_MUSIC_NAME];
+    Str name;
+    Str music_name;
     int width;
     int height;
     Entity entities[MAX_LEVEL_ENTITIES];
     int entity_count;
 } Level;
+
+/* Free level name, music name, and all entity Str fields and attrs. */
+void level_free(struct EngineContext *ctx, Level *level);
 
 /* Parse the first [[level]] (or the one matching `level_name` if non-NULL)
  * from a tomlc99 root table. Instantiates entities from blueprints.
