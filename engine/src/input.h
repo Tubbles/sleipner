@@ -1,6 +1,7 @@
 #ifndef INPUT_H
 #define INPUT_H
 
+#include "alloc.h"
 #include "raylib.h"
 #include <stdbool.h>
 
@@ -14,7 +15,7 @@ typedef struct {
     float right_trigger;
 } InputState;
 
-void input_load_mappings(struct EngineContext *ctx, const char *data, int size);
+void input_load_mappings(struct EngineContext *ctx, Allocator *alloc, const char *data, int size);
 InputState input_read(int gamepad_id);
 InputState input_read_keyboard(void);
 int input_count_gamepads(void);

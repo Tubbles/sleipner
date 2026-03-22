@@ -1,6 +1,8 @@
 #include "engine_context.h"
 #include "raylib.h"
 
+#include "alloc.h"
+#include "arena.h"
 #include "assets.h"
 #include "audio.h"
 #include "blueprint.h"
@@ -18,7 +20,6 @@
 #include <errno.h>
 #include <stdint.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 
@@ -409,7 +410,7 @@ static bool save_gamedata(struct EngineContext *ctx, const GameState *state)
     return true;
 }
 
-static char *read_file_text(struct EngineContext *ctx, const char *path)
+static char *read_file_text(struct EngineContext *ctx, const char *path, Arena *arena)
 {
     /* Stat the file first for diagnostics */
     struct stat file_stat;
@@ -426,35 +427,30 @@ static char *read_file_text(struct EngineContext *ctx, const char *path)
         return NULL;
     }
 
-    char *buffer = malloc(MAX_GAMEDATA_SIZE + 1);
+    ArenaCheckpoint read_cp = arena_save(arena);
+    char *buffer = arena_alloc_n(ctx, arena, MAX_GAMEDATA_SIZE + 1);
     if (!buffer) {
-        error_set(ctx, "malloc(%lu): %s", MAX_GAMEDATA_SIZE + 1, strerror(errno));
         (void)fclose(file);
         return NULL;
     }
+    /* Pre-zero so null termination is automatic; avoids tainted-index write after fread */
+    (void)memset(buffer, 0, MAX_GAMEDATA_SIZE + 1);
 
     size_t bytes_read = fread(buffer, 1, MAX_GAMEDATA_SIZE, file);
     if (ferror(file)) {
         error_set(ctx, "fread(%s): %s", path, strerror(errno));
-        free(buffer);
+        arena_restore(arena, read_cp);
         (void)fclose(file);
         return NULL;
     }
     (void)fclose(file);
-
-    if (bytes_read > MAX_GAMEDATA_SIZE) {
-        error_set(ctx, "file too large: %zu bytes (max %lu)", bytes_read, MAX_GAMEDATA_SIZE);
-        free(buffer);
-        return NULL;
-    }
-    buffer[bytes_read] = '\0';
     debug_log(ctx, "gamedata: read %zu bytes from %s", bytes_read, path);
     return buffer;
 }
 
 static void load_gamedata(struct EngineContext *ctx, GameState *state)
 {
-    char *content = read_file_text(ctx, GAMEDATA_PATH);
+    char *content = read_file_text(ctx, GAMEDATA_PATH, &state->gamedata_arena);
     if (!content) {
         error_wrap(ctx, "load_gamedata");
         debug_log(ctx, "error: %s", error_get(ctx));
@@ -476,7 +472,6 @@ static void load_gamedata(struct EngineContext *ctx, GameState *state)
     bool loaded = game_load_gamedata(
         ctx, state,
         (GamedataParams){.toml_string = content, .texture_lookup = texture_registry_lookup, .texture_user_data = ctx});
-    free(content);
 
     if (loaded) {
         debug_log(ctx, "gamedata: %d blueprints", state->blueprints.entries.count);
@@ -590,10 +585,6 @@ int main(void)
 #endif
     debug_log(ctx, "ctx->screen_width=%d ctx->screen_height=%d", ctx->screen_width, ctx->screen_height);
 
-#ifndef __ANDROID__
-    EmbeddedAsset gamepad_asset = ASSET(gamecontrollerdb_txt);
-    input_load_mappings(ctx, (const char *)gamepad_asset.data, gamepad_asset.size);
-#endif
     SetTargetFPS(TARGET_FPS);
     audio_init(ctx);
 
@@ -633,6 +624,16 @@ int main(void)
         error_clear(ctx);
         return 1;
     }
+
+#ifndef __ANDROID__
+    {
+        EmbeddedAsset gamepad_asset = ASSET(gamecontrollerdb_txt);
+        ArenaCheckpoint gamepad_cp = arena_save(&state.gamedata_arena);
+        Allocator gamepad_alloc = allocator_arena(ctx, &state.gamedata_arena);
+        input_load_mappings(ctx, &gamepad_alloc, (const char *)gamepad_asset.data, gamepad_asset.size);
+        arena_restore(&state.gamedata_arena, gamepad_cp);
+    }
+#endif
 
     int prev_gamepads = -1;
     bool font_preview_enabled = false;

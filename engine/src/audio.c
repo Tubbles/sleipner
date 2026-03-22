@@ -2,11 +2,11 @@
 #include "engine_context.h"
 #include "raylib.h"
 #include <math.h>
-#include <stdlib.h>
 
 #define SAMPLE_RATE 44100
 #define SAMPLE_MAX 32767.0F
 #define BITS_PER_SAMPLE 16
+#define MAX_AUDIO_SAMPLE_COUNT 7000
 
 #define TONE_FREQ_HZ 440.0F
 #define TONE_DURATION_SEC 0.15F
@@ -19,10 +19,10 @@
 #define POP_VOLUME 0.3F
 
 // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
-static Wave generate_tone(float freq, float duration, float volume)
+static Sound generate_tone(float freq, float duration, float volume)
 {
     int sample_count = (int)(SAMPLE_RATE * duration);
-    short *data = malloc(sizeof(short) * (size_t)sample_count);
+    short data[MAX_AUDIO_SAMPLE_COUNT];
 
     for (int index = 0; index < sample_count; index++) {
         float sample_time = (float)index / SAMPLE_RATE;
@@ -38,14 +38,14 @@ static Wave generate_tone(float freq, float duration, float volume)
         .channels = 1,
         .data = data,
     };
-    return wave;
+    return LoadSoundFromWave(wave);
 }
 
 // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
-static Wave generate_bubble_pop(float duration, float volume)
+static Sound generate_bubble_pop(float duration, float volume)
 {
     int sample_count = (int)(SAMPLE_RATE * duration);
-    short *data = malloc(sizeof(short) * (size_t)sample_count);
+    short data[MAX_AUDIO_SAMPLE_COUNT];
 
     for (int index = 0; index < sample_count; index++) {
         float sample_time = (float)index / SAMPLE_RATE;
@@ -68,20 +68,15 @@ static Wave generate_bubble_pop(float duration, float volume)
         .channels = 1,
         .data = data,
     };
-    return wave;
+    return LoadSoundFromWave(wave);
 }
 
 void audio_init(struct EngineContext *ctx)
 {
     InitAudioDevice();
 
-    Wave button_wave = generate_tone(TONE_FREQ_HZ, TONE_DURATION_SEC, TONE_VOLUME);
-    ctx->audio.sounds[SOUND_BUTTON] = LoadSoundFromWave(button_wave);
-    free(button_wave.data);
-
-    Wave collision_wave = generate_bubble_pop(POP_DURATION_SEC, POP_VOLUME);
-    ctx->audio.sounds[SOUND_COLLISION] = LoadSoundFromWave(collision_wave);
-    free(collision_wave.data);
+    ctx->audio.sounds[SOUND_BUTTON] = generate_tone(TONE_FREQ_HZ, TONE_DURATION_SEC, TONE_VOLUME);
+    ctx->audio.sounds[SOUND_COLLISION] = generate_bubble_pop(POP_DURATION_SEC, POP_VOLUME);
 }
 
 void audio_play(struct EngineContext *ctx, SoundKind kind)

@@ -64,4 +64,13 @@ void arena_restore(Arena *arena, ArenaCheckpoint checkpoint);
 [[nodiscard]] void *
 arena_realloc(struct EngineContext *ctx, Arena *arena, void *old_ptr, size_t old_size, AllocRequest request);
 
+/* Convenience wrapper: allocate `size` bytes with alignment 1.
+ * The alloc_size attribute lets the compiler and static analyzer know the returned
+ * region is `size` bytes, enabling bounds-checking diagnostics. */
+[[nodiscard]] __attribute__((alloc_size(3))) static inline void *
+arena_alloc_n(struct EngineContext *ctx, Arena *arena, size_t size)
+{
+    return arena_alloc(ctx, arena, (AllocRequest){.size = size, .alignment = 1});
+}
+
 #endif

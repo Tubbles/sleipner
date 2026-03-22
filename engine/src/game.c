@@ -15,10 +15,9 @@
 #include "toml.h"
 
 #include <math.h>
-#include <stdlib.h>
 #include <string.h>
 
-#define GAMEDATA_ARENA_SIZE (256UL * 1024)
+#define GAMEDATA_ARENA_SIZE (1024UL * 1024)
 #define TOML_ERRBUF_SIZE 200
 #define MAX_COLLECT_EVENTS 32
 
@@ -49,9 +48,8 @@ static int find_player_entity(const Level *level)
 bool game_load_gamedata(struct EngineContext *ctx, GameState *state, GamedataParams params)
 {
     size_t length = strlen(params.toml_string);
-    char *buffer = malloc(length + 1);
+    char *buffer = arena_alloc(ctx, &state->gamedata_arena, (AllocRequest){.size = length + 1, .alignment = 1});
     if (!buffer) {
-        error_set(ctx, "malloc failed for TOML buffer (%zu bytes)", length + 1);
         error_wrap(ctx, "game_load_gamedata");
         return false;
     }
@@ -59,7 +57,7 @@ bool game_load_gamedata(struct EngineContext *ctx, GameState *state, GamedataPar
 
     char errbuf[TOML_ERRBUF_SIZE];
     toml_table_t *root = toml_parse(buffer, errbuf, (int)sizeof(errbuf));
-    free(buffer);
+    arena_reset(&state->gamedata_arena);
 
     if (!root) {
         error_set(ctx, "toml_parse: %s", errbuf);
@@ -67,7 +65,6 @@ bool game_load_gamedata(struct EngineContext *ctx, GameState *state, GamedataPar
         return false;
     }
 
-    arena_reset(&state->gamedata_arena);
     Allocator gamedata_alloc = allocator_arena(ctx, &state->gamedata_arena);
     blueprints_load(ctx, &state->blueprints, root, &state->gamedata_arena);
 

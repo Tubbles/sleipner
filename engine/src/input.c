@@ -1,9 +1,10 @@
 #include "input.h"
+#include "alloc.h"
+#include "arena.h"
 #include "debug.h"
 #include "raylib.h"
 
 #include <math.h>
-#include <stdlib.h>
 #include <string.h>
 
 #define STICK_DEADZONE 0.15F
@@ -18,9 +19,10 @@ static Vector2 apply_deadzone(Vector2 stick, float deadzone)
     return (Vector2){stick.x * scale, stick.y * scale};
 }
 
-void input_load_mappings(struct EngineContext *ctx, const char *data, int size)
+void input_load_mappings(struct EngineContext *ctx, Allocator *alloc, const char *data, int size)
 {
-    char *mappings = malloc((size_t)size + 1);
+    char *mappings =
+        alloc->malloc_fn(alloc->ctx, alloc->arena, (AllocRequest){.size = (size_t)size + 1, .alignment = 1});
     if (!mappings) {
         debug_log(ctx, "WARNING: could not allocate gamepad mappings buffer");
         return;
@@ -30,8 +32,6 @@ void input_load_mappings(struct EngineContext *ctx, const char *data, int size)
 
     int result = SetGamepadMappings(mappings);
     debug_log(ctx, "loaded gamepad mappings (%d bytes, result=%d)", size, result);
-
-    free(mappings);
 }
 
 InputState input_read(int gamepad_id)
