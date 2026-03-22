@@ -36,7 +36,7 @@ static Attribute *find_or_append(struct EngineContext *ctx, AttrSet *set, const 
         error_set(ctx, "attribute name alloc failed for '%s'", name);
         return NULL;
     }
-    if (!vec_attribute_push(&set->entries, new_entry)) {
+    if (!vec_attribute_push(&set->entries, new_entry, NULL)) {
         str_free(ctx, &new_entry.name);
         error_set(ctx, "attribute push failed for '%s'", name);
         return NULL;
@@ -52,7 +52,7 @@ void attr_set_free(struct EngineContext *ctx, AttrSet *set)
             str_free(ctx, &set->entries.data[index].value.str);
         }
     }
-    vec_attribute_free(&set->entries);
+    vec_attribute_free(&set->entries, NULL);
     *set = (AttrSet){0};
 }
 

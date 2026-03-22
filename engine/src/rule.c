@@ -51,7 +51,7 @@ void flag_set(struct EngineContext *ctx, FlagSet *flags, const char *name)
         debug_log(ctx, "flag_set: allocation failed for '%s'", name);
         return;
     }
-    if (!vec_flag_name_push(&flags->names, entry)) {
+    if (!vec_flag_name_push(&flags->names, entry, NULL)) {
         str_free(ctx, &entry.name);
         debug_log(ctx, "flag_set: vec push failed for '%s'", name);
     }
@@ -75,7 +75,7 @@ void flag_set_free(struct EngineContext *ctx, FlagSet *flags)
     for (int index = 0; index < flags->names.count; index++) {
         str_free(ctx, &flags->names.data[index].name);
     }
-    vec_flag_name_free(&flags->names);
+    vec_flag_name_free(&flags->names, NULL);
     *flags = (FlagSet){0};
 }
 
@@ -943,7 +943,7 @@ static bool dispatch_simple_action(struct EngineContext *ctx, const ActionNode *
     case ACTION_FIRE_EVENT: {
         TriggerEvent fire = {.type = TRIGGER_EVENT, .entity_index = -1};
         strncpy(fire.argument, node->argument, MAX_ARG - 1);
-        return vec_trigger_event_push(context.event_queue, fire);
+        return vec_trigger_event_push(context.event_queue, fire, NULL);
     }
     default:
         debug_log(ctx, "action stub: %s (not yet implemented)", node->argument);
@@ -1051,7 +1051,7 @@ void rules_evaluate_batch(struct EngineContext *ctx,
 {
     vec_trigger_event pending_events = {0};
     for (int event_index = 0; event_index < event_count; event_index++) {
-        (void)vec_trigger_event_push(&pending_events, events[event_index]);
+        (void)vec_trigger_event_push(&pending_events, events[event_index], NULL);
     }
 
     for (int cascade = 0; cascade < MAX_EVENT_CASCADES && pending_events.count > 0; cascade++) {
@@ -1069,9 +1069,9 @@ void rules_evaluate_batch(struct EngineContext *ctx,
                                   &pending_events, &next_events);
         }
 
-        vec_trigger_event_free(&pending_events);
+        vec_trigger_event_free(&pending_events, NULL);
         pending_events = next_events;
     }
 
-    vec_trigger_event_free(&pending_events);
+    vec_trigger_event_free(&pending_events, NULL);
 }

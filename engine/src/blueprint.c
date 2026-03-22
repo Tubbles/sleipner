@@ -125,7 +125,7 @@ static bool inherit_attributes(struct EngineContext *ctx, Blueprint *child, cons
                 continue;
             }
         }
-        if (!vec_attribute_push(&child->attrs.entries, new_entry)) {
+        if (!vec_attribute_push(&child->attrs.entries, new_entry, NULL)) {
             str_free(ctx, &new_entry.name);
             if (parent_attr->type == ATTR_STRING) {
                 str_free(ctx, &new_entry.value.str);
@@ -281,7 +281,7 @@ static bool parse_children(struct EngineContext *ctx, Blueprint *blueprint, toml
             error_wrap(ctx, "blueprint '%s' child[%d]", blueprint->name.ptr, index);
             return false;
         }
-        if (!vec_blueprint_child_push(&blueprint->children, child_entry_data)) {
+        if (!vec_blueprint_child_push(&blueprint->children, child_entry_data, NULL)) {
             error_set(ctx, "blueprint '%s' child[%d]: out of memory", blueprint->name.ptr, index);
             return false;
         }
@@ -331,7 +331,7 @@ static void blueprint_cleanup(struct EngineContext *ctx, Blueprint *blp)
         str_free(ctx, &blp->children.data[child_index].blueprint_name);
         str_free(ctx, &blp->children.data[child_index].tag);
     }
-    vec_blueprint_child_free(&blp->children);
+    vec_blueprint_child_free(&blp->children, NULL);
     attr_set_free(ctx, &blp->attrs);
 }
 
@@ -340,7 +340,7 @@ void blueprint_table_free(struct EngineContext *ctx, BlueprintTable *table)
     for (int index = 0; index < table->entries.count; index++) {
         blueprint_cleanup(ctx, &table->entries.data[index]);
     }
-    vec_blueprint_free(&table->entries);
+    vec_blueprint_free(&table->entries, NULL);
     *table = (BlueprintTable){0};
 }
 
@@ -378,7 +378,7 @@ int blueprints_load(struct EngineContext *ctx, BlueprintTable *table, void *toml
         Blueprint temp = {0};
         if (parse_single_blueprint(ctx, &temp, entry, arena)) {
             debug_log(ctx, "bp[%d]: parsed '%s' tex='%s'", index, temp.name.ptr, temp.texture_name.ptr);
-            (void)vec_blueprint_push(&table->entries, temp);
+            (void)vec_blueprint_push(&table->entries, temp, NULL);
         } else {
             blueprint_cleanup(ctx, &temp);
             toml_datum_t name = toml_string_in(entry, "name");

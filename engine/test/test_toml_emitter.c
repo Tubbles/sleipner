@@ -180,7 +180,7 @@ void test_toml_emit_round_trip(void)
 void test_toml_emit_buffer_too_small(void)
 {
     BlueprintTable blueprints = {0};
-    TEST_ASSERT_TRUE(vec_blueprint_push(&blueprints.entries, (Blueprint){0}));
+    TEST_ASSERT_TRUE(vec_blueprint_push(&blueprints.entries, (Blueprint){0}, NULL));
     Blueprint *entry = &blueprints.entries.data[0];
     TEST_ASSERT_TRUE(str_from_cstr(&ctx, &entry->name, "test"));
     TEST_ASSERT_TRUE(str_from_cstr(&ctx, &entry->texture_name, "test.png"));

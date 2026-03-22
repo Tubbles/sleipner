@@ -6,7 +6,7 @@ void test_blueprint_table_free(struct EngineContext *ctx, BlueprintTable *table)
     for (int index = 0; index < table->entries.count; index++) {
         test_blueprint_free(ctx, &table->entries.data[index]);
     }
-    vec_blueprint_free(&table->entries);
+    vec_blueprint_free(&table->entries, NULL);
 }
 
 void test_blueprint_free(struct EngineContext *ctx, Blueprint *blueprint)
@@ -18,7 +18,7 @@ void test_blueprint_free(struct EngineContext *ctx, Blueprint *blueprint)
         str_free(ctx, &blueprint->children.data[index].blueprint_name);
         str_free(ctx, &blueprint->children.data[index].tag);
     }
-    vec_blueprint_child_free(&blueprint->children);
+    vec_blueprint_child_free(&blueprint->children, NULL);
     test_attr_set_free(ctx, &blueprint->attrs);
 }
 

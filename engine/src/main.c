@@ -57,7 +57,7 @@ static void texture_registry_add(struct EngineContext *ctx, const char *filename
     strncpy(entry.filename, filename, MAX_TEXTURE_FILENAME - 1);
     entry.filename[MAX_TEXTURE_FILENAME - 1] = '\0';
     entry.texture = texture;
-    (void)vec_texture_entry_push(&ctx->assets.textures, entry);
+    (void)vec_texture_entry_push(&ctx->assets.textures, entry, NULL);
 }
 
 static Texture2D *texture_registry_lookup(const char *filename, void *user_data)
@@ -76,7 +76,7 @@ static Texture2D *texture_registry_lookup(const char *filename, void *user_data)
 
 static void font_preview_init(struct EngineContext *ctx)
 {
-    vec_font_preview_free(&ctx->assets.font_previews);
+    vec_font_preview_free(&ctx->assets.font_previews, NULL);
     debug_log(ctx, "font_preview: initialized");
 }
 
@@ -99,7 +99,7 @@ static void font_preview_add(struct EngineContext *ctx, const char *name, Embedd
     } else {
         debug_log(ctx, "font[%d]: '%s' failed to load", ctx->assets.font_previews.count, name);
     }
-    (void)vec_font_preview_push(&ctx->assets.font_previews, entry);
+    (void)vec_font_preview_push(&ctx->assets.font_previews, entry, NULL);
 }
 
 static InputState merge_input(InputState base, InputState overlay)
@@ -291,7 +291,7 @@ static void font_preview_cleanup(struct EngineContext *ctx)
             UnloadFont(ctx->assets.font_previews.data[index].font);
         }
     }
-    vec_font_preview_free(&ctx->assets.font_previews);
+    vec_font_preview_free(&ctx->assets.font_previews, NULL);
 }
 
 static void draw_font_preview(struct EngineContext *ctx)
@@ -713,7 +713,7 @@ quit:
     for (int index = 0; index < ctx->assets.textures.count; index++) {
         UnloadTexture(ctx->assets.textures.data[index].texture);
     }
-    vec_texture_entry_free(&ctx->assets.textures);
+    vec_texture_entry_free(&ctx->assets.textures, NULL);
     font_preview_cleanup(ctx);
     game_free(ctx, &state);
     audio_shutdown(ctx);

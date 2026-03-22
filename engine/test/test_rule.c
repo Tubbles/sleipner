@@ -475,7 +475,7 @@ void test_action_set_flag_executes(void)
     TEST_ASSERT_TRUE(action_node_execute(&ctx, &action, context));
     TEST_ASSERT_TRUE(flag_get(&flags, "chest_opened"));
     test_flag_set_free(&ctx, &flags);
-    vec_trigger_event_free(&queue);
+    vec_trigger_event_free(&queue, NULL);
 }
 
 void test_action_clear_flag_executes(void)
@@ -496,7 +496,7 @@ void test_action_clear_flag_executes(void)
     TEST_ASSERT_TRUE(action_node_execute(&ctx, &action, context));
     TEST_ASSERT_FALSE(flag_get(&flags, "door_locked"));
     test_flag_set_free(&ctx, &flags);
-    vec_trigger_event_free(&queue);
+    vec_trigger_event_free(&queue, NULL);
 }
 
 void test_action_set_attr_bool(void)
@@ -525,7 +525,7 @@ void test_action_set_attr_bool(void)
     TEST_ASSERT_FALSE(attr->value.b);
     attr_set_free(&ctx, &entity.attrs);
     test_flag_set_free(&ctx, &flags);
-    vec_trigger_event_free(&queue);
+    vec_trigger_event_free(&queue, NULL);
 }
 
 void test_action_set_attr_int(void)
@@ -549,7 +549,7 @@ void test_action_set_attr_int(void)
     TEST_ASSERT_EQUAL_INT(42, entity_get_int(&entity, "health", 0));
     attr_set_free(&ctx, &entity.attrs);
     test_flag_set_free(&ctx, &flags);
-    vec_trigger_event_free(&queue);
+    vec_trigger_event_free(&queue, NULL);
 }
 
 void test_action_add_attr(void)
@@ -574,7 +574,7 @@ void test_action_add_attr(void)
     TEST_ASSERT_EQUAL_INT(7, entity_get_int(&entity, "health", 0));
     attr_set_free(&ctx, &entity.attrs);
     test_flag_set_free(&ctx, &flags);
-    vec_trigger_event_free(&queue);
+    vec_trigger_event_free(&queue, NULL);
 }
 
 void test_action_toggle_attr(void)
@@ -598,7 +598,7 @@ void test_action_toggle_attr(void)
     TEST_ASSERT_FALSE(entity_get_bool(&entity, "visible", true));
     attr_set_free(&ctx, &entity.attrs);
     test_flag_set_free(&ctx, &flags);
-    vec_trigger_event_free(&queue);
+    vec_trigger_event_free(&queue, NULL);
 }
 
 void test_action_destroy(void)
@@ -618,7 +618,7 @@ void test_action_destroy(void)
     TEST_ASSERT_TRUE(action_node_execute(&ctx, &action, context));
     TEST_ASSERT_FALSE(entity.active);
     test_flag_set_free(&ctx, &flags);
-    vec_trigger_event_free(&queue);
+    vec_trigger_event_free(&queue, NULL);
 }
 
 void test_action_fire_event_queues(void)
@@ -639,7 +639,7 @@ void test_action_fire_event_queues(void)
     TEST_ASSERT_EQUAL_INT(1, queue.count);
     TEST_ASSERT_EQUAL_INT(TRIGGER_EVENT, queue.data[0].type);
     TEST_ASSERT_EQUAL_STRING("boss_defeated", queue.data[0].argument);
-    vec_trigger_event_free(&queue);
+    vec_trigger_event_free(&queue, NULL);
     test_flag_set_free(&ctx, &flags);
 }
 
@@ -668,7 +668,7 @@ void test_action_execution_order(void)
     TEST_ASSERT_TRUE(flag_get(&flags, "second"));
     TEST_ASSERT_EQUAL_INT(2, flags.names.count);
     test_flag_set_free(&ctx, &flags);
-    vec_trigger_event_free(&queue);
+    vec_trigger_event_free(&queue, NULL);
 }
 
 /* ---- TOML round-trip parsing tests ---- */
@@ -942,7 +942,7 @@ void test_var_set_local(void)
     TEST_ASSERT_NULL(attr_get(&global_vars, "damage"));
     attr_set_free(&ctx, &local_vars);
     test_flag_set_free(&ctx, &flags);
-    vec_trigger_event_free(&queue);
+    vec_trigger_event_free(&queue, NULL);
     test_attr_set_free(&ctx, &local_vars);
 }
 
@@ -972,7 +972,7 @@ void test_var_set_global(void)
     TEST_ASSERT_NULL(attr_get(&local_vars, "score"));
     attr_set_free(&ctx, &global_vars);
     test_flag_set_free(&ctx, &flags);
-    vec_trigger_event_free(&queue);
+    vec_trigger_event_free(&queue, NULL);
     test_attr_set_free(&ctx, &local_vars);
 }
 
@@ -1051,7 +1051,7 @@ void test_var_substitution_in_set_attr(void)
     attr_set_free(&ctx, &local_vars);
     attr_set_free(&ctx, &entity.attrs);
     test_flag_set_free(&ctx, &flags);
-    vec_trigger_event_free(&queue);
+    vec_trigger_event_free(&queue, NULL);
     test_attr_set_free(&ctx, &local_vars);
 }
 
@@ -1082,7 +1082,7 @@ void test_local_var_scoped_per_rule(void)
     TEST_ASSERT_NULL(attr_get(&local_vars_b, "temp"));
     attr_set_free(&ctx, &local_vars_a);
     test_flag_set_free(&ctx, &flags);
-    vec_trigger_event_free(&queue);
+    vec_trigger_event_free(&queue, NULL);
     test_attr_set_free(&ctx, &global_vars);
 }
 

@@ -17,28 +17,17 @@
  * First push allocates VEC_INITIAL_CAPACITY elements.
  * Access elements directly via vec.data[index] — it is a typed pointer.
  *
- * Allocator overrides (set before including this header, or via -D):
- *   -DVEC_REALLOC=my_realloc
- *   -DVEC_FREE=my_free
- * Both must be provided together if either is overridden. */
+ * Pass an Allocator * to push/free to use arena or custom allocation.
+ * Pass NULL to use libc malloc/realloc/free (heap fallback). */
+
+#include "alloc.h"
 
 #include <stdbool.h>
+#include <stddef.h> // IWYU pragma: export
+#include <stdint.h> // IWYU pragma: export
+#include <stdlib.h>
 
 struct EngineContext; // IWYU pragma: export
-#include <stddef.h>   // IWYU pragma: export
-#include <stdint.h>   // IWYU pragma: export
-
-#if !defined(VEC_REALLOC) || !defined(VEC_FREE)
-#include <stdlib.h>
-#endif
-
-#ifndef VEC_REALLOC
-#define VEC_REALLOC realloc
-#endif
-
-#ifndef VEC_FREE
-#define VEC_FREE free
-#endif
 
 #define VEC_INITIAL_CAPACITY 8
 #define VEC_GROWTH_FACTOR 2
@@ -53,19 +42,27 @@ struct EngineContext; // IWYU pragma: export
         int           count;                                                          \
         int           capacity;                                                       \
     } vec_##name;                                                                     \
-    [[nodiscard]] bool vec_##name##_push(vec_##name *vec, type element);              \
+    [[nodiscard]] bool vec_##name##_push(vec_##name *vec, type element, Allocator *alloc); \
     void               vec_##name##_clear(vec_##name *vec);                           \
-    void               vec_##name##_free(vec_##name *vec);
+    void               vec_##name##_free(vec_##name *vec, Allocator *alloc);
 
 /* VEC_IMPL(name, type) — emit the function bodies declared by VEC_DECL.
  * Place in exactly one .c file per type. */
 #define VEC_IMPL(name, type)                                                          \
-    [[nodiscard]] bool vec_##name##_push(vec_##name *vec, type element) {             \
+    [[nodiscard]] bool vec_##name##_push(vec_##name *vec, type element, Allocator *alloc) { \
         if (vec->count >= vec->capacity) {                                            \
             int new_cap = vec->capacity == 0 ? VEC_INITIAL_CAPACITY                   \
                                              : vec->capacity * VEC_GROWTH_FACTOR;     \
-            typeof(type) *new_data =                                                  \
-                VEC_REALLOC(vec->data, (size_t)new_cap * sizeof(type));               \
+            size_t old_bytes = (size_t)vec->capacity * sizeof(type);                 \
+            size_t new_bytes = (size_t)new_cap * sizeof(type);                       \
+            typeof(type) *new_data;                                                   \
+            if (alloc) {                                                              \
+                new_data = alloc->realloc_fn(alloc->ctx, alloc->arena, vec->data,    \
+                    old_bytes, (AllocRequest){.size = new_bytes,                     \
+                                             .alignment = _Alignof(type)});          \
+            } else {                                                                  \
+                new_data = realloc(vec->data, new_bytes);                            \
+            }                                                                         \
             if (!new_data) {                                                          \
                 return false;                                                         \
             }                                                                         \
@@ -77,8 +74,12 @@ struct EngineContext; // IWYU pragma: export
         return true;                                                                  \
     }                                                                                 \
     void vec_##name##_clear(vec_##name *vec) { vec->count = 0; }                     \
-    void vec_##name##_free(vec_##name *vec) {                                         \
-        VEC_FREE(vec->data);                                                          \
+    void vec_##name##_free(vec_##name *vec, Allocator *alloc) {                      \
+        if (alloc) {                                                                  \
+            alloc->free_fn(alloc->ctx, alloc->arena, vec->data);                     \
+        } else {                                                                      \
+            free(vec->data);                                                          \
+        }                                                                             \
         *vec = (vec_##name){0};                                                       \
     }
 // clang-format on

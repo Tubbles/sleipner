@@ -78,40 +78,40 @@ void test_circle_rect_is_negated(void)
 void test_composite_single_rect_matches_rect_rect(void)
 {
     CollisionShape shape_a = {0};
-    (void)vec_collision_prim_push(&shape_a.prims, (CollisionPrimitive){.kind = COLLIDER_RECT, .rect = {10, 10}});
+    (void)vec_collision_prim_push(&shape_a.prims, (CollisionPrimitive){.kind = COLLIDER_RECT, .rect = {10, 10}}, NULL);
     CollisionShape shape_b = {0};
-    (void)vec_collision_prim_push(&shape_b.prims, (CollisionPrimitive){.kind = COLLIDER_RECT, .rect = {10, 10}});
+    (void)vec_collision_prim_push(&shape_b.prims, (CollisionPrimitive){.kind = COLLIDER_RECT, .rect = {10, 10}}, NULL);
 
     Vector2 push = resolve_composite(&shape_a, (Vector2){0, 0}, 0, &shape_b, (Vector2){15, 0}, 0);
     Vector2 direct = resolve_rect_rect((Vector2){0, 0}, 0, 10, 10, (Vector2){15, 0}, 0, 10, 10);
     TEST_ASSERT_FLOAT_WITHIN(0.01f, direct.x, push.x);
     TEST_ASSERT_FLOAT_WITHIN(0.01f, direct.y, push.y);
-    vec_collision_prim_free(&shape_a.prims);
-    vec_collision_prim_free(&shape_b.prims);
+    vec_collision_prim_free(&shape_a.prims, NULL);
+    vec_collision_prim_free(&shape_b.prims, NULL);
 }
 
 void test_composite_overlap_bool(void)
 {
     CollisionShape shape_a = {0};
-    (void)vec_collision_prim_push(&shape_a.prims, (CollisionPrimitive){.kind = COLLIDER_CIRCLE, .circle = {20}});
+    (void)vec_collision_prim_push(&shape_a.prims, (CollisionPrimitive){.kind = COLLIDER_CIRCLE, .circle = {20}}, NULL);
     CollisionShape shape_b = {0};
-    (void)vec_collision_prim_push(&shape_b.prims, (CollisionPrimitive){.kind = COLLIDER_CIRCLE, .circle = {20}});
+    (void)vec_collision_prim_push(&shape_b.prims, (CollisionPrimitive){.kind = COLLIDER_CIRCLE, .circle = {20}}, NULL);
 
     TEST_ASSERT_TRUE(composite_overlap(&shape_a, (Vector2){0, 0}, 0, &shape_b, (Vector2){30, 0}, 0));
     TEST_ASSERT_FALSE(composite_overlap(&shape_a, (Vector2){0, 0}, 0, &shape_b, (Vector2){50, 0}, 0));
-    vec_collision_prim_free(&shape_a.prims);
-    vec_collision_prim_free(&shape_b.prims);
+    vec_collision_prim_free(&shape_a.prims, NULL);
+    vec_collision_prim_free(&shape_b.prims, NULL);
 }
 
 void test_composite_wall(void)
 {
     CollisionShape shape = {0};
-    (void)vec_collision_prim_push(&shape.prims, (CollisionPrimitive){.kind = COLLIDER_RECT, .rect = {10, 10}});
+    (void)vec_collision_prim_push(&shape.prims, (CollisionPrimitive){.kind = COLLIDER_RECT, .rect = {10, 10}}, NULL);
     Rectangle wall = {20, -10, 200, 20};
     Vector2 push = resolve_composite_wall(&shape, (Vector2){15, 0}, 0, wall);
     /* Entity at x=15 with hw=10 extends to x=25, wall starts at x=20 */
     TEST_ASSERT_TRUE(push.x < 0); /* should push left */
-    vec_collision_prim_free(&shape.prims);
+    vec_collision_prim_free(&shape.prims, NULL);
 }
 
 /* --- Triangle resolver tests --- */
