@@ -35,10 +35,10 @@ void arena_reset(Arena *arena);
 void arena_free(Arena *arena);
 
 /* Returns the number of bytes currently used. */
-size_t arena_used(Arena *arena);
+size_t arena_used(const Arena *arena);
 
 /* Returns the number of bytes remaining. */
-size_t arena_remaining(Arena *arena);
+size_t arena_remaining(const Arena *arena);
 
 /* Save the current arena offset for later restore. */
 ArenaCheckpoint arena_save(const Arena *arena);

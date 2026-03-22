@@ -44,12 +44,12 @@ void arena_free(Arena *arena)
     arena->offset = 0;
 }
 
-size_t arena_used(Arena *arena)
+size_t arena_used(const Arena *arena)
 {
     return arena->offset;
 }
 
-size_t arena_remaining(Arena *arena)
+size_t arena_remaining(const Arena *arena)
 {
     return arena->capacity - arena->offset;
 }

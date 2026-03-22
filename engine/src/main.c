@@ -48,8 +48,10 @@ VEC_IMPL(texture_entry, TextureEntry)
 #define DEBUG_MARGIN 8
 #define DEBUG_BG_ALPHA 180
 #define DEBUG_PANEL_WIDTH 420
-#define DEBUG_LINES 10
+#define DEBUG_LINES 14
 #define FONT_PREVIEW_SIZE 32
+#define SLEIPNER_VERSION "0.1.0"
+#define BYTES_PER_KB 1024u
 
 /* Texture registry — maps texture filenames to loaded Texture2D handles */
 static void texture_registry_add(struct EngineContext *ctx, const char *filename, Texture2D texture)
@@ -230,9 +232,9 @@ static const Color debug_text_color = {200, 220, 240, 255};
 static const Color debug_log_color = {180, 210, 180, 255};
 static const Color debug_bg_color = {20, 25, 35, DEBUG_BG_ALPHA};
 
-static void
-draw_debug_info(struct EngineContext *ctx, const Entity *player, RectU32 game_bounds, int frame, float elapsed)
+static void draw_debug_info(struct EngineContext *ctx, const GameState *state, RectU32 game_bounds)
 {
+    const Entity *player = game_get_player_const(state);
     int line = 0;
     int screen_w = GetScreenWidth();
     int screen_h = GetScreenHeight();
@@ -244,8 +246,13 @@ draw_debug_info(struct EngineContext *ctx, const Entity *player, RectU32 game_bo
     int panel_height = (DEBUG_LINES * DEBUG_LINE_HEIGHT) + (DEBUG_MARGIN * 2);
     DrawRectangle(0, 0, panel_width, panel_height, debug_bg_color);
 
-    DrawText(TextFormat("FPS: %d  frame: %d  t: %.1fs", GetFPS(), frame, elapsed), DEBUG_MARGIN,
+    DrawText("v" SLEIPNER_VERSION "  " __DATE__, DEBUG_MARGIN, DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT),
+             DEBUG_FONT_SIZE, debug_text_color);
+    DrawText(TextFormat("FPS: %d  frame: %d  t: %.1fs", GetFPS(), state->frame, state->elapsed), DEBUG_MARGIN,
              DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, debug_text_color);
+    DrawText(TextFormat("arena: %zuKB / %zuKB", arena_used(&state->gamedata_arena) / BYTES_PER_KB,
+                        state->gamedata_arena.capacity / BYTES_PER_KB),
+             DEBUG_MARGIN, DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, debug_text_color);
     DrawText(TextFormat("screen: %dx%d", ctx->screen_width, ctx->screen_height), DEBUG_MARGIN,
              DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, debug_text_color);
     DrawText(TextFormat("GetScreen: %dx%d  GetRender: %dx%d", screen_w, screen_h, render_w, render_h), DEBUG_MARGIN,
@@ -698,7 +705,7 @@ int main(void)
                        WHITE);
 
         if (state.debug_enabled) {
-            draw_debug_info(ctx, game_get_player_const(&state), game_bounds, state.frame, state.elapsed);
+            draw_debug_info(ctx, &state, game_bounds);
         }
         if (font_preview_enabled) {
             draw_font_preview(ctx);
