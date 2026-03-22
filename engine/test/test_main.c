@@ -148,6 +148,29 @@ void test_particle_position_updates(void);
 void test_particle_capacity_grows(void);
 void test_particle_free_cleans_up(void);
 
+/* test_str.c */
+void test_str_from_cstr_len(void);
+void test_str_from_cstr_content(void);
+void test_str_from_cstr_null_terminated(void);
+void test_str_from_cstr_empty_nonnull_ptr(void);
+void test_str_from_strv_len(void);
+void test_str_from_strv_content(void);
+void test_str_from_strv_subview(void);
+void test_str_to_strv_len_excludes_null(void);
+void test_str_to_strv_ptr_matches(void);
+void test_str_push_char_len(void);
+void test_str_push_char_content(void);
+void test_str_push_char_null_terminated(void);
+void test_str_append_cstr_content(void);
+void test_str_append_strv_content(void);
+void test_str_append_strv_subview(void);
+void test_str_append_grows_beyond_initial_cap(void);
+void test_str_clear_resets_len(void);
+void test_str_clear_keeps_allocation(void);
+void test_str_clear_null_terminates(void);
+void test_str_free_zeros_struct(void);
+void test_str_free_on_zero_is_safe(void);
+
 /* test_strv.c */
 void test_strv_from_cstr(void);
 void test_strv_shrink_left(void);
@@ -488,6 +511,28 @@ int main(void)
     RUN_TEST(test_tri_tri_no_overlap);
     RUN_TEST(test_tri_circle_overlap);
     RUN_TEST(test_tri_rect_overlap);
+
+    RUN_TEST(test_str_from_cstr_len);
+    RUN_TEST(test_str_from_cstr_content);
+    RUN_TEST(test_str_from_cstr_null_terminated);
+    RUN_TEST(test_str_from_cstr_empty_nonnull_ptr);
+    RUN_TEST(test_str_from_strv_len);
+    RUN_TEST(test_str_from_strv_content);
+    RUN_TEST(test_str_from_strv_subview);
+    RUN_TEST(test_str_to_strv_len_excludes_null);
+    RUN_TEST(test_str_to_strv_ptr_matches);
+    RUN_TEST(test_str_push_char_len);
+    RUN_TEST(test_str_push_char_content);
+    RUN_TEST(test_str_push_char_null_terminated);
+    RUN_TEST(test_str_append_cstr_content);
+    RUN_TEST(test_str_append_strv_content);
+    RUN_TEST(test_str_append_strv_subview);
+    RUN_TEST(test_str_append_grows_beyond_initial_cap);
+    RUN_TEST(test_str_clear_resets_len);
+    RUN_TEST(test_str_clear_keeps_allocation);
+    RUN_TEST(test_str_clear_null_terminates);
+    RUN_TEST(test_str_free_zeros_struct);
+    RUN_TEST(test_str_free_on_zero_is_safe);
 
     RUN_TEST(test_strv_from_cstr);
     RUN_TEST(test_strv_shrink_left);
