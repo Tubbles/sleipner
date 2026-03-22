@@ -59,6 +59,14 @@ void test_arena_alloc_alignment(void);
 void test_arena_alloc_returns_null_when_full(void);
 void test_arena_reset(void);
 void test_arena_snapshot_restore(void);
+void test_arena_save_restore_basic(void);
+void test_arena_save_restore_nested(void);
+void test_arena_save_at_zero(void);
+void test_arena_strdup_content(void);
+void test_arena_strdup_null_returns_null(void);
+void test_arena_strdup_empty_string(void);
+void test_arena_memdup_content(void);
+void test_arena_memdup_null_returns_null(void);
 
 /* test_blueprint.c */
 void test_blueprint_load_single(void);
@@ -352,6 +360,14 @@ int main(void)
     RUN_TEST(test_arena_alloc_returns_null_when_full);
     RUN_TEST(test_arena_reset);
     RUN_TEST(test_arena_snapshot_restore);
+    RUN_TEST(test_arena_save_restore_basic);
+    RUN_TEST(test_arena_save_restore_nested);
+    RUN_TEST(test_arena_save_at_zero);
+    RUN_TEST(test_arena_strdup_content);
+    RUN_TEST(test_arena_strdup_null_returns_null);
+    RUN_TEST(test_arena_strdup_empty_string);
+    RUN_TEST(test_arena_memdup_content);
+    RUN_TEST(test_arena_memdup_null_returns_null);
 
     RUN_TEST(test_blueprint_load_single);
     RUN_TEST(test_blueprint_load_multiple);
