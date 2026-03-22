@@ -20,13 +20,13 @@ raw `malloc`/`realloc`/`free` calls that still bypass it.
   use `vec_particle` backed by gamedata_arena (thread `Allocator *` through
   `particles_init` / `particles_free`)
 
-- [ ] **`audio.c`** — `malloc` for wave synthesis sample buffers → stack-local fixed arrays
+- [x] **`audio.c`** — `malloc` for wave synthesis sample buffers → stack-local fixed arrays
   (sample counts are compile-time bounded, well within stack budget)
 
-- [ ] **`input.c`** — `malloc` for gamepad mappings copy → arena alloc (one-time init,
+- [x] **`input.c`** — `malloc` for gamepad mappings copy → arena alloc (one-time init,
   tiny, can stay in arena since it's not reclaimed between reloads)
 
-- [ ] **`main.c`** / **`game.c`** — `malloc` for file read buffer and TOML copy → arena
+- [x] **`main.c`** / **`game.c`** — `malloc` for file read buffer and TOML copy → arena
   alloc with `arena_save` / `arena_restore` so the temporary buffer is reclaimed
   immediately after the parse step completes
 
