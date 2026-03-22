@@ -28,16 +28,23 @@ jobs:
           docker buildx build --cache-from=type=local,src=/tmp/.buildx-cache --cache-to=type=local,dest=/tmp/.buildx-cache --load -t sleipner-toolchain .
 
       - name: Check formatting
-        run: CONTAINER_CMD=docker ./ci.sh check
+        run: CONTAINER_CMD=docker ./ci.sh check check.log
 
       - name: Build
-        run: CONTAINER_CMD=docker ./ci.sh build
+        run: CONTAINER_CMD=docker ./ci.sh build build.log
 
       - name: Test
-        run: CONTAINER_CMD=docker ./ci.sh test
+        run: CONTAINER_CMD=docker ./ci.sh test test.log
 
       - name: Lint
-        run: CONTAINER_CMD=docker ./ci.sh lint
+        run: CONTAINER_CMD=docker ./ci.sh lint lint.log
+
+      - name: Show logs
+        if: always()
+        run: |
+          for log in tmp/check.log tmp/build.log tmp/test.log tmp/lint.log; do
+            [ -f "$log" ] && echo "=== $log ===" && cat "$log" || true
+          done
 
       - name: Upload binary
         uses: actions/upload-artifact@v4

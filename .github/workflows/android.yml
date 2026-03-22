@@ -28,7 +28,11 @@ jobs:
           docker buildx build --cache-from=type=local,src=/tmp/.buildx-cache --cache-to=type=local,dest=/tmp/.buildx-cache --load -t sleipner-toolchain .
 
       - name: Build APK
-        run: CONTAINER_CMD=docker ./ci.sh apk
+        run: CONTAINER_CMD=docker ./ci.sh apk apk.log
+
+      - name: Show log
+        if: always()
+        run: cat tmp/apk.log
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
