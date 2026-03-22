@@ -1,6 +1,7 @@
 #ifndef ENTITY_H
 #define ENTITY_H
 
+#include "alloc.h"
 #include "attribute.h"
 #include "blueprint.h"
 #include "str.h"
@@ -8,8 +9,6 @@
 #include "raylib.h"
 
 #include <stdbool.h>
-
-struct EngineContext;
 
 #define MAX_ENTITIES 512
 
@@ -62,7 +61,7 @@ const char *entity_get_string(const Entity *entity, const char *name);
  * from blueprint defaults and copies rendering fields.
  * Returns false on allocation failure. */
 [[nodiscard]] bool entity_init_from_blueprint(
-    struct EngineContext *ctx, Entity *entity, const Blueprint *blueprint, Vector2 position, Texture2D *texture);
+    Entity *entity, const Blueprint *blueprint, Vector2 position, Texture2D *texture, Allocator *alloc);
 
 /* Recompute collision rect from position + blueprint offsets.
  * Call after moving an entity. */

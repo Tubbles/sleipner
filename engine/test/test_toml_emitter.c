@@ -80,7 +80,6 @@ void test_toml_emit_blueprints(void)
     TEST_ASSERT_NOT_NULL(strstr(output, "collision_offset = [20, 60]"));
     TEST_ASSERT_NOT_NULL(strstr(output, "collision_size = [24, 16]"));
 
-    test_blueprint_table_free(&ctx, &blueprints);
     arena_free(&arena);
 }
 
@@ -94,7 +93,7 @@ void test_toml_emit_level_with_entities(void)
     toml_table_t *root = parse_toml(fixture_gamedata);
     TEST_ASSERT_NOT_NULL(root);
     blueprints_load(&ctx, &blueprints, root, &arena);
-    TEST_ASSERT_TRUE(level_load(&ctx, &level, root, NULL, &blueprints, dummy_lookup, NULL));
+    TEST_ASSERT_TRUE(level_load(&ctx, &level, root, NULL, &blueprints, dummy_lookup, NULL, NULL));
     toml_free(root);
 
     char output[4096];
@@ -111,8 +110,7 @@ void test_toml_emit_level_with_entities(void)
     TEST_ASSERT_NOT_NULL(strstr(output, "blueprint = \"chest\""));
     TEST_ASSERT_NOT_NULL(strstr(output, "pos = [300, 100]"));
 
-    test_level_free(&ctx, &level);
-    test_blueprint_table_free(&ctx, &blueprints);
+    test_level_free(&level);
     arena_free(&arena);
 }
 
@@ -127,7 +125,7 @@ void test_toml_emit_round_trip(void)
     toml_table_t *root = parse_toml(fixture_gamedata);
     TEST_ASSERT_NOT_NULL(root);
     blueprints_load(&ctx, &blueprints, root, &arena);
-    TEST_ASSERT_TRUE(level_load(&ctx, &level, root, NULL, &blueprints, dummy_lookup, NULL));
+    TEST_ASSERT_TRUE(level_load(&ctx, &level, root, NULL, &blueprints, dummy_lookup, NULL, NULL));
     toml_free(root);
 
     /* Emit */
@@ -144,7 +142,7 @@ void test_toml_emit_round_trip(void)
     toml_table_t *root2 = parse_toml(output);
     TEST_ASSERT_NOT_NULL(root2);
     blueprints_load(&ctx, &blueprints2, root2, &arena2);
-    TEST_ASSERT_TRUE(level_load(&ctx, &level2, root2, NULL, &blueprints2, dummy_lookup, NULL));
+    TEST_ASSERT_TRUE(level_load(&ctx, &level2, root2, NULL, &blueprints2, dummy_lookup, NULL, NULL));
     toml_free(root2);
 
     /* Verify round-trip preserves data */
@@ -169,10 +167,8 @@ void test_toml_emit_round_trip(void)
         TEST_ASSERT_EQUAL_STRING(level.entities[index].blueprint_name.ptr, level2.entities[index].blueprint_name.ptr);
     }
 
-    test_level_free(&ctx, &level);
-    test_level_free(&ctx, &level2);
-    test_blueprint_table_free(&ctx, &blueprints);
-    test_blueprint_table_free(&ctx, &blueprints2);
+    test_level_free(&level);
+    test_level_free(&level2);
     arena_free(&arena);
     arena_free(&arena2);
 }
@@ -188,7 +184,7 @@ void test_toml_emit_buffer_too_small(void)
     char tiny[10];
     int written = toml_emit_gamedata(&ctx, tiny, (int)sizeof(tiny), &blueprints, NULL, 0);
     TEST_ASSERT_EQUAL_INT(-1, written);
-    test_blueprint_table_free(&ctx, &blueprints);
+    test_blueprint_table_free(&blueprints);
 }
 
 static const char *child_fixture = "[[blueprint]]\n"
@@ -238,7 +234,6 @@ void test_toml_emit_blueprint_children(void)
     TEST_ASSERT_NOT_NULL(strstr(output, "tag = \"light\""));
     TEST_ASSERT_NOT_NULL(strstr(output, "offset = [56, -8]"));
 
-    test_blueprint_table_free(&ctx, &blueprints);
     arena_free(&arena);
 }
 
@@ -252,7 +247,7 @@ void test_toml_emit_skips_child_entities(void)
     toml_table_t *root = parse_toml(child_fixture);
     TEST_ASSERT_NOT_NULL(root);
     blueprints_load(&ctx, &blueprints, root, &arena);
-    TEST_ASSERT_TRUE(level_load(&ctx, &level, root, "test", &blueprints, dummy_lookup, NULL));
+    TEST_ASSERT_TRUE(level_load(&ctx, &level, root, "test", &blueprints, dummy_lookup, NULL, NULL));
     toml_free(root);
 
     /* Level has 2 entities (wagon + lantern child) */
@@ -274,8 +269,7 @@ void test_toml_emit_skips_child_entities(void)
     }
     TEST_ASSERT_EQUAL_INT(1, count);
 
-    test_level_free(&ctx, &level);
-    test_blueprint_table_free(&ctx, &blueprints);
+    test_level_free(&level);
     arena_free(&arena);
 }
 
@@ -294,5 +288,5 @@ void test_toml_emit_no_music(void)
     /* Should not contain music line */
     TEST_ASSERT_NULL(strstr(output, "music"));
     TEST_ASSERT_NOT_NULL(strstr(output, "name = \"silent\""));
-    test_level_free(&ctx, &level);
+    test_level_free(&level);
 }

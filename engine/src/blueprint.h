@@ -1,6 +1,7 @@
 #ifndef BLUEPRINT_H
 #define BLUEPRINT_H
 
+#include "alloc.h"
 #include "arena.h"
 #include "attribute.h"
 #include "str.h"
@@ -49,7 +50,7 @@ typedef struct {
 int blueprints_load(struct EngineContext *ctx, BlueprintTable *table, void *toml_root, Arena *arena);
 
 /* Free all blueprints and their children/attrs from a table, and the table's vec. */
-void blueprint_table_free(struct EngineContext *ctx, BlueprintTable *table);
+void blueprint_table_free(Allocator *alloc, BlueprintTable *table);
 
 /* Find a blueprint by name. Returns NULL if not found. */
 const Blueprint *blueprint_find(const BlueprintTable *table, const char *name);

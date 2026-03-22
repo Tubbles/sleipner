@@ -22,44 +22,44 @@ void test_flag_set_and_get(void)
     FlagSet flags = {0};
     TEST_ASSERT_FALSE(flag_get(&flags, "chest_opened"));
 
-    flag_set(&ctx, &flags, "chest_opened");
+    flag_set(NULL, &flags, "chest_opened");
     TEST_ASSERT_TRUE(flag_get(&flags, "chest_opened"));
-    test_flag_set_free(&ctx, &flags);
+    test_flag_set_free(&flags);
 }
 
 void test_flag_clear(void)
 {
     FlagSet flags = {0};
-    flag_set(&ctx, &flags, "door_locked");
+    flag_set(NULL, &flags, "door_locked");
     TEST_ASSERT_TRUE(flag_get(&flags, "door_locked"));
 
-    flag_clear(&ctx, &flags, "door_locked");
+    flag_clear(NULL, &flags, "door_locked");
     TEST_ASSERT_FALSE(flag_get(&flags, "door_locked"));
-    test_flag_set_free(&ctx, &flags);
+    test_flag_set_free(&flags);
 }
 
 void test_flag_unset_returns_false(void)
 {
     FlagSet flags = {0};
     TEST_ASSERT_FALSE(flag_get(&flags, "never_set"));
-    test_flag_set_free(&ctx, &flags);
+    test_flag_set_free(&flags);
 }
 
 void test_flag_set_idempotent(void)
 {
     FlagSet flags = {0};
-    flag_set(&ctx, &flags, "test_flag");
-    flag_set(&ctx, &flags, "test_flag");
+    flag_set(NULL, &flags, "test_flag");
+    flag_set(NULL, &flags, "test_flag");
     TEST_ASSERT_EQUAL_INT(1, flags.names.count);
-    test_flag_set_free(&ctx, &flags);
+    test_flag_set_free(&flags);
 }
 
 void test_flag_clear_nonexistent(void)
 {
     FlagSet flags = {0};
-    flag_clear(&ctx, &flags, "nonexistent");
+    flag_clear(NULL, &flags, "nonexistent");
     TEST_ASSERT_EQUAL_INT(0, flags.names.count);
-    test_flag_set_free(&ctx, &flags);
+    test_flag_set_free(&flags);
 }
 
 /* ---- Trigger parsing tests ---- */
@@ -308,7 +308,7 @@ void test_trigger_no_match_event_wrong_argument(void)
 void test_condition_flag_true(void)
 {
     FlagSet flags = {0};
-    flag_set(&ctx, &flags, "test_flag");
+    flag_set(NULL, &flags, "test_flag");
 
     Condition condition = {.type = COND_FLAG};
     strncpy(condition.argument, "test_flag", MAX_ARG - 1);
@@ -316,7 +316,7 @@ void test_condition_flag_true(void)
     Entity entity = {0};
     ConditionContext context = {.entity = &entity, .flags = &flags};
     TEST_ASSERT_TRUE(conditions_evaluate(&condition, 1, context));
-    test_flag_set_free(&ctx, &flags);
+    test_flag_set_free(&flags);
 }
 
 void test_condition_flag_false(void)
@@ -329,7 +329,7 @@ void test_condition_flag_false(void)
     Entity entity = {0};
     ConditionContext context = {.entity = &entity, .flags = &flags};
     TEST_ASSERT_FALSE(conditions_evaluate(&condition, 1, context));
-    test_flag_set_free(&ctx, &flags);
+    test_flag_set_free(&flags);
 }
 
 void test_condition_not_flag(void)
@@ -342,13 +342,13 @@ void test_condition_not_flag(void)
     Entity entity = {0};
     ConditionContext context = {.entity = &entity, .flags = &flags};
     TEST_ASSERT_TRUE(conditions_evaluate(&condition, 1, context));
-    test_flag_set_free(&ctx, &flags);
+    test_flag_set_free(&flags);
 }
 
 void test_condition_attr_truthy(void)
 {
     Entity entity = {0};
-    (void)attr_set_bool(&ctx, &entity.attrs, "is_locked", true);
+    (void)attr_set_bool(NULL, &entity.attrs, "is_locked", true);
 
     Condition condition = {.type = COND_ATTR};
     strncpy(condition.argument, "is_locked", MAX_ARG - 1);
@@ -356,14 +356,14 @@ void test_condition_attr_truthy(void)
     FlagSet flags = {0};
     ConditionContext context = {.entity = &entity, .flags = &flags};
     TEST_ASSERT_TRUE(conditions_evaluate(&condition, 1, context));
-    attr_set_free(&ctx, &entity.attrs);
-    test_flag_set_free(&ctx, &flags);
+    attr_set_free(NULL, &entity.attrs);
+    test_flag_set_free(&flags);
 }
 
 void test_condition_attr_falsy(void)
 {
     Entity entity = {0};
-    (void)attr_set_bool(&ctx, &entity.attrs, "is_locked", false);
+    (void)attr_set_bool(NULL, &entity.attrs, "is_locked", false);
 
     Condition condition = {.type = COND_ATTR};
     strncpy(condition.argument, "is_locked", MAX_ARG - 1);
@@ -371,8 +371,8 @@ void test_condition_attr_falsy(void)
     FlagSet flags = {0};
     ConditionContext context = {.entity = &entity, .flags = &flags};
     TEST_ASSERT_FALSE(conditions_evaluate(&condition, 1, context));
-    attr_set_free(&ctx, &entity.attrs);
-    test_flag_set_free(&ctx, &flags);
+    attr_set_free(NULL, &entity.attrs);
+    test_flag_set_free(&flags);
 }
 
 void test_condition_attr_missing(void)
@@ -385,13 +385,13 @@ void test_condition_attr_missing(void)
     FlagSet flags = {0};
     ConditionContext context = {.entity = &entity, .flags = &flags};
     TEST_ASSERT_FALSE(conditions_evaluate(&condition, 1, context));
-    test_flag_set_free(&ctx, &flags);
+    test_flag_set_free(&flags);
 }
 
 void test_condition_attr_less_than(void)
 {
     Entity entity = {0};
-    (void)attr_set_int(&ctx, &entity.attrs, "health", 5);
+    (void)attr_set_int(NULL, &entity.attrs, "health", 5);
 
     Condition condition = {.type = COND_ATTR_LT, .compare_value = 10.0F};
     strncpy(condition.argument, "health", MAX_ARG - 1);
@@ -399,14 +399,14 @@ void test_condition_attr_less_than(void)
     FlagSet flags = {0};
     ConditionContext context = {.entity = &entity, .flags = &flags};
     TEST_ASSERT_TRUE(conditions_evaluate(&condition, 1, context));
-    attr_set_free(&ctx, &entity.attrs);
-    test_flag_set_free(&ctx, &flags);
+    attr_set_free(NULL, &entity.attrs);
+    test_flag_set_free(&flags);
 }
 
 void test_condition_attr_greater_than(void)
 {
     Entity entity = {0};
-    (void)attr_set_int(&ctx, &entity.attrs, "speed", 15);
+    (void)attr_set_int(NULL, &entity.attrs, "speed", 15);
 
     Condition condition = {.type = COND_ATTR_GT, .compare_value = 10.0F};
     strncpy(condition.argument, "speed", MAX_ARG - 1);
@@ -414,15 +414,15 @@ void test_condition_attr_greater_than(void)
     FlagSet flags = {0};
     ConditionContext context = {.entity = &entity, .flags = &flags};
     TEST_ASSERT_TRUE(conditions_evaluate(&condition, 1, context));
-    attr_set_free(&ctx, &entity.attrs);
-    test_flag_set_free(&ctx, &flags);
+    attr_set_free(NULL, &entity.attrs);
+    test_flag_set_free(&flags);
 }
 
 void test_condition_and_logic_all_pass(void)
 {
     FlagSet flags = {0};
-    flag_set(&ctx, &flags, "flag_a");
-    flag_set(&ctx, &flags, "flag_b");
+    flag_set(NULL, &flags, "flag_a");
+    flag_set(NULL, &flags, "flag_b");
 
     Condition conditions[2] = {
         {.type = COND_FLAG},
@@ -434,13 +434,13 @@ void test_condition_and_logic_all_pass(void)
     Entity entity = {0};
     ConditionContext context = {.entity = &entity, .flags = &flags};
     TEST_ASSERT_TRUE(conditions_evaluate(conditions, 2, context));
-    test_flag_set_free(&ctx, &flags);
+    test_flag_set_free(&flags);
 }
 
 void test_condition_and_logic_one_fails(void)
 {
     FlagSet flags = {0};
-    flag_set(&ctx, &flags, "flag_a");
+    flag_set(NULL, &flags, "flag_a");
 
     Condition conditions[2] = {
         {.type = COND_FLAG},
@@ -452,7 +452,7 @@ void test_condition_and_logic_one_fails(void)
     Entity entity = {0};
     ConditionContext context = {.entity = &entity, .flags = &flags};
     TEST_ASSERT_FALSE(conditions_evaluate(conditions, 2, context));
-    test_flag_set_free(&ctx, &flags);
+    test_flag_set_free(&flags);
 }
 
 /* ---- Action execution tests ---- */
@@ -472,16 +472,16 @@ void test_action_set_flag_executes(void)
         .flags = &flags,
         .event_queue = &queue,
     };
-    TEST_ASSERT_TRUE(action_node_execute(&ctx, &action, context));
+    TEST_ASSERT_TRUE(action_node_execute(&ctx, NULL, &action, context));
     TEST_ASSERT_TRUE(flag_get(&flags, "chest_opened"));
-    test_flag_set_free(&ctx, &flags);
+    test_flag_set_free(&flags);
     vec_trigger_event_free(&queue, NULL);
 }
 
 void test_action_clear_flag_executes(void)
 {
     FlagSet flags = {0};
-    flag_set(&ctx, &flags, "door_locked");
+    flag_set(NULL, &flags, "door_locked");
     vec_trigger_event queue = {0};
     Entity entity = {0};
 
@@ -493,9 +493,9 @@ void test_action_clear_flag_executes(void)
         .flags = &flags,
         .event_queue = &queue,
     };
-    TEST_ASSERT_TRUE(action_node_execute(&ctx, &action, context));
+    TEST_ASSERT_TRUE(action_node_execute(&ctx, NULL, &action, context));
     TEST_ASSERT_FALSE(flag_get(&flags, "door_locked"));
-    test_flag_set_free(&ctx, &flags);
+    test_flag_set_free(&flags);
     vec_trigger_event_free(&queue, NULL);
 }
 
@@ -504,7 +504,7 @@ void test_action_set_attr_bool(void)
     FlagSet flags = {0};
     vec_trigger_event queue = {0};
     Entity entity = {0};
-    (void)attr_set_bool(&ctx, &entity.attrs, "is_locked", true);
+    (void)attr_set_bool(NULL, &entity.attrs, "is_locked", true);
 
     ActionNode action = {.type = ACTION_SET_ATTR};
     strncpy(action.argument, "is_locked", MAX_ARG - 1);
@@ -517,14 +517,14 @@ void test_action_set_attr_bool(void)
         .flags = &flags,
         .event_queue = &queue,
     };
-    TEST_ASSERT_TRUE(action_node_execute(&ctx, &action, context));
+    TEST_ASSERT_TRUE(action_node_execute(&ctx, NULL, &action, context));
 
     const Attribute *attr = attr_get(&entity.attrs, "is_locked");
     TEST_ASSERT_NOT_NULL(attr);
     TEST_ASSERT_EQUAL_INT(ATTR_BOOL, attr->type);
     TEST_ASSERT_FALSE(attr->value.b);
-    attr_set_free(&ctx, &entity.attrs);
-    test_flag_set_free(&ctx, &flags);
+    attr_set_free(NULL, &entity.attrs);
+    test_flag_set_free(&flags);
     vec_trigger_event_free(&queue, NULL);
 }
 
@@ -545,10 +545,10 @@ void test_action_set_attr_int(void)
         .flags = &flags,
         .event_queue = &queue,
     };
-    TEST_ASSERT_TRUE(action_node_execute(&ctx, &action, context));
+    TEST_ASSERT_TRUE(action_node_execute(&ctx, NULL, &action, context));
     TEST_ASSERT_EQUAL_INT(42, entity_get_int(&entity, "health", 0));
-    attr_set_free(&ctx, &entity.attrs);
-    test_flag_set_free(&ctx, &flags);
+    attr_set_free(NULL, &entity.attrs);
+    test_flag_set_free(&flags);
     vec_trigger_event_free(&queue, NULL);
 }
 
@@ -557,7 +557,7 @@ void test_action_add_attr(void)
     FlagSet flags = {0};
     vec_trigger_event queue = {0};
     Entity entity = {0};
-    (void)attr_set_int(&ctx, &entity.attrs, "health", 10);
+    (void)attr_set_int(NULL, &entity.attrs, "health", 10);
 
     ActionNode action = {.type = ACTION_ADD_ATTR};
     strncpy(action.argument, "health", MAX_ARG - 1);
@@ -570,10 +570,10 @@ void test_action_add_attr(void)
         .flags = &flags,
         .event_queue = &queue,
     };
-    TEST_ASSERT_TRUE(action_node_execute(&ctx, &action, context));
+    TEST_ASSERT_TRUE(action_node_execute(&ctx, NULL, &action, context));
     TEST_ASSERT_EQUAL_INT(7, entity_get_int(&entity, "health", 0));
-    attr_set_free(&ctx, &entity.attrs);
-    test_flag_set_free(&ctx, &flags);
+    attr_set_free(NULL, &entity.attrs);
+    test_flag_set_free(&flags);
     vec_trigger_event_free(&queue, NULL);
 }
 
@@ -582,7 +582,7 @@ void test_action_toggle_attr(void)
     FlagSet flags = {0};
     vec_trigger_event queue = {0};
     Entity entity = {0};
-    (void)attr_set_bool(&ctx, &entity.attrs, "visible", true);
+    (void)attr_set_bool(NULL, &entity.attrs, "visible", true);
 
     ActionNode action = {.type = ACTION_TOGGLE_ATTR};
     strncpy(action.argument, "visible", MAX_ARG - 1);
@@ -594,10 +594,10 @@ void test_action_toggle_attr(void)
         .flags = &flags,
         .event_queue = &queue,
     };
-    TEST_ASSERT_TRUE(action_node_execute(&ctx, &action, context));
+    TEST_ASSERT_TRUE(action_node_execute(&ctx, NULL, &action, context));
     TEST_ASSERT_FALSE(entity_get_bool(&entity, "visible", true));
-    attr_set_free(&ctx, &entity.attrs);
-    test_flag_set_free(&ctx, &flags);
+    attr_set_free(NULL, &entity.attrs);
+    test_flag_set_free(&flags);
     vec_trigger_event_free(&queue, NULL);
 }
 
@@ -615,9 +615,9 @@ void test_action_destroy(void)
         .flags = &flags,
         .event_queue = &queue,
     };
-    TEST_ASSERT_TRUE(action_node_execute(&ctx, &action, context));
+    TEST_ASSERT_TRUE(action_node_execute(&ctx, NULL, &action, context));
     TEST_ASSERT_FALSE(entity.active);
-    test_flag_set_free(&ctx, &flags);
+    test_flag_set_free(&flags);
     vec_trigger_event_free(&queue, NULL);
 }
 
@@ -635,12 +635,12 @@ void test_action_fire_event_queues(void)
         .flags = &flags,
         .event_queue = &queue,
     };
-    TEST_ASSERT_TRUE(action_node_execute(&ctx, &action, context));
+    TEST_ASSERT_TRUE(action_node_execute(&ctx, NULL, &action, context));
     TEST_ASSERT_EQUAL_INT(1, queue.count);
     TEST_ASSERT_EQUAL_INT(TRIGGER_EVENT, queue.data[0].type);
     TEST_ASSERT_EQUAL_STRING("boss_defeated", queue.data[0].argument);
     vec_trigger_event_free(&queue, NULL);
-    test_flag_set_free(&ctx, &flags);
+    test_flag_set_free(&flags);
 }
 
 void test_action_execution_order(void)
@@ -661,13 +661,13 @@ void test_action_execution_order(void)
         .flags = &flags,
         .event_queue = &queue,
     };
-    (void)action_node_execute(&ctx, &actions[0], context);
-    (void)action_node_execute(&ctx, &actions[1], context);
+    (void)action_node_execute(&ctx, NULL, &actions[0], context);
+    (void)action_node_execute(&ctx, NULL, &actions[1], context);
 
     TEST_ASSERT_TRUE(flag_get(&flags, "first"));
     TEST_ASSERT_TRUE(flag_get(&flags, "second"));
     TEST_ASSERT_EQUAL_INT(2, flags.names.count);
-    test_flag_set_free(&ctx, &flags);
+    test_flag_set_free(&flags);
     vec_trigger_event_free(&queue, NULL);
 }
 
@@ -797,13 +797,13 @@ void test_evaluate_interact_sets_flag(void)
     AttrSet global_vars = {0};
     TriggerEvent event = {.type = TRIGGER_INTERACT, .entity_index = 0};
 
-    rules_evaluate_batch(&ctx, &entity, 1, &event, 1, &flags, &global_vars);
+    rules_evaluate_batch(&ctx, NULL, &entity, 1, &event, 1, &flags, &global_vars);
     TEST_ASSERT_TRUE(flag_get(&flags, "chest_opened"));
 
     arena_free(&arena);
     str_free(NULL, &blueprint.name);
-    test_flag_set_free(&ctx, &flags);
-    test_attr_set_free(&ctx, &global_vars);
+    test_flag_set_free(&flags);
+    test_attr_set_free(&global_vars);
 }
 
 void test_evaluate_condition_blocks_action(void)
@@ -841,13 +841,13 @@ void test_evaluate_condition_blocks_action(void)
     AttrSet global_vars = {0};
     TriggerEvent event = {.type = TRIGGER_INTERACT, .entity_index = 0};
 
-    rules_evaluate_batch(&ctx, &entity, 1, &event, 1, &flags, &global_vars);
+    rules_evaluate_batch(&ctx, NULL, &entity, 1, &event, 1, &flags, &global_vars);
     TEST_ASSERT_FALSE(flag_get(&flags, "chest_opened"));
 
     arena_free(&arena);
     str_free(NULL, &blueprint.name);
-    test_flag_set_free(&ctx, &flags);
-    test_attr_set_free(&ctx, &global_vars);
+    test_flag_set_free(&flags);
+    test_attr_set_free(&global_vars);
 }
 
 void test_evaluate_fire_event_cascading(void)
@@ -902,7 +902,7 @@ void test_evaluate_fire_event_cascading(void)
     AttrSet global_vars = {0};
     TriggerEvent event = {.type = TRIGGER_INTERACT, .entity_index = 0};
 
-    rules_evaluate_batch(&ctx, entities, 2, &event, 1, &flags, &global_vars);
+    rules_evaluate_batch(&ctx, NULL, entities, 2, &event, 1, &flags, &global_vars);
     TEST_ASSERT_TRUE(flag_get(&flags, "door_opened"));
 
     arena_free(&arena);
@@ -910,8 +910,8 @@ void test_evaluate_fire_event_cascading(void)
     str_free(NULL, &bp_door.name);
     str_free(NULL, &entities[0].blueprint_name);
     str_free(NULL, &entities[1].blueprint_name);
-    test_flag_set_free(&ctx, &flags);
-    test_attr_set_free(&ctx, &global_vars);
+    test_flag_set_free(&flags);
+    test_attr_set_free(&global_vars);
 }
 
 /* ---- Variable system tests ---- */
@@ -937,13 +937,13 @@ void test_var_set_local(void)
         .local_vars = &local_vars,
         .global_vars = &global_vars,
     };
-    TEST_ASSERT_TRUE(action_node_execute(&ctx, &action, context));
+    TEST_ASSERT_TRUE(action_node_execute(&ctx, NULL, &action, context));
     TEST_ASSERT_EQUAL_INT(42, attr_get_int(&local_vars, "damage", 0));
     TEST_ASSERT_NULL(attr_get(&global_vars, "damage"));
-    attr_set_free(&ctx, &local_vars);
-    test_flag_set_free(&ctx, &flags);
+    attr_set_free(NULL, &local_vars);
+    test_flag_set_free(&flags);
     vec_trigger_event_free(&queue, NULL);
-    test_attr_set_free(&ctx, &local_vars);
+    test_attr_set_free(&local_vars);
 }
 
 void test_var_set_global(void)
@@ -967,13 +967,13 @@ void test_var_set_global(void)
         .local_vars = &local_vars,
         .global_vars = &global_vars,
     };
-    TEST_ASSERT_TRUE(action_node_execute(&ctx, &action, context));
+    TEST_ASSERT_TRUE(action_node_execute(&ctx, NULL, &action, context));
     TEST_ASSERT_EQUAL_INT(100, attr_get_int(&global_vars, "score", 0));
     TEST_ASSERT_NULL(attr_get(&local_vars, "score"));
-    attr_set_free(&ctx, &global_vars);
-    test_flag_set_free(&ctx, &flags);
+    attr_set_free(NULL, &global_vars);
+    test_flag_set_free(&flags);
     vec_trigger_event_free(&queue, NULL);
-    test_attr_set_free(&ctx, &local_vars);
+    test_attr_set_free(&local_vars);
 }
 
 void test_var_condition_truthy(void)
@@ -982,7 +982,7 @@ void test_var_condition_truthy(void)
     Entity entity = {0};
     AttrSet local_vars = {0};
     AttrSet global_vars = {0};
-    (void)attr_set_int(&ctx, &local_vars, "active", 1);
+    (void)attr_set_int(NULL, &local_vars, "active", 1);
 
     Condition cond = {.type = COND_VAR};
     strncpy(cond.argument, "active", MAX_ARG - 1);
@@ -996,9 +996,9 @@ void test_var_condition_truthy(void)
         .global_vars = &global_vars,
     };
     TEST_ASSERT_TRUE(conditions_evaluate(&cond, 1, context));
-    attr_set_free(&ctx, &local_vars);
-    test_flag_set_free(&ctx, &flags);
-    test_attr_set_free(&ctx, &local_vars);
+    attr_set_free(NULL, &local_vars);
+    test_flag_set_free(&flags);
+    test_attr_set_free(&local_vars);
 }
 
 void test_var_condition_falsy_when_unset(void)
@@ -1020,8 +1020,8 @@ void test_var_condition_falsy_when_unset(void)
         .global_vars = &global_vars,
     };
     TEST_ASSERT_FALSE(conditions_evaluate(&cond, 1, context));
-    test_flag_set_free(&ctx, &flags);
-    test_attr_set_free(&ctx, &local_vars);
+    test_flag_set_free(&flags);
+    test_attr_set_free(&local_vars);
 }
 
 void test_var_substitution_in_set_attr(void)
@@ -1031,7 +1031,7 @@ void test_var_substitution_in_set_attr(void)
     Entity entity = {0};
     AttrSet local_vars = {0};
     AttrSet global_vars = {0};
-    (void)attr_set_int(&ctx, &local_vars, "amount", 5);
+    (void)attr_set_int(NULL, &local_vars, "amount", 5);
 
     ActionNode action = {.type = ACTION_SET_ATTR};
     strncpy(action.argument, "health", MAX_ARG - 1);
@@ -1046,13 +1046,13 @@ void test_var_substitution_in_set_attr(void)
         .local_vars = &local_vars,
         .global_vars = &global_vars,
     };
-    TEST_ASSERT_TRUE(action_node_execute(&ctx, &action, context));
+    TEST_ASSERT_TRUE(action_node_execute(&ctx, NULL, &action, context));
     TEST_ASSERT_EQUAL_INT(5, entity_get_int(&entity, "health", 0));
-    attr_set_free(&ctx, &local_vars);
-    attr_set_free(&ctx, &entity.attrs);
-    test_flag_set_free(&ctx, &flags);
+    attr_set_free(NULL, &local_vars);
+    attr_set_free(NULL, &entity.attrs);
+    test_flag_set_free(&flags);
     vec_trigger_event_free(&queue, NULL);
-    test_attr_set_free(&ctx, &local_vars);
+    test_attr_set_free(&local_vars);
 }
 
 void test_local_var_scoped_per_rule(void)
@@ -1077,13 +1077,13 @@ void test_local_var_scoped_per_rule(void)
         .local_vars = &local_vars_a,
         .global_vars = &global_vars,
     };
-    TEST_ASSERT_TRUE(action_node_execute(&ctx, &action, context_a));
+    TEST_ASSERT_TRUE(action_node_execute(&ctx, NULL, &action, context_a));
     TEST_ASSERT_EQUAL_INT(99, attr_get_int(&local_vars_a, "temp", 0));
     TEST_ASSERT_NULL(attr_get(&local_vars_b, "temp"));
-    attr_set_free(&ctx, &local_vars_a);
-    test_flag_set_free(&ctx, &flags);
+    attr_set_free(NULL, &local_vars_a);
+    test_flag_set_free(&flags);
     vec_trigger_event_free(&queue, NULL);
-    test_attr_set_free(&ctx, &global_vars);
+    test_attr_set_free(&global_vars);
 }
 
 /* ---- Integration: blueprint with rules parsed from gamedata ---- */
@@ -1202,7 +1202,8 @@ void test_integration_condition_blocks_interact(void)
     input.buttons[0] = false;
     game_update(&ctx, &state, input, 1.0F / 60.0F);
 
-    flag_set(&ctx, &state.flags, "has_key");
+    Allocator arena_alloc = allocator_arena(&ctx, &state.gamedata_arena);
+    flag_set(&arena_alloc, &state.flags, "has_key");
     input.buttons[0] = true;
     game_update(&ctx, &state, input, 1.0F / 60.0F);
 

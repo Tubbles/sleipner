@@ -1,4 +1,5 @@
 #include "blueprint.h"
+#include "alloc.h"
 #include "arena.h"
 #include "attribute.h"
 #include "debug.h"
@@ -52,39 +53,38 @@ static bool is_known_key(const char *key)
     return false;
 }
 
-static bool parse_custom_attr(struct EngineContext *ctx, AttrSet *attrs, toml_table_t *table, const char *key)
+static bool parse_custom_attr(Allocator *alloc, AttrSet *attrs, toml_table_t *table, const char *key)
 {
     toml_datum_t bool_value = toml_bool_in(table, key);
     if (bool_value.ok) {
-        return attr_set_bool(ctx, attrs, key, (bool)bool_value.u.b);
+        return attr_set_bool(alloc, attrs, key, (bool)bool_value.u.b);
     }
 
     toml_datum_t int_value = toml_int_in(table, key);
     if (int_value.ok) {
-        return attr_set_int(ctx, attrs, key, (int)int_value.u.i);
+        return attr_set_int(alloc, attrs, key, (int)int_value.u.i);
     }
 
     toml_datum_t double_value = toml_double_in(table, key);
     if (double_value.ok) {
-        return attr_set_float(ctx, attrs, key, (float)double_value.u.d);
+        return attr_set_float(alloc, attrs, key, (float)double_value.u.d);
     }
 
     toml_datum_t string_value = toml_string_in(table, key);
     if (string_value.ok) {
-        bool result = attr_set_string(ctx, attrs, (AttrStringPair){.name = key, .value = string_value.u.s});
+        bool result = attr_set_string(alloc, attrs, (AttrStringPair){.name = key, .value = string_value.u.s});
         free(string_value.u.s);
         return result;
     }
     return true;
 }
 
-static bool inherit_rendering_fields(struct EngineContext *ctx, Blueprint *child, const Blueprint *parent)
+static bool inherit_rendering_fields(Allocator *alloc, Blueprint *child, const Blueprint *parent)
 {
-    (void)ctx;
     bool changed = false;
 
     if (child->texture_name.len == 0 && parent->texture_name.len > 0) {
-        if (!str_from_strv(NULL, &child->texture_name, str_to_strv(parent->texture_name))) {
+        if (!str_from_strv(alloc, &child->texture_name, str_to_strv(parent->texture_name))) {
             return changed;
         }
         changed = true;
@@ -104,9 +104,8 @@ static bool inherit_rendering_fields(struct EngineContext *ctx, Blueprint *child
     return changed;
 }
 
-static bool inherit_attributes(struct EngineContext *ctx, Blueprint *child, const Blueprint *parent)
+static bool inherit_attributes(Allocator *alloc, Blueprint *child, const Blueprint *parent)
 {
-    (void)ctx;
     bool changed = false;
 
     for (int attr_index = 0; attr_index < parent->attrs.entries.count; attr_index++) {
@@ -117,20 +116,20 @@ static bool inherit_attributes(struct EngineContext *ctx, Blueprint *child, cons
         /* Deep copy: allocate independent Strs for name and (if ATTR_STRING) value. */
         Attribute new_entry = *parent_attr;
         new_entry.name = (Str){0};
-        if (!str_from_strv(NULL, &new_entry.name, str_to_strv(parent_attr->name))) {
+        if (!str_from_strv(alloc, &new_entry.name, str_to_strv(parent_attr->name))) {
             continue;
         }
         if (parent_attr->type == ATTR_STRING) {
             new_entry.value.str = (Str){0};
-            if (!str_from_strv(NULL, &new_entry.value.str, str_to_strv(parent_attr->value.str))) {
-                str_free(NULL, &new_entry.name);
+            if (!str_from_strv(alloc, &new_entry.value.str, str_to_strv(parent_attr->value.str))) {
+                str_free(alloc, &new_entry.name);
                 continue;
             }
         }
-        if (!vec_attribute_push(&child->attrs.entries, new_entry, NULL)) {
-            str_free(NULL, &new_entry.name);
+        if (!vec_attribute_push(&child->attrs.entries, new_entry, alloc)) {
+            str_free(alloc, &new_entry.name);
             if (parent_attr->type == ATTR_STRING) {
-                str_free(NULL, &new_entry.value.str);
+                str_free(alloc, &new_entry.value.str);
             }
             continue;
         }
@@ -140,7 +139,7 @@ static bool inherit_attributes(struct EngineContext *ctx, Blueprint *child, cons
     return changed;
 }
 
-static bool inherit_from_parent(struct EngineContext *ctx, Blueprint *child, const BlueprintTable *table)
+static bool inherit_from_parent(Allocator *alloc, Blueprint *child, const BlueprintTable *table)
 {
     if (child->extends_name.len == 0) {
         return false;
@@ -151,18 +150,18 @@ static bool inherit_from_parent(struct EngineContext *ctx, Blueprint *child, con
         return false;
     }
 
-    bool changed = inherit_rendering_fields(ctx, child, parent);
-    changed = (bool)(inherit_attributes(ctx, child, parent) || changed);
+    bool changed = inherit_rendering_fields(alloc, child, parent);
+    changed = (bool)(inherit_attributes(alloc, child, parent) || changed);
     return changed;
 }
 
-static void resolve_inheritance(struct EngineContext *ctx, BlueprintTable *table)
+static void resolve_inheritance(Allocator *alloc, BlueprintTable *table)
 {
     for (int pass = 0; pass < table->entries.count; pass++) {
         bool changed = false;
 
         for (int index = 0; index < table->entries.count; index++) {
-            changed = (bool)(inherit_from_parent(ctx, &table->entries.data[index], table) || changed);
+            changed = (bool)(inherit_from_parent(alloc, &table->entries.data[index], table) || changed);
         }
 
         if (!changed) {
@@ -171,17 +170,16 @@ static void resolve_inheritance(struct EngineContext *ctx, BlueprintTable *table
     }
 }
 
-static bool parse_optional_strings(struct EngineContext *ctx, Blueprint *blueprint, toml_table_t *entry)
+static bool parse_optional_strings(Allocator *alloc, Blueprint *blueprint, toml_table_t *entry)
 {
-    (void)ctx;
     toml_datum_t extends = toml_string_in(entry, "extends");
-    if (extends.ok && !str_from_toml_datum(NULL, &blueprint->extends_name, &extends)) {
+    if (extends.ok && !str_from_toml_datum(alloc, &blueprint->extends_name, &extends)) {
         return false;
     }
 
     toml_datum_t texture = toml_string_in(entry, "texture");
     if (texture.ok) {
-        return str_from_toml_datum(NULL, &blueprint->texture_name, &texture);
+        return str_from_toml_datum(alloc, &blueprint->texture_name, &texture);
     }
     return true;
 }
@@ -207,23 +205,23 @@ static void parse_geometry(Blueprint *blueprint, toml_table_t *entry)
     }
 }
 
-static bool parse_health(struct EngineContext *ctx, Blueprint *blueprint, toml_table_t *entry)
+static bool parse_health(Allocator *alloc, Blueprint *blueprint, toml_table_t *entry)
 {
     toml_array_t *health = toml_array_in(entry, "health");
     if (health && toml_array_nelem(health) == 2) {
         toml_datum_t current = toml_int_at(health, 0);
         toml_datum_t max = toml_int_at(health, 1);
-        if (current.ok && !attr_set_int(ctx, &blueprint->attrs, "health", (int)current.u.i)) {
+        if (current.ok && !attr_set_int(alloc, &blueprint->attrs, "health", (int)current.u.i)) {
             return false;
         }
-        if (max.ok && !attr_set_int(ctx, &blueprint->attrs, "max_health", (int)max.u.i)) {
+        if (max.ok && !attr_set_int(alloc, &blueprint->attrs, "max_health", (int)max.u.i)) {
             return false;
         }
     }
     return true;
 }
 
-static bool parse_custom_attrs(struct EngineContext *ctx, Blueprint *blueprint, toml_table_t *entry)
+static bool parse_custom_attrs(Allocator *alloc, Blueprint *blueprint, toml_table_t *entry)
 {
     int key_count = toml_table_nkval(entry);
     for (int key_index = 0; key_index < key_count; key_index++) {
@@ -231,28 +229,30 @@ static bool parse_custom_attrs(struct EngineContext *ctx, Blueprint *blueprint, 
         if (!key || is_known_key(key)) {
             continue;
         }
-        if (!parse_custom_attr(ctx, &blueprint->attrs, entry, key)) {
+        if (!parse_custom_attr(alloc, &blueprint->attrs, entry, key)) {
             return false;
         }
     }
     return true;
 }
 
-static bool parse_single_child(struct EngineContext *ctx, BlueprintChild *child, toml_table_t *entry)
+static bool parse_single_child(Allocator *alloc, BlueprintChild *child, toml_table_t *entry)
 {
     memset(child, 0, sizeof(*child));
 
     toml_datum_t blueprint_name = toml_string_in(entry, "blueprint");
     if (!blueprint_name.ok) {
-        error_set(ctx, "child missing required 'blueprint' key");
+        if (alloc && alloc->ctx) {
+            error_set(alloc->ctx, "child missing required 'blueprint' key");
+        }
         return false;
     }
-    if (!str_from_toml_datum(NULL, &child->blueprint_name, &blueprint_name)) {
+    if (!str_from_toml_datum(alloc, &child->blueprint_name, &blueprint_name)) {
         return false;
     }
 
     toml_datum_t tag = toml_string_in(entry, "tag");
-    if (tag.ok && !str_from_toml_datum(NULL, &child->tag, &tag)) {
+    if (tag.ok && !str_from_toml_datum(alloc, &child->tag, &tag)) {
         return false;
     }
 
@@ -265,7 +265,7 @@ static bool parse_single_child(struct EngineContext *ctx, BlueprintChild *child,
     return true;
 }
 
-static bool parse_children(struct EngineContext *ctx, Blueprint *blueprint, toml_table_t *entry)
+static bool parse_children(Allocator *alloc, Blueprint *blueprint, toml_table_t *entry)
 {
     toml_array_t *children = toml_array_in(entry, "child");
     if (!children) {
@@ -280,12 +280,16 @@ static bool parse_children(struct EngineContext *ctx, Blueprint *blueprint, toml
             continue;
         }
         BlueprintChild child_entry_data = {0};
-        if (!parse_single_child(ctx, &child_entry_data, child_entry)) {
-            error_wrap(ctx, "blueprint '%s' child[%d]", blueprint->name.ptr, index);
+        if (!parse_single_child(alloc, &child_entry_data, child_entry)) {
+            if (alloc && alloc->ctx) {
+                error_wrap(alloc->ctx, "blueprint '%s' child[%d]", blueprint->name.ptr, index);
+            }
             return false;
         }
-        if (!vec_blueprint_child_push(&blueprint->children, child_entry_data, NULL)) {
-            error_set(ctx, "blueprint '%s' child[%d]: out of memory", blueprint->name.ptr, index);
+        if (!vec_blueprint_child_push(&blueprint->children, child_entry_data, alloc)) {
+            if (alloc && alloc->ctx) {
+                error_set(alloc->ctx, "blueprint '%s' child[%d]: out of memory", blueprint->name.ptr, index);
+            }
             return false;
         }
     }
@@ -293,7 +297,7 @@ static bool parse_children(struct EngineContext *ctx, Blueprint *blueprint, toml
     return true;
 }
 
-static bool parse_single_blueprint(struct EngineContext *ctx, Blueprint *blueprint, toml_table_t *entry, Arena *arena)
+static bool parse_single_blueprint(Allocator *alloc, Blueprint *blueprint, toml_table_t *entry, Arena *arena)
 {
     memset(blueprint, 0, sizeof(*blueprint));
 
@@ -301,55 +305,60 @@ static bool parse_single_blueprint(struct EngineContext *ctx, Blueprint *bluepri
     if (!name.ok) {
         return false;
     }
-    if (!str_from_toml_datum(NULL, &blueprint->name, &name)) {
+    if (!str_from_toml_datum(alloc, &blueprint->name, &name)) {
         return false;
     }
 
-    if (!parse_optional_strings(ctx, blueprint, entry)) {
+    if (!parse_optional_strings(alloc, blueprint, entry)) {
         return false;
     }
     parse_geometry(blueprint, entry);
-    if (!parse_health(ctx, blueprint, entry)) {
+    if (!parse_health(alloc, blueprint, entry)) {
         return false;
     }
-    if (!parse_custom_attrs(ctx, blueprint, entry)) {
+    if (!parse_custom_attrs(alloc, blueprint, entry)) {
         return false;
     }
-    if (!parse_children(ctx, blueprint, entry)) {
+    if (!parse_children(alloc, blueprint, entry)) {
         return false;
     }
+    struct EngineContext *ctx = alloc ? alloc->ctx : NULL;
     if (!rules_parse(ctx, &blueprint->rules, entry, arena)) {
-        error_wrap(ctx, "blueprint '%s'", blueprint->name.ptr);
+        if (ctx) {
+            error_wrap(ctx, "blueprint '%s'", blueprint->name.ptr);
+        }
         return false;
     }
     return true;
 }
 
-static void blueprint_cleanup(struct EngineContext *ctx, Blueprint *blp)
+static void blueprint_cleanup(Allocator *alloc, Blueprint *blp)
 {
-    str_free(NULL, &blp->name);
-    str_free(NULL, &blp->extends_name);
-    str_free(NULL, &blp->texture_name);
+    str_free(alloc, &blp->name);
+    str_free(alloc, &blp->extends_name);
+    str_free(alloc, &blp->texture_name);
     for (int child_index = 0; child_index < blp->children.count; child_index++) {
-        str_free(NULL, &blp->children.data[child_index].blueprint_name);
-        str_free(NULL, &blp->children.data[child_index].tag);
+        str_free(alloc, &blp->children.data[child_index].blueprint_name);
+        str_free(alloc, &blp->children.data[child_index].tag);
     }
-    vec_blueprint_child_free(&blp->children, NULL);
-    attr_set_free(ctx, &blp->attrs);
+    vec_blueprint_child_free(&blp->children, alloc);
+    attr_set_free(alloc, &blp->attrs);
 }
 
-void blueprint_table_free(struct EngineContext *ctx, BlueprintTable *table)
+void blueprint_table_free(Allocator *alloc, BlueprintTable *table)
 {
     for (int index = 0; index < table->entries.count; index++) {
-        blueprint_cleanup(ctx, &table->entries.data[index]);
+        blueprint_cleanup(alloc, &table->entries.data[index]);
     }
-    vec_blueprint_free(&table->entries, NULL);
+    vec_blueprint_free(&table->entries, alloc);
     *table = (BlueprintTable){0};
 }
 
 int blueprints_load(struct EngineContext *ctx, BlueprintTable *table, void *toml_root, Arena *arena)
 {
-    blueprint_table_free(ctx, table);
+    Allocator alloc = allocator_arena(ctx, arena);
+    /* Reset the table struct — arena_reset in the caller already freed the old data. */
+    *table = (BlueprintTable){0};
 
     toml_array_t *blueprints = toml_array_in(toml_root, "blueprint");
     if (!blueprints) {
@@ -379,11 +388,11 @@ int blueprints_load(struct EngineContext *ctx, BlueprintTable *table, void *toml
         }
 
         Blueprint temp = {0};
-        if (parse_single_blueprint(ctx, &temp, entry, arena)) {
+        if (parse_single_blueprint(&alloc, &temp, entry, arena)) {
             debug_log(ctx, "bp[%d]: parsed '%s' tex='%s'", index, temp.name.ptr, temp.texture_name.ptr);
-            (void)vec_blueprint_push(&table->entries, temp, NULL);
+            (void)vec_blueprint_push(&table->entries, temp, &alloc);
         } else {
-            blueprint_cleanup(ctx, &temp);
+            blueprint_cleanup(&alloc, &temp);
             toml_datum_t name = toml_string_in(entry, "name");
             debug_log(ctx, "bp[%d]: FAILED to parse (name=%s)", index, name.ok ? name.u.s : "missing");
             if (name.ok) {
@@ -392,7 +401,7 @@ int blueprints_load(struct EngineContext *ctx, BlueprintTable *table, void *toml
         }
     }
 
-    resolve_inheritance(ctx, table);
+    resolve_inheritance(&alloc, table);
 
     return table->entries.count;
 }

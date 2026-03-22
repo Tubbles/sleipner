@@ -1,6 +1,7 @@
 #ifndef RULE_H
 #define RULE_H
 
+#include "alloc.h"
 #include "arena.h"
 #include "entity.h"
 #include "str.h"
@@ -122,9 +123,9 @@ typedef struct {
 } FlagSet;
 
 bool flag_get(const FlagSet *flags, const char *name);
-void flag_set(struct EngineContext *ctx, FlagSet *flags, const char *name);
-void flag_clear(struct EngineContext *ctx, FlagSet *flags, const char *name);
-void flag_set_free(struct EngineContext *ctx, FlagSet *flags);
+void flag_set(Allocator *alloc, FlagSet *flags, const char *name);
+void flag_clear(Allocator *alloc, FlagSet *flags, const char *name);
+void flag_set_free(Allocator *alloc, FlagSet *flags);
 
 /* --- Trigger events --- */
 typedef struct {
@@ -168,10 +169,12 @@ typedef struct {
     AttrSet *global_vars;
 } ActionContext;
 
-[[nodiscard]] bool action_node_execute(struct EngineContext *ctx, const ActionNode *node, ActionContext context);
+[[nodiscard]] bool
+action_node_execute(struct EngineContext *ctx, Allocator *alloc, const ActionNode *node, ActionContext context);
 
 /* --- Evaluation loop --- */
 void rules_evaluate_batch(struct EngineContext *ctx,
+                          Allocator *alloc,
                           Entity *entities,
                           int entity_count,
                           const TriggerEvent *events,

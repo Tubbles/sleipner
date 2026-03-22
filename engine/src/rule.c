@@ -1,4 +1,5 @@
 #include "rule.h"
+#include "alloc.h"
 #include "vec.h"
 #include "arena.h"
 #include "attribute.h"
@@ -41,43 +42,43 @@ bool flag_get(const FlagSet *flags, const char *name)
     return flag_find(flags, name) >= 0;
 }
 
-void flag_set(struct EngineContext *ctx, FlagSet *flags, const char *name)
+void flag_set(Allocator *alloc, FlagSet *flags, const char *name)
 {
     if (flag_find(flags, name) >= 0) {
         return;
     }
     FlagName entry = {0};
-    if (!str_from_cstr(NULL, &entry.name, name)) {
+    if (!str_from_cstr(alloc, &entry.name, name)) {
+        struct EngineContext *ctx = alloc ? alloc->ctx : NULL;
         debug_log(ctx, "flag_set: allocation failed for '%s'", name);
         return;
     }
-    if (!vec_flag_name_push(&flags->names, entry, NULL)) {
-        str_free(NULL, &entry.name);
+    if (!vec_flag_name_push(&flags->names, entry, alloc)) {
+        str_free(alloc, &entry.name);
+        struct EngineContext *ctx = alloc ? alloc->ctx : NULL;
         debug_log(ctx, "flag_set: vec push failed for '%s'", name);
     }
 }
 
-void flag_clear(struct EngineContext *ctx, FlagSet *flags, const char *name)
+void flag_clear(Allocator *alloc, FlagSet *flags, const char *name)
 {
-    (void)ctx;
     int index = flag_find(flags, name);
     if (index < 0) {
         return;
     }
-    str_free(NULL, &flags->names.data[index].name);
+    str_free(alloc, &flags->names.data[index].name);
     flags->names.count--;
     if (index < flags->names.count) {
         flags->names.data[index] = flags->names.data[flags->names.count];
     }
 }
 
-void flag_set_free(struct EngineContext *ctx, FlagSet *flags)
+void flag_set_free(Allocator *alloc, FlagSet *flags)
 {
-    (void)ctx;
     for (int index = 0; index < flags->names.count; index++) {
-        str_free(NULL, &flags->names.data[index].name);
+        str_free(alloc, &flags->names.data[index].name);
     }
-    vec_flag_name_free(&flags->names, NULL);
+    vec_flag_name_free(&flags->names, alloc);
     *flags = (FlagSet){0};
 }
 
@@ -778,7 +779,8 @@ static void resolve_arg(char *out, int out_size, const char *arg, ActionContext 
     out[out_pos] = '\0';
 }
 
-static bool execute_set_attr_action(struct EngineContext *ctx, const ActionNode *node, ActionContext context)
+static bool
+execute_set_attr_action(struct EngineContext *ctx, Allocator *alloc, const ActionNode *node, ActionContext context)
 {
     char attr_name[MAX_ARG];
     Entity *target = resolve_target(node->argument, context, attr_name, MAX_ARG);
@@ -790,18 +792,19 @@ static bool execute_set_attr_action(struct EngineContext *ctx, const ActionNode 
     resolve_arg(resolved, MAX_ARG, node->second_argument, context);
     float value = strtof(resolved, NULL);
     if (strchr(resolved, '.')) {
-        return attr_set_float(ctx, &target->attrs, attr_name, value);
+        return attr_set_float(alloc, &target->attrs, attr_name, value);
     }
     if (strcmp(resolved, "true") == 0) {
-        return attr_set_bool(ctx, &target->attrs, attr_name, true);
+        return attr_set_bool(alloc, &target->attrs, attr_name, true);
     }
     if (strcmp(resolved, "false") == 0) {
-        return attr_set_bool(ctx, &target->attrs, attr_name, false);
+        return attr_set_bool(alloc, &target->attrs, attr_name, false);
     }
-    return attr_set_int(ctx, &target->attrs, attr_name, (int)value);
+    return attr_set_int(alloc, &target->attrs, attr_name, (int)value);
 }
 
-static bool execute_add_attr_action(struct EngineContext *ctx, const ActionNode *node, ActionContext context)
+static bool
+execute_add_attr_action(struct EngineContext *ctx, Allocator *alloc, const ActionNode *node, ActionContext context)
 {
     char attr_name[MAX_ARG];
     Entity *target = resolve_target(node->argument, context, attr_name, MAX_ARG);
@@ -814,13 +817,14 @@ static bool execute_add_attr_action(struct EngineContext *ctx, const ActionNode 
     resolve_arg(resolved, MAX_ARG, node->second_argument, context);
     float delta = strtof(resolved, NULL);
     if (existing && existing->type == ATTR_FLOAT) {
-        return attr_set_float(ctx, &target->attrs, attr_name, existing->value.f + delta);
+        return attr_set_float(alloc, &target->attrs, attr_name, existing->value.f + delta);
     }
     int current_val = existing ? existing->value.i : 0;
-    return attr_set_int(ctx, &target->attrs, attr_name, current_val + (int)delta);
+    return attr_set_int(alloc, &target->attrs, attr_name, current_val + (int)delta);
 }
 
-static bool execute_toggle_attr_action(struct EngineContext *ctx, const ActionNode *node, ActionContext context)
+static bool
+execute_toggle_attr_action(struct EngineContext *ctx, Allocator *alloc, const ActionNode *node, ActionContext context)
 {
     char attr_name[MAX_ARG];
     Entity *target = resolve_target(node->argument, context, attr_name, MAX_ARG);
@@ -829,10 +833,11 @@ static bool execute_toggle_attr_action(struct EngineContext *ctx, const ActionNo
         return true;
     }
     bool current_val = entity_get_bool(target, attr_name, false);
-    return attr_set_bool(ctx, &target->attrs, attr_name, (bool)!current_val);
+    return attr_set_bool(alloc, &target->attrs, attr_name, (bool)!current_val);
 }
 
-static bool execute_set_var_action(struct EngineContext *ctx, const ActionNode *node, ActionContext context)
+static bool
+execute_set_var_action(struct EngineContext *ctx, Allocator *alloc, const ActionNode *node, ActionContext context)
 {
     char resolved_value[MAX_ARG];
     resolve_arg(resolved_value, MAX_ARG, node->second_argument, context);
@@ -851,20 +856,20 @@ static bool execute_set_var_action(struct EngineContext *ctx, const ActionNode *
         return true;
     }
     if (strcmp(resolved_value, "true") == 0) {
-        return attr_set_bool(ctx, target_vars, var_name, true);
+        return attr_set_bool(alloc, target_vars, var_name, true);
     }
     if (strcmp(resolved_value, "false") == 0) {
-        return attr_set_bool(ctx, target_vars, var_name, false);
+        return attr_set_bool(alloc, target_vars, var_name, false);
     }
     if (strchr(resolved_value, '.')) {
-        return attr_set_float(ctx, target_vars, var_name, strtof(resolved_value, NULL));
+        return attr_set_float(alloc, target_vars, var_name, strtof(resolved_value, NULL));
     }
     char *endptr;
     long ival = strtol(resolved_value, &endptr, RADIX_DECIMAL);
     if (endptr != resolved_value && *endptr == '\0') {
-        return attr_set_int(ctx, target_vars, var_name, (int)ival);
+        return attr_set_int(alloc, target_vars, var_name, (int)ival);
     }
-    return attr_set_string(ctx, target_vars, (AttrStringPair){.name = var_name, .value = resolved_value});
+    return attr_set_string(alloc, target_vars, (AttrStringPair){.name = var_name, .value = resolved_value});
 }
 
 static bool push_branch_nodes(
@@ -922,23 +927,24 @@ expand_repeat_node(struct EngineContext *ctx, const ActionNode *node, const Acti
     return true;
 }
 
-static bool dispatch_simple_action(struct EngineContext *ctx, const ActionNode *node, ActionContext context)
+static bool
+dispatch_simple_action(struct EngineContext *ctx, Allocator *alloc, const ActionNode *node, ActionContext context)
 {
     switch (node->type) {
     case ACTION_SET_FLAG:
-        flag_set(ctx, context.flags, node->argument);
+        flag_set(alloc, context.flags, node->argument);
         return true;
     case ACTION_CLEAR_FLAG:
-        flag_clear(ctx, context.flags, node->argument);
+        flag_clear(alloc, context.flags, node->argument);
         return true;
     case ACTION_SET_ATTR:
-        return execute_set_attr_action(ctx, node, context);
+        return execute_set_attr_action(ctx, alloc, node, context);
     case ACTION_ADD_ATTR:
-        return execute_add_attr_action(ctx, node, context);
+        return execute_add_attr_action(ctx, alloc, node, context);
     case ACTION_TOGGLE_ATTR:
-        return execute_toggle_attr_action(ctx, node, context);
+        return execute_toggle_attr_action(ctx, alloc, node, context);
     case ACTION_SET_VAR:
-        return execute_set_var_action(ctx, node, context);
+        return execute_set_var_action(ctx, alloc, node, context);
     case ACTION_DESTROY:
         context.entity->active = false;
         return true;
@@ -953,7 +959,7 @@ static bool dispatch_simple_action(struct EngineContext *ctx, const ActionNode *
     }
 }
 
-bool action_node_execute(struct EngineContext *ctx, const ActionNode *node, ActionContext context)
+bool action_node_execute(struct EngineContext *ctx, Allocator *alloc, const ActionNode *node, ActionContext context)
 {
     const ActionNode *exec_stack[MAX_EXEC_STACK];
     int stack_top = 0;
@@ -969,7 +975,7 @@ bool action_node_execute(struct EngineContext *ctx, const ActionNode *node, Acti
             if (!expand_repeat_node(ctx, current, exec_stack, &stack_top)) {
                 return false;
             }
-        } else if (!dispatch_simple_action(ctx, current, context)) {
+        } else if (!dispatch_simple_action(ctx, alloc, current, context)) {
             return false;
         }
     }
@@ -993,6 +999,7 @@ static bool rule_triggered_by_events(const Rule *rule, int entity_index, const v
 }
 
 static void evaluate_entity_rules(struct EngineContext *ctx,
+                                  Allocator *alloc,
                                   Entity *entity,
                                   int entity_index,
                                   Entity *entities,
@@ -1037,13 +1044,14 @@ static void evaluate_entity_rules(struct EngineContext *ctx,
         debug_log(ctx, "Executing actions for rule %d on entity %d (type: %s)", rule_index, entity_index,
                   entity->blueprint->name.ptr);
         for (int action_index = 0; action_index < rule->action_tree.count; action_index++) {
-            (void)action_node_execute(ctx, &rule->action_tree.nodes[action_index], act_ctx);
+            (void)action_node_execute(ctx, alloc, &rule->action_tree.nodes[action_index], act_ctx);
         }
-        attr_set_free(ctx, &local_vars);
+        attr_set_free(alloc, &local_vars);
     }
 }
 
 void rules_evaluate_batch(struct EngineContext *ctx,
+                          Allocator *alloc,
                           Entity *entities,
                           int entity_count,
                           const TriggerEvent *events,
@@ -1067,7 +1075,7 @@ void rules_evaluate_batch(struct EngineContext *ctx,
             if (entity->blueprint->rules.count == 0) {
                 continue;
             }
-            evaluate_entity_rules(ctx, entity, entity_index, entities, entity_count, flags, global_vars,
+            evaluate_entity_rules(ctx, alloc, entity, entity_index, entities, entity_count, flags, global_vars,
                                   &pending_events, &next_events);
         }
 

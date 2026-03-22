@@ -1,6 +1,7 @@
 #ifndef ATTRIBUTE_H
 #define ATTRIBUTE_H
 
+#include "alloc.h"
 #include "str.h"
 #include "vec.h"
 #include <stdbool.h>
@@ -37,19 +38,19 @@ typedef struct {
 const Attribute *attr_get(const AttrSet *set, const char *name);
 
 /* Free all name allocations and the underlying vec. */
-void attr_set_free(struct EngineContext *ctx, AttrSet *set);
+void attr_set_free(Allocator *alloc, AttrSet *set);
 
 /* Set an attribute. Overwrites if name exists, appends if new.
  * Returns true on success, false if the set is full. */
-[[nodiscard]] bool attr_set_float(struct EngineContext *ctx, AttrSet *set, const char *name, float value);
-[[nodiscard]] bool attr_set_int(struct EngineContext *ctx, AttrSet *set, const char *name, int value);
-[[nodiscard]] bool attr_set_bool(struct EngineContext *ctx, AttrSet *set, const char *name, bool value);
+[[nodiscard]] bool attr_set_float(Allocator *alloc, AttrSet *set, const char *name, float value);
+[[nodiscard]] bool attr_set_int(Allocator *alloc, AttrSet *set, const char *name, int value);
+[[nodiscard]] bool attr_set_bool(Allocator *alloc, AttrSet *set, const char *name, bool value);
 typedef struct {
     const char *name;
     const char *value;
 } AttrStringPair;
 
-[[nodiscard]] bool attr_set_string(struct EngineContext *ctx, AttrSet *set, AttrStringPair pair);
+[[nodiscard]] bool attr_set_string(Allocator *alloc, AttrSet *set, AttrStringPair pair);
 
 /* Convenience getters with fallback defaults. */
 float attr_get_float(const AttrSet *set, const char *name, float fallback);

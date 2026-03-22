@@ -1,7 +1,4 @@
 #include "unity.h"
-#include "engine_context.h"
-
-static struct EngineContext ctx;
 
 #include "entity.h"
 #include "str.h"
@@ -18,11 +15,11 @@ static Blueprint make_test_blueprint(void)
     blueprint.collision_offset = (Vector2){2, 4};
     blueprint.collision_size = (Vector2){12, 8};
 
-    TEST_ASSERT_TRUE(attr_set_string(&ctx, &blueprint.attrs, (AttrStringPair){.name = "behavior", .value = "static"}));
-    TEST_ASSERT_TRUE(attr_set_bool(&ctx, &blueprint.attrs, "is_locked", true));
-    TEST_ASSERT_TRUE(attr_set_int(&ctx, &blueprint.attrs, "health", 3));
-    TEST_ASSERT_TRUE(attr_set_int(&ctx, &blueprint.attrs, "max_health", 5));
-    TEST_ASSERT_TRUE(attr_set_float(&ctx, &blueprint.attrs, "speed", 0.0F));
+    TEST_ASSERT_TRUE(attr_set_string(NULL, &blueprint.attrs, (AttrStringPair){.name = "behavior", .value = "static"}));
+    TEST_ASSERT_TRUE(attr_set_bool(NULL, &blueprint.attrs, "is_locked", true));
+    TEST_ASSERT_TRUE(attr_set_int(NULL, &blueprint.attrs, "health", 3));
+    TEST_ASSERT_TRUE(attr_set_int(NULL, &blueprint.attrs, "max_health", 5));
+    TEST_ASSERT_TRUE(attr_set_float(NULL, &blueprint.attrs, "speed", 0.0F));
 
     return blueprint;
 }
@@ -33,7 +30,7 @@ void test_entity_init_from_blueprint(void)
     Texture2D dummy = {0};
     Entity entity;
 
-    TEST_ASSERT_TRUE(entity_init_from_blueprint(&ctx, &entity, &blueprint, (Vector2){100, 200}, &dummy));
+    TEST_ASSERT_TRUE(entity_init_from_blueprint(&entity, &blueprint, (Vector2){100, 200}, &dummy, NULL));
 
     TEST_ASSERT_EQUAL_STRING("chest", entity.blueprint_name.ptr);
     TEST_ASSERT_TRUE(entity.blueprint == &blueprint);
@@ -50,8 +47,8 @@ void test_entity_init_from_blueprint(void)
     TEST_ASSERT_TRUE(entity.solid);
     TEST_ASSERT_FLOAT_WITHIN(0.01F, 1.0F, entity.opacity);
     TEST_ASSERT_EQUAL_INT(-1, entity.parent_index);
-    test_blueprint_free(&ctx, &blueprint);
-    test_entity_free(&ctx, &entity);
+    test_blueprint_free(&blueprint);
+    test_entity_free(&entity);
 }
 
 void test_entity_get_attr_from_blueprint(void)
@@ -60,14 +57,14 @@ void test_entity_get_attr_from_blueprint(void)
     Texture2D dummy = {0};
     Entity entity;
 
-    TEST_ASSERT_TRUE(entity_init_from_blueprint(&ctx, &entity, &blueprint, (Vector2){0, 0}, &dummy));
+    TEST_ASSERT_TRUE(entity_init_from_blueprint(&entity, &blueprint, (Vector2){0, 0}, &dummy, NULL));
 
     /* No instance overrides — falls back to blueprint */
     TEST_ASSERT_EQUAL_STRING("static", entity_get_string(&entity, "behavior"));
     TEST_ASSERT_TRUE(entity_get_bool(&entity, "is_locked", false));
     TEST_ASSERT_FLOAT_WITHIN(0.01F, 0.0F, entity_get_float(&entity, "speed", -1.0F));
-    test_blueprint_free(&ctx, &blueprint);
-    test_entity_free(&ctx, &entity);
+    test_blueprint_free(&blueprint);
+    test_entity_free(&entity);
 }
 
 void test_entity_instance_overrides_blueprint(void)
@@ -76,11 +73,11 @@ void test_entity_instance_overrides_blueprint(void)
     Texture2D dummy = {0};
     Entity entity;
 
-    TEST_ASSERT_TRUE(entity_init_from_blueprint(&ctx, &entity, &blueprint, (Vector2){0, 0}, &dummy));
+    TEST_ASSERT_TRUE(entity_init_from_blueprint(&entity, &blueprint, (Vector2){0, 0}, &dummy, NULL));
 
     /* Override at instance level */
-    TEST_ASSERT_TRUE(attr_set_bool(&ctx, &entity.attrs, "is_locked", false));
-    TEST_ASSERT_TRUE(attr_set_float(&ctx, &entity.attrs, "speed", 50.0F));
+    TEST_ASSERT_TRUE(attr_set_bool(NULL, &entity.attrs, "is_locked", false));
+    TEST_ASSERT_TRUE(attr_set_float(NULL, &entity.attrs, "speed", 50.0F));
 
     /* Instance wins */
     TEST_ASSERT_FALSE(entity_get_bool(&entity, "is_locked", true));
@@ -88,8 +85,8 @@ void test_entity_instance_overrides_blueprint(void)
 
     /* Blueprint still provides unoverridden attrs */
     TEST_ASSERT_EQUAL_STRING("static", entity_get_string(&entity, "behavior"));
-    test_blueprint_free(&ctx, &blueprint);
-    test_entity_free(&ctx, &entity);
+    test_blueprint_free(&blueprint);
+    test_entity_free(&entity);
 }
 
 void test_entity_get_missing_attr(void)
@@ -98,28 +95,28 @@ void test_entity_get_missing_attr(void)
     Texture2D dummy = {0};
     Entity entity;
 
-    TEST_ASSERT_TRUE(entity_init_from_blueprint(&ctx, &entity, &blueprint, (Vector2){0, 0}, &dummy));
+    TEST_ASSERT_TRUE(entity_init_from_blueprint(&entity, &blueprint, (Vector2){0, 0}, &dummy, NULL));
 
     TEST_ASSERT_EQUAL_INT(42, entity_get_int(&entity, "nonexistent", 42));
     TEST_ASSERT_NULL(entity_get_string(&entity, "nope"));
-    test_blueprint_free(&ctx, &blueprint);
-    test_entity_free(&ctx, &entity);
+    test_blueprint_free(&blueprint);
+    test_entity_free(&entity);
 }
 
 void test_entity_int_float_coercion(void)
 {
     Blueprint blueprint = {0};
     TEST_ASSERT_TRUE(str_from_cstr(NULL, &blueprint.name, "test"));
-    TEST_ASSERT_TRUE(attr_set_int(&ctx, &blueprint.attrs, "speed", 80));
+    TEST_ASSERT_TRUE(attr_set_int(NULL, &blueprint.attrs, "speed", 80));
 
     Texture2D dummy = {0};
     Entity entity;
-    TEST_ASSERT_TRUE(entity_init_from_blueprint(&ctx, &entity, &blueprint, (Vector2){0, 0}, &dummy));
+    TEST_ASSERT_TRUE(entity_init_from_blueprint(&entity, &blueprint, (Vector2){0, 0}, &dummy, NULL));
 
     /* Int attr retrieved as float via coercion */
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 80.0F, entity_get_float(&entity, "speed", 0));
-    test_blueprint_free(&ctx, &blueprint);
-    test_entity_free(&ctx, &entity);
+    test_blueprint_free(&blueprint);
+    test_entity_free(&entity);
 }
 
 void test_entity_no_blueprint(void)
@@ -127,12 +124,12 @@ void test_entity_no_blueprint(void)
     Entity entity = {0};
     entity.parent_index = -1;
 
-    TEST_ASSERT_TRUE(attr_set_float(&ctx, &entity.attrs, "speed", 100.0F));
+    TEST_ASSERT_TRUE(attr_set_float(NULL, &entity.attrs, "speed", 100.0F));
 
     /* Works without a blueprint */
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 100.0F, entity_get_float(&entity, "speed", 0));
     TEST_ASSERT_EQUAL_INT(0, entity_get_int(&entity, "missing", 0));
-    test_entity_free(&ctx, &entity);
+    test_entity_free(&entity);
 }
 
 void test_entity_solid_from_collision(void)
@@ -143,11 +140,11 @@ void test_entity_solid_from_collision(void)
 
     Texture2D dummy = {0};
     Entity entity;
-    TEST_ASSERT_TRUE(entity_init_from_blueprint(&ctx, &entity, &no_collision, (Vector2){0, 0}, &dummy));
+    TEST_ASSERT_TRUE(entity_init_from_blueprint(&entity, &no_collision, (Vector2){0, 0}, &dummy, NULL));
 
     TEST_ASSERT_FALSE(entity.solid);
-    test_blueprint_free(&ctx, &no_collision);
-    test_entity_free(&ctx, &entity);
+    test_blueprint_free(&no_collision);
+    test_entity_free(&entity);
 }
 
 /* Helper: set up a 3-entity tree (parent -> child -> grandchild) */
@@ -176,7 +173,7 @@ static void make_entity_tree(Entity *entities)
 static void free_entity_tree(Entity *entities)
 {
     for (int index = 0; index < 3; index++) {
-        test_entity_free(&ctx, &entities[index]);
+        test_entity_free(&entities[index]);
     }
 }
 
@@ -247,7 +244,7 @@ void test_entity_is_visible_standalone(void)
     entity.visible = true;
 
     TEST_ASSERT_TRUE(entity_is_visible(0, &entity));
-    test_entity_free(&ctx, &entity);
+    test_entity_free(&entity);
 }
 
 void test_entity_is_visible_parent_hidden(void)

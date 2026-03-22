@@ -1,15 +1,15 @@
 #include "test_helpers.h"
 #include "str.h"
 
-void test_blueprint_table_free(struct EngineContext *ctx, BlueprintTable *table)
+void test_blueprint_table_free(BlueprintTable *table)
 {
     for (int index = 0; index < table->entries.count; index++) {
-        test_blueprint_free(ctx, &table->entries.data[index]);
+        test_blueprint_free(&table->entries.data[index]);
     }
     vec_blueprint_free(&table->entries, NULL);
 }
 
-void test_blueprint_free(struct EngineContext *ctx, Blueprint *blueprint)
+void test_blueprint_free(Blueprint *blueprint)
 {
     str_free(NULL, &blueprint->name);
     str_free(NULL, &blueprint->extends_name);
@@ -19,27 +19,27 @@ void test_blueprint_free(struct EngineContext *ctx, Blueprint *blueprint)
         str_free(NULL, &blueprint->children.data[index].tag);
     }
     vec_blueprint_child_free(&blueprint->children, NULL);
-    test_attr_set_free(ctx, &blueprint->attrs);
+    test_attr_set_free(&blueprint->attrs);
 }
 
-void test_level_free(struct EngineContext *ctx, Level *level)
+void test_level_free(Level *level)
 {
-    level_free(ctx, level);
+    level_free(NULL, level);
 }
 
-void test_entity_free(struct EngineContext *ctx, Entity *entity)
+void test_entity_free(Entity *entity)
 {
     str_free(NULL, &entity->blueprint_name);
     str_free(NULL, &entity->tag);
-    test_attr_set_free(ctx, &entity->attrs);
+    test_attr_set_free(&entity->attrs);
 }
 
-void test_flag_set_free(struct EngineContext *ctx, FlagSet *flags)
+void test_flag_set_free(FlagSet *flags)
 {
-    flag_set_free(ctx, flags);
+    flag_set_free(NULL, flags);
 }
 
-void test_attr_set_free(struct EngineContext *ctx, AttrSet *set)
+void test_attr_set_free(AttrSet *set)
 {
-    attr_set_free(ctx, set);
+    attr_set_free(NULL, set);
 }

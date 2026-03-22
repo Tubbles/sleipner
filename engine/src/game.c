@@ -1,4 +1,5 @@
 #include "game.h"
+#include "alloc.h"
 #include "arena.h"
 #include "attribute.h"
 #include "blueprint.h"
@@ -67,10 +68,11 @@ bool game_load_gamedata(struct EngineContext *ctx, GameState *state, GamedataPar
     }
 
     arena_reset(&state->gamedata_arena);
+    Allocator gamedata_alloc = allocator_arena(ctx, &state->gamedata_arena);
     blueprints_load(ctx, &state->blueprints, root, &state->gamedata_arena);
 
     bool level_ok = level_load(ctx, &state->current_level, root, params.level_name, &state->blueprints,
-                               params.texture_lookup, params.texture_user_data);
+                               params.texture_lookup, params.texture_user_data, &gamedata_alloc);
 
     toml_free(root);
     state->gamedata_loaded = level_ok;
@@ -286,16 +288,15 @@ void game_update(struct EngineContext *ctx, GameState *state, InputState input, 
     int trigger_count = collect_trigger_events(ctx, state, input, trigger_events, MAX_COLLECT_EVENTS);
 
     if (trigger_count > 0) {
-        rules_evaluate_batch(ctx, state->current_level.entities, state->current_level.entity_count, trigger_events,
-                             trigger_count, &state->flags, &state->vars);
+        Allocator rule_alloc = allocator_arena(ctx, &state->gamedata_arena);
+        rules_evaluate_batch(ctx, &rule_alloc, state->current_level.entities, state->current_level.entity_count,
+                             trigger_events, trigger_count, &state->flags, &state->vars);
     }
 }
 
 void game_free(struct EngineContext *ctx, GameState *state)
 {
-    blueprint_table_free(ctx, &state->blueprints);
-    level_free(ctx, &state->current_level);
-    flag_set_free(ctx, &state->flags);
-    attr_set_free(ctx, &state->vars);
+    (void)ctx;
     arena_free(&state->gamedata_arena);
+    *state = (GameState){0};
 }

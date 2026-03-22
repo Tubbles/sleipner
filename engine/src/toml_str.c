@@ -1,5 +1,6 @@
 #include "toml_str.h"
 
+#include "alloc.h"
 #include "str.h"
 #include "toml.h"
 

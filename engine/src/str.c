@@ -1,6 +1,7 @@
 #include "str.h"
 
 #include "alloc.h"
+#include "arena.h"
 #include "error.h"
 #include "strv.h"
 

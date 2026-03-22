@@ -1,6 +1,7 @@
 #ifndef LEVEL_H
 #define LEVEL_H
 
+#include "alloc.h"
 #include "entity.h"
 #include "str.h"
 
@@ -24,7 +25,7 @@ typedef struct {
 } Level;
 
 /* Free level name, music name, and all entity Str fields and attrs. */
-void level_free(struct EngineContext *ctx, Level *level);
+void level_free(Allocator *alloc, Level *level);
 
 /* Parse the first [[level]] (or the one matching `level_name` if non-NULL)
  * from a tomlc99 root table. Instantiates entities from blueprints.
@@ -35,6 +36,7 @@ void level_free(struct EngineContext *ctx, Level *level);
                               const char *level_name,
                               const BlueprintTable *blueprints,
                               TextureLookupFn texture_lookup,
-                              void *texture_user_data);
+                              void *texture_user_data,
+                              Allocator *alloc);
 
 #endif
