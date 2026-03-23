@@ -42,10 +42,10 @@ All persistent string fields in blueprint/entity/level/attribute/flags were alre
 migrated to `Str`. These are the remaining `char[MAX_ARG]` fixed buffers in rule
 structs, all of which are parse-time data stored in the arena-backed rule set.
 
-- [ ] **`Trigger.argument`** — `char[MAX_ARG]` → `Str`
-- [ ] **`Condition.argument`** — `char[MAX_ARG]` → `Str`
-- [ ] **`TriggerEvent.argument`** — `char[MAX_ARG]` → `Str`
-- [ ] **`ActionNode.argument`** / **`ActionNode.second_argument`** — `char[MAX_ARG]` → `Str`
+- [x] **`Trigger.argument`** — `char[MAX_ARG]` → `Str`
+- [x] **`Condition.argument`** — `char[MAX_ARG]` → `Str`
+- [x] **`TriggerEvent.argument`** — `char[MAX_ARG]` → `Str`
+- [x] **`ActionNode.argument`** / **`ActionNode.second_argument`** — `char[MAX_ARG]` → `Str`
 
 ---
 
