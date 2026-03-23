@@ -149,3 +149,102 @@ callsites need no changes.
 ---
 
 Phase order: 1 → 2 → 3. Phase 4 depends on Phase 2 and can be done independently of Phase 3.
+
+---
+
+## map.h/map.c — typed hash map
+
+Companion to vec.h. Open-addressing hash map with linear probing, power-of-2 capacity,
+Allocator-backed storage. Same zero-init convention as vec: a zeroed `map_X` is a valid
+empty map.
+
+### Macro API
+
+```c
+// In a header, after key and value type definitions:
+MAP_DECL(name, key_type, value_type)
+// Emits: map_name struct + prototypes for _set / _get / _remove / _free.
+
+// In exactly one .c file:
+MAP_IMPL(name, key_type, value_type, hash_fn, eq_fn)
+// Emits: function bodies. hash_fn and eq_fn are only needed here.
+```
+
+Hash and eq functions are regular C functions (not macro magic), so they can be shared,
+tested independently, and referred to by name. Signature conventions:
+
+```c
+uint32_t hash_fn(key_type key);          // maps key to a 32-bit hash
+bool     eq_fn(key_type a, key_type b);  // true if two keys are equal
+```
+
+### Generated struct
+
+Each map stores a flat array of entries (key + value + state packed together),
+plus count and capacity:
+
+```c
+typedef struct {
+    struct { typeof(key_type) key; typeof(value_type) value; uint8_t state; } *entries;
+    int count;
+    int capacity;
+} map_name;
+```
+
+`state` is one of: `MAP_ENTRY_EMPTY = 0` (never used), `MAP_ENTRY_OCCUPIED = 1`,
+`MAP_ENTRY_DELETED = 2` (tombstone after remove). Zero-init means all slots are empty.
+
+### Generated functions
+
+```c
+// Insert or update. Rehashes if load > 75%. Returns false on OOM.
+[[nodiscard]] bool map_name_set(map_name *map, key_type key, value_type value, Allocator *alloc);
+
+// Lookup. Returns pointer to stored value, NULL if not found.
+typeof(value_type) *map_name_get(map_name *map, key_type key);
+
+// Remove. Returns true if key existed.
+bool map_name_remove(map_name *map, key_type key);
+
+// Free internal storage, reset to zero state.
+void map_name_free(map_name *map, Allocator *alloc);
+```
+
+### Implementation notes
+
+- Capacity always a power of 2; slot index via `(hash + probe) & (capacity - 1)`.
+- Initial capacity: 16 on first insert.
+- Resize threshold: `count * 4 > capacity * 3` (75% load factor).
+- Resize: double capacity, reinsert all OCCUPIED entries (tombstones dropped).
+- `_get` and `_remove` walk the probe sequence until EMPTY (not found) or matching key.
+
+### Built-in hash and eq functions (provided in map.h)
+
+```c
+static inline uint32_t map_hash_int(int key);    // Murmur3 finalizer mix
+static inline bool     map_eq_int(int a, int b); // a == b
+```
+
+More key types (e.g. `const char *` with FNV-1a) added as needed.
+
+### Standard pre-declared types (map.h declares, map.c implements)
+
+Mirrors vec.h's primitive set, all keyed on `int` for now:
+
+```
+map_int_bool    map_int_int     map_int_float   map_int_double
+map_int_size    map_int_i8      map_int_i16      map_int_i32
+map_int_i64     map_int_u8      map_int_u16      map_int_u32     map_int_u64
+```
+
+All use `map_hash_int` / `map_eq_int`.
+
+### Test coverage (test_map.c)
+
+- Set and get (present / absent)
+- Update existing key (value replaced, count unchanged)
+- Remove (present / absent / already removed)
+- Growth: insert past initial capacity, verify all entries retrievable after rehash
+- Collision: keys that hash to the same slot, verify probe chain is correct
+- Tombstone: remove from middle of a probe chain, verify subsequent get still finds later entry
+- Free: zero-init after free, safe to reuse
