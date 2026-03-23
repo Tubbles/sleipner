@@ -9,6 +9,33 @@ void tearDown(void) {}
 /* test_stub.c */
 void test_stub_passes(void);
 
+/* test_map.c */
+void test_map_initial_state_count_is_zero(void);
+void test_map_initial_state_capacity_is_zero(void);
+void test_map_initial_state_entries_is_null(void);
+void test_map_set_and_get_present(void);
+void test_map_get_absent_returns_null(void);
+void test_map_get_on_empty_returns_null(void);
+void test_map_update_existing_replaces_value(void);
+void test_map_update_count_unchanged(void);
+void test_map_remove_present(void);
+void test_map_remove_decrements_count(void);
+void test_map_remove_absent_returns_false(void);
+void test_map_remove_already_removed_returns_false(void);
+void test_map_growth_all_entries_retrievable(void);
+void test_map_growth_capacity_is_power_of_two(void);
+void test_map_collision_probe_chain(void);
+void test_map_tombstone_get_finds_later_entry(void);
+void test_map_tombstone_reused_on_insert(void);
+void test_map_free_resets_to_zero(void);
+void test_map_free_safe_to_reuse(void);
+void test_map_free_on_empty_is_safe(void);
+void test_map_int_float_set_and_get(void);
+void test_map_int_bool_set_and_get(void);
+void test_map_int_i64_set_and_get(void);
+void test_map_get_returns_pointer_to_stored_slot(void);
+void test_map_arena_allocator(void);
+
 /* test_vec.c */
 void test_vec_initial_state_count_is_zero(void);
 void test_vec_initial_state_capacity_is_zero(void);
@@ -323,6 +350,32 @@ int main(void)
     UNITY_BEGIN();
 
     RUN_TEST(test_stub_passes);
+
+    RUN_TEST(test_map_initial_state_count_is_zero);
+    RUN_TEST(test_map_initial_state_capacity_is_zero);
+    RUN_TEST(test_map_initial_state_entries_is_null);
+    RUN_TEST(test_map_set_and_get_present);
+    RUN_TEST(test_map_get_absent_returns_null);
+    RUN_TEST(test_map_get_on_empty_returns_null);
+    RUN_TEST(test_map_update_existing_replaces_value);
+    RUN_TEST(test_map_update_count_unchanged);
+    RUN_TEST(test_map_remove_present);
+    RUN_TEST(test_map_remove_decrements_count);
+    RUN_TEST(test_map_remove_absent_returns_false);
+    RUN_TEST(test_map_remove_already_removed_returns_false);
+    RUN_TEST(test_map_growth_all_entries_retrievable);
+    RUN_TEST(test_map_growth_capacity_is_power_of_two);
+    RUN_TEST(test_map_collision_probe_chain);
+    RUN_TEST(test_map_tombstone_get_finds_later_entry);
+    RUN_TEST(test_map_tombstone_reused_on_insert);
+    RUN_TEST(test_map_free_resets_to_zero);
+    RUN_TEST(test_map_free_safe_to_reuse);
+    RUN_TEST(test_map_free_on_empty_is_safe);
+    RUN_TEST(test_map_int_float_set_and_get);
+    RUN_TEST(test_map_int_bool_set_and_get);
+    RUN_TEST(test_map_int_i64_set_and_get);
+    RUN_TEST(test_map_get_returns_pointer_to_stored_slot);
+    RUN_TEST(test_map_arena_allocator);
 
     RUN_TEST(test_vec_initial_state_count_is_zero);
     RUN_TEST(test_vec_initial_state_capacity_is_zero);

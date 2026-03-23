@@ -20,6 +20,7 @@ set(ENGINE_SOURCE_FILES
     game.c
     input.c
     level.c
+    map.c
     particle.c
     render.c
     rule.c

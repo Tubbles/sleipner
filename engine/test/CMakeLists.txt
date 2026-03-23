@@ -3,6 +3,7 @@ add_executable(engine_tests
     test_helpers.c
     test_stub.c
     test_vec.c
+    test_map.c
     test_arena.c
     test_alloc.c
     test_attribute.c
