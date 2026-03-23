@@ -5,12 +5,11 @@
 #include "attribute.h"
 #include "blueprint.h"
 #include "str.h"
+#include "vec.h" // IWYU pragma: export
 
 #include "raylib.h"
 
 #include <stdbool.h>
-
-#define MAX_ENTITIES 512
 
 typedef struct {
     /* Identity */
@@ -80,5 +79,7 @@ bool entity_is_visible(int entity_index, const Entity *entities);
 
 /* Effective active state: own active AND all ancestors active. */
 bool entity_is_active(int entity_index, const Entity *entities);
+
+VEC_DECL(entity, Entity)
 
 #endif

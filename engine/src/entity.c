@@ -4,6 +4,9 @@
 #include "blueprint.h"
 #include "str.h"
 #include "strv.h"
+#include "vec.h"
+
+VEC_IMPL(entity, Entity)
 
 #include "raylib.h"
 

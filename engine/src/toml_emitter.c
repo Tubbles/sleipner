@@ -77,8 +77,8 @@ static int emit_levels(char *buffer, int capacity, int offset, const Level *leve
         }
         offset = emit_append(buffer, capacity, offset, "\n");
 
-        for (int entity_index = 0; entity_index < level->entity_count; entity_index++) {
-            const Entity *entity = &level->entities[entity_index];
+        for (int entity_index = 0; entity_index < level->entities.count; entity_index++) {
+            const Entity *entity = &level->entities.data[entity_index];
 
             /* Skip child entities — they are instantiated from blueprint children */
             if (entity->parent_index >= 0) {

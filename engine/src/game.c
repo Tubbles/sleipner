@@ -36,8 +36,8 @@ bool game_init(struct EngineContext *ctx, GameState *state, RectU32 game_bounds)
 
 static int find_player_entity(const Level *level)
 {
-    for (int index = 0; index < level->entity_count; index++) {
-        const char *behavior = entity_get_string(&level->entities[index], "behavior");
+    for (int index = 0; index < level->entities.count; index++) {
+        const char *behavior = entity_get_string(&level->entities.data[index], "behavior");
         if (behavior && strcmp(behavior, "player") == 0) {
             return index;
         }
@@ -85,18 +85,18 @@ bool game_load_gamedata(struct EngineContext *ctx, GameState *state, GamedataPar
 
 Entity *game_get_player(GameState *state)
 {
-    if (state->player_index < 0 || state->player_index >= state->current_level.entity_count) {
+    if (state->player_index < 0 || state->player_index >= state->current_level.entities.count) {
         return NULL;
     }
-    return &state->current_level.entities[state->player_index];
+    return &state->current_level.entities.data[state->player_index];
 }
 
 const Entity *game_get_player_const(const GameState *state)
 {
-    if (state->player_index < 0 || state->player_index >= state->current_level.entity_count) {
+    if (state->player_index < 0 || state->player_index >= state->current_level.entities.count) {
         return NULL;
     }
-    return &state->current_level.entities[state->player_index];
+    return &state->current_level.entities.data[state->player_index];
 }
 
 static void update_player(Entity *player, InputState input, float delta_time, RectU32 bounds)
@@ -152,13 +152,13 @@ static void update_player(Entity *player, InputState input, float delta_time, Re
 
 static void resolve_player_obstacles(Level *level, int player_index)
 {
-    Entity *player = &level->entities[player_index];
-    for (int index = 0; index < level->entity_count; index++) {
-        if (index == player_index || !level->entities[index].solid) {
+    Entity *player = &level->entities.data[player_index];
+    for (int index = 0; index < level->entities.count; index++) {
+        if (index == player_index || !level->entities.data[index].solid) {
             continue;
         }
         Rectangle hitbox = player->collision;
-        Rectangle obstacle = level->entities[index].collision;
+        Rectangle obstacle = level->entities.data[index].collision;
         if (!CheckCollisionRecs(hitbox, obstacle)) {
             continue;
         }
@@ -197,12 +197,15 @@ static void resolve_player_obstacles(Level *level, int player_index)
 
 static void update_child_positions(Level *level)
 {
-    for (int index = 0; index < level->entity_count; index++) {
-        Entity *entity = &level->entities[index];
+    if (!level->entities.data) {
+        return;
+    }
+    for (int index = 0; index < level->entities.count; index++) {
+        Entity *entity = &level->entities.data[index];
         if (entity->parent_index < 0) {
             continue;
         }
-        const Entity *parent = &level->entities[entity->parent_index];
+        const Entity *parent = &level->entities.data[entity->parent_index];
         entity->position.x = parent->position.x + entity->offset.x;
         entity->position.y = parent->position.y + entity->offset.y;
         entity_update_collision(entity);
@@ -258,9 +261,9 @@ static int collect_trigger_events(
         if (state->player_index >= 0) {
             const Entity *player = game_get_player_const(state);
             if (player) {
-                count +=
-                    detect_interact_targets(ctx, player, state->player_index, state->current_level.entities,
-                                            state->current_level.entity_count, out_events + count, max_events - count);
+                count += detect_interact_targets(ctx, player, state->player_index, state->current_level.entities.data,
+                                                 state->current_level.entities.count, out_events + count,
+                                                 max_events - count);
             }
         }
     }
@@ -286,7 +289,7 @@ void game_update(struct EngineContext *ctx, GameState *state, InputState input, 
 
     if (trigger_count > 0) {
         Allocator rule_alloc = allocator_arena(ctx, &state->gamedata_arena);
-        rules_evaluate_batch(ctx, &rule_alloc, state->current_level.entities, state->current_level.entity_count,
+        rules_evaluate_batch(ctx, &rule_alloc, state->current_level.entities.data, state->current_level.entities.count,
                              trigger_events, trigger_count, &state->flags, &state->vars);
     }
 }

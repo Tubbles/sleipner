@@ -23,6 +23,8 @@
 #define RADIX_DECIMAL 10
 
 VEC_IMPL(flag_name, FlagName)
+VEC_IMPL(condition, Condition)
+VEC_IMPL(action_node, ActionNode)
 
 /* ---- FlagSet ---- */
 
@@ -460,13 +462,17 @@ static bool parse_conditions_array(struct EngineContext *ctx, Allocator *alloc, 
             error_set(ctx, "condition[%d] is not a string", index);
             return false;
         }
-        if (!condition_parse(ctx, alloc, &rule->conditions[rule->condition_count], value.u.s)) {
+        Condition cond = {0};
+        if (!condition_parse(ctx, alloc, &cond, value.u.s)) {
             error_wrap(ctx, "condition[%d]", index);
             free(value.u.s);
             return false;
         }
-        rule->condition_count++;
         free(value.u.s);
+        if (!vec_condition_push(&rule->conditions, cond, alloc)) {
+            error_set(ctx, "condition[%d]: out of memory", index);
+            return false;
+        }
     }
     return true;
 }
@@ -483,17 +489,11 @@ parse_actions_array(struct EngineContext *ctx, Allocator *alloc, Rule *rule, tom
         return false;
     }
 
-    ActionNode *nodes = arena_alloc(
-        ctx, arena, (AllocRequest){.size = (size_t)count * sizeof(ActionNode), .alignment = _Alignof(ActionNode)});
-    if (!nodes) {
-        error_wrap(ctx, "parse_actions_array: arena_alloc");
-        return false;
-    }
-
     for (int index = 0; index < count; index++) {
+        ActionNode node = {0};
         toml_datum_t value = toml_string_at(actions, index);
         if (value.ok) {
-            if (!action_node_parse(ctx, alloc, &nodes[index], value)) {
+            if (!action_node_parse(ctx, alloc, &node, value)) {
                 error_wrap(ctx, "action[%d]", index);
                 free(value.u.s);
                 return false;
@@ -502,7 +502,7 @@ parse_actions_array(struct EngineContext *ctx, Allocator *alloc, Rule *rule, tom
         } else {
             toml_table_t *table_value = toml_table_at(actions, index);
             if (table_value) {
-                if (!parse_control_flow_node(ctx, alloc, &nodes[index], table_value, arena)) {
+                if (!parse_control_flow_node(ctx, alloc, &node, table_value, arena)) {
                     error_wrap(ctx, "action[%d]", index);
                     return false;
                 }
@@ -511,10 +511,11 @@ parse_actions_array(struct EngineContext *ctx, Allocator *alloc, Rule *rule, tom
                 return false;
             }
         }
+        if (!vec_action_node_push(&rule->action_tree.nodes, node, alloc)) {
+            error_set(ctx, "action[%d]: out of memory", index);
+            return false;
+        }
     }
-
-    rule->action_tree.nodes = nodes;
-    rule->action_tree.count = count;
     return true;
 }
 
@@ -1085,15 +1086,15 @@ static void evaluate_entity_rules(struct EngineContext *ctx,
         };
         debug_log(ctx, "Rule triggered for entity %d (type: %s), rule %d", entity_index, entity->blueprint->name.ptr,
                   rule_index);
-        if (!conditions_evaluate(rule->conditions, rule->condition_count, cond_ctx)) {
+        if (!conditions_evaluate(rule->conditions.data, rule->conditions.count, cond_ctx)) {
             debug_log(ctx, "Conditions not met for rule %d on entity %d (type: %s)", rule_index, entity_index,
                       entity->blueprint->name.ptr);
             continue;
         }
         debug_log(ctx, "Executing actions for rule %d on entity %d (type: %s)", rule_index, entity_index,
                   entity->blueprint->name.ptr);
-        for (int action_index = 0; action_index < rule->action_tree.count; action_index++) {
-            (void)action_node_execute(ctx, alloc, &rule->action_tree.nodes[action_index], act_ctx);
+        for (int action_index = 0; action_index < rule->action_tree.nodes.count; action_index++) {
+            (void)action_node_execute(ctx, alloc, &rule->action_tree.nodes.data[action_index], act_ctx);
         }
         attr_set_free(alloc, &local_vars);
     }

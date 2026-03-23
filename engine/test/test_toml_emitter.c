@@ -159,12 +159,13 @@ void test_toml_emit_round_trip(void)
     TEST_ASSERT_EQUAL_STRING(level.music_name.ptr, level2.music_name.ptr);
     TEST_ASSERT_EQUAL_INT(level.width, level2.width);
     TEST_ASSERT_EQUAL_INT(level.height, level2.height);
-    TEST_ASSERT_EQUAL_INT(level.entity_count, level2.entity_count);
+    TEST_ASSERT_EQUAL_INT(level.entities.count, level2.entities.count);
 
-    for (int index = 0; index < level.entity_count; index++) {
-        TEST_ASSERT_FLOAT_WITHIN(0.1F, level.entities[index].position.x, level2.entities[index].position.x);
-        TEST_ASSERT_FLOAT_WITHIN(0.1F, level.entities[index].position.y, level2.entities[index].position.y);
-        TEST_ASSERT_EQUAL_STRING(level.entities[index].blueprint_name.ptr, level2.entities[index].blueprint_name.ptr);
+    for (int index = 0; index < level.entities.count; index++) {
+        TEST_ASSERT_FLOAT_WITHIN(0.1F, level.entities.data[index].position.x, level2.entities.data[index].position.x);
+        TEST_ASSERT_FLOAT_WITHIN(0.1F, level.entities.data[index].position.y, level2.entities.data[index].position.y);
+        TEST_ASSERT_EQUAL_STRING(level.entities.data[index].blueprint_name.ptr,
+                                 level2.entities.data[index].blueprint_name.ptr);
     }
 
     test_level_free(&level);
@@ -251,7 +252,7 @@ void test_toml_emit_skips_child_entities(void)
     toml_free(root);
 
     /* Level has 2 entities (wagon + lantern child) */
-    TEST_ASSERT_EQUAL_INT(2, level.entity_count);
+    TEST_ASSERT_EQUAL_INT(2, level.entities.count);
 
     char output[4096];
     int written = toml_emit_gamedata(&ctx, output, (int)sizeof(output), &blueprints, &level, 1);

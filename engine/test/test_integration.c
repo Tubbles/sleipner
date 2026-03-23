@@ -76,7 +76,7 @@ void test_integration_load_gamedata(void)
     TEST_ASSERT_TRUE(loaded);
     TEST_ASSERT_TRUE(state.gamedata_loaded);
     TEST_ASSERT_EQUAL_STRING("field", state.current_level.name.ptr);
-    TEST_ASSERT_EQUAL_INT(3, state.current_level.entity_count);
+    TEST_ASSERT_EQUAL_INT(3, state.current_level.entities.count);
     TEST_ASSERT_EQUAL_INT(3, state.blueprints.entries.count);
     TEST_ASSERT_TRUE(state.player_index >= 0);
 
@@ -93,7 +93,7 @@ void test_integration_load_specific_level(void)
         (GamedataParams){.toml_string = fixture_gamedata, .level_name = "cave", .texture_lookup = dummy_lookup});
     TEST_ASSERT_TRUE(loaded);
     TEST_ASSERT_EQUAL_STRING("cave", state.current_level.name.ptr);
-    TEST_ASSERT_EQUAL_INT(2, state.current_level.entity_count);
+    TEST_ASSERT_EQUAL_INT(2, state.current_level.entities.count);
     TEST_ASSERT_TRUE(state.player_index >= 0);
 
     game_free(&ctx, &state);
@@ -118,7 +118,7 @@ void test_integration_walk_and_collide(void)
     /* Player collision must not overlap the rock */
     const Entity *player = game_get_player_const(&state);
     /* Rock is entity index 1 (player is 0) */
-    Rectangle rock = state.current_level.entities[1].collision;
+    Rectangle rock = state.current_level.entities.data[1].collision;
     TEST_ASSERT_TRUE(player->collision.x + player->collision.width <= rock.x + 0.1F);
 
     game_free(&ctx, &state);

@@ -736,13 +736,13 @@ void test_rules_parse_from_toml(void)
 
     const Rule *rule = &rules.entries[0];
     TEST_ASSERT_EQUAL_INT(TRIGGER_INTERACT, rule->trigger.type);
-    TEST_ASSERT_EQUAL_INT(1, rule->condition_count);
-    TEST_ASSERT_EQUAL_INT(COND_FLAG, rule->conditions[0].type);
-    TEST_ASSERT_EQUAL_STRING("has_key", rule->conditions[0].argument.ptr);
-    TEST_ASSERT_EQUAL_INT(2, rule->action_tree.count);
-    TEST_ASSERT_EQUAL_INT(ACTION_SET_FLAG, rule->action_tree.nodes[0].type);
-    TEST_ASSERT_EQUAL_STRING("chest_opened", rule->action_tree.nodes[0].argument.ptr);
-    TEST_ASSERT_EQUAL_INT(ACTION_DESTROY, rule->action_tree.nodes[1].type);
+    TEST_ASSERT_EQUAL_INT(1, rule->conditions.count);
+    TEST_ASSERT_EQUAL_INT(COND_FLAG, rule->conditions.data[0].type);
+    TEST_ASSERT_EQUAL_STRING("has_key", rule->conditions.data[0].argument.ptr);
+    TEST_ASSERT_EQUAL_INT(2, rule->action_tree.nodes.count);
+    TEST_ASSERT_EQUAL_INT(ACTION_SET_FLAG, rule->action_tree.nodes.data[0].type);
+    TEST_ASSERT_EQUAL_STRING("chest_opened", rule->action_tree.nodes.data[0].argument.ptr);
+    TEST_ASSERT_EQUAL_INT(ACTION_DESTROY, rule->action_tree.nodes.data[1].type);
 
     toml_free(root);
     arena_free(&arena);
@@ -819,14 +819,9 @@ void test_evaluate_interact_sets_flag(void)
     TEST_ASSERT_NOT_NULL(rule);
     memset(rule, 0, sizeof(*rule));
     rule->trigger.type = TRIGGER_INTERACT;
-    ActionNode *nodes_interact =
-        arena_alloc(&ctx, &arena, (AllocRequest){.size = sizeof(ActionNode), .alignment = _Alignof(ActionNode)});
-    TEST_ASSERT_NOT_NULL(nodes_interact);
-    memset(nodes_interact, 0, sizeof(ActionNode));
-    nodes_interact[0].type = ACTION_SET_FLAG;
-    TEST_ASSERT_TRUE(str_from_cstr(&rule_alloc, &nodes_interact[0].argument, "chest_opened"));
-    rule->action_tree.nodes = nodes_interact;
-    rule->action_tree.count = 1;
+    ActionNode node_interact = {.type = ACTION_SET_FLAG};
+    TEST_ASSERT_TRUE(str_from_cstr(&rule_alloc, &node_interact.argument, "chest_opened"));
+    TEST_ASSERT_TRUE(vec_action_node_push(&rule->action_tree.nodes, node_interact, &rule_alloc));
 
     blueprint.rules.entries = rule;
     blueprint.rules.count = 1;
@@ -861,17 +856,12 @@ void test_evaluate_condition_blocks_action(void)
     TEST_ASSERT_NOT_NULL(rule);
     memset(rule, 0, sizeof(*rule));
     rule->trigger.type = TRIGGER_INTERACT;
-    rule->condition_count = 1;
-    rule->conditions[0].type = COND_FLAG;
-    TEST_ASSERT_TRUE(str_from_cstr(&rule_alloc, &rule->conditions[0].argument, "has_key"));
-    ActionNode *nodes_blocked =
-        arena_alloc(&ctx, &arena, (AllocRequest){.size = sizeof(ActionNode), .alignment = _Alignof(ActionNode)});
-    TEST_ASSERT_NOT_NULL(nodes_blocked);
-    memset(nodes_blocked, 0, sizeof(ActionNode));
-    nodes_blocked[0].type = ACTION_SET_FLAG;
-    TEST_ASSERT_TRUE(str_from_cstr(&rule_alloc, &nodes_blocked[0].argument, "chest_opened"));
-    rule->action_tree.nodes = nodes_blocked;
-    rule->action_tree.count = 1;
+    Condition cond_blocked = {.type = COND_FLAG};
+    TEST_ASSERT_TRUE(str_from_cstr(&rule_alloc, &cond_blocked.argument, "has_key"));
+    TEST_ASSERT_TRUE(vec_condition_push(&rule->conditions, cond_blocked, &rule_alloc));
+    ActionNode node_blocked = {.type = ACTION_SET_FLAG};
+    TEST_ASSERT_TRUE(str_from_cstr(&rule_alloc, &node_blocked.argument, "chest_opened"));
+    TEST_ASSERT_TRUE(vec_action_node_push(&rule->action_tree.nodes, node_blocked, &rule_alloc));
 
     blueprint.rules.entries = rule;
     blueprint.rules.count = 1;
@@ -905,14 +895,9 @@ void test_evaluate_fire_event_cascading(void)
     Rule *switch_rule = arena_alloc(&ctx, &arena, (AllocRequest){.size = sizeof(Rule), .alignment = _Alignof(Rule)});
     memset(switch_rule, 0, sizeof(*switch_rule));
     switch_rule->trigger.type = TRIGGER_INTERACT;
-    ActionNode *switch_nodes =
-        arena_alloc(&ctx, &arena, (AllocRequest){.size = sizeof(ActionNode), .alignment = _Alignof(ActionNode)});
-    TEST_ASSERT_NOT_NULL(switch_nodes);
-    memset(switch_nodes, 0, sizeof(ActionNode));
-    switch_nodes[0].type = ACTION_FIRE_EVENT;
-    TEST_ASSERT_TRUE(str_from_cstr(&rule_alloc, &switch_nodes[0].argument, "switch_pulled"));
-    switch_rule->action_tree.nodes = switch_nodes;
-    switch_rule->action_tree.count = 1;
+    ActionNode switch_node = {.type = ACTION_FIRE_EVENT};
+    TEST_ASSERT_TRUE(str_from_cstr(&rule_alloc, &switch_node.argument, "switch_pulled"));
+    TEST_ASSERT_TRUE(vec_action_node_push(&switch_rule->action_tree.nodes, switch_node, &rule_alloc));
     bp_switch.rules.entries = switch_rule;
     bp_switch.rules.count = 1;
 
@@ -923,14 +908,9 @@ void test_evaluate_fire_event_cascading(void)
     memset(door_rule, 0, sizeof(*door_rule));
     door_rule->trigger.type = TRIGGER_EVENT;
     TEST_ASSERT_TRUE(str_from_cstr(&rule_alloc, &door_rule->trigger.argument, "switch_pulled"));
-    ActionNode *door_nodes =
-        arena_alloc(&ctx, &arena, (AllocRequest){.size = sizeof(ActionNode), .alignment = _Alignof(ActionNode)});
-    TEST_ASSERT_NOT_NULL(door_nodes);
-    memset(door_nodes, 0, sizeof(ActionNode));
-    door_nodes[0].type = ACTION_SET_FLAG;
-    TEST_ASSERT_TRUE(str_from_cstr(&rule_alloc, &door_nodes[0].argument, "door_opened"));
-    door_rule->action_tree.nodes = door_nodes;
-    door_rule->action_tree.count = 1;
+    ActionNode door_node = {.type = ACTION_SET_FLAG};
+    TEST_ASSERT_TRUE(str_from_cstr(&rule_alloc, &door_node.argument, "door_opened"));
+    TEST_ASSERT_TRUE(vec_action_node_push(&door_rule->action_tree.nodes, door_node, &rule_alloc));
     bp_door.rules.entries = door_rule;
     bp_door.rules.count = 1;
 
@@ -1187,7 +1167,7 @@ void test_integration_interact_rule(void)
         &ctx, &state, (GamedataParams){.toml_string = rule_test_gamedata, .texture_lookup = rule_test_dummy_lookup}));
 
     TEST_ASSERT_TRUE(state.gamedata_loaded);
-    TEST_ASSERT_EQUAL_INT(2, state.current_level.entity_count);
+    TEST_ASSERT_EQUAL_INT(2, state.current_level.entities.count);
 
     const Blueprint *chest_bp = blueprint_find(&state.blueprints, "chest");
     TEST_ASSERT_NOT_NULL(chest_bp);

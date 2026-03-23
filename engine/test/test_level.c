@@ -106,7 +106,7 @@ void test_level_load_first(void)
     TEST_ASSERT_EQUAL_STRING("bgm.mp3", level.music_name.ptr);
     TEST_ASSERT_EQUAL_INT(640, level.width);
     TEST_ASSERT_EQUAL_INT(360, level.height);
-    TEST_ASSERT_EQUAL_INT(2, level.entity_count);
+    TEST_ASSERT_EQUAL_INT(2, level.entities.count);
 
     test_level_free(&level);
     (void)blueprints;
@@ -131,7 +131,7 @@ void test_level_load_by_name(void)
     TEST_ASSERT_EQUAL_STRING("dungeon", level.name.ptr);
     TEST_ASSERT_EQUAL_INT(320, level.width);
     TEST_ASSERT_EQUAL_INT(240, level.height);
-    TEST_ASSERT_EQUAL_INT(1, level.entity_count);
+    TEST_ASSERT_EQUAL_INT(1, level.entities.count);
 
     test_level_free(&level);
     (void)blueprints;
@@ -174,20 +174,20 @@ void test_level_entity_positions(void)
     TEST_ASSERT_TRUE(level_load(&ctx, &level, root, "overworld", &blueprints, test_texture_lookup, NULL, NULL));
 
     /* Tree at (200, 60) with collision_offset (20, 60) and collision_size (24, 16) */
-    TEST_ASSERT_FLOAT_WITHIN(0.1f, 200.0f, level.entities[0].position.x);
-    TEST_ASSERT_FLOAT_WITHIN(0.1f, 60.0f, level.entities[0].position.y);
-    TEST_ASSERT_FLOAT_WITHIN(0.1f, 220.0f, level.entities[0].collision.x);
-    TEST_ASSERT_FLOAT_WITHIN(0.1f, 120.0f, level.entities[0].collision.y);
-    TEST_ASSERT_FLOAT_WITHIN(0.1f, 24.0f, level.entities[0].collision.width);
-    TEST_ASSERT_FLOAT_WITHIN(0.1f, 16.0f, level.entities[0].collision.height);
-    TEST_ASSERT_TRUE(level.entities[0].texture == &dummy_tree_texture);
+    TEST_ASSERT_FLOAT_WITHIN(0.1f, 200.0f, level.entities.data[0].position.x);
+    TEST_ASSERT_FLOAT_WITHIN(0.1f, 60.0f, level.entities.data[0].position.y);
+    TEST_ASSERT_FLOAT_WITHIN(0.1f, 220.0f, level.entities.data[0].collision.x);
+    TEST_ASSERT_FLOAT_WITHIN(0.1f, 120.0f, level.entities.data[0].collision.y);
+    TEST_ASSERT_FLOAT_WITHIN(0.1f, 24.0f, level.entities.data[0].collision.width);
+    TEST_ASSERT_FLOAT_WITHIN(0.1f, 16.0f, level.entities.data[0].collision.height);
+    TEST_ASSERT_TRUE(level.entities.data[0].texture == &dummy_tree_texture);
 
     /* Chest at (300, 100) with collision_offset (0, 0) and collision_size (16, 16) */
-    TEST_ASSERT_FLOAT_WITHIN(0.1f, 300.0f, level.entities[1].position.x);
-    TEST_ASSERT_FLOAT_WITHIN(0.1f, 100.0f, level.entities[1].position.y);
-    TEST_ASSERT_FLOAT_WITHIN(0.1f, 300.0f, level.entities[1].collision.x);
-    TEST_ASSERT_FLOAT_WITHIN(0.1f, 100.0f, level.entities[1].collision.y);
-    TEST_ASSERT_TRUE(level.entities[1].texture == &dummy_chest_texture);
+    TEST_ASSERT_FLOAT_WITHIN(0.1f, 300.0f, level.entities.data[1].position.x);
+    TEST_ASSERT_FLOAT_WITHIN(0.1f, 100.0f, level.entities.data[1].position.y);
+    TEST_ASSERT_FLOAT_WITHIN(0.1f, 300.0f, level.entities.data[1].collision.x);
+    TEST_ASSERT_FLOAT_WITHIN(0.1f, 100.0f, level.entities.data[1].collision.y);
+    TEST_ASSERT_TRUE(level.entities.data[1].texture == &dummy_chest_texture);
 
     test_level_free(&level);
     (void)blueprints;
@@ -209,14 +209,14 @@ void test_level_entity_source_rects(void)
     TEST_ASSERT_TRUE(level_load(&ctx, &level, root, "overworld", &blueprints, test_texture_lookup, NULL, NULL));
 
     /* Tree source rect from blueprint */
-    TEST_ASSERT_FLOAT_WITHIN(0.1f, 0.0f, level.entities[0].source.x);
-    TEST_ASSERT_FLOAT_WITHIN(0.1f, 0.0f, level.entities[0].source.y);
-    TEST_ASSERT_FLOAT_WITHIN(0.1f, 64.0f, level.entities[0].source.width);
-    TEST_ASSERT_FLOAT_WITHIN(0.1f, 80.0f, level.entities[0].source.height);
+    TEST_ASSERT_FLOAT_WITHIN(0.1f, 0.0f, level.entities.data[0].source.x);
+    TEST_ASSERT_FLOAT_WITHIN(0.1f, 0.0f, level.entities.data[0].source.y);
+    TEST_ASSERT_FLOAT_WITHIN(0.1f, 64.0f, level.entities.data[0].source.width);
+    TEST_ASSERT_FLOAT_WITHIN(0.1f, 80.0f, level.entities.data[0].source.height);
 
     /* Chest source rect from blueprint */
-    TEST_ASSERT_FLOAT_WITHIN(0.1f, 16.0f, level.entities[1].source.width);
-    TEST_ASSERT_FLOAT_WITHIN(0.1f, 16.0f, level.entities[1].source.height);
+    TEST_ASSERT_FLOAT_WITHIN(0.1f, 16.0f, level.entities.data[1].source.width);
+    TEST_ASSERT_FLOAT_WITHIN(0.1f, 16.0f, level.entities.data[1].source.height);
 
     test_level_free(&level);
     (void)blueprints;
@@ -271,14 +271,14 @@ void test_level_child_entities_instantiated(void)
     TEST_ASSERT_TRUE(level_load(&ctx, &level, root, "test", &blueprints, test_texture_lookup, NULL, NULL));
 
     /* 1 parent (wagon) + 2 children (lantern, wheel) */
-    TEST_ASSERT_EQUAL_INT(3, level.entity_count);
+    TEST_ASSERT_EQUAL_INT(3, level.entities.count);
 
     /* Parent has no parent */
-    TEST_ASSERT_EQUAL_INT(-1, level.entities[0].parent_index);
+    TEST_ASSERT_EQUAL_INT(-1, level.entities.data[0].parent_index);
 
     /* Children point back to parent */
-    TEST_ASSERT_EQUAL_INT(0, level.entities[1].parent_index);
-    TEST_ASSERT_EQUAL_INT(0, level.entities[2].parent_index);
+    TEST_ASSERT_EQUAL_INT(0, level.entities.data[1].parent_index);
+    TEST_ASSERT_EQUAL_INT(0, level.entities.data[2].parent_index);
 
     test_level_free(&level);
     (void)blueprints;
@@ -300,12 +300,12 @@ void test_level_child_entity_positions(void)
     TEST_ASSERT_TRUE(level_load(&ctx, &level, root, "test", &blueprints, test_texture_lookup, NULL, NULL));
 
     /* Lantern at wagon(100,50) + offset(56,-8) = (156, 42) */
-    TEST_ASSERT_FLOAT_WITHIN(0.1F, 156.0F, level.entities[1].position.x);
-    TEST_ASSERT_FLOAT_WITHIN(0.1F, 42.0F, level.entities[1].position.y);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 156.0F, level.entities.data[1].position.x);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 42.0F, level.entities.data[1].position.y);
 
     /* Wheel at wagon(100,50) + offset(8,28) = (108, 78) */
-    TEST_ASSERT_FLOAT_WITHIN(0.1F, 108.0F, level.entities[2].position.x);
-    TEST_ASSERT_FLOAT_WITHIN(0.1F, 78.0F, level.entities[2].position.y);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 108.0F, level.entities.data[2].position.x);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 78.0F, level.entities.data[2].position.y);
 
     test_level_free(&level);
     (void)blueprints;
@@ -326,8 +326,8 @@ void test_level_child_entity_tags(void)
     blueprints_load(&ctx, &blueprints, root, &arena);
     TEST_ASSERT_TRUE(level_load(&ctx, &level, root, "test", &blueprints, test_texture_lookup, NULL, NULL));
 
-    TEST_ASSERT_EQUAL_STRING("light", level.entities[1].tag.ptr);
-    TEST_ASSERT_EQUAL_STRING("front_wheel", level.entities[2].tag.ptr);
+    TEST_ASSERT_EQUAL_STRING("light", level.entities.data[1].tag.ptr);
+    TEST_ASSERT_EQUAL_STRING("front_wheel", level.entities.data[2].tag.ptr);
 
     test_level_free(&level);
     (void)blueprints;
@@ -382,22 +382,22 @@ void test_level_nested_children(void)
     TEST_ASSERT_TRUE(level_load(&ctx, &level, root, "test", &blueprints, test_texture_lookup, NULL, NULL));
 
     /* outer(0) -> mid(1) -> part(2) */
-    TEST_ASSERT_EQUAL_INT(3, level.entity_count);
+    TEST_ASSERT_EQUAL_INT(3, level.entities.count);
 
-    TEST_ASSERT_EQUAL_INT(-1, level.entities[0].parent_index);
-    TEST_ASSERT_EQUAL_INT(0, level.entities[1].parent_index);
-    TEST_ASSERT_EQUAL_INT(1, level.entities[2].parent_index);
+    TEST_ASSERT_EQUAL_INT(-1, level.entities.data[0].parent_index);
+    TEST_ASSERT_EQUAL_INT(0, level.entities.data[1].parent_index);
+    TEST_ASSERT_EQUAL_INT(1, level.entities.data[2].parent_index);
 
     /* outer at (10,10), mid at (10+4, 10+4) = (14, 14) */
-    TEST_ASSERT_FLOAT_WITHIN(0.1F, 14.0F, level.entities[1].position.x);
-    TEST_ASSERT_FLOAT_WITHIN(0.1F, 14.0F, level.entities[1].position.y);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 14.0F, level.entities.data[1].position.x);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 14.0F, level.entities.data[1].position.y);
 
     /* part at (14+2, 14+2) = (16, 16) */
-    TEST_ASSERT_FLOAT_WITHIN(0.1F, 16.0F, level.entities[2].position.x);
-    TEST_ASSERT_FLOAT_WITHIN(0.1F, 16.0F, level.entities[2].position.y);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 16.0F, level.entities.data[2].position.x);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 16.0F, level.entities.data[2].position.y);
 
-    TEST_ASSERT_EQUAL_STRING("middle", level.entities[1].tag.ptr);
-    TEST_ASSERT_EQUAL_STRING("inner", level.entities[2].tag.ptr);
+    TEST_ASSERT_EQUAL_STRING("middle", level.entities.data[1].tag.ptr);
+    TEST_ASSERT_EQUAL_STRING("inner", level.entities.data[2].tag.ptr);
 
     test_level_free(&level);
     (void)blueprints;

@@ -77,8 +77,9 @@ static bool spawn_children_for(Allocator *alloc,
                                void *texture_user_data)
 {
     struct EngineContext *ctx = alloc ? alloc->ctx : NULL;
-    const Entity *parent = &level->entities[parent_index];
-    const Blueprint *parent_blueprint = parent->blueprint;
+    /* Save parent fields before any push that could invalidate the pointer. */
+    const Blueprint *parent_blueprint = level->entities.data[parent_index].blueprint;
+    Vector2 parent_position = level->entities.data[parent_index].position;
 
     for (int index = 0; index < parent_blueprint->children.count; index++) {
         const BlueprintChild *child_def = &parent_blueprint->children.data[index];
@@ -90,25 +91,23 @@ static bool spawn_children_for(Allocator *alloc,
             return false;
         }
 
-        if (level->entity_count >= MAX_LEVEL_ENTITIES) {
-            error_set(ctx, "entity limit reached (%d)", MAX_LEVEL_ENTITIES);
-            return false;
-        }
-
         Texture2D *texture = texture_lookup(child_blueprint->texture_name.ptr, texture_user_data);
-        Vector2 child_position = {parent->position.x + child_def->offset.x, parent->position.y + child_def->offset.y};
+        Vector2 child_position = {parent_position.x + child_def->offset.x, parent_position.y + child_def->offset.y};
 
-        Entity *child = &level->entities[level->entity_count];
-        if (!entity_init_from_blueprint(child, child_blueprint, child_position, texture, alloc)) {
+        Entity child = {0};
+        if (!entity_init_from_blueprint(&child, child_blueprint, child_position, texture, alloc)) {
             error_set(ctx, "entity_init_from_blueprint failed for child blueprint '%s'", child_blueprint->name.ptr);
             return false;
         }
-        child->parent_index = parent_index;
-        child->offset = child_def->offset;
-        if (child_def->tag.len > 0 && !str_from_strv(alloc, &child->tag, str_to_strv(child_def->tag))) {
+        child.parent_index = parent_index;
+        child.offset = child_def->offset;
+        if (child_def->tag.len > 0 && !str_from_strv(alloc, &child.tag, str_to_strv(child_def->tag))) {
             return false;
         }
-        level->entity_count++;
+        if (!vec_entity_push(&level->entities, child, alloc)) {
+            error_set(ctx, "spawn_children_for: out of memory");
+            return false;
+        }
     }
 
     return true;
@@ -126,10 +125,10 @@ static bool instantiate_children(Allocator *alloc,
 {
     struct EngineContext *ctx = alloc ? alloc->ctx : NULL;
     int scan_index = start_index;
-    while (scan_index < level->entity_count) {
-        const Entity *entity = &level->entities[scan_index];
-        if (entity->blueprint && entity->blueprint->children.count > 0) {
-            int depth = entity_depth(level->entities, scan_index);
+    while (scan_index < level->entities.count) {
+        const Blueprint *scan_blueprint = level->entities.data[scan_index].blueprint;
+        if (scan_blueprint && scan_blueprint->children.count > 0) {
+            int depth = entity_depth(level->entities.data, scan_index);
             if (depth >= MAX_CHILD_DEPTH) {
                 error_set(ctx, "child nesting exceeds max depth %d", MAX_CHILD_DEPTH);
                 return false;
@@ -187,14 +186,17 @@ static void parse_entity(Allocator *alloc,
         return;
     }
 
-    int parent_index = level->entity_count;
-    Entity *entity = &level->entities[parent_index];
-    if (!entity_init_from_blueprint(entity, blueprint, (Vector2){position_x, position_y}, texture, alloc)) {
+    int parent_index = level->entities.count;
+    Entity entity_temp = {0};
+    if (!entity_init_from_blueprint(&entity_temp, blueprint, (Vector2){position_x, position_y}, texture, alloc)) {
         debug_log(ctx, "ent[%d]: entity_init_from_blueprint failed", entity_index);
         return;
     }
-    parse_instance_overrides(alloc, entity, entity_table);
-    level->entity_count++;
+    parse_instance_overrides(alloc, &entity_temp, entity_table);
+    if (!vec_entity_push(&level->entities, entity_temp, alloc)) {
+        debug_log(ctx, "ent[%d]: out of memory", entity_index);
+        return;
+    }
 
     if (!instantiate_children(alloc, level, parent_index, blueprints, texture_lookup, texture_user_data)) {
         debug_log(ctx, "ent[%d]: failed to instantiate children: %s", entity_index, error_get(ctx));
@@ -225,11 +227,12 @@ void level_free(Allocator *alloc, Level *level)
 {
     str_free(alloc, &level->name);
     str_free(alloc, &level->music_name);
-    for (int index = 0; index < level->entity_count; index++) {
-        str_free(alloc, &level->entities[index].blueprint_name);
-        str_free(alloc, &level->entities[index].tag);
-        attr_set_free(alloc, &level->entities[index].attrs);
+    for (int index = 0; index < level->entities.count; index++) {
+        str_free(alloc, &level->entities.data[index].blueprint_name);
+        str_free(alloc, &level->entities.data[index].tag);
+        attr_set_free(alloc, &level->entities.data[index].attrs);
     }
+    vec_entity_free(&level->entities, alloc);
 }
 
 bool level_load(struct EngineContext *ctx,
@@ -289,7 +292,7 @@ bool level_load(struct EngineContext *ctx,
 
     int entity_count = toml_array_nelem(entities);
     debug_log(ctx, "level: %d entity entries in TOML", entity_count);
-    for (int index = 0; index < entity_count && level->entity_count < MAX_LEVEL_ENTITIES; index++) {
+    for (int index = 0; index < entity_count; index++) {
         toml_table_t *entity_table = toml_table_at(entities, index);
         if (entity_table) {
             parse_entity(alloc, level, index, entity_table, blueprints, texture_lookup, texture_user_data);

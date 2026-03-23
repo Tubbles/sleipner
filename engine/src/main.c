@@ -207,8 +207,8 @@ static void draw_grass(Texture2D texture, RectU32 bounds)
 static void draw_debug_collision_boxes(const Level *level, int player_index)
 {
     /* Player collision box (green) */
-    if (player_index >= 0 && player_index < level->entity_count) {
-        const Entity *player = &level->entities[player_index];
+    if (player_index >= 0 && player_index < level->entities.count) {
+        const Entity *player = &level->entities.data[player_index];
         DrawRectangleLinesEx(player->collision, 1, GREEN);
 
         /* Player sprite bounds (yellow) */
@@ -218,11 +218,11 @@ static void draw_debug_collision_boxes(const Level *level, int player_index)
     }
 
     /* Entity collision boxes (red) */
-    for (int index = 0; index < level->entity_count; index++) {
+    for (int index = 0; index < level->entities.count; index++) {
         if (index == player_index) {
             continue;
         }
-        DrawRectangleLinesEx(level->entities[index].collision, 1, RED);
+        DrawRectangleLinesEx(level->entities.data[index].collision, 1, RED);
     }
 }
 
@@ -485,9 +485,9 @@ static void load_gamedata(struct EngineContext *ctx, GameState *state)
                       blueprint->attrs.entries.count);
         }
         debug_log(ctx, "gamedata: level '%s' (%dx%d, %d entities)", state->current_level.name.ptr,
-                  state->current_level.width, state->current_level.height, state->current_level.entity_count);
-        for (int index = 0; index < state->current_level.entity_count; index++) {
-            const Entity *entity = &state->current_level.entities[index];
+                  state->current_level.width, state->current_level.height, state->current_level.entities.count);
+        for (int index = 0; index < state->current_level.entities.count; index++) {
+            const Entity *entity = &state->current_level.entities.data[index];
             debug_log(ctx, "  ent[%d]: bp='%s' pos=(%.0f,%.0f) tex=%s", index, entity->blueprint_name.ptr,
                       entity->position.x, entity->position.y, entity->texture ? "ok" : "NULL");
         }
@@ -523,14 +523,14 @@ static void draw_entities_depth_sorted(const GameState *state)
     const Entity *player = game_get_player_const(state);
     float player_sort_y = player ? player->position.y + 16 : 0;
 
-    for (int index = 0; index < state->current_level.entity_count; index++) {
+    for (int index = 0; index < state->current_level.entities.count; index++) {
         if (index == state->player_index) {
             continue;
         }
-        float entity_sort_y =
-            state->current_level.entities[index].collision.y + state->current_level.entities[index].collision.height;
+        float entity_sort_y = state->current_level.entities.data[index].collision.y +
+                              state->current_level.entities.data[index].collision.height;
         if (entity_sort_y <= player_sort_y) {
-            draw_entity(&state->current_level.entities[index]);
+            draw_entity(&state->current_level.entities.data[index]);
         }
     }
 
@@ -538,14 +538,14 @@ static void draw_entities_depth_sorted(const GameState *state)
         draw_player_entity(player);
     }
 
-    for (int index = 0; index < state->current_level.entity_count; index++) {
+    for (int index = 0; index < state->current_level.entities.count; index++) {
         if (index == state->player_index) {
             continue;
         }
-        float entity_sort_y =
-            state->current_level.entities[index].collision.y + state->current_level.entities[index].collision.height;
+        float entity_sort_y = state->current_level.entities.data[index].collision.y +
+                              state->current_level.entities.data[index].collision.height;
         if (entity_sort_y > player_sort_y) {
-            draw_entity(&state->current_level.entities[index]);
+            draw_entity(&state->current_level.entities.data[index]);
         }
     }
 

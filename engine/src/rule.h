@@ -55,6 +55,8 @@ typedef struct {
     float compare_value;
 } Condition;
 
+VEC_DECL(condition, Condition)
+
 /* --- Action types --- */
 typedef enum {
     ACTION_SET_FLAG,
@@ -91,23 +93,23 @@ struct ActionNode {
     Str argument;
     Str second_argument;
 
-    // For control flow nodes
+    // For control flow nodes (raw pointers — self-referential, can't use vec)
     ActionNode *children;
     int child_count;
     ActionNode *else_children;
     int else_child_count;
 };
 
+VEC_DECL(action_node, ActionNode)
+
 typedef struct {
-    ActionNode *nodes;
-    int count;
+    vec_action_node nodes;
 } ActionTree;
 
 /* --- Rule (named struct to match forward declaration in blueprint.h) --- */
 typedef struct Rule {
     Trigger trigger;
-    Condition conditions[MAX_CONDITIONS];
-    int condition_count;
+    vec_condition conditions;
     ActionTree action_tree;
 } Rule;
 

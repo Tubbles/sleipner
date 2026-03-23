@@ -51,15 +51,21 @@ structs, all of which are parse-time data stored in the arena-backed rule set.
 
 ## Promote vec types — remaining hand-rolled arrays
 
-- [ ] **`Level.entities`** — `Entity entities[MAX_LEVEL_ENTITIES]; int entity_count;`
+- [x] **`Level.entities`** — `Entity entities[MAX_LEVEL_ENTITIES]; int entity_count;`
   → `vec_entity entities` with gamedata_arena alloc
 
-- [ ] **`RuleSet`** (in `blueprint.h`) — raw `Rule *entries; int count;` → `vec_rule entries`
+- [x] **`ActionTree.nodes`** — raw `ActionNode *nodes; int count;` → `vec_action_node nodes`
 
-- [ ] **`ActionTree.nodes`** — raw `ActionNode *nodes; int count;` → `vec_action_node nodes`
-
-- [ ] **`ActionNode.children`** / **`ActionNode.else_children`** — raw `ActionNode *` +
-  count fields → `vec_action_node`
-
-- [ ] **`Rule.conditions`** — `Condition conditions[MAX_CONDITIONS]; int condition_count;`
+- [x] **`Rule.conditions`** — `Condition conditions[MAX_CONDITIONS]; int condition_count;`
   → `vec_condition conditions`
+
+- **`RuleSet`** (in `blueprint.h`) — raw `Rule *entries; int count;` → `vec_rule entries`
+  — **Blocked**: circular dependency (blueprint.h defines RuleSet using a forward-declared
+  `struct Rule *`, and including rule.h from blueprint.h creates a cycle via
+  entity.h → blueprint.h).
+
+- **`ActionNode.children`** / **`ActionNode.else_children`** — raw `ActionNode *` +
+  count fields → `vec_action_node`
+  — **Blocked**: self-referential struct constraint. `VEC_DECL(action_node, ActionNode)`
+  requires `ActionNode` to be complete, but `ActionNode` can't embed `vec_action_node`
+  before the vec type is declared.

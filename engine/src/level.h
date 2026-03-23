@@ -9,8 +9,6 @@
 
 struct EngineContext;
 
-#define MAX_LEVEL_ENTITIES 512
-
 /* Callback for resolving a texture name to a Texture2D pointer.
  * The loader calls this for each entity's blueprint texture_name. */
 typedef Texture2D *(*TextureLookupFn)(const char *texture_name, void *user_data);
@@ -20,8 +18,7 @@ typedef struct {
     Str music_name;
     int width;
     int height;
-    Entity entities[MAX_LEVEL_ENTITIES];
-    int entity_count;
+    vec_entity entities;
 } Level;
 
 /* Free level name, music name, and all entity Str fields and attrs. */
