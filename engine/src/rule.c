@@ -83,7 +83,7 @@ void flag_set_free(Allocator *alloc, FlagSet *flags)
 
 /* ---- Parsing helpers ---- */
 
-bool trigger_parse(struct EngineContext *ctx, Trigger *trigger, const char *string)
+bool trigger_parse(struct EngineContext *ctx, Allocator *alloc, Trigger *trigger, const char *string)
 {
     memset(trigger, 0, sizeof(*trigger));
     Strv strv = strv_from_cstr(string);
@@ -104,14 +104,20 @@ bool trigger_parse(struct EngineContext *ctx, Trigger *trigger, const char *stri
         trigger->type = TRIGGER_EVENT;
         Strv rest = strv;
         (void)strv_split(&rest, ':');
-        strv_copy_to_cstr(rest, trigger->argument, MAX_ARG);
+        if (!str_from_strv(alloc, &trigger->argument, rest)) {
+            error_set(ctx, "trigger_parse: allocation failed");
+            return false;
+        }
         return true;
     }
     if (strv_starts_with_cstr(strv, "attr_changed:")) {
         trigger->type = TRIGGER_ATTR_CHANGED;
         Strv rest = strv;
         (void)strv_split(&rest, ':');
-        strv_copy_to_cstr(rest, trigger->argument, MAX_ARG);
+        if (!str_from_strv(alloc, &trigger->argument, rest)) {
+            error_set(ctx, "trigger_parse: allocation failed");
+            return false;
+        }
         return true;
     }
 
@@ -119,7 +125,8 @@ bool trigger_parse(struct EngineContext *ctx, Trigger *trigger, const char *stri
     return false;
 }
 
-static bool parse_condition_attr_comparison(Condition *condition, const char *argument)
+// Returns: 1 = comparison found and allocated, 0 = no comparison, -1 = alloc failed
+static int parse_condition_attr_comparison(Allocator *alloc, Condition *condition, const char *argument)
 {
     const char *less_than = strchr(argument, '<');
     const char *greater_than = strchr(argument, '>');
@@ -127,42 +134,36 @@ static bool parse_condition_attr_comparison(Condition *condition, const char *ar
 
     if (equals) {
         condition->type = COND_ATTR_EQ;
-        size_t name_len = (size_t)(equals - argument);
-        if (name_len >= MAX_ARG) {
-            name_len = MAX_ARG - 1;
+        Strv name = {.ptr = argument, .len = (size_t)(equals - argument)};
+        if (!str_from_strv(alloc, &condition->argument, name)) {
+            return -1;
         }
-        memcpy(condition->argument, argument, name_len);
-        condition->argument[name_len] = '\0';
         condition->compare_value = strtof(equals + 2, NULL);
-        return true;
+        return 1;
     }
     if (less_than) {
         condition->type = COND_ATTR_LT;
-        size_t name_len = (size_t)(less_than - argument);
-        if (name_len >= MAX_ARG) {
-            name_len = MAX_ARG - 1;
+        Strv name = {.ptr = argument, .len = (size_t)(less_than - argument)};
+        if (!str_from_strv(alloc, &condition->argument, name)) {
+            return -1;
         }
-        memcpy(condition->argument, argument, name_len);
-        condition->argument[name_len] = '\0';
         condition->compare_value = strtof(less_than + 1, NULL);
-        return true;
+        return 1;
     }
     if (greater_than) {
         condition->type = COND_ATTR_GT;
-        size_t name_len = (size_t)(greater_than - argument);
-        if (name_len >= MAX_ARG) {
-            name_len = MAX_ARG - 1;
+        Strv name = {.ptr = argument, .len = (size_t)(greater_than - argument)};
+        if (!str_from_strv(alloc, &condition->argument, name)) {
+            return -1;
         }
-        memcpy(condition->argument, argument, name_len);
-        condition->argument[name_len] = '\0';
         condition->compare_value = strtof(greater_than + 1, NULL);
-        return true;
+        return 1;
     }
 
-    return false;
+    return 0;
 }
 
-bool condition_parse(struct EngineContext *ctx, Condition *condition, const char *string)
+bool condition_parse(struct EngineContext *ctx, Allocator *alloc, Condition *condition, const char *string)
 {
     memset(condition, 0, sizeof(*condition));
     Strv strv = strv_from_cstr(string);
@@ -171,35 +172,50 @@ bool condition_parse(struct EngineContext *ctx, Condition *condition, const char
         condition->type = COND_NOT_FLAG;
         Strv rest = strv;
         (void)strv_split(&rest, ':');
-        strv_copy_to_cstr(rest, condition->argument, MAX_ARG);
+        if (!str_from_strv(alloc, &condition->argument, rest)) {
+            error_set(ctx, "condition_parse: allocation failed");
+            return false;
+        }
         return true;
     }
     if (strv_starts_with_cstr(strv, "flag:")) {
         condition->type = COND_FLAG;
         Strv rest = strv;
         (void)strv_split(&rest, ':');
-        strv_copy_to_cstr(rest, condition->argument, MAX_ARG);
+        if (!str_from_strv(alloc, &condition->argument, rest)) {
+            error_set(ctx, "condition_parse: allocation failed");
+            return false;
+        }
         return true;
     }
     if (strv_starts_with_cstr(strv, "has_item:")) {
         condition->type = COND_HAS_ITEM;
         Strv rest = strv;
         (void)strv_split(&rest, ':');
-        strv_copy_to_cstr(rest, condition->argument, MAX_ARG);
+        if (!str_from_strv(alloc, &condition->argument, rest)) {
+            error_set(ctx, "condition_parse: allocation failed");
+            return false;
+        }
         return true;
     }
     if (strv_starts_with_cstr(strv, "var:")) {
         condition->type = COND_VAR;
         Strv rest = strv;
         (void)strv_split(&rest, ':');
-        strv_copy_to_cstr(rest, condition->argument, MAX_ARG);
+        if (!str_from_strv(alloc, &condition->argument, rest)) {
+            error_set(ctx, "condition_parse: allocation failed");
+            return false;
+        }
         return true;
     }
     if (strv_starts_with_cstr(strv, "not_attr:")) {
         condition->type = COND_NOT_ATTR;
         Strv rest = strv;
         (void)strv_split(&rest, ':');
-        strv_copy_to_cstr(rest, condition->argument, MAX_ARG);
+        if (!str_from_strv(alloc, &condition->argument, rest)) {
+            error_set(ctx, "condition_parse: allocation failed");
+            return false;
+        }
         return true;
     }
     if ((int)strv_starts_with_cstr(strv, "self.attr:") || (int)strv_starts_with_cstr(strv, "attr:")) {
@@ -207,11 +223,19 @@ bool condition_parse(struct EngineContext *ctx, Condition *condition, const char
         (void)strv_split(&rest, ':');
         char attr_arg[MAX_ARG];
         strv_copy_to_cstr(rest, attr_arg, MAX_ARG);
-        if (parse_condition_attr_comparison(condition, attr_arg)) {
+        int cmp = parse_condition_attr_comparison(alloc, condition, attr_arg);
+        if (cmp < 0) {
+            error_set(ctx, "condition_parse: allocation failed");
+            return false;
+        }
+        if (cmp > 0) {
             return true;
         }
         condition->type = COND_ATTR;
-        strv_copy_to_cstr(rest, condition->argument, MAX_ARG);
+        if (!str_from_strv(alloc, &condition->argument, rest)) {
+            error_set(ctx, "condition_parse: allocation failed");
+            return false;
+        }
         return true;
     }
 
@@ -219,12 +243,17 @@ bool condition_parse(struct EngineContext *ctx, Condition *condition, const char
     return false;
 }
 
-static bool parse_action_two_args(ActionNode *node, Strv strv)
+static bool parse_action_two_args(Allocator *alloc, ActionNode *node, Strv strv)
 {
     Strv first = strv_split(&strv, ',');
-    strv_copy_to_cstr(first, node->argument, MAX_ARG);
+    if (!str_from_strv(alloc, &node->argument, first)) {
+        return false;
+    }
     if (strv.ptr) {
-        strv_copy_to_cstr(strv, node->second_argument, MAX_ARG);
+        if (!str_from_strv(alloc, &node->second_argument, strv)) {
+            str_free(alloc, &node->argument);
+            return false;
+        }
     }
     return true;
 }
@@ -260,7 +289,7 @@ static const ActionMapping action_mappings[] = {
     {NULL, 0, false},
 };
 
-static bool parse_simple_action(struct EngineContext *ctx, ActionNode *node, const char *string)
+static bool parse_simple_action(struct EngineContext *ctx, Allocator *alloc, ActionNode *node, const char *string)
 {
     memset(node, 0, sizeof(*node));
     Strv strv = strv_from_cstr(string);
@@ -278,7 +307,7 @@ static bool parse_simple_action(struct EngineContext *ctx, ActionNode *node, con
             node->type = mapping->type;
             Strv rest = strv;
             (void)strv_split(&rest, ':');
-            return parse_action_two_args(node, rest);
+            return parse_action_two_args(alloc, node, rest);
         }
     }
 
@@ -292,6 +321,7 @@ typedef struct {
 } ParseCFTask;
 
 static bool parse_branch_array_into(struct EngineContext *ctx,
+                                    Allocator *alloc,
                                     ActionNode **out_nodes,
                                     int *out_count,
                                     toml_array_t *array,
@@ -316,7 +346,7 @@ static bool parse_branch_array_into(struct EngineContext *ctx,
     for (int child_index = 0; child_index < count; child_index++) {
         toml_datum_t value = toml_string_at(array, child_index);
         if (value.ok) {
-            if (!action_node_parse(ctx, &nodes[child_index], value, arena)) {
+            if (!action_node_parse(ctx, alloc, &nodes[child_index], value)) {
                 error_wrap(ctx, "%s[%d]", branch_name, child_index);
                 free(value.u.s);
                 return false;
@@ -342,6 +372,7 @@ static bool parse_branch_array_into(struct EngineContext *ctx,
 }
 
 static bool parse_one_cf_node(struct EngineContext *ctx,
+                              Allocator *alloc,
                               ActionNode *node,
                               toml_table_t *table,
                               Arena *arena,
@@ -353,59 +384,67 @@ static bool parse_one_cf_node(struct EngineContext *ctx,
     toml_datum_t if_cond = toml_string_in(table, "if");
     if (if_cond.ok) {
         node->type = ACTION_IF_ELSE;
-        strncpy(node->argument, if_cond.u.s, MAX_ARG - 1);
+        bool alloc_ok = str_from_cstr(alloc, &node->argument, if_cond.u.s);
         free(if_cond.u.s);
-        if (!parse_branch_array_into(ctx, &node->children, &node->child_count, toml_array_in(table, "then"), arena,
-                                     "then", task_stack, task_top)) {
+        if (!alloc_ok) {
+            error_set(ctx, "parse_one_cf_node: allocation failed");
             return false;
         }
-        return parse_branch_array_into(ctx, &node->else_children, &node->else_child_count, toml_array_in(table, "else"),
-                                       arena, "else", task_stack, task_top);
+        if (!parse_branch_array_into(ctx, alloc, &node->children, &node->child_count, toml_array_in(table, "then"),
+                                     arena, "then", task_stack, task_top)) {
+            return false;
+        }
+        return parse_branch_array_into(ctx, alloc, &node->else_children, &node->else_child_count,
+                                       toml_array_in(table, "else"), arena, "else", task_stack, task_top);
     }
 
     toml_datum_t repeat_str = toml_string_in(table, "repeat");
     if (repeat_str.ok) {
         node->type = ACTION_REPEAT;
-        strncpy(node->argument, repeat_str.u.s, MAX_ARG - 1);
+        bool alloc_ok = str_from_cstr(alloc, &node->argument, repeat_str.u.s);
         free(repeat_str.u.s);
-        return parse_branch_array_into(ctx, &node->children, &node->child_count, toml_array_in(table, "do"), arena,
-                                       "do", task_stack, task_top);
+        if (!alloc_ok) {
+            error_set(ctx, "parse_one_cf_node: allocation failed");
+            return false;
+        }
+        return parse_branch_array_into(ctx, alloc, &node->children, &node->child_count, toml_array_in(table, "do"),
+                                       arena, "do", task_stack, task_top);
     }
 
     error_set(ctx, "unknown control flow structure");
     return false;
 }
 
-static bool parse_control_flow_node(struct EngineContext *ctx, ActionNode *node, toml_table_t *table, Arena *arena)
+static bool parse_control_flow_node(
+    struct EngineContext *ctx, Allocator *alloc, ActionNode *node, toml_table_t *table, Arena *arena)
 {
     ParseCFTask task_stack[MAX_PARSE_CF_STACK];
     int task_top = 0;
 
-    if (!parse_one_cf_node(ctx, node, table, arena, task_stack, &task_top)) {
+    if (!parse_one_cf_node(ctx, alloc, node, table, arena, task_stack, &task_top)) {
         return false;
     }
     while (task_top > 0) {
         ParseCFTask task = task_stack[--task_top];
-        if (!parse_one_cf_node(ctx, task.target, task.table, arena, task_stack, &task_top)) {
+        if (!parse_one_cf_node(ctx, alloc, task.target, task.table, arena, task_stack, &task_top)) {
             return false;
         }
     }
     return true;
 }
 
-bool action_node_parse(struct EngineContext *ctx, ActionNode *node, toml_datum_t value, Arena *arena)
+bool action_node_parse(struct EngineContext *ctx, Allocator *alloc, ActionNode *node, toml_datum_t value)
 {
-    (void)arena;
     if (!value.ok || !value.u.s) {
         error_set(ctx, "action_node_parse: expected string value");
         return false;
     }
-    return parse_simple_action(ctx, node, value.u.s);
+    return parse_simple_action(ctx, alloc, node, value.u.s);
 }
 
 /* ---- TOML rule parsing ---- */
 
-static bool parse_conditions_array(struct EngineContext *ctx, Rule *rule, toml_array_t *conditions)
+static bool parse_conditions_array(struct EngineContext *ctx, Allocator *alloc, Rule *rule, toml_array_t *conditions)
 {
     if (!conditions) {
         return true;
@@ -421,7 +460,7 @@ static bool parse_conditions_array(struct EngineContext *ctx, Rule *rule, toml_a
             error_set(ctx, "condition[%d] is not a string", index);
             return false;
         }
-        if (!condition_parse(ctx, &rule->conditions[rule->condition_count], value.u.s)) {
+        if (!condition_parse(ctx, alloc, &rule->conditions[rule->condition_count], value.u.s)) {
             error_wrap(ctx, "condition[%d]", index);
             free(value.u.s);
             return false;
@@ -432,7 +471,8 @@ static bool parse_conditions_array(struct EngineContext *ctx, Rule *rule, toml_a
     return true;
 }
 
-static bool parse_actions_array(struct EngineContext *ctx, Rule *rule, toml_array_t *actions, Arena *arena)
+static bool
+parse_actions_array(struct EngineContext *ctx, Allocator *alloc, Rule *rule, toml_array_t *actions, Arena *arena)
 {
     if (!actions) {
         return true;
@@ -451,10 +491,9 @@ static bool parse_actions_array(struct EngineContext *ctx, Rule *rule, toml_arra
     }
 
     for (int index = 0; index < count; index++) {
-        // Try string first
         toml_datum_t value = toml_string_at(actions, index);
         if (value.ok) {
-            if (!action_node_parse(ctx, &nodes[index], value, arena)) {
+            if (!action_node_parse(ctx, alloc, &nodes[index], value)) {
                 error_wrap(ctx, "action[%d]", index);
                 free(value.u.s);
                 return false;
@@ -463,7 +502,7 @@ static bool parse_actions_array(struct EngineContext *ctx, Rule *rule, toml_arra
         } else {
             toml_table_t *table_value = toml_table_at(actions, index);
             if (table_value) {
-                if (!parse_control_flow_node(ctx, &nodes[index], table_value, arena)) {
+                if (!parse_control_flow_node(ctx, alloc, &nodes[index], table_value, arena)) {
                     error_wrap(ctx, "action[%d]", index);
                     return false;
                 }
@@ -479,7 +518,8 @@ static bool parse_actions_array(struct EngineContext *ctx, Rule *rule, toml_arra
     return true;
 }
 
-static bool parse_single_rule(struct EngineContext *ctx, Rule *rule, toml_table_t *entry, Arena *arena)
+static bool
+parse_single_rule(struct EngineContext *ctx, Allocator *alloc, Rule *rule, toml_table_t *entry, Arena *arena)
 {
     memset(rule, 0, sizeof(*rule));
 
@@ -488,7 +528,7 @@ static bool parse_single_rule(struct EngineContext *ctx, Rule *rule, toml_table_
         error_set(ctx, "rule missing 'trigger' key");
         return false;
     }
-    if (!trigger_parse(ctx, &rule->trigger, trigger_str.u.s)) {
+    if (!trigger_parse(ctx, alloc, &rule->trigger, trigger_str.u.s)) {
         error_wrap(ctx, "rule trigger");
         free(trigger_str.u.s);
         return false;
@@ -496,13 +536,13 @@ static bool parse_single_rule(struct EngineContext *ctx, Rule *rule, toml_table_
     free(trigger_str.u.s);
 
     toml_array_t *conditions = toml_array_in(entry, "conditions");
-    if (!parse_conditions_array(ctx, rule, conditions)) {
+    if (!parse_conditions_array(ctx, alloc, rule, conditions)) {
         error_wrap(ctx, "rule conditions");
         return false;
     }
 
     toml_array_t *actions = toml_array_in(entry, "actions");
-    if (!parse_actions_array(ctx, rule, actions, arena)) {
+    if (!parse_actions_array(ctx, alloc, rule, actions, arena)) {
         error_wrap(ctx, "rule actions");
         return false;
     }
@@ -510,7 +550,7 @@ static bool parse_single_rule(struct EngineContext *ctx, Rule *rule, toml_table_
     return true;
 }
 
-bool rules_parse(struct EngineContext *ctx, RuleSet *rules, void *toml_blueprint_table, Arena *arena)
+bool rules_parse(struct EngineContext *ctx, Allocator *alloc, RuleSet *rules, void *toml_blueprint_table, Arena *arena)
 {
     rules->entries = NULL;
     rules->count = 0;
@@ -542,7 +582,7 @@ bool rules_parse(struct EngineContext *ctx, RuleSet *rules, void *toml_blueprint
             error_set(ctx, "rule[%d]: toml_table_at returned NULL", index);
             return false;
         }
-        if (!parse_single_rule(ctx, &entries[index], entry, arena)) {
+        if (!parse_single_rule(ctx, alloc, &entries[index], entry, arena)) {
             error_wrap(ctx, "rule[%d]", index);
             return false;
         }
@@ -561,7 +601,7 @@ bool trigger_matches(const Trigger *trigger, const TriggerEvent *event)
         return false;
     }
     if (trigger->type == TRIGGER_EVENT || trigger->type == TRIGGER_ATTR_CHANGED) {
-        return strcmp(trigger->argument, event->argument) == 0;
+        return strcmp(trigger->argument.ptr, event->argument.ptr) == 0;
     }
     return true;
 }
@@ -606,39 +646,39 @@ static bool evaluate_single_condition(const Condition *condition, ConditionConte
 {
     switch (condition->type) {
     case COND_FLAG:
-        return flag_get(context.flags, condition->argument);
+        return flag_get(context.flags, condition->argument.ptr);
     case COND_NOT_FLAG:
-        return (bool)!flag_get(context.flags, condition->argument);
+        return (bool)!flag_get(context.flags, condition->argument.ptr);
     case COND_ATTR: {
-        const Attribute *attr = entity_get_attr(context.entity, condition->argument);
+        const Attribute *attr = entity_get_attr(context.entity, condition->argument.ptr);
         if (!attr) {
             return false;
         }
         return attr_is_truthy(attr);
     }
     case COND_NOT_ATTR: {
-        const Attribute *attr = entity_get_attr(context.entity, condition->argument);
+        const Attribute *attr = entity_get_attr(context.entity, condition->argument.ptr);
         if (!attr) {
             return true;
         }
         return (bool)!attr_is_truthy(attr);
     }
     case COND_ATTR_LT: {
-        const Attribute *attr = entity_get_attr(context.entity, condition->argument);
+        const Attribute *attr = entity_get_attr(context.entity, condition->argument.ptr);
         if (!attr) {
             return false;
         }
         return attr_to_float(attr) < condition->compare_value;
     }
     case COND_ATTR_GT: {
-        const Attribute *attr = entity_get_attr(context.entity, condition->argument);
+        const Attribute *attr = entity_get_attr(context.entity, condition->argument.ptr);
         if (!attr) {
             return false;
         }
         return attr_to_float(attr) > condition->compare_value;
     }
     case COND_ATTR_EQ: {
-        const Attribute *attr = entity_get_attr(context.entity, condition->argument);
+        const Attribute *attr = entity_get_attr(context.entity, condition->argument.ptr);
         if (!attr) {
             return false;
         }
@@ -649,10 +689,10 @@ static bool evaluate_single_condition(const Condition *condition, ConditionConte
     case COND_VAR: {
         const Attribute *var = NULL;
         if (context.local_vars) {
-            var = attr_get(context.local_vars, condition->argument);
+            var = attr_get(context.local_vars, condition->argument.ptr);
         }
         if (!var && context.global_vars) {
-            var = attr_get(context.global_vars, condition->argument);
+            var = attr_get(context.global_vars, condition->argument.ptr);
         }
         if (!var) {
             return false;
@@ -693,14 +733,20 @@ static Entity *resolve_target(const char *target_spec, ActionContext context, ch
     return entity_find_by_tag_mut(context.entity, tag, context.entities, context.entity_count);
 }
 
-static bool evaluate_condition_string(struct EngineContext *ctx, const char *condition_str, ConditionContext context)
+static bool evaluate_condition_string(struct EngineContext *ctx,
+                                      Allocator *alloc,
+                                      const char *condition_str,
+                                      ConditionContext context)
 {
-    Condition temp_cond;
-    if (!condition_parse(ctx, &temp_cond, condition_str)) {
+    Condition temp_cond = {0};
+    if (!condition_parse(ctx, alloc, &temp_cond, condition_str)) {
         debug_log(ctx, "control flow: failed to parse condition '%s'", condition_str);
+        str_free(alloc, &temp_cond.argument);
         return false;
     }
-    return evaluate_single_condition(&temp_cond, context);
+    bool result = evaluate_single_condition(&temp_cond, context);
+    str_free(alloc, &temp_cond.argument);
+    return result;
 }
 
 static const Attribute *lookup_var(const char *varname, ActionContext context)
@@ -738,6 +784,10 @@ static void format_var_value(char *out, int out_size, const Attribute *var)
 
 static void resolve_arg(char *out, int out_size, const char *arg, ActionContext context)
 {
+    if (!arg) {
+        out[0] = '\0';
+        return;
+    }
     if (!strchr(arg, '$')) {
         strncpy(out, arg, (size_t)(out_size - 1));
         out[out_size - 1] = '\0';
@@ -782,13 +832,13 @@ static bool
 execute_set_attr_action(struct EngineContext *ctx, Allocator *alloc, const ActionNode *node, ActionContext context)
 {
     char attr_name[MAX_ARG];
-    Entity *target = resolve_target(node->argument, context, attr_name, MAX_ARG);
+    Entity *target = resolve_target(node->argument.ptr, context, attr_name, MAX_ARG);
     if (!target) {
-        debug_log(ctx, "set_attr: target not found: %s", node->argument);
+        debug_log(ctx, "set_attr: target not found: %s", node->argument.ptr);
         return true;
     }
     char resolved[MAX_ARG];
-    resolve_arg(resolved, MAX_ARG, node->second_argument, context);
+    resolve_arg(resolved, MAX_ARG, node->second_argument.ptr, context);
     float value = strtof(resolved, NULL);
     if (strchr(resolved, '.')) {
         return attr_set_float(alloc, &target->attrs, attr_name, value);
@@ -806,14 +856,14 @@ static bool
 execute_add_attr_action(struct EngineContext *ctx, Allocator *alloc, const ActionNode *node, ActionContext context)
 {
     char attr_name[MAX_ARG];
-    Entity *target = resolve_target(node->argument, context, attr_name, MAX_ARG);
+    Entity *target = resolve_target(node->argument.ptr, context, attr_name, MAX_ARG);
     if (!target) {
-        debug_log(ctx, "add_attr: target not found: %s", node->argument);
+        debug_log(ctx, "add_attr: target not found: %s", node->argument.ptr);
         return true;
     }
     const Attribute *existing = entity_get_attr(target, attr_name);
     char resolved[MAX_ARG];
-    resolve_arg(resolved, MAX_ARG, node->second_argument, context);
+    resolve_arg(resolved, MAX_ARG, node->second_argument.ptr, context);
     float delta = strtof(resolved, NULL);
     if (existing && existing->type == ATTR_FLOAT) {
         return attr_set_float(alloc, &target->attrs, attr_name, existing->value.f + delta);
@@ -826,9 +876,9 @@ static bool
 execute_toggle_attr_action(struct EngineContext *ctx, Allocator *alloc, const ActionNode *node, ActionContext context)
 {
     char attr_name[MAX_ARG];
-    Entity *target = resolve_target(node->argument, context, attr_name, MAX_ARG);
+    Entity *target = resolve_target(node->argument.ptr, context, attr_name, MAX_ARG);
     if (!target) {
-        debug_log(ctx, "toggle_attr: target not found: %s", node->argument);
+        debug_log(ctx, "toggle_attr: target not found: %s", node->argument.ptr);
         return true;
     }
     bool current_val = entity_get_bool(target, attr_name, false);
@@ -839,19 +889,19 @@ static bool
 execute_set_var_action(struct EngineContext *ctx, Allocator *alloc, const ActionNode *node, ActionContext context)
 {
     char resolved_value[MAX_ARG];
-    resolve_arg(resolved_value, MAX_ARG, node->second_argument, context);
+    resolve_arg(resolved_value, MAX_ARG, node->second_argument.ptr, context);
 
     AttrSet *target_vars;
     const char *var_name;
-    if (strv_starts_with_cstr(strv_from_cstr(node->argument), GLOBAL_VAR_PREFIX)) {
+    if (strv_starts_with_cstr(str_to_strv(node->argument), GLOBAL_VAR_PREFIX)) {
         target_vars = context.global_vars;
-        var_name = node->argument + strlen(GLOBAL_VAR_PREFIX);
+        var_name = node->argument.ptr + strlen(GLOBAL_VAR_PREFIX);
     } else {
         target_vars = context.local_vars;
-        var_name = node->argument;
+        var_name = node->argument.ptr;
     }
     if (!target_vars) {
-        debug_log(ctx, "set_var: no var storage for '%s'", node->argument);
+        debug_log(ctx, "set_var: no var storage for '%s'", node->argument.ptr);
         return true;
     }
     if (strcmp(resolved_value, "true") == 0) {
@@ -886,6 +936,7 @@ static bool push_branch_nodes(
 
 static bool expand_if_else_node(struct EngineContext *ctx,
                                 const ActionNode *node,
+                                Allocator *alloc,
                                 ActionContext context,
                                 const ActionNode **exec_stack,
                                 int *stack_top)
@@ -898,7 +949,7 @@ static bool expand_if_else_node(struct EngineContext *ctx,
         .local_vars = context.local_vars,
         .global_vars = context.global_vars,
     };
-    bool condition_met = evaluate_condition_string(ctx, node->argument, cond_ctx);
+    bool condition_met = evaluate_condition_string(ctx, alloc, node->argument.ptr, cond_ctx);
     const ActionNode *branch;
     int branch_count;
     if (condition_met) {
@@ -914,7 +965,7 @@ static bool expand_if_else_node(struct EngineContext *ctx,
 static bool
 expand_repeat_node(struct EngineContext *ctx, const ActionNode *node, const ActionNode **exec_stack, int *stack_top)
 {
-    int repeat_count = (int)strtol(node->argument, NULL, RADIX_DECIMAL);
+    int repeat_count = (int)strtol(node->argument.ptr, NULL, RADIX_DECIMAL);
     if (repeat_count <= 0) {
         repeat_count = 1;
     }
@@ -931,10 +982,10 @@ dispatch_simple_action(struct EngineContext *ctx, Allocator *alloc, const Action
 {
     switch (node->type) {
     case ACTION_SET_FLAG:
-        flag_set(alloc, context.flags, node->argument);
+        flag_set(alloc, context.flags, node->argument.ptr);
         return true;
     case ACTION_CLEAR_FLAG:
-        flag_clear(alloc, context.flags, node->argument);
+        flag_clear(alloc, context.flags, node->argument.ptr);
         return true;
     case ACTION_SET_ATTR:
         return execute_set_attr_action(ctx, alloc, node, context);
@@ -948,12 +999,11 @@ dispatch_simple_action(struct EngineContext *ctx, Allocator *alloc, const Action
         context.entity->active = false;
         return true;
     case ACTION_FIRE_EVENT: {
-        TriggerEvent fire = {.type = TRIGGER_EVENT, .entity_index = -1};
-        strncpy(fire.argument, node->argument, MAX_ARG - 1);
+        TriggerEvent fire = {.type = TRIGGER_EVENT, .entity_index = -1, .argument = node->argument};
         return trigger_event_queue_push(context.event_queue, fire);
     }
     default:
-        debug_log(ctx, "action stub: %s (not yet implemented)", node->argument);
+        debug_log(ctx, "action stub: %s (not yet implemented)", node->argument.ptr);
         return true;
     }
 }
@@ -967,7 +1017,7 @@ bool action_node_execute(struct EngineContext *ctx, Allocator *alloc, const Acti
     while (stack_top > 0) {
         const ActionNode *current = exec_stack[--stack_top];
         if (current->type == ACTION_IF_ELSE) {
-            if (!expand_if_else_node(ctx, current, context, exec_stack, &stack_top)) {
+            if (!expand_if_else_node(ctx, current, alloc, context, exec_stack, &stack_top)) {
                 return false;
             }
         } else if (current->type == ACTION_REPEAT) {

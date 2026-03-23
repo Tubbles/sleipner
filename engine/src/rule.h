@@ -33,7 +33,7 @@ typedef enum {
 
 typedef struct {
     TriggerType type;
-    char argument[MAX_ARG];
+    Str argument;
 } Trigger;
 
 /* --- Condition types --- */
@@ -51,7 +51,7 @@ typedef enum {
 
 typedef struct {
     ConditionType type;
-    char argument[MAX_ARG];
+    Str argument;
     float compare_value;
 } Condition;
 
@@ -88,8 +88,8 @@ typedef struct ActionNode ActionNode;
 
 struct ActionNode {
     ActionType type;
-    char argument[MAX_ARG];
-    char second_argument[MAX_ARG];
+    Str argument;
+    Str second_argument;
 
     // For control flow nodes
     ActionNode *children;
@@ -131,7 +131,7 @@ void flag_set_free(Allocator *alloc, FlagSet *flags);
 typedef struct {
     TriggerType type;
     int entity_index;
-    char argument[MAX_ARG];
+    Str argument;
 } TriggerEvent;
 
 #define MAX_CASCADE_EVENTS 64
@@ -152,10 +152,12 @@ typedef struct {
 }
 
 /* --- Parsing (from TOML) --- */
-[[nodiscard]] bool trigger_parse(struct EngineContext *ctx, Trigger *trigger, const char *string);
-[[nodiscard]] bool condition_parse(struct EngineContext *ctx, Condition *condition, const char *string);
-[[nodiscard]] bool action_node_parse(struct EngineContext *ctx, ActionNode *node, toml_datum_t value, Arena *arena);
-[[nodiscard]] bool rules_parse(struct EngineContext *ctx, RuleSet *rules, void *toml_blueprint_table, Arena *arena);
+[[nodiscard]] bool trigger_parse(struct EngineContext *ctx, Allocator *alloc, Trigger *trigger, const char *string);
+[[nodiscard]] bool
+condition_parse(struct EngineContext *ctx, Allocator *alloc, Condition *condition, const char *string);
+[[nodiscard]] bool action_node_parse(struct EngineContext *ctx, Allocator *alloc, ActionNode *node, toml_datum_t value);
+[[nodiscard]] bool
+rules_parse(struct EngineContext *ctx, Allocator *alloc, RuleSet *rules, void *toml_blueprint_table, Arena *arena);
 
 /* --- Trigger matching --- */
 bool trigger_matches(const Trigger *trigger, const TriggerEvent *event);

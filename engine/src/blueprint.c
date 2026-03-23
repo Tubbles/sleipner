@@ -323,7 +323,7 @@ static bool parse_single_blueprint(Allocator *alloc, Blueprint *blueprint, toml_
         return false;
     }
     struct EngineContext *ctx = alloc ? alloc->ctx : NULL;
-    if (!rules_parse(ctx, &blueprint->rules, entry, arena)) {
+    if (!rules_parse(ctx, alloc, &blueprint->rules, entry, arena)) {
         if (ctx) {
             error_wrap(ctx, "blueprint '%s'", blueprint->name.ptr);
         }
