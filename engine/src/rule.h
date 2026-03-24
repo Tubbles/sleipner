@@ -3,10 +3,12 @@
 
 #include "alloc.h"
 #include "arena.h"
-#include "blueprint.h"
 #include "entity.h"
 #include "str.h"
 #include "vec.h" // IWYU pragma: export
+
+/* Forward declaration — include blueprint.h for the full definition. */
+typedef struct BlueprintTable BlueprintTable;
 
 #include <stdbool.h>
 
@@ -107,12 +109,14 @@ typedef struct {
     vec_action_node nodes;
 } ActionTree;
 
-/* --- Rule (named struct to match forward declaration in blueprint.h) --- */
+/* --- Rule --- */
 typedef struct Rule {
     Trigger trigger;
     vec_condition conditions;
     ActionTree action_tree;
 } Rule;
+
+VEC_DECL(rule, Rule)
 
 /* --- FlagSet (global boolean flags) --- */
 typedef struct {
@@ -160,7 +164,7 @@ typedef struct {
 condition_parse(struct EngineContext *ctx, Allocator *alloc, Condition *condition, const char *string);
 [[nodiscard]] bool action_node_parse(struct EngineContext *ctx, Allocator *alloc, ActionNode *node, toml_datum_t value);
 [[nodiscard]] bool
-rules_parse(struct EngineContext *ctx, Allocator *alloc, RuleSet *rules, void *toml_blueprint_table, Arena *arena);
+rules_parse(struct EngineContext *ctx, Allocator *alloc, vec_rule *rules, void *toml_blueprint_table, Arena *arena);
 
 /* --- Trigger matching --- */
 bool trigger_matches(const Trigger *trigger, const TriggerEvent *event);

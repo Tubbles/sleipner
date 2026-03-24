@@ -730,11 +730,11 @@ void test_rules_parse_from_toml(void)
     TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 65536));
     Allocator alloc = allocator_arena(&ctx, &arena);
 
-    RuleSet rules;
+    vec_rule rules = {0};
     TEST_ASSERT_TRUE(rules_parse(&ctx, &alloc, &rules, root, &arena));
     TEST_ASSERT_EQUAL_INT(1, rules.count);
 
-    const Rule *rule = &rules.entries[0];
+    const Rule *rule = &rules.data[0];
     TEST_ASSERT_EQUAL_INT(TRIGGER_INTERACT, rule->trigger.type);
     TEST_ASSERT_EQUAL_INT(1, rule->conditions.count);
     TEST_ASSERT_EQUAL_INT(COND_FLAG, rule->conditions.data[0].type);
@@ -762,7 +762,7 @@ void test_rules_parse_no_rules(void)
     TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 65536));
     Allocator alloc = allocator_arena(&ctx, &arena);
 
-    RuleSet rules;
+    vec_rule rules = {0};
     TEST_ASSERT_TRUE(rules_parse(&ctx, &alloc, &rules, root, &arena));
     TEST_ASSERT_EQUAL_INT(0, rules.count);
 
@@ -792,13 +792,13 @@ void test_rules_parse_multiple_rules(void)
     TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 65536));
     Allocator alloc = allocator_arena(&ctx, &arena);
 
-    RuleSet rules;
+    vec_rule rules = {0};
     TEST_ASSERT_TRUE(rules_parse(&ctx, &alloc, &rules, root, &arena));
     TEST_ASSERT_EQUAL_INT(2, rules.count);
 
-    TEST_ASSERT_EQUAL_INT(TRIGGER_INTERACT, rules.entries[0].trigger.type);
-    TEST_ASSERT_EQUAL_INT(TRIGGER_EVENT, rules.entries[1].trigger.type);
-    TEST_ASSERT_EQUAL_STRING("reset", rules.entries[1].trigger.argument.ptr);
+    TEST_ASSERT_EQUAL_INT(TRIGGER_INTERACT, rules.data[0].trigger.type);
+    TEST_ASSERT_EQUAL_INT(TRIGGER_EVENT, rules.data[1].trigger.type);
+    TEST_ASSERT_EQUAL_STRING("reset", rules.data[1].trigger.argument.ptr);
 
     toml_free(root);
     arena_free(&arena);
@@ -823,8 +823,7 @@ void test_evaluate_interact_sets_flag(void)
     TEST_ASSERT_TRUE(str_from_cstr(&rule_alloc, &node_interact.argument, "chest_opened"));
     TEST_ASSERT_TRUE(vec_action_node_push(&rule->action_tree.nodes, node_interact, &rule_alloc));
 
-    blueprint.rules.entries = rule;
-    blueprint.rules.count = 1;
+    TEST_ASSERT_TRUE(vec_rule_push(&blueprint.rules, *rule, &rule_alloc));
 
     Entity entity = {0};
     entity.active = true;
@@ -868,8 +867,7 @@ void test_evaluate_condition_blocks_action(void)
     TEST_ASSERT_TRUE(str_from_cstr(&rule_alloc, &node_blocked.argument, "chest_opened"));
     TEST_ASSERT_TRUE(vec_action_node_push(&rule->action_tree.nodes, node_blocked, &rule_alloc));
 
-    blueprint.rules.entries = rule;
-    blueprint.rules.count = 1;
+    TEST_ASSERT_TRUE(vec_rule_push(&blueprint.rules, *rule, &rule_alloc));
 
     Entity entity = {0};
     entity.active = true;
@@ -908,8 +906,7 @@ void test_evaluate_fire_event_cascading(void)
     ActionNode switch_node = {.type = ACTION_FIRE_EVENT};
     TEST_ASSERT_TRUE(str_from_cstr(&rule_alloc, &switch_node.argument, "switch_pulled"));
     TEST_ASSERT_TRUE(vec_action_node_push(&switch_rule->action_tree.nodes, switch_node, &rule_alloc));
-    bp_switch.rules.entries = switch_rule;
-    bp_switch.rules.count = 1;
+    TEST_ASSERT_TRUE(vec_rule_push(&bp_switch.rules, *switch_rule, &rule_alloc));
 
     Blueprint bp_door = {0};
     TEST_ASSERT_TRUE(str_from_cstr(NULL, &bp_door.name, "door"));
@@ -921,8 +918,7 @@ void test_evaluate_fire_event_cascading(void)
     ActionNode door_node = {.type = ACTION_SET_FLAG};
     TEST_ASSERT_TRUE(str_from_cstr(&rule_alloc, &door_node.argument, "door_opened"));
     TEST_ASSERT_TRUE(vec_action_node_push(&door_rule->action_tree.nodes, door_node, &rule_alloc));
-    bp_door.rules.entries = door_rule;
-    bp_door.rules.count = 1;
+    TEST_ASSERT_TRUE(vec_rule_push(&bp_door.rules, *door_rule, &rule_alloc));
 
     Entity entities[2] = {0};
     entities[0].active = true;
@@ -1185,7 +1181,7 @@ void test_integration_interact_rule(void)
     const Blueprint *chest_bp = blueprint_find(&state.blueprints, "chest");
     TEST_ASSERT_NOT_NULL(chest_bp);
     TEST_ASSERT_EQUAL_INT(1, chest_bp->rules.count);
-    TEST_ASSERT_EQUAL_INT(TRIGGER_INTERACT, chest_bp->rules.entries[0].trigger.type);
+    TEST_ASSERT_EQUAL_INT(TRIGGER_INTERACT, chest_bp->rules.data[0].trigger.type);
 
     TEST_ASSERT_FALSE(flag_get(&state.flags, "chest_opened"));
 

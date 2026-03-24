@@ -4,6 +4,7 @@
 #include "alloc.h"
 #include "arena.h"
 #include "attribute.h"
+#include "rule.h"
 #include "str.h"
 #include "vec.h"
 
@@ -12,11 +13,6 @@
 #include <stdbool.h>
 
 struct EngineContext;
-
-typedef struct {
-    struct Rule *entries;
-    int count;
-} RuleSet;
 
 typedef struct {
     Str blueprint_name;
@@ -35,14 +31,15 @@ typedef struct {
     Vector2 collision_size;
     AttrSet attrs;
     vec_blueprint_child children;
-    RuleSet rules;
+    vec_rule rules;
 } Blueprint;
 
 VEC_DECL(blueprint, Blueprint)
 
-typedef struct {
+typedef struct BlueprintTable BlueprintTable;
+struct BlueprintTable {
     vec_blueprint entries;
-} BlueprintTable;
+};
 
 /* Parse all [[blueprint]] entries from a tomlc99 root table into the blueprint table.
  * Arena is used for variable-length data (rule arrays).

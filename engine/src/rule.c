@@ -25,6 +25,7 @@
 VEC_IMPL(flag_name, FlagName)
 VEC_IMPL(condition, Condition)
 VEC_IMPL(action_node, ActionNode)
+VEC_IMPL(rule, Rule)
 
 /* ---- FlagSet ---- */
 
@@ -544,6 +545,7 @@ parse_single_rule(struct EngineContext *ctx, Allocator *alloc, Rule *rule, toml_
 
     toml_array_t *actions = toml_array_in(entry, "actions");
     if (!parse_actions_array(ctx, alloc, rule, actions, arena)) {
+        vec_condition_free(&rule->conditions, alloc);
         error_wrap(ctx, "rule actions");
         return false;
     }
@@ -551,10 +553,9 @@ parse_single_rule(struct EngineContext *ctx, Allocator *alloc, Rule *rule, toml_
     return true;
 }
 
-bool rules_parse(struct EngineContext *ctx, Allocator *alloc, RuleSet *rules, void *toml_blueprint_table, Arena *arena)
+bool rules_parse(struct EngineContext *ctx, Allocator *alloc, vec_rule *rules, void *toml_blueprint_table, Arena *arena)
 {
-    rules->entries = NULL;
-    rules->count = 0;
+    *rules = (vec_rule){0};
 
     toml_array_t *rule_array = toml_array_in(toml_blueprint_table, "rule");
     if (!rule_array) {
@@ -570,27 +571,27 @@ bool rules_parse(struct EngineContext *ctx, Allocator *alloc, RuleSet *rules, vo
         return false;
     }
 
-    Rule *entries =
-        arena_alloc(ctx, arena, (AllocRequest){.size = (size_t)count * sizeof(Rule), .alignment = _Alignof(Rule)});
-    if (!entries) {
-        error_wrap(ctx, "rules_parse: arena_alloc");
-        return false;
-    }
-
     for (int index = 0; index < count; index++) {
         toml_table_t *entry = toml_table_at(rule_array, index);
         if (!entry) {
             error_set(ctx, "rule[%d]: toml_table_at returned NULL", index);
             return false;
         }
-        if (!parse_single_rule(ctx, alloc, &entries[index], entry, arena)) {
+        Rule rule = {0};
+        if (!parse_single_rule(ctx, alloc, &rule, entry, arena)) {
+            vec_condition_free(&rule.conditions, alloc);
+            vec_action_node_free(&rule.action_tree.nodes, alloc);
             error_wrap(ctx, "rule[%d]", index);
+            return false;
+        }
+        if (!vec_rule_push(rules, rule, alloc)) {
+            vec_condition_free(&rule.conditions, alloc);
+            vec_action_node_free(&rule.action_tree.nodes, alloc);
+            error_set(ctx, "rule[%d]: out of memory", index);
             return false;
         }
     }
 
-    rules->entries = entries;
-    rules->count = count;
     return true;
 }
 
@@ -1064,9 +1065,9 @@ static void evaluate_entity_rules(struct EngineContext *ctx,
     if (!blueprint) {
         return;
     }
-    const RuleSet *ruleset = &blueprint->rules;
+    const vec_rule *ruleset = &blueprint->rules;
     for (int rule_index = 0; rule_index < ruleset->count; rule_index++) {
-        const Rule *rule = &ruleset->entries[rule_index];
+        const Rule *rule = &ruleset->data[rule_index];
         if (!rule_triggered_by_events(rule, entity_index, pending_events)) {
             continue;
         }
