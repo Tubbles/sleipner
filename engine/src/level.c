@@ -77,8 +77,13 @@ static bool spawn_children_for(Allocator *alloc,
                                void *texture_user_data)
 {
     struct EngineContext *ctx = alloc ? alloc->ctx : NULL;
-    /* Save parent fields before any push that could invalidate the pointer. */
-    const Blueprint *parent_blueprint = level->entities.data[parent_index].blueprint;
+    /* Look up the parent blueprint by name (saved before any push that could
+     * reallocate the entities vec and invalidate pointers). */
+    const Blueprint *parent_blueprint =
+        blueprint_find(blueprints, level->entities.data[parent_index].blueprint_name.ptr);
+    if (!parent_blueprint || parent_blueprint->children.count == 0) {
+        return true;
+    }
     Vector2 parent_position = level->entities.data[parent_index].position;
 
     for (int index = 0; index < parent_blueprint->children.count; index++) {
@@ -93,12 +98,21 @@ static bool spawn_children_for(Allocator *alloc,
 
         Texture2D *texture = texture_lookup(child_blueprint->texture_name.ptr, texture_user_data);
         Vector2 child_position = {parent_position.x + child_def->offset.x, parent_position.y + child_def->offset.y};
+        EntitySpec child_spec = {
+            .blueprint_name = str_to_strv(child_blueprint->name),
+            .defaults = &child_blueprint->attrs,
+            .source = child_blueprint->source,
+            .collision_offset = child_blueprint->collision_offset,
+            .collision_size = child_blueprint->collision_size,
+            .texture = texture,
+        };
 
         Entity child = {0};
-        if (!entity_init_from_blueprint(&child, child_blueprint, child_position, texture, alloc)) {
-            error_set(ctx, "entity_init_from_blueprint failed for child blueprint '%s'", child_blueprint->name.ptr);
+        if (!entity_init(&child, child_spec, child_position, alloc)) {
+            error_set(ctx, "entity_init failed for child blueprint '%s'", child_blueprint->name.ptr);
             return false;
         }
+        child.id = level->next_entity_id++;
         child.parent_index = parent_index;
         child.offset = child_def->offset;
         if (child_def->tag.len > 0 && !str_from_strv(alloc, &child.tag, str_to_strv(child_def->tag))) {
@@ -126,7 +140,8 @@ static bool instantiate_children(Allocator *alloc,
     struct EngineContext *ctx = alloc ? alloc->ctx : NULL;
     int scan_index = start_index;
     while (scan_index < level->entities.count) {
-        const Blueprint *scan_blueprint = level->entities.data[scan_index].blueprint;
+        const Blueprint *scan_blueprint =
+            blueprint_find(blueprints, level->entities.data[scan_index].blueprint_name.ptr);
         if (scan_blueprint && scan_blueprint->children.count > 0) {
             int depth = entity_depth(level->entities.data, scan_index);
             if (depth >= MAX_CHILD_DEPTH) {
@@ -186,12 +201,21 @@ static void parse_entity(Allocator *alloc,
         return;
     }
 
+    EntitySpec spec = {
+        .blueprint_name = str_to_strv(blueprint->name),
+        .defaults = &blueprint->attrs,
+        .source = blueprint->source,
+        .collision_offset = blueprint->collision_offset,
+        .collision_size = blueprint->collision_size,
+        .texture = texture,
+    };
     int parent_index = level->entities.count;
     Entity entity_temp = {0};
-    if (!entity_init_from_blueprint(&entity_temp, blueprint, (Vector2){position_x, position_y}, texture, alloc)) {
-        debug_log(ctx, "ent[%d]: entity_init_from_blueprint failed", entity_index);
+    if (!entity_init(&entity_temp, spec, (Vector2){position_x, position_y}, alloc)) {
+        debug_log(ctx, "ent[%d]: entity_init failed", entity_index);
         return;
     }
+    entity_temp.id = level->next_entity_id++;
     parse_instance_overrides(alloc, &entity_temp, entity_table);
     if (!vec_entity_push(&level->entities, entity_temp, alloc)) {
         debug_log(ctx, "ent[%d]: out of memory", entity_index);

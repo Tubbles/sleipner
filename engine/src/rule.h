@@ -3,6 +3,7 @@
 
 #include "alloc.h"
 #include "arena.h"
+#include "blueprint.h"
 #include "entity.h"
 #include "str.h"
 #include "vec.h" // IWYU pragma: export
@@ -199,6 +200,7 @@ void rules_evaluate_batch(struct EngineContext *ctx,
                           const TriggerEvent *events,
                           int event_count,
                           FlagSet *flags,
-                          AttrSet *global_vars);
+                          AttrSet *global_vars,
+                          const BlueprintTable *blueprints);
 
 #endif

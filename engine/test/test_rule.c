@@ -828,17 +828,22 @@ void test_evaluate_interact_sets_flag(void)
 
     Entity entity = {0};
     entity.active = true;
-    entity.blueprint = &blueprint;
+    TEST_ASSERT_TRUE(str_from_cstr(NULL, &entity.blueprint_name, "chest"));
+
+    BlueprintTable blueprints = {0};
+    TEST_ASSERT_TRUE(vec_blueprint_push(&blueprints.entries, blueprint, NULL));
 
     FlagSet flags = {0};
     AttrSet global_vars = {0};
     TriggerEvent event = {.type = TRIGGER_INTERACT, .entity_index = 0};
 
-    rules_evaluate_batch(&ctx, NULL, &entity, 1, &event, 1, &flags, &global_vars);
+    rules_evaluate_batch(&ctx, NULL, &entity, 1, &event, 1, &flags, &global_vars, &blueprints);
     TEST_ASSERT_TRUE(flag_get(&flags, "chest_opened"));
 
     arena_free(&arena);
     str_free(NULL, &blueprint.name);
+    str_free(NULL, &entity.blueprint_name);
+    vec_blueprint_free(&blueprints.entries, NULL);
     test_flag_set_free(&flags);
     test_attr_set_free(&global_vars);
 }
@@ -868,17 +873,22 @@ void test_evaluate_condition_blocks_action(void)
 
     Entity entity = {0};
     entity.active = true;
-    entity.blueprint = &blueprint;
+    TEST_ASSERT_TRUE(str_from_cstr(NULL, &entity.blueprint_name, "chest"));
+
+    BlueprintTable blueprints = {0};
+    TEST_ASSERT_TRUE(vec_blueprint_push(&blueprints.entries, blueprint, NULL));
 
     FlagSet flags = {0};
     AttrSet global_vars = {0};
     TriggerEvent event = {.type = TRIGGER_INTERACT, .entity_index = 0};
 
-    rules_evaluate_batch(&ctx, NULL, &entity, 1, &event, 1, &flags, &global_vars);
+    rules_evaluate_batch(&ctx, NULL, &entity, 1, &event, 1, &flags, &global_vars, &blueprints);
     TEST_ASSERT_FALSE(flag_get(&flags, "chest_opened"));
 
     arena_free(&arena);
     str_free(NULL, &blueprint.name);
+    str_free(NULL, &entity.blueprint_name);
+    vec_blueprint_free(&blueprints.entries, NULL);
     test_flag_set_free(&flags);
     test_attr_set_free(&global_vars);
 }
@@ -916,17 +926,19 @@ void test_evaluate_fire_event_cascading(void)
 
     Entity entities[2] = {0};
     entities[0].active = true;
-    entities[0].blueprint = &bp_switch;
     TEST_ASSERT_TRUE(str_from_cstr(NULL, &entities[0].blueprint_name, "switch"));
     entities[1].active = true;
-    entities[1].blueprint = &bp_door;
     TEST_ASSERT_TRUE(str_from_cstr(NULL, &entities[1].blueprint_name, "door"));
+
+    BlueprintTable blueprints = {0};
+    TEST_ASSERT_TRUE(vec_blueprint_push(&blueprints.entries, bp_switch, NULL));
+    TEST_ASSERT_TRUE(vec_blueprint_push(&blueprints.entries, bp_door, NULL));
 
     FlagSet flags = {0};
     AttrSet global_vars = {0};
     TriggerEvent event = {.type = TRIGGER_INTERACT, .entity_index = 0};
 
-    rules_evaluate_batch(&ctx, NULL, entities, 2, &event, 1, &flags, &global_vars);
+    rules_evaluate_batch(&ctx, NULL, entities, 2, &event, 1, &flags, &global_vars, &blueprints);
     TEST_ASSERT_TRUE(flag_get(&flags, "door_opened"));
 
     arena_free(&arena);
@@ -934,6 +946,7 @@ void test_evaluate_fire_event_cascading(void)
     str_free(NULL, &bp_door.name);
     str_free(NULL, &entities[0].blueprint_name);
     str_free(NULL, &entities[1].blueprint_name);
+    vec_blueprint_free(&blueprints.entries, NULL);
     test_flag_set_free(&flags);
     test_attr_set_free(&global_vars);
 }

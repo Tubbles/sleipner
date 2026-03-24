@@ -2,6 +2,7 @@
 #define LEVEL_H
 
 #include "alloc.h"
+#include "blueprint.h"
 #include "entity.h"
 #include "str.h"
 
@@ -18,6 +19,7 @@ typedef struct {
     Str music_name;
     int width;
     int height;
+    int next_entity_id;
     vec_entity entities;
 } Level;
 

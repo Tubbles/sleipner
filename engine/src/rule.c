@@ -1057,9 +1057,14 @@ static void evaluate_entity_rules(struct EngineContext *ctx,
                                   FlagSet *flags,
                                   AttrSet *global_vars,
                                   const TriggerEventQueue *pending_events,
-                                  TriggerEventQueue *next_events)
+                                  TriggerEventQueue *next_events,
+                                  const BlueprintTable *blueprints)
 {
-    const RuleSet *ruleset = &entity->blueprint->rules;
+    const Blueprint *blueprint = blueprint_find(blueprints, entity->blueprint_name.ptr);
+    if (!blueprint) {
+        return;
+    }
+    const RuleSet *ruleset = &blueprint->rules;
     for (int rule_index = 0; rule_index < ruleset->count; rule_index++) {
         const Rule *rule = &ruleset->entries[rule_index];
         if (!rule_triggered_by_events(rule, entity_index, pending_events)) {
@@ -1084,15 +1089,15 @@ static void evaluate_entity_rules(struct EngineContext *ctx,
             .local_vars = &local_vars,
             .global_vars = global_vars,
         };
-        debug_log(ctx, "Rule triggered for entity %d (type: %s), rule %d", entity_index, entity->blueprint->name.ptr,
+        debug_log(ctx, "Rule triggered for entity %d (type: %s), rule %d", entity_index, entity->blueprint_name.ptr,
                   rule_index);
         if (!conditions_evaluate(rule->conditions.data, rule->conditions.count, cond_ctx)) {
             debug_log(ctx, "Conditions not met for rule %d on entity %d (type: %s)", rule_index, entity_index,
-                      entity->blueprint->name.ptr);
+                      entity->blueprint_name.ptr);
             continue;
         }
         debug_log(ctx, "Executing actions for rule %d on entity %d (type: %s)", rule_index, entity_index,
-                  entity->blueprint->name.ptr);
+                  entity->blueprint_name.ptr);
         for (int action_index = 0; action_index < rule->action_tree.nodes.count; action_index++) {
             (void)action_node_execute(ctx, alloc, &rule->action_tree.nodes.data[action_index], act_ctx);
         }
@@ -1107,7 +1112,8 @@ void rules_evaluate_batch(struct EngineContext *ctx,
                           const TriggerEvent *events,
                           int event_count,
                           FlagSet *flags,
-                          AttrSet *global_vars)
+                          AttrSet *global_vars,
+                          const BlueprintTable *blueprints)
 {
     TriggerEventQueue pending_events = {0};
     for (int event_index = 0; event_index < event_count; event_index++) {
@@ -1119,14 +1125,11 @@ void rules_evaluate_batch(struct EngineContext *ctx,
 
         for (int entity_index = 0; entity_index < entity_count; entity_index++) {
             Entity *entity = &entities[entity_index];
-            if (!entity->active || !entity->blueprint) {
-                continue;
-            }
-            if (entity->blueprint->rules.count == 0) {
+            if (!entity->active || entity->blueprint_name.len == 0) {
                 continue;
             }
             evaluate_entity_rules(ctx, alloc, entity, entity_index, entities, entity_count, flags, global_vars,
-                                  &pending_events, &next_events);
+                                  &pending_events, &next_events, blueprints);
         }
 
         pending_events = next_events;

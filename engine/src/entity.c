@@ -1,7 +1,6 @@
 #include "entity.h"
 #include "alloc.h"
 #include "attribute.h"
-#include "blueprint.h"
 #include "str.h"
 #include "strv.h"
 #include "vec.h"
@@ -14,8 +13,8 @@ VEC_IMPL(entity, Entity)
 
 const Attribute *entity_get_attr(const Entity *entity, const char *name)
 {
-    if (entity->blueprint) {
-        return attr_get_scoped(&entity->attrs, &entity->blueprint->attrs, name);
+    if (entity->defaults) {
+        return attr_get_scoped(&entity->attrs, entity->defaults, name);
     }
     return attr_get(&entity->attrs, name);
 }
@@ -68,32 +67,35 @@ const char *entity_get_string(const Entity *entity, const char *name)
     return NULL;
 }
 
-bool entity_init_from_blueprint(
-    Entity *entity, const Blueprint *blueprint, Vector2 position, Texture2D *texture, Allocator *alloc)
+bool entity_init(Entity *entity, EntitySpec spec, Vector2 position, Allocator *alloc)
 {
     memset(entity, 0, sizeof(*entity));
 
-    if (!str_from_strv(alloc, &entity->blueprint_name, str_to_strv(blueprint->name))) {
+    if (!str_from_strv(alloc, &entity->blueprint_name, spec.blueprint_name)) {
         return false;
     }
-    entity->blueprint = blueprint;
+    entity->defaults = spec.defaults;
 
     entity->position = position;
-    entity->texture = texture;
-    entity->source = blueprint->source;
+    entity->texture = spec.texture;
+    entity->source = spec.source;
+    entity->collision_offset = spec.collision_offset;
+    entity->collision_size = spec.collision_size;
     entity->collision = (Rectangle){
-        position.x + blueprint->collision_offset.x,
-        position.y + blueprint->collision_offset.y,
-        blueprint->collision_size.x,
-        blueprint->collision_size.y,
+        position.x + spec.collision_offset.x,
+        position.y + spec.collision_offset.y,
+        spec.collision_size.x,
+        spec.collision_size.y,
     };
 
     /* Built-in defaults */
-    entity->health = attr_get_int(&blueprint->attrs, "health", 0);
-    entity->max_health = attr_get_int(&blueprint->attrs, "max_health", 0);
+    if (spec.defaults) {
+        entity->health = attr_get_int(spec.defaults, "health", 0);
+        entity->max_health = attr_get_int(spec.defaults, "max_health", 0);
+    }
     entity->visible = true;
     entity->active = true;
-    entity->solid = (bool)((blueprint->collision_size.x > 0.0F) || (blueprint->collision_size.y > 0.0F));
+    entity->solid = (bool)((spec.collision_size.x > 0.0F) || (spec.collision_size.y > 0.0F));
     entity->opacity = 1.0F;
     entity->parent_index = -1;
     return true;
@@ -101,10 +103,8 @@ bool entity_init_from_blueprint(
 
 void entity_update_collision(Entity *entity)
 {
-    if (entity->blueprint) {
-        entity->collision.x = entity->position.x + entity->blueprint->collision_offset.x;
-        entity->collision.y = entity->position.y + entity->blueprint->collision_offset.y;
-    }
+    entity->collision.x = entity->position.x + entity->collision_offset.x;
+    entity->collision.y = entity->position.y + entity->collision_offset.y;
 }
 
 static int find_entity_index(const Entity *entity, const Entity *entities, int entity_count)

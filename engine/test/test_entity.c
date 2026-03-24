@@ -6,6 +6,18 @@
 
 #include <string.h>
 
+static EntitySpec spec_from_blueprint(const Blueprint *blueprint, Texture2D *texture)
+{
+    return (EntitySpec){
+        .blueprint_name = str_to_strv(blueprint->name),
+        .defaults = &blueprint->attrs,
+        .source = blueprint->source,
+        .collision_offset = blueprint->collision_offset,
+        .collision_size = blueprint->collision_size,
+        .texture = texture,
+    };
+}
+
 static Blueprint make_test_blueprint(void)
 {
     Blueprint blueprint = {0};
@@ -28,12 +40,20 @@ void test_entity_init_from_blueprint(void)
 {
     Blueprint blueprint = make_test_blueprint();
     Texture2D dummy = {0};
+    EntitySpec spec = {
+        .blueprint_name = str_to_strv(blueprint.name),
+        .defaults = &blueprint.attrs,
+        .source = blueprint.source,
+        .collision_offset = blueprint.collision_offset,
+        .collision_size = blueprint.collision_size,
+        .texture = &dummy,
+    };
     Entity entity;
 
-    TEST_ASSERT_TRUE(entity_init_from_blueprint(&entity, &blueprint, (Vector2){100, 200}, &dummy, NULL));
+    TEST_ASSERT_TRUE(entity_init(&entity, spec, (Vector2){100, 200}, NULL));
 
     TEST_ASSERT_EQUAL_STRING("chest", entity.blueprint_name.ptr);
-    TEST_ASSERT_TRUE(entity.blueprint == &blueprint);
+    TEST_ASSERT_TRUE(entity.defaults == &blueprint.attrs);
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 100.0F, entity.position.x);
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 200.0F, entity.position.y);
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 102.0F, entity.collision.x);
@@ -57,7 +77,7 @@ void test_entity_get_attr_from_blueprint(void)
     Texture2D dummy = {0};
     Entity entity;
 
-    TEST_ASSERT_TRUE(entity_init_from_blueprint(&entity, &blueprint, (Vector2){0, 0}, &dummy, NULL));
+    TEST_ASSERT_TRUE(entity_init(&entity, spec_from_blueprint(&blueprint, &dummy), (Vector2){0, 0}, NULL));
 
     /* No instance overrides — falls back to blueprint */
     TEST_ASSERT_EQUAL_STRING("static", entity_get_string(&entity, "behavior"));
@@ -73,7 +93,7 @@ void test_entity_instance_overrides_blueprint(void)
     Texture2D dummy = {0};
     Entity entity;
 
-    TEST_ASSERT_TRUE(entity_init_from_blueprint(&entity, &blueprint, (Vector2){0, 0}, &dummy, NULL));
+    TEST_ASSERT_TRUE(entity_init(&entity, spec_from_blueprint(&blueprint, &dummy), (Vector2){0, 0}, NULL));
 
     /* Override at instance level */
     TEST_ASSERT_TRUE(attr_set_bool(NULL, &entity.attrs, "is_locked", false));
@@ -95,7 +115,7 @@ void test_entity_get_missing_attr(void)
     Texture2D dummy = {0};
     Entity entity;
 
-    TEST_ASSERT_TRUE(entity_init_from_blueprint(&entity, &blueprint, (Vector2){0, 0}, &dummy, NULL));
+    TEST_ASSERT_TRUE(entity_init(&entity, spec_from_blueprint(&blueprint, &dummy), (Vector2){0, 0}, NULL));
 
     TEST_ASSERT_EQUAL_INT(42, entity_get_int(&entity, "nonexistent", 42));
     TEST_ASSERT_NULL(entity_get_string(&entity, "nope"));
@@ -111,7 +131,7 @@ void test_entity_int_float_coercion(void)
 
     Texture2D dummy = {0};
     Entity entity;
-    TEST_ASSERT_TRUE(entity_init_from_blueprint(&entity, &blueprint, (Vector2){0, 0}, &dummy, NULL));
+    TEST_ASSERT_TRUE(entity_init(&entity, spec_from_blueprint(&blueprint, &dummy), (Vector2){0, 0}, NULL));
 
     /* Int attr retrieved as float via coercion */
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 80.0F, entity_get_float(&entity, "speed", 0));
@@ -126,7 +146,7 @@ void test_entity_no_blueprint(void)
 
     TEST_ASSERT_TRUE(attr_set_float(NULL, &entity.attrs, "speed", 100.0F));
 
-    /* Works without a blueprint */
+    /* Works without defaults */
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 100.0F, entity_get_float(&entity, "speed", 0));
     TEST_ASSERT_EQUAL_INT(0, entity_get_int(&entity, "missing", 0));
     test_entity_free(&entity);
@@ -140,7 +160,7 @@ void test_entity_solid_from_collision(void)
 
     Texture2D dummy = {0};
     Entity entity;
-    TEST_ASSERT_TRUE(entity_init_from_blueprint(&entity, &no_collision, (Vector2){0, 0}, &dummy, NULL));
+    TEST_ASSERT_TRUE(entity_init(&entity, spec_from_blueprint(&no_collision, &dummy), (Vector2){0, 0}, NULL));
 
     TEST_ASSERT_FALSE(entity.solid);
     test_blueprint_free(&no_collision);

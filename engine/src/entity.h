@@ -3,7 +3,6 @@
 
 #include "alloc.h"
 #include "attribute.h"
-#include "blueprint.h"
 #include "str.h"
 #include "vec.h" // IWYU pragma: export
 
@@ -11,58 +10,71 @@
 
 #include <stdbool.h>
 
+/* Blueprint properties needed to initialize an entity. Caller owns all
+ * pointed-to data for the duration of entity_init — nothing is borrowed
+ * beyond that call. */
 typedef struct {
-    /* Identity */
+    Strv blueprint_name;
+    const AttrSet *defaults;
+    Rectangle source;
+    Vector2 collision_offset;
+    Vector2 collision_size;
+    Texture2D *texture;
+} EntitySpec;
+
+typedef struct {
+    /* Pointers (8 bytes each, no padding gap) */
+    const AttrSet *defaults;
+    Texture2D *texture;
+
+    /* Attrs + identity strings (all naturally aligned) */
+    AttrSet attrs;
     Str blueprint_name;
-    const Blueprint *blueprint;
     Str tag;
 
-    /* Built-in attributes */
-    Vector2 position;
+    /* Scalar fields (4 bytes each, packed together) */
+    int id;
     int health;
     int max_health;
-    bool visible;
-    bool active;
-    bool solid;
     float opacity;
+    int anim_row;
+    float frame_timer;
+    int frame_index;
+    int parent_index;
 
-    /* Rendering */
-    Texture2D *texture;
+    /* Vectors (8 bytes each) */
+    Vector2 position;
+    Vector2 collision_offset;
+    Vector2 collision_size;
+    Vector2 offset;
+
+    /* Rectangles (16 bytes each) */
     Rectangle source;
     Rectangle collision;
 
-    /* Animation (runtime state, not persisted) */
-    int anim_row;
+    /* Bools (1 byte each, packed at end) */
+    bool visible;
+    bool active;
+    bool solid;
     bool flip;
-    float frame_timer;
-    int frame_index;
     bool moving;
-
-    /* Custom attributes (instance overrides) */
-    AttrSet attrs;
-
-    /* Composition */
-    int parent_index;
-    Vector2 offset;
 } Entity;
 
-/* Get an attribute with instance -> blueprint fallback.
+/* Get an attribute with instance -> defaults fallback.
  * Returns NULL if not found in either. */
 const Attribute *entity_get_attr(const Entity *entity, const char *name);
 
-/* Typed getters with instance -> blueprint fallback. */
+/* Typed getters with instance -> defaults fallback. */
 float entity_get_float(const Entity *entity, const char *name, float fallback);
 int entity_get_int(const Entity *entity, const char *name, int fallback);
 bool entity_get_bool(const Entity *entity, const char *name, bool fallback);
 const char *entity_get_string(const Entity *entity, const char *name);
 
-/* Initialize an entity from a blueprint. Sets built-in attributes
- * from blueprint defaults and copies rendering fields.
- * Returns false on allocation failure. */
-[[nodiscard]] bool entity_init_from_blueprint(
-    Entity *entity, const Blueprint *blueprint, Vector2 position, Texture2D *texture, Allocator *alloc);
+/* Initialize an entity from a spec. Copies blueprint_name; borrows defaults
+ * pointer. Returns false on allocation failure. */
+[[nodiscard]] bool entity_init(Entity *entity, EntitySpec spec, Vector2 position, Allocator *alloc);
 
-/* Recompute collision rect from position + blueprint offsets.
+/* Recompute collision rect from position + entity's stored collision_offset.
  * Call after moving an entity. */
 void entity_update_collision(Entity *entity);
 

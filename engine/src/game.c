@@ -230,7 +230,7 @@ static int detect_interact_targets(struct EngineContext *ctx,
         float distance_sq = (delta_x * delta_x) + (delta_y * delta_y);
         if (distance_sq <= INTERACT_RANGE * INTERACT_RANGE) {
             debug_log(ctx, "Player within interact range of entity %d (type: %s)", index,
-                      entities[index].blueprint->name.ptr);
+                      entities[index].blueprint_name.ptr);
             out_events[count] = (TriggerEvent){
                 .type = TRIGGER_INTERACT,
                 .entity_index = index,
@@ -290,7 +290,7 @@ void game_update(struct EngineContext *ctx, GameState *state, InputState input, 
     if (trigger_count > 0) {
         Allocator rule_alloc = allocator_arena(ctx, &state->gamedata_arena);
         rules_evaluate_batch(ctx, &rule_alloc, state->current_level.entities.data, state->current_level.entities.count,
-                             trigger_events, trigger_count, &state->flags, &state->vars);
+                             trigger_events, trigger_count, &state->flags, &state->vars, &state->blueprints);
     }
 }
 
