@@ -29,6 +29,7 @@ typedef struct {
     int player_index;
     Arena gamedata_arena;
     BlueprintTable blueprints;
+    map_entity_ruleset rule_table;
     Level current_level;
     FlagSet flags;
     AttrSet vars;

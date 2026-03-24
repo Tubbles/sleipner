@@ -3,10 +3,10 @@
 #include "vec.h"
 #include "arena.h"
 #include "attribute.h"
-#include "blueprint.h"
 #include "debug.h"
 #include "entity.h"
 #include "error.h"
+#include "map.h"
 #include "str.h"
 #include "strv.h"
 
@@ -26,6 +26,7 @@ VEC_IMPL(flag_name, FlagName)
 VEC_IMPL(condition, Condition)
 VEC_IMPL(action_node, ActionNode)
 VEC_IMPL(rule, Rule)
+MAP_IMPL(entity_ruleset, int, vec_rule, map_hash_int, map_eq_int)
 
 /* ---- FlagSet ---- */
 
@@ -1059,13 +1060,12 @@ static void evaluate_entity_rules(struct EngineContext *ctx,
                                   AttrSet *global_vars,
                                   const TriggerEventQueue *pending_events,
                                   TriggerEventQueue *next_events,
-                                  const BlueprintTable *blueprints)
+                                  map_entity_ruleset *rule_table)
 {
-    const Blueprint *blueprint = blueprint_find(blueprints, entity->blueprint_name.ptr);
-    if (!blueprint) {
+    const vec_rule *ruleset = map_entity_ruleset_get(rule_table, entity->id);
+    if (!ruleset) {
         return;
     }
-    const vec_rule *ruleset = &blueprint->rules;
     for (int rule_index = 0; rule_index < ruleset->count; rule_index++) {
         const Rule *rule = &ruleset->data[rule_index];
         if (!rule_triggered_by_events(rule, entity_index, pending_events)) {
@@ -1114,7 +1114,7 @@ void rules_evaluate_batch(struct EngineContext *ctx,
                           int event_count,
                           FlagSet *flags,
                           AttrSet *global_vars,
-                          const BlueprintTable *blueprints)
+                          map_entity_ruleset *rule_table)
 {
     TriggerEventQueue pending_events = {0};
     for (int event_index = 0; event_index < event_count; event_index++) {
@@ -1126,11 +1126,11 @@ void rules_evaluate_batch(struct EngineContext *ctx,
 
         for (int entity_index = 0; entity_index < entity_count; entity_index++) {
             Entity *entity = &entities[entity_index];
-            if (!entity->active || entity->blueprint_name.len == 0) {
+            if (!entity->active) {
                 continue;
             }
             evaluate_entity_rules(ctx, alloc, entity, entity_index, entities, entity_count, flags, global_vars,
-                                  &pending_events, &next_events, blueprints);
+                                  &pending_events, &next_events, rule_table);
         }
 
         pending_events = next_events;

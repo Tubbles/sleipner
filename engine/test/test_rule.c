@@ -827,22 +827,24 @@ void test_evaluate_interact_sets_flag(void)
 
     Entity entity = {0};
     entity.active = true;
+    entity.id = 0;
     TEST_ASSERT_TRUE(str_from_cstr(NULL, &entity.blueprint_name, "chest"));
 
-    BlueprintTable blueprints = {0};
-    TEST_ASSERT_TRUE(vec_blueprint_push(&blueprints.entries, blueprint, NULL));
+    map_entity_ruleset rule_table = {0};
+    Allocator heap_alloc = allocator_heap();
+    TEST_ASSERT_TRUE(map_entity_ruleset_set(&rule_table, entity.id, blueprint.rules, &heap_alloc));
 
     FlagSet flags = {0};
     AttrSet global_vars = {0};
     TriggerEvent event = {.type = TRIGGER_INTERACT, .entity_index = 0};
 
-    rules_evaluate_batch(&ctx, NULL, &entity, 1, &event, 1, &flags, &global_vars, &blueprints);
+    rules_evaluate_batch(&ctx, NULL, &entity, 1, &event, 1, &flags, &global_vars, &rule_table);
     TEST_ASSERT_TRUE(flag_get(&flags, "chest_opened"));
 
     arena_free(&arena);
     str_free(NULL, &blueprint.name);
     str_free(NULL, &entity.blueprint_name);
-    vec_blueprint_free(&blueprints.entries, NULL);
+    map_entity_ruleset_free(&rule_table, &heap_alloc);
     test_flag_set_free(&flags);
     test_attr_set_free(&global_vars);
 }
@@ -871,22 +873,24 @@ void test_evaluate_condition_blocks_action(void)
 
     Entity entity = {0};
     entity.active = true;
+    entity.id = 0;
     TEST_ASSERT_TRUE(str_from_cstr(NULL, &entity.blueprint_name, "chest"));
 
-    BlueprintTable blueprints = {0};
-    TEST_ASSERT_TRUE(vec_blueprint_push(&blueprints.entries, blueprint, NULL));
+    map_entity_ruleset rule_table = {0};
+    Allocator heap_alloc = allocator_heap();
+    TEST_ASSERT_TRUE(map_entity_ruleset_set(&rule_table, entity.id, blueprint.rules, &heap_alloc));
 
     FlagSet flags = {0};
     AttrSet global_vars = {0};
     TriggerEvent event = {.type = TRIGGER_INTERACT, .entity_index = 0};
 
-    rules_evaluate_batch(&ctx, NULL, &entity, 1, &event, 1, &flags, &global_vars, &blueprints);
+    rules_evaluate_batch(&ctx, NULL, &entity, 1, &event, 1, &flags, &global_vars, &rule_table);
     TEST_ASSERT_FALSE(flag_get(&flags, "chest_opened"));
 
     arena_free(&arena);
     str_free(NULL, &blueprint.name);
     str_free(NULL, &entity.blueprint_name);
-    vec_blueprint_free(&blueprints.entries, NULL);
+    map_entity_ruleset_free(&rule_table, &heap_alloc);
     test_flag_set_free(&flags);
     test_attr_set_free(&global_vars);
 }
@@ -922,19 +926,22 @@ void test_evaluate_fire_event_cascading(void)
 
     Entity entities[2] = {0};
     entities[0].active = true;
+    entities[0].id = 0;
     TEST_ASSERT_TRUE(str_from_cstr(NULL, &entities[0].blueprint_name, "switch"));
     entities[1].active = true;
+    entities[1].id = 1;
     TEST_ASSERT_TRUE(str_from_cstr(NULL, &entities[1].blueprint_name, "door"));
 
-    BlueprintTable blueprints = {0};
-    TEST_ASSERT_TRUE(vec_blueprint_push(&blueprints.entries, bp_switch, NULL));
-    TEST_ASSERT_TRUE(vec_blueprint_push(&blueprints.entries, bp_door, NULL));
+    map_entity_ruleset rule_table = {0};
+    Allocator heap_alloc = allocator_heap();
+    TEST_ASSERT_TRUE(map_entity_ruleset_set(&rule_table, entities[0].id, bp_switch.rules, &heap_alloc));
+    TEST_ASSERT_TRUE(map_entity_ruleset_set(&rule_table, entities[1].id, bp_door.rules, &heap_alloc));
 
     FlagSet flags = {0};
     AttrSet global_vars = {0};
     TriggerEvent event = {.type = TRIGGER_INTERACT, .entity_index = 0};
 
-    rules_evaluate_batch(&ctx, NULL, entities, 2, &event, 1, &flags, &global_vars, &blueprints);
+    rules_evaluate_batch(&ctx, NULL, entities, 2, &event, 1, &flags, &global_vars, &rule_table);
     TEST_ASSERT_TRUE(flag_get(&flags, "door_opened"));
 
     arena_free(&arena);
@@ -942,7 +949,7 @@ void test_evaluate_fire_event_cascading(void)
     str_free(NULL, &bp_door.name);
     str_free(NULL, &entities[0].blueprint_name);
     str_free(NULL, &entities[1].blueprint_name);
-    vec_blueprint_free(&blueprints.entries, NULL);
+    map_entity_ruleset_free(&rule_table, &heap_alloc);
     test_flag_set_free(&flags);
     test_attr_set_free(&global_vars);
 }

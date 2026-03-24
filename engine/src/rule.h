@@ -4,11 +4,9 @@
 #include "alloc.h"
 #include "arena.h"
 #include "entity.h"
+#include "map.h" // IWYU pragma: export
 #include "str.h"
 #include "vec.h" // IWYU pragma: export
-
-/* Forward declaration — include blueprint.h for the full definition. */
-typedef struct BlueprintTable BlueprintTable;
 
 #include <stdbool.h>
 
@@ -118,6 +116,9 @@ typedef struct Rule {
 
 VEC_DECL(rule, Rule)
 
+/* Maps entity ID (int) to the entity's rule set (vec_rule shallow copy). */
+MAP_DECL(entity_ruleset, int, vec_rule)
+
 /* --- FlagSet (global boolean flags) --- */
 typedef struct {
     Str name;
@@ -205,6 +206,6 @@ void rules_evaluate_batch(struct EngineContext *ctx,
                           int event_count,
                           FlagSet *flags,
                           AttrSet *global_vars,
-                          const BlueprintTable *blueprints);
+                          map_entity_ruleset *rule_table);
 
 #endif

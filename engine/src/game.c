@@ -58,6 +58,7 @@ bool game_load_gamedata(struct EngineContext *ctx, GameState *state, GamedataPar
     char errbuf[TOML_ERRBUF_SIZE];
     toml_table_t *root = toml_parse(buffer, errbuf, (int)sizeof(errbuf));
     arena_reset(&state->gamedata_arena);
+    state->rule_table = (map_entity_ruleset){0};
 
     if (!root) {
         error_set(ctx, "toml_parse: %s", errbuf);
@@ -76,6 +77,13 @@ bool game_load_gamedata(struct EngineContext *ctx, GameState *state, GamedataPar
 
     if (level_ok) {
         state->player_index = find_player_entity(&state->current_level);
+        for (int index = 0; index < state->current_level.entities.count; index++) {
+            const Entity *entity = &state->current_level.entities.data[index];
+            const Blueprint *blueprint = blueprint_find(&state->blueprints, entity->blueprint_name.ptr);
+            if (blueprint && blueprint->rules.count > 0) {
+                (void)map_entity_ruleset_set(&state->rule_table, entity->id, blueprint->rules, &gamedata_alloc);
+            }
+        }
     } else {
         error_wrap(ctx, "game_load_gamedata");
     }
@@ -290,7 +298,7 @@ void game_update(struct EngineContext *ctx, GameState *state, InputState input, 
     if (trigger_count > 0) {
         Allocator rule_alloc = allocator_arena(ctx, &state->gamedata_arena);
         rules_evaluate_batch(ctx, &rule_alloc, state->current_level.entities.data, state->current_level.entities.count,
-                             trigger_events, trigger_count, &state->flags, &state->vars, &state->blueprints);
+                             trigger_events, trigger_count, &state->flags, &state->vars, &state->rule_table);
     }
 }
 
