@@ -162,7 +162,7 @@ static void resolve_player_obstacles(Level *level, int player_index)
 {
     Entity *player = &level->entities.data[player_index];
     for (int index = 0; index < level->entities.count; index++) {
-        if (index == player_index || !level->entities.data[index].solid) {
+        if (index == player_index || !entity_get_bool(&level->entities.data[index], "solid", false)) {
             continue;
         }
         Rectangle hitbox = player->collision;
@@ -230,7 +230,7 @@ static int detect_interact_targets(struct EngineContext *ctx,
 {
     int count = 0;
     for (int index = 0; index < entity_count && count < max_events; index++) {
-        if (index == player_index || !entities[index].active) {
+        if (index == player_index || !entity_get_bool(&entities[index], "active", true)) {
             continue;
         }
         float delta_x = entities[index].position.x - player->position.x;

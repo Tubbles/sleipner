@@ -16,7 +16,6 @@
 typedef struct {
     Strv blueprint_name;
     const AttrSet *defaults;
-    Rectangle source;
     Vector2 collision_offset;
     Vector2 collision_size;
     Texture2D *texture;
@@ -34,9 +33,6 @@ typedef struct {
 
     /* Scalar fields (4 bytes each, packed together) */
     int id;
-    int health;
-    int max_health;
-    float opacity;
     int anim_row;
     float frame_timer;
     int frame_index;
@@ -49,13 +45,9 @@ typedef struct {
     Vector2 offset;
 
     /* Rectangles (16 bytes each) */
-    Rectangle source;
     Rectangle collision;
 
     /* Bools (1 byte each, packed at end) */
-    bool visible;
-    bool active;
-    bool solid;
     bool flip;
     bool moving;
 } Entity;
@@ -69,6 +61,9 @@ float entity_get_float(const Entity *entity, const char *name, float fallback);
 int entity_get_int(const Entity *entity, const char *name, int fallback);
 bool entity_get_bool(const Entity *entity, const char *name, bool fallback);
 const char *entity_get_string(const Entity *entity, const char *name);
+
+/* Source rectangle from src_x/y/w/h attrs (instance -> defaults fallback). */
+Rectangle entity_get_source(const Entity *entity);
 
 /* Initialize an entity from a spec. Copies blueprint_name; borrows defaults
  * pointer. Returns false on allocation failure. */

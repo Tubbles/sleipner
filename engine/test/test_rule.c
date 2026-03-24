@@ -497,7 +497,6 @@ void test_action_set_flag_executes(void)
     FlagSet flags = {0};
     TriggerEventQueue queue = {0};
     Entity entity = {0};
-    entity.active = true;
 
     ActionNode action = {.type = ACTION_SET_FLAG};
     TEST_ASSERT_TRUE(str_from_cstr(NULL, &action.argument, "chest_opened"));
@@ -644,7 +643,6 @@ void test_action_destroy(void)
     FlagSet flags = {0};
     TriggerEventQueue queue = {0};
     Entity entity = {0};
-    entity.active = true;
 
     ActionNode action = {.type = ACTION_DESTROY};
 
@@ -654,8 +652,9 @@ void test_action_destroy(void)
         .event_queue = &queue,
     };
     TEST_ASSERT_TRUE(action_node_execute(&ctx, NULL, &action, context));
-    TEST_ASSERT_FALSE(entity.active);
+    TEST_ASSERT_FALSE(entity_get_bool(&entity, "active", true));
     test_flag_set_free(&flags);
+    test_attr_set_free(&entity.attrs);
 }
 
 void test_action_fire_event_queues(void)
@@ -826,7 +825,6 @@ void test_evaluate_interact_sets_flag(void)
     TEST_ASSERT_TRUE(vec_rule_push(&blueprint.rules, *rule, &rule_alloc));
 
     Entity entity = {0};
-    entity.active = true;
     entity.id = 0;
     TEST_ASSERT_TRUE(str_from_cstr(NULL, &entity.blueprint_name, "chest"));
 
@@ -872,7 +870,6 @@ void test_evaluate_condition_blocks_action(void)
     TEST_ASSERT_TRUE(vec_rule_push(&blueprint.rules, *rule, &rule_alloc));
 
     Entity entity = {0};
-    entity.active = true;
     entity.id = 0;
     TEST_ASSERT_TRUE(str_from_cstr(NULL, &entity.blueprint_name, "chest"));
 
@@ -925,10 +922,8 @@ void test_evaluate_fire_event_cascading(void)
     TEST_ASSERT_TRUE(vec_rule_push(&bp_door.rules, *door_rule, &rule_alloc));
 
     Entity entities[2] = {0};
-    entities[0].active = true;
     entities[0].id = 0;
     TEST_ASSERT_TRUE(str_from_cstr(NULL, &entities[0].blueprint_name, "switch"));
-    entities[1].active = true;
     entities[1].id = 1;
     TEST_ASSERT_TRUE(str_from_cstr(NULL, &entities[1].blueprint_name, "door"));
 

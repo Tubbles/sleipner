@@ -999,7 +999,7 @@ dispatch_simple_action(struct EngineContext *ctx, Allocator *alloc, const Action
     case ACTION_SET_VAR:
         return execute_set_var_action(ctx, alloc, node, context);
     case ACTION_DESTROY:
-        context.entity->active = false;
+        (void)attr_set_bool(alloc, &context.entity->attrs, "active", false);
         return true;
     case ACTION_FIRE_EVENT: {
         TriggerEvent fire = {.type = TRIGGER_EVENT, .entity_index = -1, .argument = node->argument};
@@ -1126,7 +1126,7 @@ void rules_evaluate_batch(struct EngineContext *ctx,
 
         for (int entity_index = 0; entity_index < entity_count; entity_index++) {
             Entity *entity = &entities[entity_index];
-            if (!entity->active) {
+            if (!entity_get_bool(entity, "active", true)) {
                 continue;
             }
             evaluate_entity_rules(ctx, alloc, entity, entity_index, entities, entity_count, flags, global_vars,

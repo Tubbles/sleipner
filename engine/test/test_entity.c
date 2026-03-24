@@ -14,7 +14,6 @@ static EntitySpec spec_from_blueprint(const Blueprint *blueprint, Texture2D *tex
     return (EntitySpec){
         .blueprint_name = strv_from_cstr(attr_get_string(&blueprint->attrs, "name")),
         .defaults = &blueprint->attrs,
-        .source = blueprint_get_source(blueprint),
         .collision_offset = blueprint_get_collision_offset(blueprint),
         .collision_size = blueprint_get_collision_size(blueprint),
         .texture = texture,
@@ -52,7 +51,6 @@ void test_entity_init_from_blueprint(void)
     EntitySpec spec = {
         .blueprint_name = strv_from_cstr(attr_get_string(&blueprint.attrs, "name")),
         .defaults = &blueprint.attrs,
-        .source = blueprint_get_source(&blueprint),
         .collision_offset = blueprint_get_collision_offset(&blueprint),
         .collision_size = blueprint_get_collision_size(&blueprint),
         .texture = &dummy,
@@ -69,12 +67,11 @@ void test_entity_init_from_blueprint(void)
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 204.0F, entity.collision.y);
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 12.0F, entity.collision.width);
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 8.0F, entity.collision.height);
-    TEST_ASSERT_EQUAL_INT(3, entity.health);
-    TEST_ASSERT_EQUAL_INT(5, entity.max_health);
-    TEST_ASSERT_TRUE(entity.visible);
-    TEST_ASSERT_TRUE(entity.active);
-    TEST_ASSERT_TRUE(entity.solid);
-    TEST_ASSERT_FLOAT_WITHIN(0.01F, 1.0F, entity.opacity);
+    TEST_ASSERT_EQUAL_INT(3, entity_get_int(&entity, "health", 0));
+    TEST_ASSERT_EQUAL_INT(5, entity_get_int(&entity, "max_health", 0));
+    TEST_ASSERT_TRUE(entity_get_bool(&entity, "visible", true));
+    TEST_ASSERT_TRUE(entity_get_bool(&entity, "active", true));
+    TEST_ASSERT_TRUE(entity_get_bool(&entity, "solid", false));
     TEST_ASSERT_EQUAL_INT(-1, entity.parent_index);
     test_blueprint_free(&blueprint);
     test_entity_free(&entity);
@@ -171,7 +168,7 @@ void test_entity_solid_from_collision(void)
     Entity entity;
     TEST_ASSERT_TRUE(entity_init(&entity, spec_from_blueprint(&no_collision, &dummy), (Vector2){0, 0}, NULL));
 
-    TEST_ASSERT_FALSE(entity.solid);
+    TEST_ASSERT_FALSE(entity_get_bool(&entity, "solid", true));
     test_blueprint_free(&no_collision);
     test_entity_free(&entity);
 }
@@ -183,20 +180,14 @@ static void make_entity_tree(Entity *entities)
 
     TEST_ASSERT_TRUE(str_from_cstr(NULL, &entities[0].blueprint_name, "wagon"));
     entities[0].parent_index = -1;
-    entities[0].visible = true;
-    entities[0].active = true;
 
     TEST_ASSERT_TRUE(str_from_cstr(NULL, &entities[1].blueprint_name, "lantern"));
     TEST_ASSERT_TRUE(str_from_cstr(NULL, &entities[1].tag, "light"));
     entities[1].parent_index = 0;
-    entities[1].visible = true;
-    entities[1].active = true;
 
     TEST_ASSERT_TRUE(str_from_cstr(NULL, &entities[2].blueprint_name, "wheel"));
     TEST_ASSERT_TRUE(str_from_cstr(NULL, &entities[2].tag, "front_wheel"));
     entities[2].parent_index = 0;
-    entities[2].visible = true;
-    entities[2].active = true;
 }
 
 static void free_entity_tree(Entity *entities)
@@ -270,7 +261,6 @@ void test_entity_is_visible_standalone(void)
 {
     Entity entity = {0};
     entity.parent_index = -1;
-    entity.visible = true;
 
     TEST_ASSERT_TRUE(entity_is_visible(0, &entity));
     test_entity_free(&entity);
@@ -282,7 +272,7 @@ void test_entity_is_visible_parent_hidden(void)
     make_entity_tree(entities);
 
     /* Child is visible, but parent is hidden */
-    entities[0].visible = false;
+    TEST_ASSERT_TRUE(attr_set_bool(NULL, &entities[0].attrs, "visible", false));
 
     TEST_ASSERT_FALSE(entity_is_visible(1, entities));
     free_entity_tree(entities);
@@ -302,7 +292,7 @@ void test_entity_is_active_parent_inactive(void)
     Entity entities[3];
     make_entity_tree(entities);
 
-    entities[0].active = false;
+    TEST_ASSERT_TRUE(attr_set_bool(NULL, &entities[0].attrs, "active", false));
 
     TEST_ASSERT_FALSE(entity_is_active(1, entities));
     free_entity_tree(entities);

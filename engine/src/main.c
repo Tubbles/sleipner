@@ -170,7 +170,7 @@ static void draw_player_entity(const Entity *player)
 
 static void draw_entity(const Entity *entity)
 {
-    DrawTextureRec(*entity->texture, entity->source, entity->position, WHITE);
+    DrawTextureRec(*entity->texture, entity_get_source(entity), entity->position, WHITE);
 }
 
 static void log_gamepad_changes(struct EngineContext *ctx, int *prev_gamepads, int frame)

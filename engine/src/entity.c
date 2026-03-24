@@ -78,7 +78,6 @@ bool entity_init(Entity *entity, EntitySpec spec, Vector2 position, Allocator *a
 
     entity->position = position;
     entity->texture = spec.texture;
-    entity->source = spec.source;
     entity->collision_offset = spec.collision_offset;
     entity->collision_size = spec.collision_size;
     entity->collision = (Rectangle){
@@ -88,15 +87,11 @@ bool entity_init(Entity *entity, EntitySpec spec, Vector2 position, Allocator *a
         spec.collision_size.y,
     };
 
-    /* Built-in defaults */
-    if (spec.defaults) {
-        entity->health = attr_get_int(spec.defaults, "health", 0);
-        entity->max_health = attr_get_int(spec.defaults, "max_health", 0);
+    bool is_solid = (bool)((spec.collision_size.x > 0.0F) || (spec.collision_size.y > 0.0F));
+    if (!attr_set_bool(alloc, &entity->attrs, "solid", is_solid)) {
+        str_free(alloc, &entity->blueprint_name);
+        return false;
     }
-    entity->visible = true;
-    entity->active = true;
-    entity->solid = (bool)((spec.collision_size.x > 0.0F) || (spec.collision_size.y > 0.0F));
-    entity->opacity = 1.0F;
     entity->parent_index = -1;
     return true;
 }
@@ -167,11 +162,21 @@ Entity *entity_find_by_tag_mut(Entity *source, const char *tag, Entity *entities
     return &entities[result - entities];
 }
 
+Rectangle entity_get_source(const Entity *entity)
+{
+    return (Rectangle){
+        entity_get_float(entity, "src_x", 0.0F),
+        entity_get_float(entity, "src_y", 0.0F),
+        entity_get_float(entity, "src_w", 0.0F),
+        entity_get_float(entity, "src_h", 0.0F),
+    };
+}
+
 bool entity_is_visible(int entity_index, const Entity *entities)
 {
     int current = entity_index;
     while (current >= 0) {
-        if (!entities[current].visible) {
+        if (!entity_get_bool(&entities[current], "visible", true)) {
             return false;
         }
         current = entities[current].parent_index;
@@ -183,7 +188,7 @@ bool entity_is_active(int entity_index, const Entity *entities)
 {
     int current = entity_index;
     while (current >= 0) {
-        if (!entities[current].active) {
+        if (!entity_get_bool(&entities[current], "active", true)) {
             return false;
         }
         current = entities[current].parent_index;
