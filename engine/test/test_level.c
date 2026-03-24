@@ -91,7 +91,7 @@ static toml_table_t *parse_toml(const char *input)
 void test_level_load_first(void)
 {
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 4096));
+    TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 32768));
     BlueprintTable blueprints;
     Level level = {0};
 
@@ -117,7 +117,7 @@ void test_level_load_first(void)
 void test_level_load_by_name(void)
 {
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 4096));
+    TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 32768));
     BlueprintTable blueprints;
     Level level = {0};
 
@@ -142,7 +142,7 @@ void test_level_load_by_name(void)
 void test_level_load_nonexistent(void)
 {
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 4096));
+    TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 32768));
     BlueprintTable blueprints;
     Level level = {0};
 
@@ -163,7 +163,7 @@ void test_level_load_nonexistent(void)
 void test_level_entity_positions(void)
 {
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 4096));
+    TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 32768));
     BlueprintTable blueprints;
     Level level = {0};
 
@@ -198,7 +198,7 @@ void test_level_entity_positions(void)
 void test_level_entity_source_rects(void)
 {
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 4096));
+    TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 32768));
     BlueprintTable blueprints;
     Level level = {0};
 
@@ -260,7 +260,7 @@ static const char *child_gamedata = "[[blueprint]]\n"
 void test_level_child_entities_instantiated(void)
 {
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 4096));
+    TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 32768));
     BlueprintTable blueprints;
     Level level = {0};
 
@@ -289,7 +289,7 @@ void test_level_child_entities_instantiated(void)
 void test_level_child_entity_positions(void)
 {
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 4096));
+    TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 32768));
     BlueprintTable blueprints;
     Level level = {0};
 
@@ -316,7 +316,7 @@ void test_level_child_entity_positions(void)
 void test_level_child_entity_tags(void)
 {
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 4096));
+    TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 32768));
     BlueprintTable blueprints;
     Level level = {0};
 
@@ -338,7 +338,7 @@ void test_level_child_entity_tags(void)
 void test_level_nested_children(void)
 {
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 4096));
+    TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 32768));
     BlueprintTable blueprints;
     Level level = {0};
 

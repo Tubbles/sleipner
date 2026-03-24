@@ -4,6 +4,7 @@
 #include "alloc.h"
 #include "arena.h"
 #include "assets.h"
+#include "attribute.h"
 #include "audio.h"
 #include "blueprint.h"
 #include "debug.h"
@@ -518,8 +519,8 @@ static void load_gamedata(struct EngineContext *ctx, GameState *state)
         debug_log(ctx, "gamedata: %d blueprints", state->blueprints.entries.count);
         for (int index = 0; index < state->blueprints.entries.count; index++) {
             const Blueprint *blueprint = &state->blueprints.entries.data[index];
-            debug_log(ctx, "  bp[%d]: '%s' tex='%s' attrs=%d", index, blueprint->name.ptr, blueprint->texture_name.ptr,
-                      blueprint->attrs.entries.count);
+            debug_log(ctx, "  bp[%d]: '%s' tex='%s' attrs=%d", index, attr_get_string(&blueprint->attrs, "name"),
+                      attr_get_string(&blueprint->attrs, "texture"), blueprint->attrs.entries.count);
         }
         debug_log(ctx, "gamedata: level '%s' (%dx%d, %d entities)", state->current_level.name.ptr,
                   state->current_level.width, state->current_level.height, state->current_level.entities.count);

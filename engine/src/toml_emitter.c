@@ -1,8 +1,11 @@
 #include "toml_emitter.h"
+#include "attribute.h"
 #include "blueprint.h"
 #include "entity.h"
 #include "error.h"
 #include "level.h"
+
+#include "raylib.h"
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -34,16 +37,19 @@ static int emit_blueprints(char *buffer, int capacity, int offset, const Bluepri
 {
     for (int index = 0; index < blueprints->entries.count; index++) {
         const Blueprint *blueprint = &blueprints->entries.data[index];
+        Rectangle source = blueprint_get_source(blueprint);
+        Vector2 col_offset = blueprint_get_collision_offset(blueprint);
+        Vector2 col_size = blueprint_get_collision_size(blueprint);
 
         offset = emit_append(buffer, capacity, offset, "[[blueprint]]\n");
-        offset = emit_append(buffer, capacity, offset, "name = \"%s\"\n", blueprint->name.ptr);
-        offset = emit_append(buffer, capacity, offset, "texture = \"%s\"\n", blueprint->texture_name.ptr);
-        offset = emit_append(buffer, capacity, offset, "src = [%d, %d, %d, %d]\n", (int)blueprint->source.x,
-                             (int)blueprint->source.y, (int)blueprint->source.width, (int)blueprint->source.height);
-        offset = emit_append(buffer, capacity, offset, "collision_offset = [%d, %d]\n",
-                             (int)blueprint->collision_offset.x, (int)blueprint->collision_offset.y);
-        offset = emit_append(buffer, capacity, offset, "collision_size = [%d, %d]\n", (int)blueprint->collision_size.x,
-                             (int)blueprint->collision_size.y);
+        offset = emit_append(buffer, capacity, offset, "name = \"%s\"\n", attr_get_string(&blueprint->attrs, "name"));
+        offset =
+            emit_append(buffer, capacity, offset, "texture = \"%s\"\n", attr_get_string(&blueprint->attrs, "texture"));
+        offset = emit_append(buffer, capacity, offset, "src = [%d, %d, %d, %d]\n", (int)source.x, (int)source.y,
+                             (int)source.width, (int)source.height);
+        offset = emit_append(buffer, capacity, offset, "collision_offset = [%d, %d]\n", (int)col_offset.x,
+                             (int)col_offset.y);
+        offset = emit_append(buffer, capacity, offset, "collision_size = [%d, %d]\n", (int)col_size.x, (int)col_size.y);
         offset = emit_append(buffer, capacity, offset, "\n");
 
         for (int child_index = 0; child_index < blueprint->children.count; child_index++) {

@@ -1,7 +1,10 @@
 #include "unity.h"
 
+#include "attribute.h"
+#include "blueprint.h"
 #include "entity.h"
 #include "str.h"
+#include "strv.h"
 #include "test_helpers.h"
 
 #include <string.h>
@@ -9,11 +12,11 @@
 static EntitySpec spec_from_blueprint(const Blueprint *blueprint, Texture2D *texture)
 {
     return (EntitySpec){
-        .blueprint_name = str_to_strv(blueprint->name),
+        .blueprint_name = strv_from_cstr(attr_get_string(&blueprint->attrs, "name")),
         .defaults = &blueprint->attrs,
-        .source = blueprint->source,
-        .collision_offset = blueprint->collision_offset,
-        .collision_size = blueprint->collision_size,
+        .source = blueprint_get_source(blueprint),
+        .collision_offset = blueprint_get_collision_offset(blueprint),
+        .collision_size = blueprint_get_collision_size(blueprint),
         .texture = texture,
     };
 }
@@ -21,11 +24,17 @@ static EntitySpec spec_from_blueprint(const Blueprint *blueprint, Texture2D *tex
 static Blueprint make_test_blueprint(void)
 {
     Blueprint blueprint = {0};
-    TEST_ASSERT_TRUE(str_from_cstr(NULL, &blueprint.name, "chest"));
-    TEST_ASSERT_TRUE(str_from_cstr(NULL, &blueprint.texture_name, "chest.png"));
-    blueprint.source = (Rectangle){0, 0, 16, 16};
-    blueprint.collision_offset = (Vector2){2, 4};
-    blueprint.collision_size = (Vector2){12, 8};
+    TEST_ASSERT_TRUE(attr_set_string(NULL, &blueprint.attrs, (AttrStringPair){.name = "name", .value = "chest"}));
+    TEST_ASSERT_TRUE(
+        attr_set_string(NULL, &blueprint.attrs, (AttrStringPair){.name = "texture", .value = "chest.png"}));
+    TEST_ASSERT_TRUE(attr_set_float(NULL, &blueprint.attrs, "src_x", 0.0F));
+    TEST_ASSERT_TRUE(attr_set_float(NULL, &blueprint.attrs, "src_y", 0.0F));
+    TEST_ASSERT_TRUE(attr_set_float(NULL, &blueprint.attrs, "src_w", 16.0F));
+    TEST_ASSERT_TRUE(attr_set_float(NULL, &blueprint.attrs, "src_h", 16.0F));
+    TEST_ASSERT_TRUE(attr_set_float(NULL, &blueprint.attrs, "collision_offset_x", 2.0F));
+    TEST_ASSERT_TRUE(attr_set_float(NULL, &blueprint.attrs, "collision_offset_y", 4.0F));
+    TEST_ASSERT_TRUE(attr_set_float(NULL, &blueprint.attrs, "collision_w", 12.0F));
+    TEST_ASSERT_TRUE(attr_set_float(NULL, &blueprint.attrs, "collision_h", 8.0F));
 
     TEST_ASSERT_TRUE(attr_set_string(NULL, &blueprint.attrs, (AttrStringPair){.name = "behavior", .value = "static"}));
     TEST_ASSERT_TRUE(attr_set_bool(NULL, &blueprint.attrs, "is_locked", true));
@@ -41,11 +50,11 @@ void test_entity_init_from_blueprint(void)
     Blueprint blueprint = make_test_blueprint();
     Texture2D dummy = {0};
     EntitySpec spec = {
-        .blueprint_name = str_to_strv(blueprint.name),
+        .blueprint_name = strv_from_cstr(attr_get_string(&blueprint.attrs, "name")),
         .defaults = &blueprint.attrs,
-        .source = blueprint.source,
-        .collision_offset = blueprint.collision_offset,
-        .collision_size = blueprint.collision_size,
+        .source = blueprint_get_source(&blueprint),
+        .collision_offset = blueprint_get_collision_offset(&blueprint),
+        .collision_size = blueprint_get_collision_size(&blueprint),
         .texture = &dummy,
     };
     Entity entity;
@@ -126,7 +135,7 @@ void test_entity_get_missing_attr(void)
 void test_entity_int_float_coercion(void)
 {
     Blueprint blueprint = {0};
-    TEST_ASSERT_TRUE(str_from_cstr(NULL, &blueprint.name, "test"));
+    TEST_ASSERT_TRUE(attr_set_string(NULL, &blueprint.attrs, (AttrStringPair){.name = "name", .value = "test"}));
     TEST_ASSERT_TRUE(attr_set_int(NULL, &blueprint.attrs, "speed", 80));
 
     Texture2D dummy = {0};
@@ -155,7 +164,7 @@ void test_entity_no_blueprint(void)
 void test_entity_solid_from_collision(void)
 {
     Blueprint no_collision = {0};
-    TEST_ASSERT_TRUE(str_from_cstr(NULL, &no_collision.name, "ghost"));
+    TEST_ASSERT_TRUE(attr_set_string(NULL, &no_collision.attrs, (AttrStringPair){.name = "name", .value = "ghost"}));
     /* collision_size is (0, 0) */
 
     Texture2D dummy = {0};

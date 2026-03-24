@@ -11,9 +11,6 @@ void test_blueprint_table_free(BlueprintTable *table)
 
 void test_blueprint_free(Blueprint *blueprint)
 {
-    str_free(NULL, &blueprint->name);
-    str_free(NULL, &blueprint->extends_name);
-    str_free(NULL, &blueprint->texture_name);
     for (int index = 0; index < blueprint->children.count; index++) {
         str_free(NULL, &blueprint->children.data[index].blueprint_name);
         str_free(NULL, &blueprint->children.data[index].tag);

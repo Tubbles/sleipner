@@ -6,6 +6,7 @@
 #include "entity.h"
 #include "error.h"
 #include "str.h"
+#include "strv.h"
 #include "toml_str.h"
 
 #include "raylib.h"
@@ -92,24 +93,25 @@ static bool spawn_children_for(Allocator *alloc,
         const Blueprint *child_blueprint = blueprint_find(blueprints, child_def->blueprint_name.ptr);
         if (!child_blueprint) {
             error_set(ctx, "child blueprint '%s' not found", child_def->blueprint_name.ptr);
-            error_wrap(ctx, "parent '%s' child[%d]", parent_blueprint->name.ptr, index);
+            error_wrap(ctx, "parent '%s' child[%d]", attr_get_string(&parent_blueprint->attrs, "name"), index);
             return false;
         }
 
-        Texture2D *texture = texture_lookup(child_blueprint->texture_name.ptr, texture_user_data);
+        Texture2D *texture = texture_lookup(attr_get_string(&child_blueprint->attrs, "texture"), texture_user_data);
         Vector2 child_position = {parent_position.x + child_def->offset.x, parent_position.y + child_def->offset.y};
         EntitySpec child_spec = {
-            .blueprint_name = str_to_strv(child_blueprint->name),
+            .blueprint_name = strv_from_cstr(attr_get_string(&child_blueprint->attrs, "name")),
             .defaults = &child_blueprint->attrs,
-            .source = child_blueprint->source,
-            .collision_offset = child_blueprint->collision_offset,
-            .collision_size = child_blueprint->collision_size,
+            .source = blueprint_get_source(child_blueprint),
+            .collision_offset = blueprint_get_collision_offset(child_blueprint),
+            .collision_size = blueprint_get_collision_size(child_blueprint),
             .texture = texture,
         };
 
         Entity child = {0};
         if (!entity_init(&child, child_spec, child_position, alloc)) {
-            error_set(ctx, "entity_init failed for child blueprint '%s'", child_blueprint->name.ptr);
+            error_set(ctx, "entity_init failed for child blueprint '%s'",
+                      attr_get_string(&child_blueprint->attrs, "name"));
             return false;
         }
         child.id = level->next_entity_id++;
@@ -195,18 +197,19 @@ static void parse_entity(Allocator *alloc,
         position_y = (float)pos_y.u.i;
     }
 
-    Texture2D *texture = texture_lookup(blueprint->texture_name.ptr, texture_user_data);
+    const char *texture_name = attr_get_string(&blueprint->attrs, "texture");
+    Texture2D *texture = texture_lookup(texture_name, texture_user_data);
     if (!texture) {
-        debug_log(ctx, "ent[%d]: texture '%s' not found", entity_index, blueprint->texture_name.ptr);
+        debug_log(ctx, "ent[%d]: texture '%s' not found", entity_index, texture_name);
         return;
     }
 
     EntitySpec spec = {
-        .blueprint_name = str_to_strv(blueprint->name),
+        .blueprint_name = strv_from_cstr(attr_get_string(&blueprint->attrs, "name")),
         .defaults = &blueprint->attrs,
-        .source = blueprint->source,
-        .collision_offset = blueprint->collision_offset,
-        .collision_size = blueprint->collision_size,
+        .source = blueprint_get_source(blueprint),
+        .collision_offset = blueprint_get_collision_offset(blueprint),
+        .collision_size = blueprint_get_collision_size(blueprint),
         .texture = texture,
     };
     int parent_index = level->entities.count;

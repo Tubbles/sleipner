@@ -23,12 +23,6 @@ typedef struct {
 VEC_DECL(blueprint_child, BlueprintChild)
 
 typedef struct {
-    Str name;
-    Str extends_name;
-    Str texture_name;
-    Rectangle source;
-    Vector2 collision_offset;
-    Vector2 collision_size;
     AttrSet attrs;
     vec_blueprint_child children;
     vec_rule rules;
@@ -40,6 +34,11 @@ typedef struct BlueprintTable BlueprintTable;
 struct BlueprintTable {
     vec_blueprint entries;
 };
+
+/* Geometry helpers — read src/collision attrs and assemble into raylib types. */
+Rectangle blueprint_get_source(const Blueprint *blp);
+Vector2 blueprint_get_collision_offset(const Blueprint *blp);
+Vector2 blueprint_get_collision_size(const Blueprint *blp);
 
 /* Parse all [[blueprint]] entries from a tomlc99 root table into the blueprint table.
  * Arena is used for variable-length data (rule arrays).

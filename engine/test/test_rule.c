@@ -809,7 +809,7 @@ void test_rules_parse_multiple_rules(void)
 void test_evaluate_interact_sets_flag(void)
 {
     Blueprint blueprint = {0};
-    TEST_ASSERT_TRUE(str_from_cstr(NULL, &blueprint.name, "chest"));
+    TEST_ASSERT_TRUE(attr_set_string(NULL, &blueprint.attrs, (AttrStringPair){.name = "name", .value = "chest"}));
 
     Arena arena;
     TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 65536));
@@ -842,7 +842,7 @@ void test_evaluate_interact_sets_flag(void)
     TEST_ASSERT_TRUE(flag_get(&flags, "chest_opened"));
 
     arena_free(&arena);
-    str_free(NULL, &blueprint.name);
+    attr_set_free(NULL, &blueprint.attrs);
     str_free(NULL, &entity.blueprint_name);
     map_entity_ruleset_free(&rule_table, &heap_alloc);
     test_flag_set_free(&flags);
@@ -852,7 +852,7 @@ void test_evaluate_interact_sets_flag(void)
 void test_evaluate_condition_blocks_action(void)
 {
     Blueprint blueprint = {0};
-    TEST_ASSERT_TRUE(str_from_cstr(NULL, &blueprint.name, "chest"));
+    TEST_ASSERT_TRUE(attr_set_string(NULL, &blueprint.attrs, (AttrStringPair){.name = "name", .value = "chest"}));
 
     Arena arena;
     TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 65536));
@@ -888,7 +888,7 @@ void test_evaluate_condition_blocks_action(void)
     TEST_ASSERT_FALSE(flag_get(&flags, "chest_opened"));
 
     arena_free(&arena);
-    str_free(NULL, &blueprint.name);
+    attr_set_free(NULL, &blueprint.attrs);
     str_free(NULL, &entity.blueprint_name);
     map_entity_ruleset_free(&rule_table, &heap_alloc);
     test_flag_set_free(&flags);
@@ -902,7 +902,7 @@ void test_evaluate_fire_event_cascading(void)
     Allocator rule_alloc = allocator_arena(&ctx, &arena);
 
     Blueprint bp_switch = {0};
-    TEST_ASSERT_TRUE(str_from_cstr(NULL, &bp_switch.name, "switch"));
+    TEST_ASSERT_TRUE(attr_set_string(NULL, &bp_switch.attrs, (AttrStringPair){.name = "name", .value = "switch"}));
 
     Rule *switch_rule = arena_alloc(&ctx, &arena, (AllocRequest){.size = sizeof(Rule), .alignment = _Alignof(Rule)});
     memset(switch_rule, 0, sizeof(*switch_rule));
@@ -913,7 +913,7 @@ void test_evaluate_fire_event_cascading(void)
     TEST_ASSERT_TRUE(vec_rule_push(&bp_switch.rules, *switch_rule, &rule_alloc));
 
     Blueprint bp_door = {0};
-    TEST_ASSERT_TRUE(str_from_cstr(NULL, &bp_door.name, "door"));
+    TEST_ASSERT_TRUE(attr_set_string(NULL, &bp_door.attrs, (AttrStringPair){.name = "name", .value = "door"}));
 
     Rule *door_rule = arena_alloc(&ctx, &arena, (AllocRequest){.size = sizeof(Rule), .alignment = _Alignof(Rule)});
     memset(door_rule, 0, sizeof(*door_rule));
@@ -945,8 +945,8 @@ void test_evaluate_fire_event_cascading(void)
     TEST_ASSERT_TRUE(flag_get(&flags, "door_opened"));
 
     arena_free(&arena);
-    str_free(NULL, &bp_switch.name);
-    str_free(NULL, &bp_door.name);
+    attr_set_free(NULL, &bp_switch.attrs);
+    attr_set_free(NULL, &bp_door.attrs);
     str_free(NULL, &entities[0].blueprint_name);
     str_free(NULL, &entities[1].blueprint_name);
     map_entity_ruleset_free(&rule_table, &heap_alloc);

@@ -140,6 +140,25 @@ const char *attr_get_string(const AttrSet *set, const char *name)
     return NULL;
 }
 
+void attr_remove(Allocator *alloc, AttrSet *set, const char *name)
+{
+    for (int index = 0; index < set->entries.count; index++) {
+        if (!strv_eq_cstr(str_to_strv(set->entries.data[index].name), name)) {
+            continue;
+        }
+        str_free(alloc, &set->entries.data[index].name);
+        if (set->entries.data[index].type == ATTR_STRING) {
+            str_free(alloc, &set->entries.data[index].value.str);
+        }
+        int last = set->entries.count - 1;
+        if (index != last) {
+            set->entries.data[index] = set->entries.data[last];
+        }
+        set->entries.count--;
+        return;
+    }
+}
+
 const Attribute *attr_get_scoped(const AttrSet *instance, const AttrSet *blueprint, const char *name)
 {
     const Attribute *entry = attr_get(instance, name);

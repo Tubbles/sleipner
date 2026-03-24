@@ -14,7 +14,7 @@ static struct EngineContext ctx;
 
 static void with_arena(Arena *arena)
 {
-    TEST_ASSERT_TRUE(arena_init(&ctx, arena, 4096));
+    TEST_ASSERT_TRUE(arena_init(&ctx, arena, 32768));
 }
 
 static toml_table_t *parse_toml(const char *input)
@@ -45,16 +45,17 @@ void test_blueprint_load_single(void)
     TEST_ASSERT_EQUAL_INT(1, count);
     TEST_ASSERT_EQUAL_INT(1, table.entries.count);
 
-    TEST_ASSERT_EQUAL_STRING("tree", table.entries.data[0].name.ptr);
-    TEST_ASSERT_EQUAL_STRING("tree.png", table.entries.data[0].texture_name.ptr);
-    TEST_ASSERT_FLOAT_WITHIN(0.1f, 0.0f, table.entries.data[0].source.x);
-    TEST_ASSERT_FLOAT_WITHIN(0.1f, 0.0f, table.entries.data[0].source.y);
-    TEST_ASSERT_FLOAT_WITHIN(0.1f, 64.0f, table.entries.data[0].source.width);
-    TEST_ASSERT_FLOAT_WITHIN(0.1f, 80.0f, table.entries.data[0].source.height);
-    TEST_ASSERT_FLOAT_WITHIN(0.1f, 20.0f, table.entries.data[0].collision_offset.x);
-    TEST_ASSERT_FLOAT_WITHIN(0.1f, 60.0f, table.entries.data[0].collision_offset.y);
-    TEST_ASSERT_FLOAT_WITHIN(0.1f, 24.0f, table.entries.data[0].collision_size.x);
-    TEST_ASSERT_FLOAT_WITHIN(0.1f, 16.0f, table.entries.data[0].collision_size.y);
+    const Blueprint *tree = &table.entries.data[0];
+    TEST_ASSERT_EQUAL_STRING("tree", attr_get_string(&tree->attrs, "name"));
+    TEST_ASSERT_EQUAL_STRING("tree.png", attr_get_string(&tree->attrs, "texture"));
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 0.0F, attr_get_float(&tree->attrs, "src_x", -1.0F));
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 0.0F, attr_get_float(&tree->attrs, "src_y", -1.0F));
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 64.0F, attr_get_float(&tree->attrs, "src_w", -1.0F));
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 80.0F, attr_get_float(&tree->attrs, "src_h", -1.0F));
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 20.0F, attr_get_float(&tree->attrs, "collision_offset_x", -1.0F));
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 60.0F, attr_get_float(&tree->attrs, "collision_offset_y", -1.0F));
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 24.0F, attr_get_float(&tree->attrs, "collision_w", -1.0F));
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 16.0F, attr_get_float(&tree->attrs, "collision_h", -1.0F));
 
     toml_free(root);
     (void)table;
@@ -84,8 +85,8 @@ void test_blueprint_load_multiple(void)
 
     int count = blueprints_load(&ctx, &table, root, &test_arena);
     TEST_ASSERT_EQUAL_INT(2, count);
-    TEST_ASSERT_EQUAL_STRING("tree", table.entries.data[0].name.ptr);
-    TEST_ASSERT_EQUAL_STRING("chest", table.entries.data[1].name.ptr);
+    TEST_ASSERT_EQUAL_STRING("tree", attr_get_string(&table.entries.data[0].attrs, "name"));
+    TEST_ASSERT_EQUAL_STRING("chest", attr_get_string(&table.entries.data[1].attrs, "name"));
 
     toml_free(root);
     (void)table;
@@ -117,8 +118,8 @@ void test_blueprint_find(void)
 
     const Blueprint *found = blueprint_find(&table, "chest");
     TEST_ASSERT_NOT_NULL(found);
-    TEST_ASSERT_EQUAL_STRING("chest", found->name.ptr);
-    TEST_ASSERT_EQUAL_STRING("chest.png", found->texture_name.ptr);
+    TEST_ASSERT_EQUAL_STRING("chest", attr_get_string(&found->attrs, "name"));
+    TEST_ASSERT_EQUAL_STRING("chest.png", attr_get_string(&found->attrs, "texture"));
 
     const Blueprint *not_found = blueprint_find(&table, "nonexistent");
     TEST_ASSERT_NULL(not_found);
@@ -147,7 +148,7 @@ void test_blueprint_skip_nameless(void)
 
     int count = blueprints_load(&ctx, &table, root, &test_arena);
     TEST_ASSERT_EQUAL_INT(1, count);
-    TEST_ASSERT_EQUAL_STRING("chest", table.entries.data[0].name.ptr);
+    TEST_ASSERT_EQUAL_STRING("chest", attr_get_string(&table.entries.data[0].attrs, "name"));
 
     toml_free(root);
     (void)table;
@@ -266,9 +267,9 @@ void test_blueprint_extends(void)
 
     /* Inherited from parent */
     TEST_ASSERT_EQUAL_STRING("static", attr_get_string(&locked->attrs, "behavior"));
-    TEST_ASSERT_EQUAL_STRING("chest.png", locked->texture_name.ptr);
-    TEST_ASSERT_FLOAT_WITHIN(0.1F, 16.0F, locked->source.width);
-    TEST_ASSERT_FLOAT_WITHIN(0.1F, 16.0F, locked->collision_size.x);
+    TEST_ASSERT_EQUAL_STRING("chest.png", attr_get_string(&locked->attrs, "texture"));
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 16.0F, attr_get_float(&locked->attrs, "src_w", -1.0F));
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 16.0F, attr_get_float(&locked->attrs, "collision_w", -1.0F));
 
     toml_free(root);
     (void)table;
@@ -467,7 +468,7 @@ void test_blueprint_extends_chain(void)
 
     /* Inherited through chain */
     TEST_ASSERT_EQUAL_STRING("static", attr_get_string(&top->attrs, "behavior"));
-    TEST_ASSERT_EQUAL_STRING("base.png", top->texture_name.ptr);
+    TEST_ASSERT_EQUAL_STRING("base.png", attr_get_string(&top->attrs, "texture"));
 
     toml_free(root);
     (void)table;

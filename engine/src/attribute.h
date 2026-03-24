@@ -58,6 +58,9 @@ int attr_get_int(const AttrSet *set, const char *name, int fallback);
 bool attr_get_bool(const AttrSet *set, const char *name, bool fallback);
 const char *attr_get_string(const AttrSet *set, const char *name);
 
+/* Remove an attribute by name. Swap-and-decrement. No-op if not found. */
+void attr_remove(Allocator *alloc, AttrSet *set, const char *name);
+
 /* Look up an attribute by name, falling back to a second set if not found
  * in the first. Used for instance -> blueprint scoping. */
 const Attribute *attr_get_scoped(const AttrSet *instance, const AttrSet *blueprint, const char *name);

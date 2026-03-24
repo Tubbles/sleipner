@@ -6,10 +6,10 @@
 #include "error.h"
 #include "rule.h"
 #include "str.h"
-#include "strv.h"
 #include "toml_str.h"
 #include "vec.h"
 
+#include "raylib.h"
 #include "toml.h"
 
 #include <stdlib.h>
@@ -42,9 +42,8 @@ static bool parse_float_array(toml_array_t *array, float *out, int expected_coun
 /* Keys with dedicated parsing — not treated as custom attributes */
 static bool is_known_key(const char *key)
 {
-    static const char *known[] = {"name",           "texture", "src",    "collision_offset",
-                                  "collision_size", "extends", "health", "animation",
-                                  "child",          "rule",    NULL};
+    static const char *known[] = {"name", "src", "collision_offset", "collision_size", "health", "animation", "child",
+                                  "rule", NULL};
     for (int index = 0; known[index]; index++) {
         if (strcmp(key, known[index]) == 0) {
             return true;
@@ -77,31 +76,6 @@ static bool parse_custom_attr(Allocator *alloc, AttrSet *attrs, toml_table_t *ta
         return result;
     }
     return true;
-}
-
-static bool inherit_rendering_fields(Allocator *alloc, Blueprint *child, const Blueprint *parent)
-{
-    bool changed = false;
-
-    if (child->texture_name.len == 0 && parent->texture_name.len > 0) {
-        if (!str_from_strv(alloc, &child->texture_name, str_to_strv(parent->texture_name))) {
-            return changed;
-        }
-        changed = true;
-    }
-    if (child->source.width == 0 && child->source.height == 0 &&
-        (parent->source.width != 0 || parent->source.height != 0)) {
-        child->source = parent->source;
-        changed = true;
-    }
-    if (child->collision_size.x == 0 && child->collision_size.y == 0 &&
-        (parent->collision_size.x != 0 || parent->collision_size.y != 0)) {
-        child->collision_offset = parent->collision_offset;
-        child->collision_size = parent->collision_size;
-        changed = true;
-    }
-
-    return changed;
 }
 
 static bool inherit_attributes(Allocator *alloc, Blueprint *child, const Blueprint *parent)
@@ -141,18 +115,17 @@ static bool inherit_attributes(Allocator *alloc, Blueprint *child, const Bluepri
 
 static bool inherit_from_parent(Allocator *alloc, Blueprint *child, const BlueprintTable *table)
 {
-    if (child->extends_name.len == 0) {
+    const char *extends = attr_get_string(&child->attrs, "extends");
+    if (!extends) {
         return false;
     }
 
-    const Blueprint *parent = blueprint_find(table, child->extends_name.ptr);
+    const Blueprint *parent = blueprint_find(table, extends);
     if (!parent) {
         return false;
     }
 
-    bool changed = inherit_rendering_fields(alloc, child, parent);
-    changed = (bool)(inherit_attributes(alloc, child, parent) || changed);
-    return changed;
+    return inherit_attributes(alloc, child, parent);
 }
 
 static void resolve_inheritance(Allocator *alloc, BlueprintTable *table)
@@ -170,39 +143,48 @@ static void resolve_inheritance(Allocator *alloc, BlueprintTable *table)
     }
 }
 
-static bool parse_optional_strings(Allocator *alloc, Blueprint *blueprint, toml_table_t *entry)
+static bool parse_geometry(Allocator *alloc, Blueprint *blueprint, toml_table_t *entry)
 {
-    toml_datum_t extends = toml_string_in(entry, "extends");
-    if (extends.ok && !str_from_toml_datum(alloc, &blueprint->extends_name, &extends)) {
-        return false;
-    }
-
-    toml_datum_t texture = toml_string_in(entry, "texture");
-    if (texture.ok) {
-        return str_from_toml_datum(alloc, &blueprint->texture_name, &texture);
-    }
-    return true;
-}
-
-static void parse_geometry(Blueprint *blueprint, toml_table_t *entry)
-{
-    toml_array_t *source = toml_array_in(entry, "src");
     float source_values[4] = {0};
+    toml_array_t *source = toml_array_in(entry, "src");
     if (parse_float_array(source, source_values, 4)) {
-        blueprint->source = (Rectangle){source_values[0], source_values[1], source_values[2], source_values[3]};
+        if (!attr_set_float(alloc, &blueprint->attrs, "src_x", source_values[0])) {
+            return false;
+        }
+        if (!attr_set_float(alloc, &blueprint->attrs, "src_y", source_values[1])) {
+            return false;
+        }
+        if (!attr_set_float(alloc, &blueprint->attrs, "src_w", source_values[2])) {
+            return false;
+        }
+        if (!attr_set_float(alloc, &blueprint->attrs, "src_h", source_values[3])) {
+            return false;
+        }
     }
 
-    toml_array_t *collision_offset = toml_array_in(entry, "collision_offset");
     float offset_values[2] = {0};
+    toml_array_t *collision_offset = toml_array_in(entry, "collision_offset");
     if (parse_float_array(collision_offset, offset_values, 2)) {
-        blueprint->collision_offset = (Vector2){offset_values[0], offset_values[1]};
+        if (!attr_set_float(alloc, &blueprint->attrs, "collision_offset_x", offset_values[0])) {
+            return false;
+        }
+        if (!attr_set_float(alloc, &blueprint->attrs, "collision_offset_y", offset_values[1])) {
+            return false;
+        }
     }
 
-    toml_array_t *collision_size = toml_array_in(entry, "collision_size");
     float size_values[2] = {0};
+    toml_array_t *collision_size = toml_array_in(entry, "collision_size");
     if (parse_float_array(collision_size, size_values, 2)) {
-        blueprint->collision_size = (Vector2){size_values[0], size_values[1]};
+        if (!attr_set_float(alloc, &blueprint->attrs, "collision_w", size_values[0])) {
+            return false;
+        }
+        if (!attr_set_float(alloc, &blueprint->attrs, "collision_h", size_values[1])) {
+            return false;
+        }
     }
+
+    return true;
 }
 
 static bool parse_health(Allocator *alloc, Blueprint *blueprint, toml_table_t *entry)
@@ -282,13 +264,14 @@ static bool parse_children(Allocator *alloc, Blueprint *blueprint, toml_table_t 
         BlueprintChild child_entry_data = {0};
         if (!parse_single_child(alloc, &child_entry_data, child_entry)) {
             if (alloc && alloc->ctx) {
-                error_wrap(alloc->ctx, "blueprint '%s' child[%d]", blueprint->name.ptr, index);
+                error_wrap(alloc->ctx, "blueprint '%s' child[%d]", attr_get_string(&blueprint->attrs, "name"), index);
             }
             return false;
         }
         if (!vec_blueprint_child_push(&blueprint->children, child_entry_data, alloc)) {
             if (alloc && alloc->ctx) {
-                error_set(alloc->ctx, "blueprint '%s' child[%d]: out of memory", blueprint->name.ptr, index);
+                error_set(alloc->ctx, "blueprint '%s' child[%d]: out of memory",
+                          attr_get_string(&blueprint->attrs, "name"), index);
             }
             return false;
         }
@@ -305,14 +288,15 @@ static bool parse_single_blueprint(Allocator *alloc, Blueprint *blueprint, toml_
     if (!name.ok) {
         return false;
     }
-    if (!str_from_toml_datum(alloc, &blueprint->name, &name)) {
+    bool name_ok = attr_set_string(alloc, &blueprint->attrs, (AttrStringPair){.name = "name", .value = name.u.s});
+    free(name.u.s);
+    if (!name_ok) {
         return false;
     }
 
-    if (!parse_optional_strings(alloc, blueprint, entry)) {
+    if (!parse_geometry(alloc, blueprint, entry)) {
         return false;
     }
-    parse_geometry(blueprint, entry);
     if (!parse_health(alloc, blueprint, entry)) {
         return false;
     }
@@ -325,7 +309,7 @@ static bool parse_single_blueprint(Allocator *alloc, Blueprint *blueprint, toml_
     struct EngineContext *ctx = alloc ? alloc->ctx : NULL;
     if (!rules_parse(ctx, alloc, &blueprint->rules, entry, arena)) {
         if (ctx) {
-            error_wrap(ctx, "blueprint '%s'", blueprint->name.ptr);
+            error_wrap(ctx, "blueprint '%s'", attr_get_string(&blueprint->attrs, "name"));
         }
         return false;
     }
@@ -334,9 +318,6 @@ static bool parse_single_blueprint(Allocator *alloc, Blueprint *blueprint, toml_
 
 static void blueprint_cleanup(Allocator *alloc, Blueprint *blp)
 {
-    str_free(alloc, &blp->name);
-    str_free(alloc, &blp->extends_name);
-    str_free(alloc, &blp->texture_name);
     for (int child_index = 0; child_index < blp->children.count; child_index++) {
         str_free(alloc, &blp->children.data[child_index].blueprint_name);
         str_free(alloc, &blp->children.data[child_index].tag);
@@ -352,6 +333,32 @@ void blueprint_table_free(Allocator *alloc, BlueprintTable *table)
     }
     vec_blueprint_free(&table->entries, alloc);
     *table = (BlueprintTable){0};
+}
+
+Rectangle blueprint_get_source(const Blueprint *blp)
+{
+    return (Rectangle){
+        attr_get_float(&blp->attrs, "src_x", 0.0F),
+        attr_get_float(&blp->attrs, "src_y", 0.0F),
+        attr_get_float(&blp->attrs, "src_w", 0.0F),
+        attr_get_float(&blp->attrs, "src_h", 0.0F),
+    };
+}
+
+Vector2 blueprint_get_collision_offset(const Blueprint *blp)
+{
+    return (Vector2){
+        attr_get_float(&blp->attrs, "collision_offset_x", 0.0F),
+        attr_get_float(&blp->attrs, "collision_offset_y", 0.0F),
+    };
+}
+
+Vector2 blueprint_get_collision_size(const Blueprint *blp)
+{
+    return (Vector2){
+        attr_get_float(&blp->attrs, "collision_w", 0.0F),
+        attr_get_float(&blp->attrs, "collision_h", 0.0F),
+    };
 }
 
 int blueprints_load(struct EngineContext *ctx, BlueprintTable *table, void *toml_root, Arena *arena)
@@ -389,7 +396,8 @@ int blueprints_load(struct EngineContext *ctx, BlueprintTable *table, void *toml
 
         Blueprint temp = {0};
         if (parse_single_blueprint(&alloc, &temp, entry, arena)) {
-            debug_log(ctx, "bp[%d]: parsed '%s' tex='%s'", index, temp.name.ptr, temp.texture_name.ptr);
+            debug_log(ctx, "bp[%d]: parsed '%s' tex='%s'", index, attr_get_string(&temp.attrs, "name"),
+                      attr_get_string(&temp.attrs, "texture"));
             (void)vec_blueprint_push(&table->entries, temp, &alloc);
         } else {
             blueprint_cleanup(&alloc, &temp);
@@ -403,13 +411,19 @@ int blueprints_load(struct EngineContext *ctx, BlueprintTable *table, void *toml
 
     resolve_inheritance(&alloc, table);
 
+    /* Strip 'extends' attr — it has no runtime meaning after inheritance */
+    for (int index = 0; index < table->entries.count; index++) {
+        attr_remove(&alloc, &table->entries.data[index].attrs, "extends");
+    }
+
     return table->entries.count;
 }
 
 const Blueprint *blueprint_find(const BlueprintTable *table, const char *name)
 {
     for (int index = 0; index < table->entries.count; index++) {
-        if ((int)strv_eq_cstr(str_to_strv(table->entries.data[index].name), name)) {
+        const char *bp_name = attr_get_string(&table->entries.data[index].attrs, "name");
+        if (bp_name && strcmp(bp_name, name) == 0) {
             return &table->entries.data[index];
         }
     }
