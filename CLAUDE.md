@@ -51,7 +51,7 @@ conan build .
 - **Test everything with Unity + fff.h.** Every non-trivial pure function should have corresponding tests in `test/`. If a function is hard to test, it probably does too much.
 - **Full descriptive names always.** No single-letter variables anywhere, including loop counters (`i` → `index`, `j` → `next`). No small abbreviations either (`pt` → `particle`, `dx` → `delta_x`, `wp` → `world_pos`). The codebase should be self-documenting through clear naming.
 - **Vendor libraries go in `engine/vendor/`.** Not the top-level `vendor/`.
-- **Avoid forward declarations.** Prefer including actual headers to make dependencies explicit and maintain module integrity. Forward declarations can hide circular dependencies and break the "code module" concept. If circular dependencies exist, refactor to eliminate them rather than hiding them.
+- **No opaque cross-module forward declarations.** Never use `struct Foo;` or `typedef struct Foo Foo;` in a header to avoid including the header that defines `Foo`. This hides circular dependencies and obscures the include hierarchy. If a circular dependency appears, fix the architecture — extract a common lower-level definition, use dependency injection, or split the type — rather than hiding the cycle with an opaque pointer. There is no clang-tidy check for this; enforcement is by convention. Exceptions: (1) self-referential structs within the same file (e.g. `struct Node { struct Node *next; }`) are necessary and fine; (2) `struct EngineContext;` is a known violation pending a proper split of the logging/error context into a lightweight header — do not add new ones.
 
 ## Testing Strategy
 
