@@ -3,7 +3,7 @@
 ## Engineering Goals
 
 - **One arena** (`gamedata_arena`) — no scratch arena, no second arena
-- **No opaque cross-module forward declarations** — `struct EngineContext;` is the last one; eliminate it by splitting the logging/error concern into a lightweight header with no upward dependencies (see Coding Style in CLAUDE.md)
+- **No opaque cross-module forward declarations** — `struct EngineContext;` is the last one; eliminate it by splitting the logging/error concern into a lightweight header with no upward dependencies (see Coding Style in CLAUDE.md). Also investigate cppcheck for a built-in check; if none exists, write a small cppcheck Python plugin (lives in this repo) to enforce it automatically.
 - **No libc heap** in engine code (except `arena.c` bootstrap and TOML vendor `free()`)
 - **No naked `char *` / `char[]` strings** — `Str` for owned strings, `Strv` for non-owning views
 - **Vec types for all linear data** — no hand-rolled pointer+count arrays
