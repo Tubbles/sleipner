@@ -328,6 +328,21 @@ void test_var_condition_falsy_when_unset(void);
 void test_var_substitution_in_set_attr(void);
 void test_local_var_scoped_per_rule(void);
 
+/* test_touch.c */
+void test_touch_initial_state_is_none(void);
+void test_touch_first_touch_outside_button_sets_stick_mode(void);
+void test_touch_first_touch_sets_origin(void);
+void test_touch_continue_updates_current(void);
+void test_touch_continue_preserves_origin(void);
+void test_touch_release_resets_mode(void);
+void test_touch_button_area_sets_button_mode(void);
+void test_touch_button_triggers_on_press(void);
+void test_touch_button_not_triggered_on_hold(void);
+void test_touch_get_stick_no_touch_returns_zero(void);
+void test_touch_get_stick_right_returns_positive_x(void);
+void test_touch_get_stick_clamps_to_one(void);
+void test_touch_not_triggered_outside_button(void);
+
 /* test_collision.c */
 void test_rect_rect_overlap(void);
 void test_rect_rect_no_overlap(void);
@@ -589,6 +604,20 @@ int main(void)
     RUN_TEST(test_var_condition_falsy_when_unset);
     RUN_TEST(test_var_substitution_in_set_attr);
     RUN_TEST(test_local_var_scoped_per_rule);
+
+    RUN_TEST(test_touch_initial_state_is_none);
+    RUN_TEST(test_touch_first_touch_outside_button_sets_stick_mode);
+    RUN_TEST(test_touch_first_touch_sets_origin);
+    RUN_TEST(test_touch_continue_updates_current);
+    RUN_TEST(test_touch_continue_preserves_origin);
+    RUN_TEST(test_touch_release_resets_mode);
+    RUN_TEST(test_touch_button_area_sets_button_mode);
+    RUN_TEST(test_touch_button_triggers_on_press);
+    RUN_TEST(test_touch_button_not_triggered_on_hold);
+    RUN_TEST(test_touch_get_stick_no_touch_returns_zero);
+    RUN_TEST(test_touch_get_stick_right_returns_positive_x);
+    RUN_TEST(test_touch_get_stick_clamps_to_one);
+    RUN_TEST(test_touch_not_triggered_outside_button);
 
     RUN_TEST(test_rect_rect_overlap);
     RUN_TEST(test_rect_rect_no_overlap);

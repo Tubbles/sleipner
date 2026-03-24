@@ -19,6 +19,7 @@ add_executable(engine_tests
     test_toml_emitter.c
     test_rule.c
     test_str.c
+    test_touch.c
     test_strv.c
     test_toml_str.c
 )

@@ -13,6 +13,7 @@
 #include "level.h"
 #include "rect.h"
 
+#include "touch.h"
 #include "toml_emitter.h"
 
 #include "error.h"
@@ -331,6 +332,10 @@ static void draw_font_preview(struct EngineContext *ctx)
     }
 }
 
+#define TOUCH_BUTTON_X_FRAC 0.90F
+#define TOUCH_BUTTON_SIZE_FRAC 0.10F
+#define TOUCH_STICK_RADIUS_DIV 3
+
 #define MAX_GAMEDATA_SIZE (256UL * 1024)
 #define MAX_PATH_LEN 512
 #define COPY_BUFFER_SIZE 4096
@@ -450,6 +455,38 @@ static char *read_file_text(struct EngineContext *ctx, const char *path, Arena *
     (void)fclose(file);
     debug_log(ctx, "gamedata: read %zu bytes from %s", bytes_read, path);
     return buffer;
+}
+
+static float clamp_unit(float value)
+{
+    if (value < -1.0F) {
+        return -1.0F;
+    }
+    if (value > 1.0F) {
+        return 1.0F;
+    }
+    return value;
+}
+
+static InputState
+apply_touch_input(InputState input, TouchState *touch_state, struct EngineContext *ctx, GameState *state)
+{
+    Rectangle button_rect = {(float)ctx->screen_width * TOUCH_BUTTON_X_FRAC, 0.0F,
+                             (float)ctx->screen_width * TOUCH_BUTTON_SIZE_FRAC,
+                             (float)ctx->screen_width * TOUCH_BUTTON_SIZE_FRAC};
+    touch_update(touch_state, button_rect);
+    if (touch_state->debug_button_triggered) {
+        state->debug_enabled = (bool)!state->debug_enabled;
+        debug_log(ctx, "debug %s (touch, frame %d)", (int)state->debug_enabled ? "ON" : "OFF", state->frame);
+    }
+    Vector2 stick = touch_get_stick(touch_state, (float)ctx->screen_width / (float)TOUCH_STICK_RADIUS_DIV);
+    if (stick.x != 0.0F) {
+        input.left_stick.x = clamp_unit(input.left_stick.x + stick.x);
+    }
+    if (stick.y != 0.0F) {
+        input.left_stick.y = clamp_unit(input.left_stick.y + stick.y);
+    }
+    return input;
 }
 
 static void load_gamedata(struct EngineContext *ctx, GameState *state)
@@ -641,6 +678,7 @@ int main(void)
 
     int prev_gamepads = -1;
     bool font_preview_enabled = false;
+    TouchState touch_state = {0};
 
     debug_log(ctx, "gamedata path: %s", GAMEDATA_PATH);
     debug_log(ctx, "screen %dx%d  game %ux%u  scale %d", ctx->screen_width, ctx->screen_height, game_bounds.width,
@@ -677,6 +715,7 @@ int main(void)
         }
 
         InputState input = read_all_input();
+        input = apply_touch_input(input, &touch_state, ctx, &state);
 
         /* Update (pure logic — no rendering) */
         game_update(ctx, &state, input, delta_time);
