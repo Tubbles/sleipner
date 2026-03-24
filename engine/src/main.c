@@ -334,7 +334,7 @@ static void draw_font_preview(struct EngineContext *ctx)
 
 #define TOUCH_BUTTON_X_FRAC 0.90F
 #define TOUCH_BUTTON_SIZE_FRAC 0.10F
-#define TOUCH_STICK_RADIUS_DIV 3
+#define TOUCH_STICK_RADIUS_DIV 6
 
 #define MAX_GAMEDATA_SIZE (256UL * 1024)
 #define MAX_PATH_LEN 512
