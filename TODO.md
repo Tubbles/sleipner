@@ -16,11 +16,3 @@
   requires `ActionNode` to be complete, but `ActionNode` can't embed `vec_action_node`
   before the vec type is declared.
 
----
-
-## Entity/Blueprint decoupling — done
-
-All phases complete: Blueprint and Entity dedicated typed fields have been merged into
-their AttrSets. Blueprints carry `"name"`, `"texture"`, `"src_*"`, `"collision_*"` as
-attrs; entities carry `"solid"` as instance attr. Access goes through typed getters
-(`entity_get_float`, `entity_get_bool`, `entity_get_source`, `blueprint_get_source`, etc.).
