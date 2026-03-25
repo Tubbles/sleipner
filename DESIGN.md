@@ -744,6 +744,65 @@ pos = [320, 180]
 - The editor modifies in-memory state and writes the entire file back on save via a TOML serializer (tomlc99 is read-only, so we write a simple emitter ourselves).
 - Hot-reload: optionally watch the file's mtime and reload when it changes (useful when editing on phone while running on desktop, or vice versa).
 
+## Memory Architecture
+
+All engine memory is arena-backed — no `malloc`/`free` anywhere except tomlc99 vendor internals and the allocator infrastructure's `NULL` fallback. The two arenas in `GameState` have distinct lifetimes, and data is loaded incrementally in layers.
+
+### Data Lifecycle
+
+```
+1. Compile time
+   Asset bytes (PNG, TTF, MP3) embedded in .rodata via .incbin.
+   Zero runtime I/O for assets — they're part of the binary.
+
+2. Startup — game_init()
+   Two arenas allocated via mmap(MAP_ANONYMOUS|MAP_NORESERVE).
+   1 TiB virtual reservation each; physical pages demand-paged.
+   Both start empty.
+
+3. Asset registration — once per process
+   Raylib decodes raw bytes → GPU VRAM (not in arena).
+   Small registry structs (TextureEntry, FontPreviewEntry) pushed
+   into gamedata_arena via arena allocator.
+   gamedata_base checkpoint saved — marks the floor of this zone.
+
+4. Gamedata load — game_load_gamedata()
+   File read into scratch buffer, TOML parsed (tomlc99 uses its
+   own heap — vendor exception). Blueprints, level, rules stored
+   in gamedata_arena above gamedata_base. tomlc99 tables freed.
+
+5. Game loop — update/render cycle
+   Scratch allocations via SCRATCH_SCOPE(&state.scratch_arena).
+   Offset auto-restored at scope exit; no syscall, bare rewind.
+
+6. Hot-reload / level transition
+   arena_restore(&state->gamedata_arena, state->gamedata_base)
+   rewinds gamedata_arena to the checkpoint. Asset registry at the
+   bottom is untouched. Step 4 runs again.
+
+7. Shutdown — game_free()
+   arena_free() munmaps both arenas (returns virtual range to OS).
+   Raylib unloads GPU textures and fonts.
+```
+
+### Arena Zone Layout
+
+```
+gamedata_arena:
+  [0 .. gamedata_base)    textures + fonts (survive all reloads)
+  [gamedata_base .. top)  blueprints, level, rules (rewound on reload)
+
+scratch_arena:
+  [checkpoint .. top)     per-scope temporaries (rewound at SCRATCH_SCOPE exit)
+```
+
+### Key Rules
+
+- `arena_restore` is the only lifecycle operation called at runtime — a bare pointer rewind, no syscall.
+- `arena_reset` (calls `MADV_DONTNEED`) is only called at full teardown in `game_free`.
+- **Never** call `arena_reset` on `gamedata_arena` from game code — it would wipe the texture registry, causing a black screen.
+- The asset registry (textures, fonts) uses a dynamic vec backed by the arena. Adding a new asset is one line in `main.c`; no fixed-size arrays to resize.
+
 ## Roadmap
 
 ### Phase 1 — Foundation (DONE)
@@ -865,7 +924,7 @@ pos = [320, 180]
 - **Release distribution:** Load `gamedata.toml` from filesystem at runtime on both platforms.
 - **Engine grows organically.** Don't build engine features speculatively — add them when the game needs them.
 - **Undo system:** Snapshot-based. Before each editor operation, snapshot the entire in-memory gamedata and push onto a history stack. Undo = pop and restore. Simple, every operation is automatically undoable, no need to define inverse operations. Gamedata is small enough that even 100+ snapshots are negligible memory. If gamedata ever grows to megabytes, migrate to command pattern — undo is internal to the editor so refactoring is cheap.
-- **Memory allocation:** Arena allocator for all gamedata. All data loaded from TOML lives in one arena — reload or undo = reset the arena. Behavior params per blueprint are variable-length (pointer + count into the arena), no fixed cap. Undo snapshots are just `memcpy` of the arena.
+- **Memory allocation:** Two arenas in `GameState` — `gamedata_arena` for persistent data (assets at the bottom, gamedata above a checkpoint) and `scratch_arena` for per-scope temporaries. Hot-reload rewinds `gamedata_arena` to `gamedata_base` via `arena_restore`, preserving the asset registry. No `malloc`/`free` in engine code. See Memory Architecture section for the full lifecycle.
 - **Hot-reload:** Poll mtime on `gamedata.toml` (~once per second) in play mode — auto-reload when the file changes (Syncthing edits from phone appear live). In editor mode, no auto-reload — reload is explicit only, to avoid blowing away unsaved in-memory changes.
 - **Tile map:** 16x16 pixel tiles, 2 layers (ground + overlay). Ground is terrain (grass, dirt, water, paths). Overlay renders on top of ground but under entities (flowers, puddles, shadows). Stored as arrays of integer tile IDs in TOML, row by row. Autotiling (automatic edge/corner sprite selection) is an editor feature — the file stores concrete tile IDs, the editor computes them on placement.
 - **TOML emitter:** Clean regeneration, no comment/formatting preservation. The in-game editor is the primary editing interface — comments aren't useful. Keeps the emitter dead simple.
