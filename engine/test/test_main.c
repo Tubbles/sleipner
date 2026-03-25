@@ -175,6 +175,9 @@ void test_integration_walk_and_collide(void);
 void test_integration_walk_freely(void);
 void test_integration_boundary_all_directions(void);
 void test_integration_player_entity_spawns(void);
+void test_integration_on_spawn_trigger_fires_on_load(void);
+void test_integration_enter_trigger_fires_on_overlap(void);
+void test_integration_enter_trigger_fires_only_once(void);
 
 /* test_shape.c */
 void test_circle_bounds_centered(void);
@@ -507,6 +510,9 @@ int main(void)
     RUN_TEST(test_integration_walk_freely);
     RUN_TEST(test_integration_boundary_all_directions);
     RUN_TEST(test_integration_player_entity_spawns);
+    RUN_TEST(test_integration_on_spawn_trigger_fires_on_load);
+    RUN_TEST(test_integration_enter_trigger_fires_on_overlap);
+    RUN_TEST(test_integration_enter_trigger_fires_only_once);
 
     RUN_TEST(test_level_load_first);
     RUN_TEST(test_level_load_by_name);

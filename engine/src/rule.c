@@ -26,6 +26,7 @@ VEC_IMPL(flag_name, FlagName)
 VEC_IMPL(condition, Condition)
 VEC_IMPL(action_node, ActionNode)
 VEC_IMPL(rule, Rule)
+VEC_IMPL(trigger_event, TriggerEvent)
 MAP_IMPL(entity_ruleset, int, vec_rule, map_hash_int, map_eq_int)
 
 /* ---- FlagSet ---- */

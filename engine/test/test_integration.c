@@ -57,6 +57,58 @@ static const char *fixture_gamedata = "[[blueprint]]\n"
                                       "blueprint = \"rock\"\n"
                                       "pos = [80, 60]\n";
 
+/* Fixture with enter and on_spawn rules.
+ * Player at (100,100), zone at (200,100) with 32x32 collision.
+ * Beacon at (50,50) fires set_flag:beacon_spawned on on_spawn. */
+static const char *fixture_triggers = "[[blueprint]]\n"
+                                      "name = \"player\"\n"
+                                      "texture = \"player.png\"\n"
+                                      "src = [0, 0, 32, 32]\n"
+                                      "collision_offset = [0, 0]\n"
+                                      "collision_size = [16, 16]\n"
+                                      "behavior = \"player\"\n"
+                                      "speed = 80\n"
+                                      "\n"
+                                      "[[blueprint]]\n"
+                                      "name = \"zone\"\n"
+                                      "texture = \"rock.png\"\n"
+                                      "src = [0, 0, 16, 16]\n"
+                                      "collision_offset = [0, 0]\n"
+                                      "collision_size = [32, 32]\n"
+                                      "solid = false\n"
+                                      "\n"
+                                      "[[blueprint.rule]]\n"
+                                      "trigger = \"enter\"\n"
+                                      "actions = [\"set_flag:zone_entered\"]\n"
+                                      "\n"
+                                      "[[blueprint]]\n"
+                                      "name = \"beacon\"\n"
+                                      "texture = \"rock.png\"\n"
+                                      "src = [0, 0, 16, 16]\n"
+                                      "collision_offset = [0, 0]\n"
+                                      "collision_size = [16, 16]\n"
+                                      "solid = false\n"
+                                      "\n"
+                                      "[[blueprint.rule]]\n"
+                                      "trigger = \"on_spawn\"\n"
+                                      "actions = [\"set_flag:beacon_spawned\"]\n"
+                                      "\n"
+                                      "[[level]]\n"
+                                      "name = \"test\"\n"
+                                      "size = [320, 240]\n"
+                                      "\n"
+                                      "[[level.entity]]\n"
+                                      "blueprint = \"player\"\n"
+                                      "pos = [100, 100]\n"
+                                      "\n"
+                                      "[[level.entity]]\n"
+                                      "blueprint = \"zone\"\n"
+                                      "pos = [200, 100]\n"
+                                      "\n"
+                                      "[[level.entity]]\n"
+                                      "blueprint = \"beacon\"\n"
+                                      "pos = [50, 50]\n";
+
 static Texture2D dummy_texture;
 
 static Texture2D *dummy_lookup(const char *texture_name, void *user_data)
@@ -229,6 +281,101 @@ void test_integration_player_entity_spawns(void)
         game_update(&ctx, &state, input, 1.0F / 60.0F);
     }
     TEST_ASSERT_TRUE(game_get_player_const(&state)->position.x > start_x);
+
+    game_free(&ctx, &state);
+}
+
+void test_integration_on_spawn_trigger_fires_on_load(void)
+{
+    GameState state;
+    TEST_ASSERT_TRUE(game_init(&ctx, &state, (RectU32){320, 240}));
+    TEST_ASSERT_TRUE(game_load_gamedata(
+        &ctx, &state, (GamedataParams){.toml_string = fixture_triggers, .texture_lookup = dummy_lookup}));
+
+    /* beacon blueprint has on_spawn → set_flag:beacon_spawned.
+     * No game_update needed — the flag must be set by game_load_gamedata. */
+    TEST_ASSERT_TRUE(flag_get(&state.flags, "beacon_spawned"));
+
+    game_free(&ctx, &state);
+}
+
+void test_integration_enter_trigger_fires_on_overlap(void)
+{
+    GameState state;
+    TEST_ASSERT_TRUE(game_init(&ctx, &state, (RectU32){320, 240}));
+    TEST_ASSERT_TRUE(game_load_gamedata(
+        &ctx, &state, (GamedataParams){.toml_string = fixture_triggers, .texture_lookup = dummy_lookup}));
+
+    /* zone_entered must not be set before the player reaches the zone */
+    TEST_ASSERT_FALSE(flag_get(&state.flags, "zone_entered"));
+
+    /* Player at (100,100), collision [100,100,16,16]. Zone at (200,100), collision [200,100,32,32].
+     * Player right edge starts at 116, zone left edge at 200. Gap = 84px.
+     * Speed = 80 px/s → need ~63 frames at 1/60s. Run 80 to be safe. */
+    InputState input = {0};
+    input.left_stick.x = 1.0F;
+    for (int iteration = 0; iteration < 80; iteration++) {
+        game_update(&ctx, &state, input, 1.0F / 60.0F);
+    }
+
+    TEST_ASSERT_TRUE(flag_get(&state.flags, "zone_entered"));
+
+    game_free(&ctx, &state);
+}
+
+void test_integration_enter_trigger_fires_only_once(void)
+{
+    GameState state;
+    TEST_ASSERT_TRUE(game_init(&ctx, &state, (RectU32){320, 240}));
+
+    /* Zone blueprint uses add_attr:self.enter_count,1 to count firings */
+    static const char *fixture_enter_count = "[[blueprint]]\n"
+                                             "name = \"player\"\n"
+                                             "texture = \"player.png\"\n"
+                                             "src = [0, 0, 32, 32]\n"
+                                             "collision_offset = [0, 0]\n"
+                                             "collision_size = [16, 16]\n"
+                                             "behavior = \"player\"\n"
+                                             "speed = 80\n"
+                                             "\n"
+                                             "[[blueprint]]\n"
+                                             "name = \"zone\"\n"
+                                             "texture = \"rock.png\"\n"
+                                             "src = [0, 0, 16, 16]\n"
+                                             "collision_offset = [0, 0]\n"
+                                             "collision_size = [32, 32]\n"
+                                             "solid = false\n"
+                                             "enter_count = 0\n"
+                                             "\n"
+                                             "[[blueprint.rule]]\n"
+                                             "trigger = \"enter\"\n"
+                                             "actions = [\"add_attr:self.enter_count,1\"]\n"
+                                             "\n"
+                                             "[[level]]\n"
+                                             "name = \"test\"\n"
+                                             "size = [320, 240]\n"
+                                             "\n"
+                                             "[[level.entity]]\n"
+                                             "blueprint = \"player\"\n"
+                                             "pos = [100, 100]\n"
+                                             "\n"
+                                             "[[level.entity]]\n"
+                                             "blueprint = \"zone\"\n"
+                                             "pos = [200, 100]\n";
+
+    TEST_ASSERT_TRUE(game_load_gamedata(
+        &ctx, &state, (GamedataParams){.toml_string = fixture_enter_count, .texture_lookup = dummy_lookup}));
+
+    /* Walk into zone and keep walking through it for 200 frames total */
+    InputState input = {0};
+    input.left_stick.x = 1.0F;
+    for (int iteration = 0; iteration < 200; iteration++) {
+        game_update(&ctx, &state, input, 1.0F / 60.0F);
+    }
+
+    /* enter_count must be exactly 1 — edge-triggered, not level-triggered */
+    const Entity *zone = &state.current_level.entities.data[1];
+    TEST_ASSERT_EQUAL_INT(1, (int)entity_get_float(zone, "enter_count", 0.0F));
 
     game_free(&ctx, &state);
 }

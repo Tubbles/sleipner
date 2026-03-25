@@ -87,10 +87,13 @@ bool entity_init(Entity *entity, EntitySpec spec, Vector2 position, Allocator *a
         spec.collision_size.y,
     };
 
-    bool is_solid = (bool)((spec.collision_size.x > 0.0F) || (spec.collision_size.y > 0.0F));
-    if (!attr_set_bool(alloc, &entity->attrs, "solid", is_solid)) {
-        str_free(alloc, &entity->blueprint_name);
-        return false;
+    /* Only auto-derive solid from collision size if the blueprint does not explicitly set it */
+    if (!spec.defaults || !attr_get(spec.defaults, "solid")) {
+        bool is_solid = (bool)((spec.collision_size.x > 0.0F) || (spec.collision_size.y > 0.0F));
+        if (!attr_set_bool(alloc, &entity->attrs, "solid", is_solid)) {
+            str_free(alloc, &entity->blueprint_name);
+            return false;
+        }
     }
     entity->parent_index = -1;
     return true;

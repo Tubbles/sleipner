@@ -856,7 +856,7 @@ scratch_arena:
 - [x] Variable system (local per-execution, global persistent, $ references in parameters)
 - [ ] Subroutines (named reusable action sequences, callable via `call:`)
 - [ ] Timer management (create, destroy named timers)
-- [ ] Enter/on_spawn trigger detection (simple AABB overlap for now — will be replaced by composable collision shapes, see Phase 9)
+- [x] Enter/on_spawn trigger detection (simple AABB overlap for now — will be replaced by composable collision shapes, see Phase 9)
 - [ ] Remaining triggers (collide, defeat, timer, timer_periodic, on_destroy)
 
 ### Phase 5 — Editor Mode

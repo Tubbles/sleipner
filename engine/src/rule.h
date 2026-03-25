@@ -142,6 +142,8 @@ typedef struct {
     Str argument;
 } TriggerEvent;
 
+VEC_DECL(trigger_event, TriggerEvent)
+
 #define MAX_CASCADE_EVENTS 64
 
 typedef struct {

@@ -7,6 +7,7 @@
 #include "level.h"
 #include "rect.h"
 #include "rule.h"
+#include "vec.h"
 
 #include <stdbool.h>
 
@@ -30,6 +31,7 @@ typedef struct {
     Arena gamedata_arena;
     ArenaCheckpoint gamedata_base; /* offset just above persistent assets (textures, fonts) */
     Arena scratch_arena;
+    vec_bool prev_player_overlaps; /* one entry per level entity: true if player overlapped last frame */
     BlueprintTable blueprints;
     map_entity_ruleset rule_table;
     Level current_level;

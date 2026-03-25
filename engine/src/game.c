@@ -18,7 +18,6 @@
 #include <string.h>
 
 #define TOML_ERRBUF_SIZE 200
-#define MAX_COLLECT_EVENTS 32
 
 bool game_init(struct EngineContext *ctx, GameState *state, RectU32 game_bounds)
 {
@@ -63,6 +62,7 @@ bool game_load_gamedata(struct EngineContext *ctx, GameState *state, GamedataPar
     toml_table_t *root = toml_parse(buffer, errbuf, (int)sizeof(errbuf));
     arena_restore(&state->gamedata_arena, state->gamedata_base);
     state->rule_table = (map_entity_ruleset){0};
+    state->prev_player_overlaps = (vec_bool){0};
 
     if (!root) {
         error_set(ctx, "toml_parse: %s", errbuf);
@@ -86,6 +86,27 @@ bool game_load_gamedata(struct EngineContext *ctx, GameState *state, GamedataPar
             const Blueprint *blueprint = blueprint_find(&state->blueprints, entity->blueprint_name.ptr);
             if (blueprint && blueprint->rules.count > 0) {
                 (void)map_entity_ruleset_set(&state->rule_table, entity->id, blueprint->rules, &gamedata_alloc);
+            }
+        }
+
+        /* Initialize overlap tracking: one false entry per entity */
+        for (int index = 0; index < state->current_level.entities.count; index++) {
+            (void)vec_bool_push(&state->prev_player_overlaps, false, &gamedata_alloc);
+        }
+
+        /* Fire on_spawn for every entity now that the rule table is ready */
+        {
+            SCRATCH_SCOPE(&state->scratch_arena);
+            Allocator scratch_alloc = allocator_arena(ctx, &state->scratch_arena);
+            vec_trigger_event spawn_events = {0};
+            for (int index = 0; index < state->current_level.entities.count; index++) {
+                (void)vec_trigger_event_push(
+                    &spawn_events, (TriggerEvent){.type = TRIGGER_ON_SPAWN, .entity_index = index}, &scratch_alloc);
+            }
+            if (spawn_events.count > 0) {
+                rules_evaluate_batch(ctx, &gamedata_alloc, state->current_level.entities.data,
+                                     state->current_level.entities.count, spawn_events.data, spawn_events.count,
+                                     &state->flags, &state->vars, &state->rule_table);
             }
         }
     } else {
@@ -224,16 +245,15 @@ static void update_child_positions(Level *level)
     }
 }
 
-static int detect_interact_targets(struct EngineContext *ctx,
-                                   const Entity *player,
-                                   int player_index,
-                                   const Entity *entities,
-                                   int entity_count,
-                                   TriggerEvent *out_events,
-                                   int max_events)
+static void detect_interact_targets(struct EngineContext *ctx,
+                                    const Entity *player,
+                                    int player_index,
+                                    const Entity *entities,
+                                    int entity_count,
+                                    vec_trigger_event *out_events,
+                                    Allocator *alloc)
 {
-    int count = 0;
-    for (int index = 0; index < entity_count && count < max_events; index++) {
+    for (int index = 0; index < entity_count; index++) {
         if (index == player_index || !entity_get_bool(&entities[index], "active", true)) {
             continue;
         }
@@ -243,21 +263,38 @@ static int detect_interact_targets(struct EngineContext *ctx,
         if (distance_sq <= INTERACT_RANGE * INTERACT_RANGE) {
             debug_log(ctx, "Player within interact range of entity %d (type: %s)", index,
                       entities[index].blueprint_name.ptr);
-            out_events[count] = (TriggerEvent){
-                .type = TRIGGER_INTERACT,
-                .entity_index = index,
-            };
-            count++;
+            (void)vec_trigger_event_push(out_events, (TriggerEvent){.type = TRIGGER_INTERACT, .entity_index = index},
+                                         alloc);
         }
     }
-    return count;
 }
 
-static int collect_trigger_events(
-    struct EngineContext *ctx, GameState *state, InputState input, TriggerEvent *out_events, int max_events)
+static void detect_enter_targets(const Entity *player,
+                                 int player_index,
+                                 const Entity *entities,
+                                 int entity_count,
+                                 vec_bool *overlaps,
+                                 vec_trigger_event *out_events,
+                                 Allocator *alloc)
 {
-    int count = 0;
+    for (int index = 0; index < entity_count && index < overlaps->count; index++) {
+        if (index == player_index || !entity_get_bool(&entities[index], "active", true)) {
+            overlaps->data[index] = false;
+            continue;
+        }
+        bool currently_overlapping = CheckCollisionRecs(player->collision, entities[index].collision);
+        bool was_overlapping = overlaps->data[index];
+        overlaps->data[index] = currently_overlapping;
+        if (currently_overlapping && !was_overlapping) {
+            (void)vec_trigger_event_push(out_events, (TriggerEvent){.type = TRIGGER_ENTER, .entity_index = index},
+                                         alloc);
+        }
+    }
+}
 
+static void collect_trigger_events(
+    struct EngineContext *ctx, GameState *state, InputState input, vec_trigger_event *out_events, Allocator *alloc)
+{
     bool interact_pressed = input.buttons[0];
     bool interact_edge = false;
     if (interact_pressed) {
@@ -273,14 +310,19 @@ static int collect_trigger_events(
         if (state->player_index >= 0) {
             const Entity *player = game_get_player_const(state);
             if (player) {
-                count += detect_interact_targets(ctx, player, state->player_index, state->current_level.entities.data,
-                                                 state->current_level.entities.count, out_events + count,
-                                                 max_events - count);
+                detect_interact_targets(ctx, player, state->player_index, state->current_level.entities.data,
+                                        state->current_level.entities.count, out_events, alloc);
             }
         }
     }
 
-    return count;
+    if (state->player_index >= 0 && state->prev_player_overlaps.count > 0) {
+        const Entity *player = game_get_player_const(state);
+        if (player) {
+            detect_enter_targets(player, state->player_index, state->current_level.entities.data,
+                                 state->current_level.entities.count, &state->prev_player_overlaps, out_events, alloc);
+        }
+    }
 }
 
 void game_update(struct EngineContext *ctx, GameState *state, InputState input, float delta_time)
@@ -296,13 +338,16 @@ void game_update(struct EngineContext *ctx, GameState *state, InputState input, 
 
     update_child_positions(&state->current_level);
 
-    TriggerEvent trigger_events[MAX_COLLECT_EVENTS];
-    int trigger_count = collect_trigger_events(ctx, state, input, trigger_events, MAX_COLLECT_EVENTS);
+    SCRATCH_SCOPE(&state->scratch_arena);
+    Allocator scratch_alloc = allocator_arena(ctx, &state->scratch_arena);
+    vec_trigger_event trigger_events = {0};
+    collect_trigger_events(ctx, state, input, &trigger_events, &scratch_alloc);
 
-    if (trigger_count > 0) {
+    if (trigger_events.count > 0) {
         Allocator rule_alloc = allocator_arena(ctx, &state->gamedata_arena);
         rules_evaluate_batch(ctx, &rule_alloc, state->current_level.entities.data, state->current_level.entities.count,
-                             trigger_events, trigger_count, &state->flags, &state->vars, &state->rule_table);
+                             trigger_events.data, trigger_events.count, &state->flags, &state->vars,
+                             &state->rule_table);
     }
 }
 
