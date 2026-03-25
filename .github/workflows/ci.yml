@@ -25,12 +25,7 @@ jobs:
       - name: Build toolchain image with cache
         run: |
           docker buildx create --use
-          docker buildx build --cache-from=type=local,src=/tmp/.buildx-cache --cache-to=type=local,dest=/tmp/.buildx-cache-new,mode=max --load -t sleipner-toolchain .
-
-      - name: Update Docker layer cache
-        run: |
-          rm -rf /tmp/.buildx-cache
-          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
+          docker buildx build --cache-from=type=local,src=/tmp/.buildx-cache --cache-to=type=local,dest=/tmp/.buildx-cache --load -t sleipner-toolchain .
 
       - name: Check formatting
         run: CONTAINER_CMD=docker ./ci.sh check check.log
