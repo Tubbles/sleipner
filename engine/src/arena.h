@@ -47,14 +47,6 @@ ArenaCheckpoint arena_save(const Arena *arena);
  * All allocations made after the checkpoint become invalid. */
 void arena_restore(Arena *arena, ArenaCheckpoint checkpoint);
 
-/* Duplicate a null-terminated string into the arena.
- * Returns NULL if cstr is NULL or the arena is full. */
-[[nodiscard]] char *arena_strdup(struct EngineContext *ctx, Arena *arena, const char *cstr);
-
-/* Copy size bytes from src into the arena.
- * Returns NULL if src is NULL or the arena is full. */
-[[nodiscard]] void *arena_memdup(struct EngineContext *ctx, Arena *arena, const void *src, size_t size);
-
 /* Reallocate an existing arena allocation.
  * If old_ptr is NULL, behaves like arena_alloc.
  * If request.size <= old_size, returns old_ptr unchanged.

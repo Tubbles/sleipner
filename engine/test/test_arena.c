@@ -187,69 +187,6 @@ void test_arena_save_at_zero(void)
     arena_free(&arena);
 }
 
-void test_arena_strdup_content(void)
-{
-    Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 128));
-
-    char *copy = arena_strdup(&ctx, &arena, "hello");
-    TEST_ASSERT_NOT_NULL(copy);
-    TEST_ASSERT_EQUAL_STRING("hello", copy);
-
-    arena_free(&arena);
-}
-
-void test_arena_strdup_null_returns_null(void)
-{
-    Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 128));
-
-    char *copy = arena_strdup(&ctx, &arena, NULL);
-    TEST_ASSERT_NULL(copy);
-    TEST_ASSERT_EQUAL_size_t(0, arena_used(&arena));
-
-    arena_free(&arena);
-}
-
-void test_arena_strdup_empty_string(void)
-{
-    Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 128));
-
-    char *copy = arena_strdup(&ctx, &arena, "");
-    TEST_ASSERT_NOT_NULL(copy);
-    TEST_ASSERT_EQUAL_STRING("", copy);
-    TEST_ASSERT_EQUAL_size_t(1, arena_used(&arena));
-
-    arena_free(&arena);
-}
-
-void test_arena_memdup_content(void)
-{
-    Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 128));
-
-    uint8_t src[] = {0xDE, 0xAD, 0xBE, 0xEF};
-    uint8_t *copy = arena_memdup(&ctx, &arena, src, sizeof(src));
-    TEST_ASSERT_NOT_NULL(copy);
-    TEST_ASSERT_EQUAL_UINT8_ARRAY(src, copy, sizeof(src));
-    TEST_ASSERT_EQUAL_size_t(sizeof(src), arena_used(&arena));
-
-    arena_free(&arena);
-}
-
-void test_arena_memdup_null_returns_null(void)
-{
-    Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 128));
-
-    void *copy = arena_memdup(&ctx, &arena, NULL, 16);
-    TEST_ASSERT_NULL(copy);
-    TEST_ASSERT_EQUAL_size_t(0, arena_used(&arena));
-
-    arena_free(&arena);
-}
-
 void test_arena_realloc_null_ptr_acts_as_alloc(void)
 {
     Arena arena;
