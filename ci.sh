@@ -26,7 +26,9 @@ run() {
 }
 
 ensure_image() {
-    "$CONTAINER_CMD" build -t "$IMAGE" .
+    if ! "$CONTAINER_CMD" image inspect "$IMAGE" > /dev/null 2>&1; then
+        "$CONTAINER_CMD" build -t "$IMAGE" .
+    fi
 }
 
 conan_profile_setup='conan profile detect --force \
