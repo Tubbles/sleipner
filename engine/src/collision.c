@@ -421,20 +421,15 @@ bool composite_overlap(const CollisionShape *shape_a,
 
 Vector2 resolve_composite_wall(const CollisionShape *shape, Vector2 pos, float angle, Rectangle wall)
 {
-    CollisionShape wall_shape = {0};
     CollisionPrimitive wall_prim = {
         .kind = COLLIDER_RECT,
         .offset = {0, 0},
         .angle_offset = 0,
+        .rect = {.half_w = wall.width / 2, .half_h = wall.height / 2},
     };
-    wall_prim.rect.half_w = wall.width / 2;
-    wall_prim.rect.half_h = wall.height / 2;
-    (void)vec_collision_prim_push(&wall_shape.prims, wall_prim, NULL);
-
+    CollisionShape wall_shape = {.prims = {.data = &wall_prim, .count = 1, .capacity = 1}};
     Vector2 wall_center = {wall.x + (wall.width / 2), wall.y + (wall.height / 2)};
-    Vector2 result = resolve_composite(shape, pos, angle, &wall_shape, wall_center, 0);
-    vec_collision_prim_free(&wall_shape.prims, NULL);
-    return result;
+    return resolve_composite(shape, pos, angle, &wall_shape, wall_center, 0);
 }
 
 // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)

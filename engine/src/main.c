@@ -54,13 +54,13 @@ VEC_IMPL(texture_entry, TextureEntry)
 #define FONT_PREVIEW_SIZE 32
 
 /* Texture registry — maps texture filenames to loaded Texture2D handles */
-static void texture_registry_add(struct EngineContext *ctx, const char *filename, Texture2D texture)
+static void texture_registry_add(struct EngineContext *ctx, const char *filename, Texture2D texture, Allocator *alloc)
 {
     TextureEntry entry = {0};
     strncpy(entry.filename, filename, MAX_TEXTURE_FILENAME - 1);
     entry.filename[MAX_TEXTURE_FILENAME - 1] = '\0';
     entry.texture = texture;
-    (void)vec_texture_entry_push(&ctx->assets.textures, entry, NULL);
+    (void)vec_texture_entry_push(&ctx->assets.textures, entry, alloc);
 }
 
 static Texture2D *texture_registry_lookup(const char *filename, void *user_data)
@@ -77,12 +77,6 @@ static Texture2D *texture_registry_lookup(const char *filename, void *user_data)
     return NULL;
 }
 
-static void font_preview_init(struct EngineContext *ctx)
-{
-    vec_font_preview_free(&ctx->assets.font_previews, NULL);
-    debug_log(ctx, "font_preview: initialized");
-}
-
 static Texture2D load_embedded_texture(EmbeddedAsset asset)
 {
     Image image = LoadImageFromMemory(".png", asset.data, asset.size);
@@ -91,7 +85,7 @@ static Texture2D load_embedded_texture(EmbeddedAsset asset)
     return texture;
 }
 
-static void font_preview_add(struct EngineContext *ctx, const char *name, EmbeddedAsset asset)
+static void font_preview_add(struct EngineContext *ctx, const char *name, EmbeddedAsset asset, Allocator *alloc)
 {
     FontPreviewEntry entry = {0};
     strncpy(entry.name, name, FONT_NAME_LEN - 1);
@@ -102,7 +96,7 @@ static void font_preview_add(struct EngineContext *ctx, const char *name, Embedd
     } else {
         debug_log(ctx, "font[%d]: '%s' failed to load", ctx->assets.font_previews.count, name);
     }
-    (void)vec_font_preview_push(&ctx->assets.font_previews, entry, NULL);
+    (void)vec_font_preview_push(&ctx->assets.font_previews, entry, alloc);
 }
 
 static InputState merge_input(InputState base, InputState overlay)
@@ -298,7 +292,6 @@ static void font_preview_cleanup(struct EngineContext *ctx)
             UnloadFont(ctx->assets.font_previews.data[index].font);
         }
     }
-    vec_font_preview_free(&ctx->assets.font_previews, NULL);
 }
 
 static void draw_font_preview(struct EngineContext *ctx)
@@ -630,27 +623,6 @@ int main(void)
     SetTargetFPS(TARGET_FPS);
     audio_init(ctx);
 
-    /* Load textures from embedded assets */
-    texture_registry_add(ctx, "player.png", load_embedded_texture(ASSET(player_png)));
-    texture_registry_add(ctx, "grass.png", load_embedded_texture(ASSET(grass_png)));
-    texture_registry_add(ctx, "tree.png", load_embedded_texture(ASSET(tree_png)));
-    texture_registry_add(ctx, "chest.png", load_embedded_texture(ASSET(chest_png)));
-    texture_registry_add(ctx, "house.png", load_embedded_texture(ASSET(house_png)));
-    texture_registry_add(ctx, "fence.png", load_embedded_texture(ASSET(fence_png)));
-    for (int index = 0; index < ctx->assets.textures.count; index++) {
-        debug_log(ctx, "texture[%d]: '%s' id=%u %dx%d", index, ctx->assets.textures.data[index].filename,
-                  ctx->assets.textures.data[index].texture.id, ctx->assets.textures.data[index].texture.width,
-                  ctx->assets.textures.data[index].texture.height);
-    }
-    /* Initialize and load fonts */
-    font_preview_init(ctx);
-    font_preview_add(ctx, "Earth Illusion", ASSET(earth_illusion_ttf));
-    font_preview_add(ctx, "Golden Apple", ASSET(golden_apple_ttf));
-    font_preview_add(ctx, "MenuCard", ASSET(menucard_ttf));
-    font_preview_add(ctx, "Nudge Orb", ASSET(nudge_orb_ttf));
-    font_preview_add(ctx, "CardboardCrown", ASSET(cardboardcrown_ttf));
-    font_preview_add(ctx, "RoyalFibre", ASSET(royalfibre_ttf));
-
     EmbeddedAsset bgm_asset = ASSET(bgm_mp3);
     Music bgm = LoadMusicStreamFromMemory(".mp3", bgm_asset.data, bgm_asset.size);
     bgm.looping = true;
@@ -667,13 +639,35 @@ int main(void)
         return 1;
     }
 
+    {
+        Allocator gamedata_alloc = allocator_arena(ctx, &state.gamedata_arena);
+        /* Load textures from embedded assets */
+        texture_registry_add(ctx, "player.png", load_embedded_texture(ASSET(player_png)), &gamedata_alloc);
+        texture_registry_add(ctx, "grass.png", load_embedded_texture(ASSET(grass_png)), &gamedata_alloc);
+        texture_registry_add(ctx, "tree.png", load_embedded_texture(ASSET(tree_png)), &gamedata_alloc);
+        texture_registry_add(ctx, "chest.png", load_embedded_texture(ASSET(chest_png)), &gamedata_alloc);
+        texture_registry_add(ctx, "house.png", load_embedded_texture(ASSET(house_png)), &gamedata_alloc);
+        texture_registry_add(ctx, "fence.png", load_embedded_texture(ASSET(fence_png)), &gamedata_alloc);
+        for (int index = 0; index < ctx->assets.textures.count; index++) {
+            debug_log(ctx, "texture[%d]: '%s' id=%u %dx%d", index, ctx->assets.textures.data[index].filename,
+                      ctx->assets.textures.data[index].texture.id, ctx->assets.textures.data[index].texture.width,
+                      ctx->assets.textures.data[index].texture.height);
+        }
+        /* Load fonts */
+        font_preview_add(ctx, "Earth Illusion", ASSET(earth_illusion_ttf), &gamedata_alloc);
+        font_preview_add(ctx, "Golden Apple", ASSET(golden_apple_ttf), &gamedata_alloc);
+        font_preview_add(ctx, "MenuCard", ASSET(menucard_ttf), &gamedata_alloc);
+        font_preview_add(ctx, "Nudge Orb", ASSET(nudge_orb_ttf), &gamedata_alloc);
+        font_preview_add(ctx, "CardboardCrown", ASSET(cardboardcrown_ttf), &gamedata_alloc);
+        font_preview_add(ctx, "RoyalFibre", ASSET(royalfibre_ttf), &gamedata_alloc);
+    }
+
 #ifndef __ANDROID__
     {
+        SCRATCH_SCOPE(&state.scratch_arena);
         EmbeddedAsset gamepad_asset = ASSET(gamecontrollerdb_txt);
-        ArenaCheckpoint gamepad_cp = arena_save(&state.gamedata_arena);
-        Allocator gamepad_alloc = allocator_arena(ctx, &state.gamedata_arena);
+        Allocator gamepad_alloc = allocator_arena(ctx, &state.scratch_arena);
         input_load_mappings(ctx, &gamepad_alloc, (const char *)gamepad_asset.data, gamepad_asset.size);
-        arena_restore(&state.gamedata_arena, gamepad_cp);
     }
 #endif
 
@@ -758,7 +752,6 @@ quit:
     for (int index = 0; index < ctx->assets.textures.count; index++) {
         UnloadTexture(ctx->assets.textures.data[index].texture);
     }
-    vec_texture_entry_free(&ctx->assets.textures, NULL);
     font_preview_cleanup(ctx);
     game_free(ctx, &state);
     audio_shutdown(ctx);
