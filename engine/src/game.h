@@ -28,6 +28,7 @@ enum {
 typedef struct {
     int player_index;
     Arena gamedata_arena;
+    ArenaCheckpoint gamedata_base; /* offset just above persistent assets (textures, fonts) */
     Arena scratch_arena;
     BlueprintTable blueprints;
     map_entity_ruleset rule_table;

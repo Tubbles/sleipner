@@ -55,12 +55,24 @@ conan build .
 
 ## Arena Architecture
 
-All engine memory is arena-backed. **Zero libc `malloc`/`realloc`/`free` in game code** — only the allocator infrastructure's `NULL` fallback path and TOML vendor datum frees remain as exceptions.
+**ALL engine memory is arena-backed. Using `malloc`, `realloc`, or `free` anywhere in engine code is strictly forbidden — no exceptions, no workarounds, no "just this once".** The only permitted exemptions are: (1) the `NULL`-allocator fallback path inside the allocator infrastructure itself, and (2) `free(datum.u.s)` calls for TOML vendor string datums (a vendor limitation). If you find yourself reaching for `malloc`, the architecture is wrong — restructure to pass an arena allocator instead.
 
 ### Two arenas in `GameState`
 
-- **`gamedata_arena`** — all persistent data: blueprints, levels, entity strings, attribute names/values, rules, runtime flags, asset vecs (textures, fonts). Reset via `arena_reset` on hot-reload/level transition. `arena_reset` calls `MADV_DONTNEED` to return physical pages to the OS.
+- **`gamedata_arena`** — all persistent data: blueprints, levels, entity strings, attribute names/values, rules, runtime flags, asset vecs (textures, fonts). On hot-reload/level transition, rewound to `gamedata_base` via `arena_restore` — **not** `arena_reset`. `arena_reset` (which calls `MADV_DONTNEED`) is only for full teardown.
 - **`scratch_arena`** — temporaries that must not outlive their enclosing scope. Always used via `SCRATCH_SCOPE` — no exceptions. `arena_restore` does a bare pointer rewind with no `madvise`; scratch memory is reused immediately.
+
+### `gamedata_base` checkpoint
+
+`GameState` holds an `ArenaCheckpoint gamedata_base` that is saved **after** persistent assets (textures, fonts) are loaded into `gamedata_arena` at startup — but **before** any gamedata (blueprints, level, rules) is parsed. Layout:
+
+```
+gamedata_arena:
+  [0 .. gamedata_base)   ← textures + fonts (survive all reloads, freed only at game exit)
+  [gamedata_base .. top) ← blueprints, level, rules (rewound on each reload)
+```
+
+`game_load_gamedata` calls `arena_restore(&state->gamedata_arena, state->gamedata_base)` before re-parsing. This preserves the texture/font data and reclaims all gamedata memory without a single `free()`. **Never call `arena_reset` on `gamedata_arena` from game code** — it would wipe the textures and cause a black screen.
 
 ### Backing storage
 
@@ -76,7 +88,7 @@ Saves the arena offset on entry and restores it on any block exit (return, break
 
 ### Passing allocators
 
-Pass `allocator_arena(ctx, arena)` wherever arena-backed allocation is needed. `Str`, `vec`, and `map` all accept an `Allocator *`; pass `NULL` only in test code that manages its own lifetime via `test_*_free` helpers.
+**Always pass `allocator_arena(ctx, arena)`.** `Str`, `vec`, and `map` all accept an `Allocator *`. Passing `NULL` is only allowed in test code that manages its own lifetime via `test_*_free` helpers — never in engine code. If you are about to pass `NULL` or call `allocator_heap()` in non-test code, stop and fix the architecture instead.
 
 ## Testing Strategy
 

@@ -292,7 +292,6 @@ static void font_preview_cleanup(struct EngineContext *ctx)
             UnloadFont(ctx->assets.font_previews.data[index].font);
         }
     }
-    vec_font_preview_free(&ctx->assets.font_previews, NULL);
 }
 
 static void draw_font_preview(struct EngineContext *ctx)
@@ -640,25 +639,30 @@ int main(void)
         return 1;
     }
 
-    /* Load textures from embedded assets — heap-allocated (NULL): these outlive gamedata reloads */
-    texture_registry_add(ctx, "player.png", load_embedded_texture(ASSET(player_png)), NULL);
-    texture_registry_add(ctx, "grass.png", load_embedded_texture(ASSET(grass_png)), NULL);
-    texture_registry_add(ctx, "tree.png", load_embedded_texture(ASSET(tree_png)), NULL);
-    texture_registry_add(ctx, "chest.png", load_embedded_texture(ASSET(chest_png)), NULL);
-    texture_registry_add(ctx, "house.png", load_embedded_texture(ASSET(house_png)), NULL);
-    texture_registry_add(ctx, "fence.png", load_embedded_texture(ASSET(fence_png)), NULL);
-    for (int index = 0; index < ctx->assets.textures.count; index++) {
-        debug_log(ctx, "texture[%d]: '%s' id=%u %dx%d", index, ctx->assets.textures.data[index].filename,
-                  ctx->assets.textures.data[index].texture.id, ctx->assets.textures.data[index].texture.width,
-                  ctx->assets.textures.data[index].texture.height);
+    {
+        Allocator gamedata_alloc = allocator_arena(ctx, &state.gamedata_arena);
+        /* Load textures and fonts into gamedata_arena — these sit at the bottom of the arena
+         * below gamedata_base and survive every gamedata reload (only freed at game exit). */
+        texture_registry_add(ctx, "player.png", load_embedded_texture(ASSET(player_png)), &gamedata_alloc);
+        texture_registry_add(ctx, "grass.png", load_embedded_texture(ASSET(grass_png)), &gamedata_alloc);
+        texture_registry_add(ctx, "tree.png", load_embedded_texture(ASSET(tree_png)), &gamedata_alloc);
+        texture_registry_add(ctx, "chest.png", load_embedded_texture(ASSET(chest_png)), &gamedata_alloc);
+        texture_registry_add(ctx, "house.png", load_embedded_texture(ASSET(house_png)), &gamedata_alloc);
+        texture_registry_add(ctx, "fence.png", load_embedded_texture(ASSET(fence_png)), &gamedata_alloc);
+        for (int index = 0; index < ctx->assets.textures.count; index++) {
+            debug_log(ctx, "texture[%d]: '%s' id=%u %dx%d", index, ctx->assets.textures.data[index].filename,
+                      ctx->assets.textures.data[index].texture.id, ctx->assets.textures.data[index].texture.width,
+                      ctx->assets.textures.data[index].texture.height);
+        }
+        font_preview_add(ctx, "Earth Illusion", ASSET(earth_illusion_ttf), &gamedata_alloc);
+        font_preview_add(ctx, "Golden Apple", ASSET(golden_apple_ttf), &gamedata_alloc);
+        font_preview_add(ctx, "MenuCard", ASSET(menucard_ttf), &gamedata_alloc);
+        font_preview_add(ctx, "Nudge Orb", ASSET(nudge_orb_ttf), &gamedata_alloc);
+        font_preview_add(ctx, "CardboardCrown", ASSET(cardboardcrown_ttf), &gamedata_alloc);
+        font_preview_add(ctx, "RoyalFibre", ASSET(royalfibre_ttf), &gamedata_alloc);
     }
-    /* Load fonts — heap-allocated (NULL): these outlive gamedata reloads */
-    font_preview_add(ctx, "Earth Illusion", ASSET(earth_illusion_ttf), NULL);
-    font_preview_add(ctx, "Golden Apple", ASSET(golden_apple_ttf), NULL);
-    font_preview_add(ctx, "MenuCard", ASSET(menucard_ttf), NULL);
-    font_preview_add(ctx, "Nudge Orb", ASSET(nudge_orb_ttf), NULL);
-    font_preview_add(ctx, "CardboardCrown", ASSET(cardboardcrown_ttf), NULL);
-    font_preview_add(ctx, "RoyalFibre", ASSET(royalfibre_ttf), NULL);
+    /* Mark the high-water point: everything below here survives gamedata reloads */
+    state.gamedata_base = arena_save(&state.gamedata_arena);
 
 #ifndef __ANDROID__
     {
@@ -750,7 +754,6 @@ quit:
     for (int index = 0; index < ctx->assets.textures.count; index++) {
         UnloadTexture(ctx->assets.textures.data[index].texture);
     }
-    vec_texture_entry_free(&ctx->assets.textures, NULL);
     font_preview_cleanup(ctx);
     game_free(ctx, &state);
     audio_shutdown(ctx);

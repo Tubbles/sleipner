@@ -61,7 +61,7 @@ bool game_load_gamedata(struct EngineContext *ctx, GameState *state, GamedataPar
 
     char errbuf[TOML_ERRBUF_SIZE];
     toml_table_t *root = toml_parse(buffer, errbuf, (int)sizeof(errbuf));
-    arena_reset(&state->gamedata_arena);
+    arena_restore(&state->gamedata_arena, state->gamedata_base);
     state->rule_table = (map_entity_ruleset){0};
 
     if (!root) {
