@@ -53,6 +53,31 @@ conan build .
 - **Vendor libraries go in `engine/vendor/`.** Not the top-level `vendor/`.
 - **No opaque cross-module forward declarations.** Never use `struct Foo;` or `typedef struct Foo Foo;` in a header to avoid including the header that defines `Foo`. This hides circular dependencies and obscures the include hierarchy. If a circular dependency appears, fix the architecture — extract a common lower-level definition, use dependency injection, or split the type — rather than hiding the cycle with an opaque pointer. There is no clang-tidy check for this; enforcement is by convention. Exceptions: (1) self-referential structs within the same file (e.g. `struct Node { struct Node *next; }`) are necessary and fine; (2) `struct EngineContext;` is a known violation pending a proper split of the logging/error context into a lightweight header — do not add new ones.
 
+## Arena Architecture
+
+All engine memory is arena-backed. **Zero libc `malloc`/`realloc`/`free` in game code** — only the allocator infrastructure's `NULL` fallback path and TOML vendor datum frees remain as exceptions.
+
+### Two arenas in `GameState`
+
+- **`gamedata_arena`** — all persistent data: blueprints, levels, entity strings, attribute names/values, rules, runtime flags, asset vecs (textures, fonts). Reset via `arena_reset` on hot-reload/level transition. `arena_reset` calls `MADV_DONTNEED` to return physical pages to the OS.
+- **`scratch_arena`** — temporaries that must not outlive their enclosing scope. Always used via `SCRATCH_SCOPE` — no exceptions. `arena_restore` does a bare pointer rewind with no `madvise`; scratch memory is reused immediately.
+
+### Backing storage
+
+Both arenas use `mmap(MAP_ANONYMOUS|MAP_PRIVATE|MAP_NORESERVE)` with a 1 TiB (`1ULL << 40`) virtual reservation. Physical pages are demand-paged — only memory actually written costs RAM. `MAP_NORESERVE` is required to allow the large reservation inside containers with strict overcommit heuristics.
+
+### `SCRATCH_SCOPE` macro
+
+```c
+SCRATCH_SCOPE(&state.scratch_arena);
+```
+
+Saves the arena offset on entry and restores it on any block exit (return, break, goto, fall-through) via `__attribute__((cleanup))`. Every function that allocates into `scratch_arena` must open with `SCRATCH_SCOPE`. No manual `arena_save`/`arena_restore` on `scratch_arena` is permitted.
+
+### Passing allocators
+
+Pass `allocator_arena(ctx, arena)` wherever arena-backed allocation is needed. `Str`, `vec`, and `map` all accept an `Allocator *`; pass `NULL` only in test code that manages its own lifetime via `test_*_free` helpers.
+
 ## Testing Strategy
 
 Two levels of testing, both run in CI:
