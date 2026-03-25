@@ -310,7 +310,7 @@ void test_map_get_returns_pointer_to_stored_slot(void)
 void test_map_arena_allocator(void)
 {
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 4096));
+    TEST_ASSERT_TRUE(arena_init(&ctx, &arena));
     Allocator alloc = allocator_arena(&ctx, &arena);
 
     map_int_int map = {0};

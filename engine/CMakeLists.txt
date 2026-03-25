@@ -12,7 +12,7 @@ endforeach()
 
 add_library(engine STATIC ${engine_srcs})
 target_include_directories(engine PUBLIC src)
-target_compile_definitions(engine PRIVATE _POSIX_C_SOURCE=199309L)
+target_compile_definitions(engine PRIVATE _GNU_SOURCE)
 target_link_libraries(engine PUBLIC raylib tomlc99)
 
 add_executable(sleipner src/main.c)

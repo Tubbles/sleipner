@@ -83,7 +83,6 @@ void test_attr_multiple_types(void);
 void test_arena_init_and_free(void);
 void test_arena_alloc_basic(void);
 void test_arena_alloc_alignment(void);
-void test_arena_alloc_returns_null_when_full(void);
 void test_arena_reset(void);
 void test_arena_snapshot_restore(void);
 void test_arena_save_restore_basic(void);
@@ -93,6 +92,8 @@ void test_arena_realloc_null_ptr_acts_as_alloc(void);
 void test_arena_realloc_shrink_returns_same_ptr(void);
 void test_arena_realloc_in_place_when_at_top(void);
 void test_arena_realloc_copies_when_not_at_top(void);
+void test_arena_scratch_scope_auto_pop(void);
+void test_arena_scratch_scope_nested(void);
 
 /* test_alloc.c */
 void test_alloc_heap_malloc_and_free(void);
@@ -431,7 +432,6 @@ int main(void)
     RUN_TEST(test_arena_init_and_free);
     RUN_TEST(test_arena_alloc_basic);
     RUN_TEST(test_arena_alloc_alignment);
-    RUN_TEST(test_arena_alloc_returns_null_when_full);
     RUN_TEST(test_arena_reset);
     RUN_TEST(test_arena_snapshot_restore);
     RUN_TEST(test_arena_save_restore_basic);
@@ -441,6 +441,8 @@ int main(void)
     RUN_TEST(test_arena_realloc_shrink_returns_same_ptr);
     RUN_TEST(test_arena_realloc_in_place_when_at_top);
     RUN_TEST(test_arena_realloc_copies_when_not_at_top);
+    RUN_TEST(test_arena_scratch_scope_auto_pop);
+    RUN_TEST(test_arena_scratch_scope_nested);
 
     RUN_TEST(test_alloc_heap_malloc_and_free);
     RUN_TEST(test_alloc_heap_realloc);

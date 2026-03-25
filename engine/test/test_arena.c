@@ -11,9 +11,8 @@ static struct EngineContext ctx;
 void test_arena_init_and_free(void)
 {
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 1024));
+    TEST_ASSERT_TRUE(arena_init(&ctx, &arena));
     TEST_ASSERT_NOT_NULL(arena.buffer);
-    TEST_ASSERT_EQUAL_size_t(1024, arena.capacity);
     TEST_ASSERT_EQUAL_size_t(0, arena.offset);
     arena_free(&arena);
     TEST_ASSERT_NULL(arena.buffer);
@@ -22,12 +21,11 @@ void test_arena_init_and_free(void)
 void test_arena_alloc_basic(void)
 {
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 256));
+    TEST_ASSERT_TRUE(arena_init(&ctx, &arena));
 
     void *first = arena_alloc(&ctx, &arena, (AllocRequest){.size = 32, .alignment = 1});
     TEST_ASSERT_NOT_NULL(first);
     TEST_ASSERT_EQUAL_size_t(32, arena_used(&arena));
-    TEST_ASSERT_EQUAL_size_t(224, arena_remaining(&arena));
 
     void *second = arena_alloc(&ctx, &arena, (AllocRequest){.size = 64, .alignment = 1});
     TEST_ASSERT_NOT_NULL(second);
@@ -42,7 +40,7 @@ void test_arena_alloc_basic(void)
 void test_arena_alloc_alignment(void)
 {
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 256));
+    TEST_ASSERT_TRUE(arena_init(&ctx, &arena));
 
     /* Allocate 1 byte to misalign */
     (void)arena_alloc(&ctx, &arena, (AllocRequest){.size = 1, .alignment = 1});
@@ -55,36 +53,16 @@ void test_arena_alloc_alignment(void)
     arena_free(&arena);
 }
 
-void test_arena_alloc_returns_null_when_full(void)
-{
-    Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 64));
-
-    void *first = arena_alloc(&ctx, &arena, (AllocRequest){.size = 48, .alignment = 1});
-    TEST_ASSERT_NOT_NULL(first);
-
-    /* Not enough room for 32 more bytes */
-    void *second = arena_alloc(&ctx, &arena, (AllocRequest){.size = 32, .alignment = 1});
-    TEST_ASSERT_NULL(second);
-
-    /* But smaller allocation still fits */
-    void *third = arena_alloc(&ctx, &arena, (AllocRequest){.size = 16, .alignment = 1});
-    TEST_ASSERT_NOT_NULL(third);
-
-    arena_free(&arena);
-}
-
 void test_arena_reset(void)
 {
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 128));
+    TEST_ASSERT_TRUE(arena_init(&ctx, &arena));
 
     (void)arena_alloc(&ctx, &arena, (AllocRequest){.size = 100, .alignment = 1});
     TEST_ASSERT_EQUAL_size_t(100, arena_used(&arena));
 
     arena_reset(&arena);
     TEST_ASSERT_EQUAL_size_t(0, arena_used(&arena));
-    TEST_ASSERT_EQUAL_size_t(128, arena_remaining(&arena));
 
     /* Can allocate again after reset */
     void *pointer = arena_alloc(&ctx, &arena, (AllocRequest){.size = 128, .alignment = 1});
@@ -96,7 +74,7 @@ void test_arena_reset(void)
 void test_arena_snapshot_restore(void)
 {
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 256));
+    TEST_ASSERT_TRUE(arena_init(&ctx, &arena));
 
     /* Write some data */
     int *values = arena_alloc(&ctx, &arena, (AllocRequest){.size = 4 * sizeof(int), .alignment = _Alignof(int)});
@@ -134,7 +112,7 @@ void test_arena_snapshot_restore(void)
 void test_arena_save_restore_basic(void)
 {
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 256));
+    TEST_ASSERT_TRUE(arena_init(&ctx, &arena));
 
     (void)arena_alloc(&ctx, &arena, (AllocRequest){.size = 32, .alignment = 1});
     ArenaCheckpoint checkpoint = arena_save(&arena);
@@ -152,7 +130,7 @@ void test_arena_save_restore_basic(void)
 void test_arena_save_restore_nested(void)
 {
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 512));
+    TEST_ASSERT_TRUE(arena_init(&ctx, &arena));
 
     (void)arena_alloc(&ctx, &arena, (AllocRequest){.size = 16, .alignment = 1});
     ArenaCheckpoint outer = arena_save(&arena);
@@ -175,7 +153,7 @@ void test_arena_save_restore_nested(void)
 void test_arena_save_at_zero(void)
 {
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 128));
+    TEST_ASSERT_TRUE(arena_init(&ctx, &arena));
 
     ArenaCheckpoint checkpoint = arena_save(&arena);
     TEST_ASSERT_EQUAL_size_t(0, checkpoint);
@@ -190,7 +168,7 @@ void test_arena_save_at_zero(void)
 void test_arena_realloc_null_ptr_acts_as_alloc(void)
 {
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 128));
+    TEST_ASSERT_TRUE(arena_init(&ctx, &arena));
 
     void *ptr = arena_realloc(&ctx, &arena, NULL, 0, (AllocRequest){.size = 32, .alignment = 1});
     TEST_ASSERT_NOT_NULL(ptr);
@@ -202,7 +180,7 @@ void test_arena_realloc_null_ptr_acts_as_alloc(void)
 void test_arena_realloc_shrink_returns_same_ptr(void)
 {
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 128));
+    TEST_ASSERT_TRUE(arena_init(&ctx, &arena));
 
     void *ptr = arena_alloc(&ctx, &arena, (AllocRequest){.size = 64, .alignment = 1});
     size_t used_before = arena_used(&arena);
@@ -217,7 +195,7 @@ void test_arena_realloc_shrink_returns_same_ptr(void)
 void test_arena_realloc_in_place_when_at_top(void)
 {
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 128));
+    TEST_ASSERT_TRUE(arena_init(&ctx, &arena));
 
     int *values = arena_alloc(&ctx, &arena, (AllocRequest){.size = 2 * sizeof(int), .alignment = _Alignof(int)});
     values[0] = 10;
@@ -236,7 +214,7 @@ void test_arena_realloc_in_place_when_at_top(void)
 void test_arena_realloc_copies_when_not_at_top(void)
 {
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 256));
+    TEST_ASSERT_TRUE(arena_init(&ctx, &arena));
 
     int *first = arena_alloc(&ctx, &arena, (AllocRequest){.size = 2 * sizeof(int), .alignment = _Alignof(int)});
     first[0] = 42;
@@ -251,6 +229,53 @@ void test_arena_realloc_copies_when_not_at_top(void)
     TEST_ASSERT_NOT_EQUAL(first, moved);
     TEST_ASSERT_EQUAL_INT(42, moved[0]);
     TEST_ASSERT_EQUAL_INT(99, moved[1]);
+
+    arena_free(&arena);
+}
+
+static size_t scratch_scope_helper(Arena *arena)
+{
+    SCRATCH_SCOPE(arena);
+    (void)arena_alloc(&ctx, arena, (AllocRequest){.size = 64, .alignment = 1});
+    return arena_used(arena);
+}
+
+void test_arena_scratch_scope_auto_pop(void)
+{
+    Arena arena;
+    TEST_ASSERT_TRUE(arena_init(&ctx, &arena));
+
+    (void)arena_alloc(&ctx, &arena, (AllocRequest){.size = 32, .alignment = 1});
+    TEST_ASSERT_EQUAL_size_t(32, arena_used(&arena));
+
+    /* SCRATCH_SCOPE inside helper: should restore to 32 on return */
+    size_t used_inside = scratch_scope_helper(&arena);
+    TEST_ASSERT_EQUAL_size_t(96, used_inside);
+    TEST_ASSERT_EQUAL_size_t(32, arena_used(&arena));
+
+    arena_free(&arena);
+}
+
+void test_arena_scratch_scope_nested(void)
+{
+    Arena arena;
+    TEST_ASSERT_TRUE(arena_init(&ctx, &arena));
+
+    {
+        SCRATCH_SCOPE(&arena);
+        (void)arena_alloc(&ctx, &arena, (AllocRequest){.size = 16, .alignment = 1});
+        TEST_ASSERT_EQUAL_size_t(16, arena_used(&arena));
+
+        {
+            SCRATCH_SCOPE(&arena);
+            (void)arena_alloc(&ctx, &arena, (AllocRequest){.size = 32, .alignment = 1});
+            TEST_ASSERT_EQUAL_size_t(48, arena_used(&arena));
+        }
+        /* Inner scope popped */
+        TEST_ASSERT_EQUAL_size_t(16, arena_used(&arena));
+    }
+    /* Outer scope popped */
+    TEST_ASSERT_EQUAL_size_t(0, arena_used(&arena));
 
     arena_free(&arena);
 }

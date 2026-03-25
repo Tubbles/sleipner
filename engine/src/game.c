@@ -17,7 +17,6 @@
 #include <math.h>
 #include <string.h>
 
-#define GAMEDATA_ARENA_SIZE (1024UL * 1024)
 #define TOML_ERRBUF_SIZE 200
 #define MAX_COLLECT_EVENTS 32
 
@@ -27,7 +26,12 @@ bool game_init(struct EngineContext *ctx, GameState *state, RectU32 game_bounds)
     state->game_bounds = game_bounds;
     state->player_index = -1;
     state->debug_enabled = true;
-    if (!arena_init(ctx, &state->gamedata_arena, GAMEDATA_ARENA_SIZE)) {
+    if (!arena_init(ctx, &state->gamedata_arena)) {
+        error_wrap(ctx, "game_init");
+        return false;
+    }
+    if (!arena_init(ctx, &state->scratch_arena)) {
+        arena_free(&state->gamedata_arena);
         error_wrap(ctx, "game_init");
         return false;
     }
@@ -306,5 +310,6 @@ void game_free(struct EngineContext *ctx, GameState *state)
 {
     (void)ctx;
     arena_free(&state->gamedata_arena);
+    arena_free(&state->scratch_arena);
     *state = (GameState){0};
 }

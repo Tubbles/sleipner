@@ -59,7 +59,7 @@ static toml_table_t *parse_toml(const char *input)
 void test_toml_emit_blueprints(void)
 {
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 32768));
+    TEST_ASSERT_TRUE(arena_init(&ctx, &arena));
     BlueprintTable blueprints = {0};
 
     toml_table_t *root = parse_toml(fixture_gamedata);
@@ -86,7 +86,7 @@ void test_toml_emit_blueprints(void)
 void test_toml_emit_level_with_entities(void)
 {
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 32768));
+    TEST_ASSERT_TRUE(arena_init(&ctx, &arena));
     BlueprintTable blueprints = {0};
     Level level = {0};
 
@@ -117,7 +117,7 @@ void test_toml_emit_level_with_entities(void)
 void test_toml_emit_round_trip(void)
 {
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 32768));
+    TEST_ASSERT_TRUE(arena_init(&ctx, &arena));
     BlueprintTable blueprints = {0};
     Level level = {0};
 
@@ -135,7 +135,7 @@ void test_toml_emit_round_trip(void)
 
     /* Re-parse the emitted output */
     Arena arena2;
-    TEST_ASSERT_TRUE(arena_init(&ctx, &arena2, 32768));
+    TEST_ASSERT_TRUE(arena_init(&ctx, &arena2));
     BlueprintTable blueprints2 = {0};
     Level level2 = {0};
 
@@ -219,7 +219,7 @@ static const char *child_fixture = "[[blueprint]]\n"
 void test_toml_emit_blueprint_children(void)
 {
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 32768));
+    TEST_ASSERT_TRUE(arena_init(&ctx, &arena));
     BlueprintTable blueprints = {0};
 
     toml_table_t *root = parse_toml(child_fixture);
@@ -242,7 +242,7 @@ void test_toml_emit_blueprint_children(void)
 void test_toml_emit_skips_child_entities(void)
 {
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 32768));
+    TEST_ASSERT_TRUE(arena_init(&ctx, &arena));
     BlueprintTable blueprints = {0};
     Level level = {0};
 

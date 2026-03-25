@@ -35,7 +35,7 @@ void test_alloc_heap_realloc(void)
 void test_alloc_arena_malloc(void)
 {
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 256));
+    TEST_ASSERT_TRUE(arena_init(&ctx, &arena));
 
     Allocator alloc = allocator_arena(&ctx, &arena);
     void *ptr = alloc.malloc_fn(alloc.ctx, alloc.arena, (AllocRequest){.size = 64, .alignment = 1});
@@ -48,7 +48,7 @@ void test_alloc_arena_malloc(void)
 void test_alloc_arena_free_is_noop(void)
 {
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 256));
+    TEST_ASSERT_TRUE(arena_init(&ctx, &arena));
 
     Allocator alloc = allocator_arena(&ctx, &arena);
     void *ptr = alloc.malloc_fn(alloc.ctx, alloc.arena, (AllocRequest){.size = 32, .alignment = 1});
@@ -64,7 +64,7 @@ void test_alloc_arena_free_is_noop(void)
 void test_alloc_arena_realloc_in_place(void)
 {
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 256));
+    TEST_ASSERT_TRUE(arena_init(&ctx, &arena));
 
     Allocator alloc = allocator_arena(&ctx, &arena);
 

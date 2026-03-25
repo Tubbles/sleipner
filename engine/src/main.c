@@ -250,8 +250,8 @@ static void draw_debug_info(struct EngineContext *ctx, const GameState *state, R
              DEBUG_FONT_SIZE, debug_text_color);
     DrawText(TextFormat("FPS: %d  frame: %d  t: %.1fs", GetFPS(), state->frame, state->elapsed), DEBUG_MARGIN,
              DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, debug_text_color);
-    DrawText(TextFormat("arena: %zu / %zu bytes", arena_used(&state->gamedata_arena), state->gamedata_arena.capacity),
-             DEBUG_MARGIN, DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, debug_text_color);
+    DrawText(TextFormat("arena: %zu bytes", arena_used(&state->gamedata_arena)), DEBUG_MARGIN,
+             DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, debug_text_color);
     DrawText(TextFormat("screen: %dx%d", ctx->screen_width, ctx->screen_height), DEBUG_MARGIN,
              DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, debug_text_color);
     DrawText(TextFormat("GetScreen: %dx%d  GetRender: %dx%d", screen_w, screen_h, render_w, render_h), DEBUG_MARGIN,

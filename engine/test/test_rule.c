@@ -726,7 +726,7 @@ void test_rules_parse_from_toml(void)
     TEST_ASSERT_NOT_NULL(root);
 
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 65536));
+    TEST_ASSERT_TRUE(arena_init(&ctx, &arena));
     Allocator alloc = allocator_arena(&ctx, &arena);
 
     vec_rule rules = {0};
@@ -758,7 +758,7 @@ void test_rules_parse_no_rules(void)
     TEST_ASSERT_NOT_NULL(root);
 
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 65536));
+    TEST_ASSERT_TRUE(arena_init(&ctx, &arena));
     Allocator alloc = allocator_arena(&ctx, &arena);
 
     vec_rule rules = {0};
@@ -788,7 +788,7 @@ void test_rules_parse_multiple_rules(void)
     TEST_ASSERT_NOT_NULL(root);
 
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 65536));
+    TEST_ASSERT_TRUE(arena_init(&ctx, &arena));
     Allocator alloc = allocator_arena(&ctx, &arena);
 
     vec_rule rules = {0};
@@ -811,7 +811,7 @@ void test_evaluate_interact_sets_flag(void)
     TEST_ASSERT_TRUE(attr_set_string(NULL, &blueprint.attrs, (AttrStringPair){.name = "name", .value = "chest"}));
 
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 65536));
+    TEST_ASSERT_TRUE(arena_init(&ctx, &arena));
     Allocator rule_alloc = allocator_arena(&ctx, &arena);
 
     Rule *rule = arena_alloc(&ctx, &arena, (AllocRequest){.size = sizeof(Rule), .alignment = _Alignof(Rule)});
@@ -853,7 +853,7 @@ void test_evaluate_condition_blocks_action(void)
     TEST_ASSERT_TRUE(attr_set_string(NULL, &blueprint.attrs, (AttrStringPair){.name = "name", .value = "chest"}));
 
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 65536));
+    TEST_ASSERT_TRUE(arena_init(&ctx, &arena));
     Allocator rule_alloc = allocator_arena(&ctx, &arena);
 
     Rule *rule = arena_alloc(&ctx, &arena, (AllocRequest){.size = sizeof(Rule), .alignment = _Alignof(Rule)});
@@ -895,7 +895,7 @@ void test_evaluate_condition_blocks_action(void)
 void test_evaluate_fire_event_cascading(void)
 {
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx, &arena, 65536));
+    TEST_ASSERT_TRUE(arena_init(&ctx, &arena));
     Allocator rule_alloc = allocator_arena(&ctx, &arena);
 
     Blueprint bp_switch = {0};
