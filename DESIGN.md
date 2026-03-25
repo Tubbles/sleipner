@@ -856,7 +856,7 @@ scratch_arena:
 - [x] Variable system (local per-execution, global persistent, $ references in parameters)
 - [ ] Subroutines (named reusable action sequences, callable via `call:`)
 - [ ] Timer management (create, destroy named timers)
-- [ ] Enter/on_spawn trigger detection (overlap tracking, level load events)
+- [ ] Enter/on_spawn trigger detection (simple AABB overlap for now — will be replaced by composable collision shapes, see Phase 9)
 - [ ] Remaining triggers (collide, defeat, timer, timer_periodic, on_destroy)
 
 ### Phase 5 — Editor Mode
@@ -915,6 +915,19 @@ scratch_arena:
 - [ ] Audio (music crossfade, spatial sound, ambient layers)
 - [ ] NPC behaviors (patrol, dialogue)
 - [ ] Save/load system (persistent world state, delta from gamedata, auto-save, slots)
+
+### Phase 9 — Collision Engine
+
+Replace the AABB-only collision system with composable collision shapes. Each entity's collision volume is a list of primitives; the engine tests all pairs.
+
+- [ ] Collision primitive types: circle, rectangle, triangle
+- [ ] Composable collision volumes (list of primitives per entity, combined for resolution)
+- [ ] Replace simple AABB overlap in `enter` trigger detection with full shape system
+- [ ] Replace player/obstacle AABB resolution with primitive-pair resolution
+- [ ] Slope and angled surface support
+- [ ] One-way platforms (jump-down ledges)
+- [ ] Trigger volumes of arbitrary shape (enter trigger uses shape, not AABB)
+- [ ] Editor visualization: draw all primitives in debug mode
 
 ## Resolved Decisions
 
@@ -1005,10 +1018,10 @@ scratch_arena:
 - Should large assets (music, tilesets) use a different strategy than small ones (icons, UI)?
 
 ### Collision System Evolution
-- Current system is AABB-based — will slopes or angled surfaces be needed?
-- One-way platforms (e.g. jump-down ledges)?
-- Trigger volumes of arbitrary shape (circles, polygons)?
-- How do trigger zones interact with the rule system?
+
+Planned in Phase 9. The current AABB system will be replaced with composable collision shapes — each entity's collision volume is a list of primitives (circle, triangle, rectangle), composed together. This unlocks irregular hitboxes, angled surfaces, and trigger zones of arbitrary shape.
+
+When Phase 9 lands, the simple AABB overlap used for `enter` trigger detection will be ripped out and replaced with the full shape system. The rule integration (`enter` fires when a player's shape overlaps an entity's shape) stays the same — only the underlying geometry changes.
 
 ### Modding
 - The data-driven architecture makes modding nearly free — worth designing for explicitly?
