@@ -1019,9 +1019,52 @@ Replace the AABB-only collision system with composable collision shapes. Each en
 
 ### Collision System Evolution
 
-Planned in Phase 9. The current AABB system will be replaced with composable collision shapes — each entity's collision volume is a list of primitives (circle, triangle, rectangle), composed together. This unlocks irregular hitboxes, angled surfaces, and trigger zones of arbitrary shape.
+Planned in Phase 9. The current AABB system will be replaced with the `Shape` / `Region` type system described below. This supersedes the existing `CollisionPrim` / `CollisionShape` types, which will be deleted.
 
-When Phase 9 lands, the simple AABB overlap used for `enter` trigger detection will be ripped out and replaced with the full shape system. The rule integration (`enter` fires when a player's shape overlaps an entity's shape) stays the same — only the underlying geometry changes.
+When Phase 9 lands, the simple AABB overlap used for `enter` trigger detection will be ripped out and replaced with the full shape system. The rule integration (`enter` fires when a player's region overlaps an entity's region) stays the same — only the underlying geometry changes.
+
+#### Type Definitions
+
+**`Shape`** — a single convex primitive, positioned relative to its owning `Region`. Tagged union:
+
+```c
+typedef enum { SHAPE_CIRCLE, SHAPE_RECT, SHAPE_TRIANGLE } ShapeKind;
+
+typedef struct {
+    ShapeKind kind;
+    Vector2 offset;   // relative to owning Region's offset
+    union {
+        struct { float radius; }                  circle;
+        struct { float half_w, half_h, angle; }  rect;
+        struct { Vector2 vertices[3]; }           triangle; // relative to shape offset
+    };
+} Shape;
+```
+
+**`Region`** — a composed volume: one or more `Shape`s plus a local offset:
+
+```c
+typedef struct {
+    Vector2 offset;   // relative to entity position
+    vec_shape shapes; // arena-backed; empty vec = no region
+} Region;
+```
+
+World position of a shape = `entity.position + region.offset + shape.offset`.
+
+**Named regions on `Entity`** — separate fields, not a vec, for clarity:
+
+```c
+Region collision_region;  // physics resolution (blocks movement)
+Region trigger_region;    // enter trigger detection
+// future: attack_hitbox, hurt_box, ...
+```
+
+An empty `vec_shape` (`.shapes.count == 0`) means the region is absent — no special sentinel needed.
+
+#### Decomposability
+
+Each primitive is convex by construction. Arbitrary polygons — including concave ones — are representable by composing triangles (triangulation). There is no concave polygon primitive and none is needed: the composition mechanism provides it for free. This is an intentional design property, not a limitation.
 
 ### Modding
 - The data-driven architecture makes modding nearly free — worth designing for explicitly?
