@@ -51,8 +51,7 @@ static int emit_attr_value(char *buffer, int capacity, int offset, const Attribu
     case ATTR_FLOAT: {
         char tmp[FLOAT_STR_BUFSIZE];
         (void)snprintf(tmp, sizeof(tmp), "%g", (double)attr->value.f);
-        /* TOML requires a decimal point so the parser keeps the value as float, not int.
-         * Split into separate checks to avoid bool->int implicit conversion in || chains. */
+        /* TOML requires a decimal point so the parser keeps the value as float, not int. */
         if (strchr(tmp, '.') != NULL) {
             return emit_append(buffer, capacity, offset, "%s", tmp);
         }
@@ -192,7 +191,6 @@ static int emit_conditions_inline_array(char *buffer, int capacity, int offset, 
     return emit_append(buffer, capacity, offset, "]");
 }
 
-/* Action arg count — avoids bool struct fields that trigger implicit-bool-conversion lint */
 typedef enum {
     ACTION_EMIT_NO_ARGS,
     ACTION_EMIT_ONE_ARG,

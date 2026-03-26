@@ -239,14 +239,13 @@ If `data/gamedata.toml` and `~/Sync/sleipner/gamedata.toml` have diverged (both 
 ## Lint Discipline
 
 - **Never assume warnings are false positives.** Treat every clang-tidy/clang-analyzer warning as a real issue. Exhaust all code-level fixes before even considering suppression. Hard proof is required that something is truly a false positive before adding any NOLINTNEXTLINE.
-- **Avoid NOLINT comments.** Prefer fixing the code (e.g. explicit `(bool)` casts for C's int-returning `&&`/`||` operators). NOLINTs are noise that hide real issues.
+- **Avoid NOLINT comments.** Prefer fixing the code. NOLINTs are noise that hide real issues.
 - **Never disable lint checks without asking.** Do not modify `.clang-tidy` Checks or add inline suppressions without explicit user approval.
 - **Keep a list of tricky checks.** When encountering a lint check that requires a non-obvious fix pattern, document the check name and the fix in this section so it's available for future reference. Keep adding to this list over time.
 
 ### Known tricky checks
 - `bugprone-easily-swappable-parameters` — Two adjacent parameters of the same type. Fix by reordering params, changing one to a different type (e.g. index instead of pointer), or wrapping in a struct.
 - `performance-no-int-to-ptr` — Don't cast integers to pointers. Use index arithmetic or memcpy instead of `(Type *)(uintptr_t)value`.
-- Implicit boolean conversion — C's `&&`/`||` return int, not bool. Use explicit `(bool)` cast when assigning to a bool field.
 
 ## Toolchain Reference
 

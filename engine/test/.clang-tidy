@@ -23,9 +23,6 @@ InheritParentConfig: true
 #                                  transitively pull in stdint/stdbool etc.;
 #                                  requiring every transitive type to be directly
 #                                  included adds churn with no benefit.
-# readability-implicit-bool-conversion
-#                                — Unity macros use C integer semantics; the
-#                                  extra casts add noise.
 # cert-err33-c                   — snprintf/printf return values in test setup
 #                                  are intentionally ignored; test failure is
 #                                  caught by the assertion that follows.
@@ -35,7 +32,6 @@ Checks: >
   -misc-include-cleaner,
   -misc-use-internal-linkage,
   -readability-function-cognitive-complexity,
-  -readability-implicit-bool-conversion,
   -readability-magic-numbers,
   -readability-math-missing-parentheses,
   -readability-uppercase-literal-suffix,

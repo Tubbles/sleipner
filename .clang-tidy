@@ -25,6 +25,7 @@ Checks: >
   -objc-*,
   -openmp-*,
   -zircon-*,
+  -readability-implicit-bool-conversion,
 
 CheckOptions:
   readability-identifier-naming.FunctionCase: lower_case
@@ -34,8 +35,6 @@ CheckOptions:
   readability-identifier-naming.TypedefCase: CamelCase
   readability-identifier-naming.StructCase: CamelCase
   readability-function-cognitive-complexity.Threshold: 25
-  readability-implicit-bool-conversion.AllowIntegerConditions: true
-  readability-implicit-bool-conversion.AllowPointerConditions: true
   readability-magic-numbers.IgnoredFloatingPointValues: '0.0;0.5;1.0;2.0;3.0;-1.0;-0.5'
   readability-magic-numbers.IgnoredIntegerValues: '0;1;2;3;4;8;16;255'
 
