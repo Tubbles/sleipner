@@ -292,3 +292,167 @@ void test_toml_emit_no_music(void)
     TEST_ASSERT_NOT_NULL(strstr(output, "name = \"silent\""));
     test_level_free(&level);
 }
+
+static const char *custom_attr_fixture = "[[blueprint]]\n"
+                                         "name = \"gate\"\n"
+                                         "texture = \"gate.png\"\n"
+                                         "src = [0, 0, 16, 32]\n"
+                                         "collision_offset = [0, 0]\n"
+                                         "collision_size = [16, 32]\n"
+                                         "behavior = \"static\"\n"
+                                         "score = 7\n"
+                                         "\n"
+                                         "[[level]]\n"
+                                         "name = \"test\"\n"
+                                         "size = [320, 240]\n";
+
+void test_toml_emit_custom_attrs(void)
+{
+    Arena arena;
+    TEST_ASSERT_TRUE(arena_init(&ctx, &arena));
+    BlueprintTable blueprints = {0};
+
+    toml_table_t *root = parse_toml(custom_attr_fixture);
+    TEST_ASSERT_NOT_NULL(root);
+    blueprints_load(&ctx, &blueprints, root, &arena);
+    toml_free(root);
+
+    char output[4096];
+    Level empty_level = {0};
+    int written = toml_emit_gamedata(&ctx, output, (int)sizeof(output), &blueprints, &empty_level, 0);
+    TEST_ASSERT_TRUE(written > 0);
+
+    TEST_ASSERT_NOT_NULL(strstr(output, "behavior = \"static\""));
+    TEST_ASSERT_NOT_NULL(strstr(output, "score = 7"));
+
+    /* Round-trip: re-parse and verify custom attrs survive */
+    Arena arena2;
+    TEST_ASSERT_TRUE(arena_init(&ctx, &arena2));
+    BlueprintTable blueprints2 = {0};
+
+    toml_table_t *root2 = parse_toml(output);
+    TEST_ASSERT_NOT_NULL(root2);
+    blueprints_load(&ctx, &blueprints2, root2, &arena2);
+    toml_free(root2);
+
+    TEST_ASSERT_EQUAL_INT(1, blueprints2.entries.count);
+    const Blueprint *blueprint = &blueprints2.entries.data[0];
+    TEST_ASSERT_EQUAL_STRING("static", attr_get_string(&blueprint->attrs, "behavior"));
+    TEST_ASSERT_EQUAL_INT(7, attr_get_int(&blueprint->attrs, "score", -1));
+
+    arena_free(&arena);
+    arena_free(&arena2);
+}
+
+static const char *health_fixture = "[[blueprint]]\n"
+                                    "name = \"knight\"\n"
+                                    "texture = \"knight.png\"\n"
+                                    "src = [0, 0, 16, 16]\n"
+                                    "collision_offset = [0, 0]\n"
+                                    "collision_size = [16, 16]\n"
+                                    "health = [10, 50]\n"
+                                    "\n"
+                                    "[[level]]\n"
+                                    "name = \"test\"\n"
+                                    "size = [320, 240]\n";
+
+void test_toml_emit_health(void)
+{
+    Arena arena;
+    TEST_ASSERT_TRUE(arena_init(&ctx, &arena));
+    BlueprintTable blueprints = {0};
+
+    toml_table_t *root = parse_toml(health_fixture);
+    TEST_ASSERT_NOT_NULL(root);
+    blueprints_load(&ctx, &blueprints, root, &arena);
+    toml_free(root);
+
+    char output[4096];
+    Level empty_level = {0};
+    int written = toml_emit_gamedata(&ctx, output, (int)sizeof(output), &blueprints, &empty_level, 0);
+    TEST_ASSERT_TRUE(written > 0);
+
+    TEST_ASSERT_NOT_NULL(strstr(output, "health = [10, 50]"));
+
+    /* Round-trip: re-parse and verify health values survive */
+    Arena arena2;
+    TEST_ASSERT_TRUE(arena_init(&ctx, &arena2));
+    BlueprintTable blueprints2 = {0};
+
+    toml_table_t *root2 = parse_toml(output);
+    TEST_ASSERT_NOT_NULL(root2);
+    blueprints_load(&ctx, &blueprints2, root2, &arena2);
+    toml_free(root2);
+
+    TEST_ASSERT_EQUAL_INT(1, blueprints2.entries.count);
+    const Blueprint *blueprint = &blueprints2.entries.data[0];
+    TEST_ASSERT_EQUAL_INT(10, attr_get_int(&blueprint->attrs, "health", -1));
+    TEST_ASSERT_EQUAL_INT(50, attr_get_int(&blueprint->attrs, "max_health", -1));
+
+    arena_free(&arena);
+    arena_free(&arena2);
+}
+
+static const char *rule_fixture = "[[blueprint]]\n"
+                                  "name = \"chest\"\n"
+                                  "texture = \"chest.png\"\n"
+                                  "src = [0, 0, 16, 16]\n"
+                                  "collision_offset = [0, 0]\n"
+                                  "collision_size = [16, 16]\n"
+                                  "\n"
+                                  "[[blueprint.rule]]\n"
+                                  "trigger = \"interact\"\n"
+                                  "conditions = [\"not_flag:chest_opened\"]\n"
+                                  "actions = [\"set_flag:chest_opened\", \"destroy\"]\n"
+                                  "\n"
+                                  "[[level]]\n"
+                                  "name = \"test\"\n"
+                                  "size = [320, 240]\n";
+
+void test_toml_emit_rules(void)
+{
+    Arena arena;
+    TEST_ASSERT_TRUE(arena_init(&ctx, &arena));
+    BlueprintTable blueprints = {0};
+
+    toml_table_t *root = parse_toml(rule_fixture);
+    TEST_ASSERT_NOT_NULL(root);
+    blueprints_load(&ctx, &blueprints, root, &arena);
+    toml_free(root);
+
+    char output[8192];
+    Level empty_level = {0};
+    int written = toml_emit_gamedata(&ctx, output, (int)sizeof(output), &blueprints, &empty_level, 0);
+    TEST_ASSERT_TRUE(written > 0);
+
+    TEST_ASSERT_NOT_NULL(strstr(output, "[[blueprint.rule]]"));
+    TEST_ASSERT_NOT_NULL(strstr(output, "trigger = \"interact\""));
+    TEST_ASSERT_NOT_NULL(strstr(output, "\"not_flag:chest_opened\""));
+    TEST_ASSERT_NOT_NULL(strstr(output, "\"set_flag:chest_opened\""));
+    TEST_ASSERT_NOT_NULL(strstr(output, "\"destroy\""));
+
+    /* Round-trip: re-parse and verify rule structure survives */
+    Arena arena2;
+    TEST_ASSERT_TRUE(arena_init(&ctx, &arena2));
+    BlueprintTable blueprints2 = {0};
+
+    toml_table_t *root2 = parse_toml(output);
+    TEST_ASSERT_NOT_NULL(root2);
+    blueprints_load(&ctx, &blueprints2, root2, &arena2);
+    toml_free(root2);
+
+    TEST_ASSERT_EQUAL_INT(1, blueprints2.entries.count);
+    const Blueprint *blueprint = &blueprints2.entries.data[0];
+    TEST_ASSERT_EQUAL_INT(1, blueprint->rules.count);
+
+    const Rule *rule = &blueprint->rules.data[0];
+    TEST_ASSERT_EQUAL_INT(TRIGGER_INTERACT, rule->trigger.type);
+    TEST_ASSERT_EQUAL_INT(1, rule->conditions.count);
+    TEST_ASSERT_EQUAL_INT(COND_NOT_FLAG, rule->conditions.data[0].type);
+    TEST_ASSERT_EQUAL_INT(2, rule->action_tree.nodes.count);
+    TEST_ASSERT_EQUAL_INT(ACTION_SET_FLAG, rule->action_tree.nodes.data[0].type);
+    TEST_ASSERT_EQUAL_INT(ACTION_DESTROY, rule->action_tree.nodes.data[1].type);
+
+    arena_free(&arena);
+    arena_free(&arena2);
+}

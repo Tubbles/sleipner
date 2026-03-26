@@ -258,6 +258,9 @@ void test_toml_emit_buffer_too_small(void);
 void test_toml_emit_no_music(void);
 void test_toml_emit_blueprint_children(void);
 void test_toml_emit_skips_child_entities(void);
+void test_toml_emit_custom_attrs(void);
+void test_toml_emit_health(void);
+void test_toml_emit_rules(void);
 
 /* test_rule.c */
 void test_flag_set_and_get(void);
@@ -718,6 +721,9 @@ int main(void)
     RUN_TEST(test_toml_emit_no_music);
     RUN_TEST(test_toml_emit_blueprint_children);
     RUN_TEST(test_toml_emit_skips_child_entities);
+    RUN_TEST(test_toml_emit_custom_attrs);
+    RUN_TEST(test_toml_emit_health);
+    RUN_TEST(test_toml_emit_rules);
 
     return UNITY_END();
 }

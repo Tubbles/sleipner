@@ -44,6 +44,7 @@ typedef struct {
     int frame;
     float elapsed;
     bool gamedata_loaded;
+    bool editor_mode;
     bool debug_enabled;
     bool prev_interact;
 } GameState;
