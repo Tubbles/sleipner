@@ -62,6 +62,7 @@ bool game_load_gamedata(struct EngineContext *ctx, GameState *state, GamedataPar
     toml_table_t *root = toml_parse(buffer, errbuf, (int)sizeof(errbuf));
     arena_restore(&state->gamedata_arena, state->gamedata_base);
     state->rule_table = (map_entity_ruleset){0};
+    state->subroutines = (vec_subroutine){0};
     state->prev_player_overlaps = (vec_bool){0};
 
     if (!root) {
@@ -72,9 +73,12 @@ bool game_load_gamedata(struct EngineContext *ctx, GameState *state, GamedataPar
 
     Allocator gamedata_alloc = allocator_arena(ctx, &state->gamedata_arena);
     blueprints_load(ctx, &state->blueprints, root, &state->gamedata_arena);
-
-    bool level_ok = level_load(ctx, &state->current_level, root, params.level_name, &state->blueprints,
-                               params.texture_lookup, params.texture_user_data, &gamedata_alloc);
+    bool subs_ok = subroutines_parse(ctx, &gamedata_alloc, &state->subroutines, root, &state->gamedata_arena);
+    bool level_ok = false;
+    if (subs_ok) {
+        level_ok = level_load(ctx, &state->current_level, root, params.level_name, &state->blueprints,
+                              params.texture_lookup, params.texture_user_data, &gamedata_alloc);
+    }
 
     toml_free(root);
     state->gamedata_loaded = level_ok;
@@ -106,7 +110,7 @@ bool game_load_gamedata(struct EngineContext *ctx, GameState *state, GamedataPar
             if (spawn_events.count > 0) {
                 rules_evaluate_batch(ctx, &gamedata_alloc, state->current_level.entities.data,
                                      state->current_level.entities.count, spawn_events.data, spawn_events.count,
-                                     &state->flags, &state->vars, &state->rule_table);
+                                     &state->flags, &state->vars, &state->rule_table, &state->subroutines);
             }
         }
     } else {
@@ -346,8 +350,8 @@ void game_update(struct EngineContext *ctx, GameState *state, InputState input, 
     if (trigger_events.count > 0) {
         Allocator rule_alloc = allocator_arena(ctx, &state->gamedata_arena);
         rules_evaluate_batch(ctx, &rule_alloc, state->current_level.entities.data, state->current_level.entities.count,
-                             trigger_events.data, trigger_events.count, &state->flags, &state->vars,
-                             &state->rule_table);
+                             trigger_events.data, trigger_events.count, &state->flags, &state->vars, &state->rule_table,
+                             &state->subroutines);
     }
 }
 

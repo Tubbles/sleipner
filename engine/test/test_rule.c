@@ -836,7 +836,7 @@ void test_evaluate_interact_sets_flag(void)
     AttrSet global_vars = {0};
     TriggerEvent event = {.type = TRIGGER_INTERACT, .entity_index = 0};
 
-    rules_evaluate_batch(&ctx, NULL, &entity, 1, &event, 1, &flags, &global_vars, &rule_table);
+    rules_evaluate_batch(&ctx, NULL, &entity, 1, &event, 1, &flags, &global_vars, &rule_table, NULL);
     TEST_ASSERT_TRUE(flag_get(&flags, "chest_opened"));
 
     arena_free(&arena);
@@ -881,7 +881,7 @@ void test_evaluate_condition_blocks_action(void)
     AttrSet global_vars = {0};
     TriggerEvent event = {.type = TRIGGER_INTERACT, .entity_index = 0};
 
-    rules_evaluate_batch(&ctx, NULL, &entity, 1, &event, 1, &flags, &global_vars, &rule_table);
+    rules_evaluate_batch(&ctx, NULL, &entity, 1, &event, 1, &flags, &global_vars, &rule_table, NULL);
     TEST_ASSERT_FALSE(flag_get(&flags, "chest_opened"));
 
     arena_free(&arena);
@@ -936,7 +936,7 @@ void test_evaluate_fire_event_cascading(void)
     AttrSet global_vars = {0};
     TriggerEvent event = {.type = TRIGGER_INTERACT, .entity_index = 0};
 
-    rules_evaluate_batch(&ctx, NULL, entities, 2, &event, 1, &flags, &global_vars, &rule_table);
+    rules_evaluate_batch(&ctx, NULL, entities, 2, &event, 1, &flags, &global_vars, &rule_table, NULL);
     TEST_ASSERT_TRUE(flag_get(&flags, "door_opened"));
 
     arena_free(&arena);
@@ -1413,6 +1413,113 @@ void test_integration_for_each_bind_mode(void)
         const Entity *entity = &state.current_level.entities.data[entity_index];
         TEST_ASSERT_EQUAL_INT(1, (int)entity_get_float(entity, "tagged", 0.0F));
     }
+
+    game_free(&ctx, &state);
+}
+
+/* ---- Integration: subroutines ---- */
+
+void test_integration_subroutine_call(void)
+{
+    /* A subroutine sets a flag. A blueprint rule calls it.
+     * After load (on_spawn), the flag must be set. */
+    static const char *gamedata = "[[subroutine]]\n"
+                                  "name = \"mark_visited\"\n"
+                                  "actions = [\"set_flag:visited\"]\n"
+                                  "\n"
+                                  "[[blueprint]]\n"
+                                  "name = \"beacon\"\n"
+                                  "texture = \"t.png\"\n"
+                                  "src = [0, 0, 16, 16]\n"
+                                  "\n"
+                                  "[[blueprint.rule]]\n"
+                                  "trigger = \"on_spawn\"\n"
+                                  "actions = [\"call:mark_visited\"]\n"
+                                  "\n"
+                                  "[[level]]\n"
+                                  "name = \"test\"\n"
+                                  "size = [320, 240]\n"
+                                  "\n"
+                                  "[[level.entity]]\n"
+                                  "blueprint = \"beacon\"\n"
+                                  "pos = [10, 10]\n";
+
+    GameState state;
+    TEST_ASSERT_TRUE(game_init(&ctx, &state, (RectU32){320, 240}));
+    TEST_ASSERT_TRUE(game_load_gamedata(
+        &ctx, &state, (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));
+
+    TEST_ASSERT_TRUE(flag_get(&state.flags, "visited"));
+
+    game_free(&ctx, &state);
+}
+
+void test_integration_subroutine_inherits_self(void)
+{
+    /* Subroutine uses self.attr — must operate on the calling entity. */
+    static const char *gamedata = "[[subroutine]]\n"
+                                  "name = \"increment\"\n"
+                                  "actions = [\"add_attr:self.count,1\"]\n"
+                                  "\n"
+                                  "[[blueprint]]\n"
+                                  "name = \"counter\"\n"
+                                  "texture = \"t.png\"\n"
+                                  "src = [0, 0, 16, 16]\n"
+                                  "count = 0\n"
+                                  "\n"
+                                  "[[blueprint.rule]]\n"
+                                  "trigger = \"on_spawn\"\n"
+                                  "actions = [\"call:increment\", \"call:increment\"]\n"
+                                  "\n"
+                                  "[[level]]\n"
+                                  "name = \"test\"\n"
+                                  "size = [320, 240]\n"
+                                  "\n"
+                                  "[[level.entity]]\n"
+                                  "blueprint = \"counter\"\n"
+                                  "pos = [10, 10]\n";
+
+    GameState state;
+    TEST_ASSERT_TRUE(game_init(&ctx, &state, (RectU32){320, 240}));
+    TEST_ASSERT_TRUE(game_load_gamedata(
+        &ctx, &state, (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));
+
+    /* Called twice — count must be 2 */
+    const Entity *counter = &state.current_level.entities.data[0];
+    TEST_ASSERT_EQUAL_INT(2, (int)entity_get_float(counter, "count", 0.0F));
+
+    game_free(&ctx, &state);
+}
+
+void test_integration_subroutine_missing_is_soft_fail(void)
+{
+    /* Calling a non-existent subroutine must not crash — subsequent actions still run. */
+    static const char *gamedata = "[[blueprint]]\n"
+                                  "name = \"thing\"\n"
+                                  "texture = \"t.png\"\n"
+                                  "src = [0, 0, 16, 16]\n"
+                                  "count = 0\n"
+                                  "\n"
+                                  "[[blueprint.rule]]\n"
+                                  "trigger = \"on_spawn\"\n"
+                                  "actions = [\"call:nonexistent\", \"add_attr:self.count,1\"]\n"
+                                  "\n"
+                                  "[[level]]\n"
+                                  "name = \"test\"\n"
+                                  "size = [320, 240]\n"
+                                  "\n"
+                                  "[[level.entity]]\n"
+                                  "blueprint = \"thing\"\n"
+                                  "pos = [10, 10]\n";
+
+    GameState state;
+    TEST_ASSERT_TRUE(game_init(&ctx, &state, (RectU32){320, 240}));
+    TEST_ASSERT_TRUE(game_load_gamedata(
+        &ctx, &state, (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));
+
+    /* count must be 1 — add_attr ran after the failed call: */
+    const Entity *thing = &state.current_level.entities.data[0];
+    TEST_ASSERT_EQUAL_INT(1, (int)entity_get_float(thing, "count", 0.0F));
 
     game_free(&ctx, &state);
 }

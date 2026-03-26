@@ -27,6 +27,7 @@ VEC_IMPL(condition, Condition)
 VEC_IMPL(action_node, ActionNode)
 VEC_IMPL(rule, Rule)
 VEC_IMPL(trigger_event, TriggerEvent)
+VEC_IMPL(subroutine, Subroutine)
 MAP_IMPL(entity_ruleset, int, vec_rule, map_hash_int, map_eq_int)
 
 /* ---- FlagSet ---- */
@@ -512,8 +513,8 @@ static bool parse_conditions_array(struct EngineContext *ctx, Allocator *alloc, 
     return parse_conditions_into(ctx, alloc, &rule->conditions, conditions, "rule");
 }
 
-static bool
-parse_actions_array(struct EngineContext *ctx, Allocator *alloc, Rule *rule, toml_array_t *actions, Arena *arena)
+static bool parse_action_nodes_into(
+    struct EngineContext *ctx, Allocator *alloc, vec_action_node *nodes, toml_array_t *actions, Arena *arena)
 {
     if (!actions) {
         return true;
@@ -546,12 +547,18 @@ parse_actions_array(struct EngineContext *ctx, Allocator *alloc, Rule *rule, tom
                 return false;
             }
         }
-        if (!vec_action_node_push(&rule->action_tree.nodes, node, alloc)) {
+        if (!vec_action_node_push(nodes, node, alloc)) {
             error_set(ctx, "action[%d]: out of memory", index);
             return false;
         }
     }
     return true;
+}
+
+static bool
+parse_actions_array(struct EngineContext *ctx, Allocator *alloc, Rule *rule, toml_array_t *actions, Arena *arena)
+{
+    return parse_action_nodes_into(ctx, alloc, &rule->action_tree.nodes, actions, arena);
 }
 
 static bool
@@ -1091,6 +1098,29 @@ execute_for_each_node(struct EngineContext *ctx, Allocator *alloc, const ActionN
     return true;
 }
 
+static bool
+execute_call_node(struct EngineContext *ctx, Allocator *alloc, const ActionNode *node, ActionContext context)
+{
+    if (context.call_depth >= MAX_CALL_DEPTH) {
+        error_set(ctx, "call: max depth %d exceeded", MAX_CALL_DEPTH);
+        return false;
+    }
+    if (!context.subroutines) {
+        debug_log(ctx, "call: no subroutine table");
+        return true;
+    }
+    for (int sub_index = 0; sub_index < context.subroutines->count; sub_index++) {
+        const Subroutine *sub = &context.subroutines->data[sub_index];
+        if (strcmp(sub->name.ptr, node->argument.ptr) == 0) {
+            ActionContext sub_ctx = context;
+            sub_ctx.call_depth++;
+            return execute_action_nodes(ctx, alloc, sub->action_tree.nodes.data, sub->action_tree.nodes.count, sub_ctx);
+        }
+    }
+    debug_log(ctx, "call: subroutine '%s' not found", node->argument.ptr);
+    return true;
+}
+
 static bool execute_action_nodes(
     struct EngineContext *ctx, Allocator *alloc, const ActionNode *nodes, int count, ActionContext context)
 {
@@ -1116,6 +1146,10 @@ static bool execute_action_nodes(
             }
         } else if (current->type == ACTION_FOR_EACH) {
             if (!execute_for_each_node(ctx, alloc, current, context)) {
+                return false;
+            }
+        } else if (current->type == ACTION_CALL) {
+            if (!execute_call_node(ctx, alloc, current, context)) {
                 return false;
             }
         } else if (!dispatch_simple_action(ctx, alloc, current, context)) {
@@ -1157,7 +1191,8 @@ static void evaluate_entity_rules(struct EngineContext *ctx,
                                   AttrSet *global_vars,
                                   const TriggerEventQueue *pending_events,
                                   TriggerEventQueue *next_events,
-                                  map_entity_ruleset *rule_table)
+                                  map_entity_ruleset *rule_table,
+                                  const vec_subroutine *subroutines)
 {
     const vec_rule *ruleset = map_entity_ruleset_get(rule_table, entity->id);
     if (!ruleset) {
@@ -1186,6 +1221,7 @@ static void evaluate_entity_rules(struct EngineContext *ctx,
             .event_queue = next_events,
             .local_vars = &local_vars,
             .global_vars = global_vars,
+            .subroutines = subroutines,
         };
         debug_log(ctx, "Rule triggered for entity %d (type: %s), rule %d", entity_index, entity->blueprint_name.ptr,
                   rule_index);
@@ -1211,7 +1247,8 @@ void rules_evaluate_batch(struct EngineContext *ctx,
                           int event_count,
                           FlagSet *flags,
                           AttrSet *global_vars,
-                          map_entity_ruleset *rule_table)
+                          map_entity_ruleset *rule_table,
+                          const vec_subroutine *subroutines)
 {
     TriggerEventQueue pending_events = {0};
     for (int event_index = 0; event_index < event_count; event_index++) {
@@ -1227,9 +1264,55 @@ void rules_evaluate_batch(struct EngineContext *ctx,
                 continue;
             }
             evaluate_entity_rules(ctx, alloc, entity, entity_index, entities, entity_count, flags, global_vars,
-                                  &pending_events, &next_events, rule_table);
+                                  &pending_events, &next_events, rule_table, subroutines);
         }
 
         pending_events = next_events;
     }
+}
+
+/* ---- Subroutine parsing ---- */
+
+bool subroutines_parse(
+    struct EngineContext *ctx, Allocator *alloc, vec_subroutine *subroutines, void *toml_root, Arena *arena)
+{
+    toml_array_t *sub_array = toml_array_in((toml_table_t *)toml_root, "subroutine");
+    if (!sub_array) {
+        return true; /* no subroutines — fine */
+    }
+    int count = toml_array_nelem(sub_array);
+    for (int index = 0; index < count; index++) {
+        toml_table_t *sub_table = toml_table_at(sub_array, index);
+        if (!sub_table) {
+            error_set(ctx, "subroutine[%d]: expected table", index);
+            return false;
+        }
+        toml_datum_t name_datum = toml_string_in(sub_table, "name");
+        if (!name_datum.ok) {
+            error_set(ctx, "subroutine[%d]: missing 'name'", index);
+            return false;
+        }
+        /* Push a name-only stub first so the action_tree lives inside the vec element
+         * (reachable via subroutines->data), avoiding false-positive leak warnings from
+         * the clang-analyzer about arena-backed allocations. */
+        Subroutine stub = {0};
+        bool alloc_ok = str_from_cstr(alloc, &stub.name, name_datum.u.s);
+        free(name_datum.u.s);
+        if (!alloc_ok) {
+            error_set(ctx, "subroutine[%d]: allocation failed for name", index);
+            return false;
+        }
+        if (!vec_subroutine_push(subroutines, stub, alloc)) {
+            error_set(ctx, "subroutine[%d]: push failed", index);
+            return false;
+        }
+        Subroutine *pushed = &subroutines->data[subroutines->count - 1];
+        if (!parse_action_nodes_into(ctx, alloc, &pushed->action_tree.nodes, toml_array_in(sub_table, "actions"),
+                                     arena)) {
+            error_wrap(ctx, "subroutine '%s'", pushed->name.ptr);
+            return false;
+        }
+        debug_log(ctx, "subroutine: parsed '%s' (%d actions)", pushed->name.ptr, pushed->action_tree.nodes.count);
+    }
+    return true;
 }

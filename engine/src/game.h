@@ -34,6 +34,7 @@ typedef struct {
     vec_bool prev_player_overlaps; /* one entry per level entity: true if player overlapped last frame */
     BlueprintTable blueprints;
     map_entity_ruleset rule_table;
+    vec_subroutine subroutines;
     Level current_level;
     FlagSet flags;
     AttrSet vars;

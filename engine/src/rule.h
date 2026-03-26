@@ -127,6 +127,14 @@ typedef struct Rule {
 
 VEC_DECL(rule, Rule)
 
+/* --- Subroutines (named, reusable action sequences) --- */
+typedef struct {
+    Str name;
+    ActionTree action_tree;
+} Subroutine;
+
+VEC_DECL(subroutine, Subroutine)
+
 /* Maps entity ID (int) to the entity's rule set (vec_rule shallow copy). */
 MAP_DECL(entity_ruleset, int, vec_rule)
 
@@ -179,6 +187,8 @@ condition_parse(struct EngineContext *ctx, Allocator *alloc, Condition *conditio
 [[nodiscard]] bool action_node_parse(struct EngineContext *ctx, Allocator *alloc, ActionNode *node, toml_datum_t value);
 [[nodiscard]] bool
 rules_parse(struct EngineContext *ctx, Allocator *alloc, vec_rule *rules, void *toml_blueprint_table, Arena *arena);
+[[nodiscard]] bool subroutines_parse(
+    struct EngineContext *ctx, Allocator *alloc, vec_subroutine *subroutines, void *toml_root, Arena *arena);
 
 /* --- Trigger matching --- */
 bool trigger_matches(const Trigger *trigger, const TriggerEvent *event);
@@ -196,6 +206,8 @@ typedef struct {
 bool conditions_evaluate(const Condition *conditions, int count, ConditionContext context);
 
 /* --- Action execution --- */
+#define MAX_CALL_DEPTH 8
+
 typedef struct {
     Entity *entity;
     int entity_index;
@@ -205,7 +217,9 @@ typedef struct {
     TriggerEventQueue *event_queue;
     AttrSet *local_vars;
     AttrSet *global_vars;
-    const LocalScope *scope; /* entity binding chain — walked by resolve_target */
+    const LocalScope *scope;           /* entity binding chain — walked by resolve_target */
+    const vec_subroutine *subroutines; /* read-only subroutine table */
+    int call_depth;                    /* recursion guard for call: */
 } ActionContext;
 
 [[nodiscard]] bool
@@ -220,6 +234,7 @@ void rules_evaluate_batch(struct EngineContext *ctx,
                           int event_count,
                           FlagSet *flags,
                           AttrSet *global_vars,
-                          map_entity_ruleset *rule_table);
+                          map_entity_ruleset *rule_table,
+                          const vec_subroutine *subroutines);
 
 #endif

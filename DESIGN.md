@@ -918,7 +918,7 @@ This is bounded (one leaked backing per growth event) and reclaimed on level rel
 - [x] Control flow nodes (if/else, repeat)
 - [x] for-each control flow node (entity queries)
 - [x] Variable system (local per-execution, global persistent, $ references in parameters)
-- [ ] Subroutines (named reusable action sequences, callable via `call:`)
+- [x] Subroutines (named reusable action sequences, callable via `call:`)
 - [ ] Timer management (create, destroy named timers)
 - [x] Enter/on_spawn trigger detection (simple AABB overlap for now — will be replaced by composable collision shapes, see Phase 9)
 - [ ] Remaining triggers (collide, defeat, timer, timer_periodic, on_destroy)
