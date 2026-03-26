@@ -28,6 +28,7 @@ VEC_IMPL(action_node, ActionNode)
 VEC_IMPL(rule, Rule)
 VEC_IMPL(trigger_event, TriggerEvent)
 VEC_IMPL(subroutine, Subroutine)
+VEC_IMPL(timer, Timer)
 MAP_IMPL(entity_ruleset, int, vec_rule, map_hash_int, map_eq_int)
 
 /* ---- FlagSet ---- */
@@ -124,6 +125,38 @@ bool trigger_parse(struct EngineContext *ctx, Allocator *alloc, Trigger *trigger
             error_set(ctx, "trigger_parse: allocation failed");
             return false;
         }
+        return true;
+    }
+    if (strv_starts_with_cstr(strv, "timer_periodic:")) {
+        trigger->type = TRIGGER_TIMER_PERIODIC;
+        Strv rest = strv;
+        (void)strv_split(&rest, ':');
+        if (!str_from_strv(alloc, &trigger->argument, rest)) {
+            error_set(ctx, "trigger_parse: allocation failed");
+            return false;
+        }
+        return true;
+    }
+    if (strv_starts_with_cstr(strv, "timer:")) {
+        trigger->type = TRIGGER_TIMER;
+        Strv rest = strv;
+        (void)strv_split(&rest, ':');
+        if (!str_from_strv(alloc, &trigger->argument, rest)) {
+            error_set(ctx, "trigger_parse: allocation failed");
+            return false;
+        }
+        return true;
+    }
+    if (strv_eq_cstr(strv, "on_destroy")) {
+        trigger->type = TRIGGER_ON_DESTROY;
+        return true;
+    }
+    if (strv_eq_cstr(strv, "defeat")) {
+        trigger->type = TRIGGER_DEFEAT;
+        return true;
+    }
+    if (strv_eq_cstr(strv, "collide")) {
+        trigger->type = TRIGGER_COLLIDE;
         return true;
     }
 
@@ -290,6 +323,7 @@ static const ActionMapping action_mappings[] = {
     {"call:", ACTION_CALL, true},
     {"set_var:", ACTION_SET_VAR, true},
     {"wait:", ACTION_WAIT, true},
+    {"create_timer_periodic:", ACTION_CREATE_TIMER_PERIODIC, true},
     {"create_timer:", ACTION_CREATE_TIMER, true},
     {"destroy_timer:", ACTION_DESTROY_TIMER, true},
     {NULL, 0, false},
@@ -643,7 +677,8 @@ bool trigger_matches(const Trigger *trigger, const TriggerEvent *event)
     if (trigger->type != event->type) {
         return false;
     }
-    if (trigger->type == TRIGGER_EVENT || trigger->type == TRIGGER_ATTR_CHANGED) {
+    if (trigger->type == TRIGGER_EVENT || trigger->type == TRIGGER_ATTR_CHANGED || trigger->type == TRIGGER_TIMER ||
+        trigger->type == TRIGGER_TIMER_PERIODIC) {
         return strcmp(trigger->argument.ptr, event->argument.ptr) == 0;
     }
     return true;
@@ -1018,6 +1053,55 @@ expand_repeat_node(struct EngineContext *ctx, const ActionNode *node, const Acti
     return true;
 }
 
+static bool execute_create_timer_action(
+    struct EngineContext *ctx, Allocator *alloc, const ActionNode *node, ActionContext context, bool periodic)
+{
+    if (!context.timers) {
+        debug_log(ctx, "create_timer: no timer list in context");
+        return true;
+    }
+    float duration = node->second_argument.len > 0 ? strtof(node->second_argument.ptr, NULL) : 1.0F;
+    /* Replace existing timer with same name + entity, or append */
+    for (int timer_index = 0; timer_index < context.timers->count; timer_index++) {
+        Timer *existing = &context.timers->data[timer_index];
+        if (existing->entity_index == context.entity_index && strcmp(existing->name.ptr, node->argument.ptr) == 0) {
+            existing->remaining = duration;
+            existing->duration = duration;
+            existing->periodic = periodic;
+            return true;
+        }
+    }
+    Timer new_timer = {
+        .name = node->argument,
+        .entity_index = context.entity_index,
+        .remaining = duration,
+        .duration = duration,
+        .periodic = periodic,
+    };
+    if (!vec_timer_push(context.timers, new_timer, alloc)) {
+        error_set(ctx, "create_timer: allocation failed");
+        return false;
+    }
+    return true;
+}
+
+static bool execute_destroy_timer_action(struct EngineContext *ctx, const ActionNode *node, ActionContext context)
+{
+    if (!context.timers) {
+        debug_log(ctx, "destroy_timer: no timer list in context");
+        return true;
+    }
+    for (int timer_index = 0; timer_index < context.timers->count; timer_index++) {
+        Timer *timer = &context.timers->data[timer_index];
+        if (timer->entity_index == context.entity_index && strcmp(timer->name.ptr, node->argument.ptr) == 0) {
+            context.timers->data[timer_index] = context.timers->data[context.timers->count - 1];
+            context.timers->count--;
+            return true;
+        }
+    }
+    return true;
+}
+
 static bool
 dispatch_simple_action(struct EngineContext *ctx, Allocator *alloc, const ActionNode *node, ActionContext context)
 {
@@ -1043,6 +1127,12 @@ dispatch_simple_action(struct EngineContext *ctx, Allocator *alloc, const Action
         TriggerEvent fire = {.type = TRIGGER_EVENT, .entity_index = -1, .argument = node->argument};
         return trigger_event_queue_push(context.event_queue, fire);
     }
+    case ACTION_CREATE_TIMER:
+        return execute_create_timer_action(ctx, alloc, node, context, false);
+    case ACTION_CREATE_TIMER_PERIODIC:
+        return execute_create_timer_action(ctx, alloc, node, context, true);
+    case ACTION_DESTROY_TIMER:
+        return execute_destroy_timer_action(ctx, node, context);
     default:
         debug_log(ctx, "action stub: %s (not yet implemented)", node->argument.ptr);
         return true;
@@ -1192,7 +1282,8 @@ static void evaluate_entity_rules(struct EngineContext *ctx,
                                   const TriggerEventQueue *pending_events,
                                   TriggerEventQueue *next_events,
                                   map_entity_ruleset *rule_table,
-                                  const vec_subroutine *subroutines)
+                                  const vec_subroutine *subroutines,
+                                  vec_timer *timers)
 {
     const vec_rule *ruleset = map_entity_ruleset_get(rule_table, entity->id);
     if (!ruleset) {
@@ -1222,6 +1313,7 @@ static void evaluate_entity_rules(struct EngineContext *ctx,
             .local_vars = &local_vars,
             .global_vars = global_vars,
             .subroutines = subroutines,
+            .timers = timers,
         };
         debug_log(ctx, "Rule triggered for entity %d (type: %s), rule %d", entity_index, entity->blueprint_name.ptr,
                   rule_index);
@@ -1248,7 +1340,8 @@ void rules_evaluate_batch(struct EngineContext *ctx,
                           FlagSet *flags,
                           AttrSet *global_vars,
                           map_entity_ruleset *rule_table,
-                          const vec_subroutine *subroutines)
+                          const vec_subroutine *subroutines,
+                          vec_timer *timers)
 {
     TriggerEventQueue pending_events = {0};
     for (int event_index = 0; event_index < event_count; event_index++) {
@@ -1264,7 +1357,7 @@ void rules_evaluate_batch(struct EngineContext *ctx,
                 continue;
             }
             evaluate_entity_rules(ctx, alloc, entity, entity_index, entities, entity_count, flags, global_vars,
-                                  &pending_events, &next_events, rule_table, subroutines);
+                                  &pending_events, &next_events, rule_table, subroutines, timers);
         }
 
         pending_events = next_events;

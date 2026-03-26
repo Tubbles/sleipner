@@ -35,6 +35,7 @@ typedef struct {
     BlueprintTable blueprints;
     map_entity_ruleset rule_table;
     vec_subroutine subroutines;
+    vec_timer timers;
     Level current_level;
     FlagSet flags;
     AttrSet vars;

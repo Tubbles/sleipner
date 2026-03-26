@@ -63,6 +63,7 @@ bool game_load_gamedata(struct EngineContext *ctx, GameState *state, GamedataPar
     arena_restore(&state->gamedata_arena, state->gamedata_base);
     state->rule_table = (map_entity_ruleset){0};
     state->subroutines = (vec_subroutine){0};
+    state->timers = (vec_timer){0};
     state->prev_player_overlaps = (vec_bool){0};
 
     if (!root) {
@@ -110,7 +111,8 @@ bool game_load_gamedata(struct EngineContext *ctx, GameState *state, GamedataPar
             if (spawn_events.count > 0) {
                 rules_evaluate_batch(ctx, &gamedata_alloc, state->current_level.entities.data,
                                      state->current_level.entities.count, spawn_events.data, spawn_events.count,
-                                     &state->flags, &state->vars, &state->rule_table, &state->subroutines);
+                                     &state->flags, &state->vars, &state->rule_table, &state->subroutines,
+                                     &state->timers);
             }
         }
     } else {
@@ -345,13 +347,37 @@ void game_update(struct EngineContext *ctx, GameState *state, InputState input, 
     SCRATCH_SCOPE(&state->scratch_arena);
     Allocator scratch_alloc = allocator_arena(ctx, &state->scratch_arena);
     vec_trigger_event trigger_events = {0};
+
+    /* Tick timers and collect fired events */
+    for (int timer_index = state->timers.count - 1; timer_index >= 0; timer_index--) {
+        Timer *timer = &state->timers.data[timer_index];
+        timer->remaining -= delta_time;
+        if (timer->remaining > 0.0F) {
+            continue;
+        }
+        TriggerType fire_type = TRIGGER_TIMER;
+        if (timer->periodic) {
+            fire_type = TRIGGER_TIMER_PERIODIC;
+        }
+        (void)vec_trigger_event_push(
+            &trigger_events,
+            (TriggerEvent){.type = fire_type, .entity_index = timer->entity_index, .argument = timer->name},
+            &scratch_alloc);
+        if (timer->periodic) {
+            timer->remaining += timer->duration;
+        } else {
+            state->timers.data[timer_index] = state->timers.data[state->timers.count - 1];
+            state->timers.count--;
+        }
+    }
+
     collect_trigger_events(ctx, state, input, &trigger_events, &scratch_alloc);
 
     if (trigger_events.count > 0) {
         Allocator rule_alloc = allocator_arena(ctx, &state->gamedata_arena);
         rules_evaluate_batch(ctx, &rule_alloc, state->current_level.entities.data, state->current_level.entities.count,
                              trigger_events.data, trigger_events.count, &state->flags, &state->vars, &state->rule_table,
-                             &state->subroutines);
+                             &state->subroutines, &state->timers);
     }
 }
 

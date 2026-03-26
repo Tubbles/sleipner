@@ -836,7 +836,7 @@ void test_evaluate_interact_sets_flag(void)
     AttrSet global_vars = {0};
     TriggerEvent event = {.type = TRIGGER_INTERACT, .entity_index = 0};
 
-    rules_evaluate_batch(&ctx, NULL, &entity, 1, &event, 1, &flags, &global_vars, &rule_table, NULL);
+    rules_evaluate_batch(&ctx, NULL, &entity, 1, &event, 1, &flags, &global_vars, &rule_table, NULL, NULL);
     TEST_ASSERT_TRUE(flag_get(&flags, "chest_opened"));
 
     arena_free(&arena);
@@ -881,7 +881,7 @@ void test_evaluate_condition_blocks_action(void)
     AttrSet global_vars = {0};
     TriggerEvent event = {.type = TRIGGER_INTERACT, .entity_index = 0};
 
-    rules_evaluate_batch(&ctx, NULL, &entity, 1, &event, 1, &flags, &global_vars, &rule_table, NULL);
+    rules_evaluate_batch(&ctx, NULL, &entity, 1, &event, 1, &flags, &global_vars, &rule_table, NULL, NULL);
     TEST_ASSERT_FALSE(flag_get(&flags, "chest_opened"));
 
     arena_free(&arena);
@@ -936,7 +936,7 @@ void test_evaluate_fire_event_cascading(void)
     AttrSet global_vars = {0};
     TriggerEvent event = {.type = TRIGGER_INTERACT, .entity_index = 0};
 
-    rules_evaluate_batch(&ctx, NULL, entities, 2, &event, 1, &flags, &global_vars, &rule_table, NULL);
+    rules_evaluate_batch(&ctx, NULL, entities, 2, &event, 1, &flags, &global_vars, &rule_table, NULL, NULL);
     TEST_ASSERT_TRUE(flag_get(&flags, "door_opened"));
 
     arena_free(&arena);
@@ -1487,6 +1487,155 @@ void test_integration_subroutine_inherits_self(void)
     /* Called twice — count must be 2 */
     const Entity *counter = &state.current_level.entities.data[0];
     TEST_ASSERT_EQUAL_INT(2, (int)entity_get_float(counter, "count", 0.0F));
+
+    game_free(&ctx, &state);
+}
+
+/* ---- Integration: timers ---- */
+
+void test_integration_timer_oneshot_fires_once(void)
+{
+    /* Entity creates a one-shot timer on_spawn; after one tick past duration it fires and
+     * sets a flag. A second tick must NOT fire again. */
+    static const char *gamedata = "[[blueprint]]\n"
+                                  "name = \"thing\"\n"
+                                  "texture = \"t.png\"\n"
+                                  "src = [0, 0, 16, 16]\n"
+                                  "\n"
+                                  "[[blueprint.rule]]\n"
+                                  "trigger = \"on_spawn\"\n"
+                                  "actions = [\"create_timer:tick,0.5\"]\n"
+                                  "\n"
+                                  "[[blueprint.rule]]\n"
+                                  "trigger = \"timer:tick\"\n"
+                                  "actions = [\"add_attr:self.fired_count,1\"]\n"
+                                  "\n"
+                                  "[[level]]\n"
+                                  "name = \"test\"\n"
+                                  "size = [320, 240]\n"
+                                  "\n"
+                                  "[[level.entity]]\n"
+                                  "blueprint = \"thing\"\n"
+                                  "pos = [10, 10]\n"
+                                  "fired_count = 0\n";
+
+    GameState state;
+    TEST_ASSERT_TRUE(game_init(&ctx, &state, (RectU32){320, 240}));
+    TEST_ASSERT_TRUE(game_load_gamedata(
+        &ctx, &state, (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));
+
+    /* 1 timer created, none fired yet */
+    TEST_ASSERT_EQUAL_INT(1, state.timers.count);
+    const Entity *thing = &state.current_level.entities.data[0];
+    TEST_ASSERT_EQUAL_INT(0, (int)entity_get_float(thing, "fired_count", 0.0F));
+
+    /* Advance past duration — timer fires once */
+    game_update(&ctx, &state, (InputState){0}, 0.6F);
+    TEST_ASSERT_EQUAL_INT(0, state.timers.count);
+    TEST_ASSERT_EQUAL_INT(1, (int)entity_get_float(thing, "fired_count", 0.0F));
+
+    /* Second tick — no timer left, count stays at 1 */
+    game_update(&ctx, &state, (InputState){0}, 0.6F);
+    TEST_ASSERT_EQUAL_INT(1, (int)entity_get_float(thing, "fired_count", 0.0F));
+
+    game_free(&ctx, &state);
+}
+
+void test_integration_timer_periodic_fires_repeatedly(void)
+{
+    /* Periodic timer fires every 0.5 s — advance 1.1 s and expect 2 fires. */
+    static const char *gamedata = "[[blueprint]]\n"
+                                  "name = \"thing\"\n"
+                                  "texture = \"t.png\"\n"
+                                  "src = [0, 0, 16, 16]\n"
+                                  "\n"
+                                  "[[blueprint.rule]]\n"
+                                  "trigger = \"on_spawn\"\n"
+                                  "actions = [\"create_timer_periodic:pulse,0.5\"]\n"
+                                  "\n"
+                                  "[[blueprint.rule]]\n"
+                                  "trigger = \"timer_periodic:pulse\"\n"
+                                  "actions = [\"add_attr:self.pulse_count,1\"]\n"
+                                  "\n"
+                                  "[[level]]\n"
+                                  "name = \"test\"\n"
+                                  "size = [320, 240]\n"
+                                  "\n"
+                                  "[[level.entity]]\n"
+                                  "blueprint = \"thing\"\n"
+                                  "pos = [10, 10]\n"
+                                  "pulse_count = 0\n";
+
+    GameState state;
+    TEST_ASSERT_TRUE(game_init(&ctx, &state, (RectU32){320, 240}));
+    TEST_ASSERT_TRUE(game_load_gamedata(
+        &ctx, &state, (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));
+
+    /* Advance 0.6 s — one fire */
+    game_update(&ctx, &state, (InputState){0}, 0.6F);
+    const Entity *thing = &state.current_level.entities.data[0];
+    TEST_ASSERT_EQUAL_INT(1, (int)entity_get_float(thing, "pulse_count", 0.0F));
+
+    /* Advance another 0.6 s — second fire; timer still alive */
+    game_update(&ctx, &state, (InputState){0}, 0.6F);
+    TEST_ASSERT_EQUAL_INT(2, (int)entity_get_float(thing, "pulse_count", 0.0F));
+    TEST_ASSERT_EQUAL_INT(1, state.timers.count);
+
+    game_free(&ctx, &state);
+}
+
+void test_integration_timer_destroy_cancels(void)
+{
+    /* Entity creates a timer on_spawn and destroys it on a separate event.
+     * After the destroy event no fire should occur even past the duration. */
+    static const char *gamedata = "[[blueprint]]\n"
+                                  "name = \"thing\"\n"
+                                  "texture = \"t.png\"\n"
+                                  "src = [0, 0, 16, 16]\n"
+                                  "\n"
+                                  "[[blueprint.rule]]\n"
+                                  "trigger = \"on_spawn\"\n"
+                                  "actions = [\"create_timer:tick,0.5\"]\n"
+                                  "\n"
+                                  "[[blueprint.rule]]\n"
+                                  "trigger = \"event:cancel\"\n"
+                                  "actions = [\"destroy_timer:tick\"]\n"
+                                  "\n"
+                                  "[[blueprint.rule]]\n"
+                                  "trigger = \"timer:tick\"\n"
+                                  "actions = [\"add_attr:self.fired_count,1\"]\n"
+                                  "\n"
+                                  "[[level]]\n"
+                                  "name = \"test\"\n"
+                                  "size = [320, 240]\n"
+                                  "\n"
+                                  "[[level.entity]]\n"
+                                  "blueprint = \"thing\"\n"
+                                  "pos = [10, 10]\n"
+                                  "fired_count = 0\n";
+
+    GameState state;
+    TEST_ASSERT_TRUE(game_init(&ctx, &state, (RectU32){320, 240}));
+    TEST_ASSERT_TRUE(game_load_gamedata(
+        &ctx, &state, (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));
+
+    TEST_ASSERT_EQUAL_INT(1, state.timers.count);
+
+    /* Fire cancel event — timer removed */
+    TriggerEvent cancel = {.type = TRIGGER_EVENT, .entity_index = -1};
+    Allocator heap_alloc = allocator_heap();
+    (void)str_from_cstr(&heap_alloc, &cancel.argument, "cancel");
+    Allocator rule_alloc = allocator_arena(&ctx, &state.gamedata_arena);
+    rules_evaluate_batch(&ctx, &rule_alloc, state.current_level.entities.data, state.current_level.entities.count,
+                         &cancel, 1, &state.flags, &state.vars, &state.rule_table, &state.subroutines, &state.timers);
+    str_free(&heap_alloc, &cancel.argument);
+
+    TEST_ASSERT_EQUAL_INT(0, state.timers.count);
+
+    /* Advance past duration — no fire */
+    game_update(&ctx, &state, (InputState){0}, 0.6F);
+    const Entity *thing = &state.current_level.entities.data[0];
+    TEST_ASSERT_EQUAL_INT(0, (int)entity_get_float(thing, "fired_count", 0.0F));
 
     game_free(&ctx, &state);
 }

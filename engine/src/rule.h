@@ -30,6 +30,11 @@ typedef enum {
     TRIGGER_ON_SPAWN,
     TRIGGER_EVENT,
     TRIGGER_ATTR_CHANGED,
+    TRIGGER_TIMER,
+    TRIGGER_TIMER_PERIODIC,
+    TRIGGER_ON_DESTROY,
+    TRIGGER_DEFEAT,
+    TRIGGER_COLLIDE,
 } TriggerType;
 
 typedef struct {
@@ -80,6 +85,7 @@ typedef enum {
     ACTION_SET_VAR,
     ACTION_WAIT,
     ACTION_CREATE_TIMER,
+    ACTION_CREATE_TIMER_PERIODIC,
     ACTION_DESTROY_TIMER,
     ACTION_IF_ELSE,
     ACTION_REPEAT,
@@ -126,6 +132,17 @@ typedef struct Rule {
 } Rule;
 
 VEC_DECL(rule, Rule)
+
+/* --- Timers --- */
+typedef struct {
+    Str name;
+    int entity_index; /* owning entity */
+    float remaining;  /* seconds until next fire */
+    float duration;   /* full period (periodic) or original duration (one-shot) */
+    bool periodic;
+} Timer;
+
+VEC_DECL(timer, Timer)
 
 /* --- Subroutines (named, reusable action sequences) --- */
 typedef struct {
@@ -219,6 +236,7 @@ typedef struct {
     AttrSet *global_vars;
     const LocalScope *scope;           /* entity binding chain — walked by resolve_target */
     const vec_subroutine *subroutines; /* read-only subroutine table */
+    vec_timer *timers;                 /* mutable timer list for create_timer/destroy_timer */
     int call_depth;                    /* recursion guard for call: */
 } ActionContext;
 
@@ -235,6 +253,7 @@ void rules_evaluate_batch(struct EngineContext *ctx,
                           FlagSet *flags,
                           AttrSet *global_vars,
                           map_entity_ruleset *rule_table,
-                          const vec_subroutine *subroutines);
+                          const vec_subroutine *subroutines,
+                          vec_timer *timers);
 
 #endif
