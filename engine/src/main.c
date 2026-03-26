@@ -53,6 +53,11 @@ VEC_IMPL(texture_entry, TextureEntry)
 #define DEBUG_LINES 14
 #define FONT_PREVIEW_SIZE 32
 
+#define EDITOR_CAMERA_SPEED 120.0F
+#define EDITOR_CROSSHAIR_HALF 6
+#define HINTS_BAR_HEIGHT 24
+#define HINTS_FONT_SIZE 16
+
 /* Texture registry — maps texture filenames to loaded Texture2D handles */
 static void texture_registry_add(struct EngineContext *ctx, const char *filename, Texture2D texture, Allocator *alloc)
 {
@@ -282,6 +287,35 @@ static void draw_debug_info(struct EngineContext *ctx, const GameState *state, R
             DrawText(debug_get_line(ctx, index), DEBUG_MARGIN, log_y + DEBUG_MARGIN + (index * DEBUG_LINE_HEIGHT),
                      DEBUG_FONT_SIZE, debug_log_color);
         }
+    }
+}
+
+static void load_persistent_assets(struct EngineContext *ctx, GameState *state)
+{
+    Allocator gamedata_alloc = allocator_arena(ctx, &state->gamedata_arena);
+    texture_registry_add(ctx, "player.png", load_embedded_texture(ASSET(player_png)), &gamedata_alloc);
+    texture_registry_add(ctx, "grass.png", load_embedded_texture(ASSET(grass_png)), &gamedata_alloc);
+    texture_registry_add(ctx, "tree.png", load_embedded_texture(ASSET(tree_png)), &gamedata_alloc);
+    texture_registry_add(ctx, "chest.png", load_embedded_texture(ASSET(chest_png)), &gamedata_alloc);
+    texture_registry_add(ctx, "house.png", load_embedded_texture(ASSET(house_png)), &gamedata_alloc);
+    texture_registry_add(ctx, "fence.png", load_embedded_texture(ASSET(fence_png)), &gamedata_alloc);
+    for (int index = 0; index < ctx->assets.textures.count; index++) {
+        debug_log(ctx, "texture[%d]: '%s' id=%u %dx%d", index, ctx->assets.textures.data[index].filename,
+                  ctx->assets.textures.data[index].texture.id, ctx->assets.textures.data[index].texture.width,
+                  ctx->assets.textures.data[index].texture.height);
+    }
+    font_preview_add(ctx, "Earth Illusion", ASSET(earth_illusion_ttf), &gamedata_alloc);
+    font_preview_add(ctx, "Golden Apple", ASSET(golden_apple_ttf), &gamedata_alloc);
+    font_preview_add(ctx, "MenuCard", ASSET(menucard_ttf), &gamedata_alloc);
+    font_preview_add(ctx, "Nudge Orb", ASSET(nudge_orb_ttf), &gamedata_alloc);
+    font_preview_add(ctx, "CardboardCrown", ASSET(cardboardcrown_ttf), &gamedata_alloc);
+    font_preview_add(ctx, "RoyalFibre", ASSET(royalfibre_ttf), &gamedata_alloc);
+}
+
+static void unload_textures(struct EngineContext *ctx)
+{
+    for (int index = 0; index < ctx->assets.textures.count; index++) {
+        UnloadTexture(ctx->assets.textures.data[index].texture);
     }
 }
 
@@ -549,6 +583,34 @@ static void poll_hot_reload(struct EngineContext *ctx, GameState *state)
     }
 }
 
+static void update_editor_camera(Camera2D *camera, InputState input, float delta_time)
+{
+    camera->target.x += input.left_stick.x * EDITOR_CAMERA_SPEED * delta_time;
+    camera->target.y += input.left_stick.y * EDITOR_CAMERA_SPEED * delta_time;
+}
+
+static void draw_editor_crosshair(RectU32 game_bounds)
+{
+    int center_x = (int)game_bounds.width / 2;
+    int center_y = (int)game_bounds.height / 2;
+    DrawLine(center_x - EDITOR_CROSSHAIR_HALF, center_y, center_x + EDITOR_CROSSHAIR_HALF, center_y, WHITE);
+    DrawLine(center_x, center_y - EDITOR_CROSSHAIR_HALF, center_x, center_y + EDITOR_CROSSHAIR_HALF, WHITE);
+}
+
+static void draw_hints_bar(bool editor_mode, const struct EngineContext *hints_ctx)
+{
+    int bar_y = hints_ctx->screen_height - HINTS_BAR_HEIGHT;
+    DrawRectangle(0, bar_y, hints_ctx->screen_width, HINTS_BAR_HEIGHT, debug_bg_color);
+    const char *hints;
+    if (editor_mode) {
+        hints = "F5: Play  |  F9/Y: Save  |  Stick/WASD: Pan";
+    } else {
+        hints = "F5: Editor  |  F3: Debug  |  F4: Fonts";
+    }
+    int text_y = bar_y + ((HINTS_BAR_HEIGHT - HINTS_FONT_SIZE) / 2);
+    DrawText(hints, DEBUG_MARGIN, text_y, HINTS_FONT_SIZE, debug_text_color);
+}
+
 static void draw_entities_depth_sorted(const GameState *state)
 {
     const Entity *player = game_get_player_const(state);
@@ -583,6 +645,56 @@ static void draw_entities_depth_sorted(const GameState *state)
     if (state->debug_enabled) {
         draw_debug_collision_boxes(&state->current_level, state->player_index);
     }
+}
+
+static void
+handle_editor_input(struct EngineContext *ctx, GameState *state, Camera2D *camera, InputState input, float delta_time)
+{
+    if (toggle_pressed((ToggleBinding){KEY_F9, GAMEPAD_BUTTON_RIGHT_FACE_UP})) {
+        if (!save_gamedata(ctx, state)) {
+            debug_log(ctx, "save error: %s", error_get(ctx));
+            error_clear(ctx);
+        } else {
+            load_gamedata(ctx, state);
+        }
+    }
+    update_editor_camera(camera, input, delta_time);
+}
+
+typedef struct {
+    RenderTexture2D target;
+    RectU32 game_bounds;
+    Camera2D editor_camera;
+    bool font_preview_enabled;
+} RenderParams;
+
+static void render_frame(struct EngineContext *ctx, const GameState *state, RenderParams params)
+{
+    BeginTextureMode(params.target);
+    ClearBackground(BLACK);
+    if (state->editor_mode) {
+        BeginMode2D(params.editor_camera);
+    }
+    draw_grass(*texture_registry_lookup("grass.png", ctx), params.game_bounds);
+    draw_entities_depth_sorted(state);
+    if (state->editor_mode) {
+        EndMode2D();
+        draw_editor_crosshair(params.game_bounds);
+    }
+    EndTextureMode();
+
+    BeginDrawing();
+    DrawTexturePro(
+        params.target.texture, (Rectangle){0, 0, (float)params.game_bounds.width, -(float)params.game_bounds.height},
+        (Rectangle){0, 0, (float)ctx->screen_width, (float)ctx->screen_height}, (Vector2){0, 0}, 0.0F, WHITE);
+    if (state->debug_enabled) {
+        draw_debug_info(ctx, state, params.game_bounds);
+    }
+    if (params.font_preview_enabled) {
+        draw_font_preview(ctx);
+    }
+    draw_hints_bar(state->editor_mode, ctx);
+    EndDrawing();
 }
 
 int main(void)
@@ -639,28 +751,9 @@ int main(void)
         return 1;
     }
 
-    {
-        Allocator gamedata_alloc = allocator_arena(ctx, &state.gamedata_arena);
-        /* Load textures and fonts into gamedata_arena — these sit at the bottom of the arena
-         * below gamedata_base and survive every gamedata reload (only freed at game exit). */
-        texture_registry_add(ctx, "player.png", load_embedded_texture(ASSET(player_png)), &gamedata_alloc);
-        texture_registry_add(ctx, "grass.png", load_embedded_texture(ASSET(grass_png)), &gamedata_alloc);
-        texture_registry_add(ctx, "tree.png", load_embedded_texture(ASSET(tree_png)), &gamedata_alloc);
-        texture_registry_add(ctx, "chest.png", load_embedded_texture(ASSET(chest_png)), &gamedata_alloc);
-        texture_registry_add(ctx, "house.png", load_embedded_texture(ASSET(house_png)), &gamedata_alloc);
-        texture_registry_add(ctx, "fence.png", load_embedded_texture(ASSET(fence_png)), &gamedata_alloc);
-        for (int index = 0; index < ctx->assets.textures.count; index++) {
-            debug_log(ctx, "texture[%d]: '%s' id=%u %dx%d", index, ctx->assets.textures.data[index].filename,
-                      ctx->assets.textures.data[index].texture.id, ctx->assets.textures.data[index].texture.width,
-                      ctx->assets.textures.data[index].texture.height);
-        }
-        font_preview_add(ctx, "Earth Illusion", ASSET(earth_illusion_ttf), &gamedata_alloc);
-        font_preview_add(ctx, "Golden Apple", ASSET(golden_apple_ttf), &gamedata_alloc);
-        font_preview_add(ctx, "MenuCard", ASSET(menucard_ttf), &gamedata_alloc);
-        font_preview_add(ctx, "Nudge Orb", ASSET(nudge_orb_ttf), &gamedata_alloc);
-        font_preview_add(ctx, "CardboardCrown", ASSET(cardboardcrown_ttf), &gamedata_alloc);
-        font_preview_add(ctx, "RoyalFibre", ASSET(royalfibre_ttf), &gamedata_alloc);
-    }
+    /* Load textures and fonts into gamedata_arena — these sit at the bottom of the arena
+     * below gamedata_base and survive every gamedata reload (only freed at game exit). */
+    load_persistent_assets(ctx, &state);
     /* Mark the high-water point: everything below here survives gamedata reloads */
     state.gamedata_base = arena_save(&state.gamedata_arena);
 
@@ -676,6 +769,11 @@ int main(void)
     int prev_gamepads = -1;
     bool font_preview_enabled = false;
     TouchState touch_state = {0};
+    Camera2D editor_camera = {
+        .offset = {(float)game_bounds.width / 2.0F, (float)game_bounds.height / 2.0F},
+        .target = {(float)game_bounds.width / 2.0F, (float)game_bounds.height / 2.0F},
+        .zoom = 1.0F,
+    };
 
     debug_log(ctx, "gamedata path: %s", GAMEDATA_PATH);
     debug_log(ctx, "screen %dx%d  game %ux%u  scale %d", ctx->screen_width, ctx->screen_height, game_bounds.width,
@@ -705,6 +803,12 @@ int main(void)
             font_preview_enabled = (bool)!font_preview_enabled;
         }
 
+        /* Toggle editor mode: F5 or gamepad Start */
+        if (toggle_pressed((ToggleBinding){KEY_F5, GAMEPAD_BUTTON_MIDDLE_RIGHT})) {
+            state.editor_mode = (bool)!state.editor_mode;
+            debug_log(ctx, "editor %s (frame %d)", (int)state.editor_mode ? "ON" : "OFF", state.frame);
+        }
+
         log_gamepad_changes(ctx, &prev_gamepads, state.frame);
 
         if (any_gamepad_exit_requested()) {
@@ -714,6 +818,11 @@ int main(void)
         InputState input = read_all_input();
         input = apply_touch_input(input, &touch_state, ctx, &state);
 
+        /* Handle editor-only actions: save and camera pan */
+        if (state.editor_mode) {
+            handle_editor_input(ctx, &state, &editor_camera, input, delta_time);
+        }
+
         /* Update (pure logic — no rendering) */
         game_update(ctx, &state, input, delta_time);
 
@@ -722,28 +831,13 @@ int main(void)
             debug_log(ctx, "frame=%d t=%.1fs dt=%.4f fps=%d", state.frame, state.elapsed, delta_time, GetFPS());
         }
 
-        /* Render at game resolution with depth sorting */
-        BeginTextureMode(target);
-        ClearBackground(BLACK);
-
-        draw_grass(*texture_registry_lookup("grass.png", ctx), game_bounds);
-        draw_entities_depth_sorted(&state);
-
-        EndTextureMode();
-
-        /* Scale game render to screen */
-        BeginDrawing();
-        DrawTexturePro(target.texture, (Rectangle){0, 0, (float)game_bounds.width, -(float)game_bounds.height},
-                       (Rectangle){0, 0, (float)ctx->screen_width, (float)ctx->screen_height}, (Vector2){0, 0}, 0.0F,
-                       WHITE);
-
-        if (state.debug_enabled) {
-            draw_debug_info(ctx, &state, game_bounds);
-        }
-        if (font_preview_enabled) {
-            draw_font_preview(ctx);
-        }
-        EndDrawing();
+        render_frame(ctx, &state,
+                     (RenderParams){
+                         .target = target,
+                         .game_bounds = game_bounds,
+                         .editor_camera = editor_camera,
+                         .font_preview_enabled = font_preview_enabled,
+                     });
     }
 
 quit:
@@ -751,9 +845,7 @@ quit:
 
     UnloadMusicStream(bgm);
     UnloadRenderTexture(target);
-    for (int index = 0; index < ctx->assets.textures.count; index++) {
-        UnloadTexture(ctx->assets.textures.data[index].texture);
-    }
+    unload_textures(ctx);
     font_preview_cleanup(ctx);
     game_free(ctx, &state);
     audio_shutdown(ctx);
