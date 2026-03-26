@@ -2,6 +2,7 @@
 
 ## Engineering Goals
 
+- **One arena** (`gamedata_arena`) — no scratch arena, no second arena
 - **No opaque cross-module forward declarations** — `struct EngineContext;` is
   the last one; eliminate it by splitting the logging/error concern into a
   lightweight header with no upward dependencies (see Coding Style in
