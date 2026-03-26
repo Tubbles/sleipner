@@ -804,6 +804,70 @@ scratch_arena:
 - The asset registry (textures, fonts) uses a dynamic vec backed by the arena. Adding a new asset is one line in `main.c`; no fixed-size arrays to resize.
 - **Prefer `vec` over fixed-size arrays with `MAX_*` constants.** If a collection's size isn't known at compile time, use a `vec` backed by the appropriate arena. `MAX_*` constants invite off-by-one bugs, silent truncation, and inflexibility — the arena makes dynamic sizing essentially free.
 
+### Vec Growth and Pointer Stability
+
+When a vec backed by an arena needs to grow, the arena allocator checks whether the vec's backing
+array is the **topmost allocation**. If yes, it extends in place — no copy, no pointer change. If
+anything else was allocated after it, a new block is allocated at the top, the data is copied, and
+the old block is **left orphaned in the arena** (valid memory, but unreachable). The vec struct's
+`data` pointer is always updated to the new block, so code that accesses through the vec struct is
+correct. Code that cached `&vec.data[i]` before the push now holds a stale pointer.
+
+**Rule: never hold a pointer to a vec element across a push to that vec.** Always re-derive via
+`vec.data[i]` after any push that could trigger growth.
+
+#### Two-dimensional growth: map of vecs
+
+A `map<K, vec_V>` grows in two independent dimensions:
+
+- **Map growth (rehash):** when the map exceeds 75% load, a new bucket array is allocated at the
+  arena top, entries are copied by value (including embedded vec structs — their `data` pointers
+  are preserved), and the old bucket array is orphaned. Any `vec_V *` pointer previously returned
+  by `map_get` is now stale.
+
+- **Vec growth within a map entry:** a pointer returned by `map_get` points into the map's bucket
+  array. Calling `vec_push` through that pointer updates the vec struct in-place — fine as long as
+  the map doesn't rehash concurrently.
+
+The two failure modes are independent:
+
+```
+// Stale vec pointer after map rehash:
+vec_int *group = map_get(&groups, "enemies");   // pointer into bucket array
+map_set(&groups, "new_group", empty, alloc);    // rehash → new bucket array
+vec_int_push(group, id, alloc);                 // ✗ group points into orphaned array
+
+// Correct: fresh lookup every time
+vec_int_push(map_get(&groups, "enemies"), id, alloc);  // ✓
+```
+
+#### Mitigations
+
+**Pointer stability via indirection.** Store `vec_int *` (pointer) in the map rather than
+`vec_int` (value). Each vec is its own separate arena allocation. Map rehash copies the pointer,
+not the vec — the vec stays at a stable address regardless of map growth.
+
+**Two-phase protocol.** Finish all map growth at load time; only push to existing vecs at runtime.
+No new keys at runtime means no rehash, so `map_get` pointers remain valid for the duration of a
+game frame. This is the correct pattern for named entity groups: groups are defined in TOML at load
+time (map frozen), entities are added/removed at runtime (vec push only).
+
+**Index-only access.** Never cache a pointer across a push. Always call `map_get` immediately
+before use within a single expression.
+
+#### Named entity group store
+
+The group store (`map<string, vec_int *>`) follows the two-phase protocol:
+
+- Load time: all group names defined (map grows to final size, then frozen). Each group's `vec_int`
+  is individually allocated in `gamedata_arena` and pointed to by the map entry.
+- Runtime: `add_to_group:X` / `remove_from_group:X` push/pop entity indices into the group's vec.
+  No map rehash, no stale pointers.
+
+Growth of a group vec when it is not the topmost arena allocation leaks the old backing block.
+This is bounded (one leaked backing per growth event) and reclaimed on level reload via
+`arena_restore`.
+
 ## Roadmap
 
 ### Phase 1 — Foundation (DONE)

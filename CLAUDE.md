@@ -91,6 +91,24 @@ Saves the arena offset on entry and restores it on any block exit (return, break
 
 **Always pass `allocator_arena(ctx, arena)`.** `Str`, `vec`, and `map` all accept an `Allocator *`. Passing `NULL` is only allowed in test code that manages its own lifetime via `test_*_free` helpers — never in engine code. If you are about to pass `NULL` or call `allocator_heap()` in non-test code, stop and fix the architecture instead.
 
+### Vec growth and pointer stability
+
+When a vec backed by an arena grows, it extends in place only if its backing array is the
+**topmost allocation**. Otherwise a new block is allocated at the top, data is copied, and the old
+block is orphaned in the arena (valid but unreachable). Two rules follow from this:
+
+- **Never hold a pointer to a vec element across a push to that vec.** `&vec.data[i]` becomes
+  stale if a reallocation occurs. Always re-derive via `vec.data[i]` after any push.
+- **Build then read.** Finish all pushes to a vec before taking any element pointer. The
+  load-time / play-time split naturally satisfies this: vecs grow at load time, are read-only at
+  runtime.
+
+For `map<K, vec_V>` two-dimensional structures: prefer storing `vec_V *` (pointer) in the map
+rather than `vec_V` (value), so map rehash copies the pointer and not the vec. Use the two-phase
+protocol — map keys defined at load time (no runtime rehash), vec contents grown at runtime. See
+DESIGN.md § "Vec Growth and Pointer Stability" for the full analysis and the named entity group
+store design.
+
 ## Testing Strategy
 
 Two levels of testing, both run in CI:
