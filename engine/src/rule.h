@@ -86,15 +86,26 @@ typedef enum {
     ACTION_FOR_EACH,
 } ActionType;
 
+/* --- Local variable scope chain (C stack frames — no arena allocation) --- */
+typedef struct LocalScope {
+    Str bind_name;                  /* the bound name, e.g. "enemy" */
+    int entity_index;               /* which entity is bound */
+    const struct LocalScope *outer; /* enclosing scope, NULL at top level */
+} LocalScope;
+
 /* --- Control flow nodes --- */
 typedef struct ActionNode ActionNode;
 
 struct ActionNode {
     ActionType type;
-    Str argument;
-    Str second_argument;
+    Str argument;        /* simple: target; repeat: count; for_each: collection */
+    Str second_argument; /* simple: value;                for_each: bind name   */
 
-    // For control flow nodes (raw pointers — self-referential, can't use vec)
+    /* Pre-parsed conditions: if/else uses this as the predicate;
+     * for_each uses it as the per-iteration filter. */
+    vec_condition conditions;
+
+    /* For control flow nodes (raw pointers — self-referential, can't use vec) */
     ActionNode *children;
     int child_count;
     ActionNode *else_children;
@@ -194,6 +205,7 @@ typedef struct {
     TriggerEventQueue *event_queue;
     AttrSet *local_vars;
     AttrSet *global_vars;
+    const LocalScope *scope; /* entity binding chain — walked by resolve_target */
 } ActionContext;
 
 [[nodiscard]] bool

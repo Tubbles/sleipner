@@ -1252,3 +1252,167 @@ void test_integration_condition_blocks_interact(void)
 
     game_free(&ctx, &state);
 }
+
+/* ---- Integration: for_each control flow ---- */
+
+void test_integration_for_each_no_bind_iterates_all_entities(void)
+{
+    /* counter blueprint: on_spawn → for_each entities (no bind) → add_attr:self.count,1
+     * Three entities in the level: counter, target_a, target_b (all count = 0).
+     * After load, every entity should have count = 1 (one iteration each). */
+    static const char *gamedata = "[[blueprint]]\n"
+                                  "name = \"counter\"\n"
+                                  "texture = \"t.png\"\n"
+                                  "src = [0, 0, 16, 16]\n"
+                                  "count = 0\n"
+                                  "\n"
+                                  "[[blueprint.rule]]\n"
+                                  "trigger = \"on_spawn\"\n"
+                                  "actions = [{ for_each = \"entities\", do = [\"add_attr:self.count,1\"] }]\n"
+                                  "\n"
+                                  "[[blueprint]]\n"
+                                  "name = \"target\"\n"
+                                  "texture = \"t.png\"\n"
+                                  "src = [0, 0, 16, 16]\n"
+                                  "count = 0\n"
+                                  "\n"
+                                  "[[level]]\n"
+                                  "name = \"test\"\n"
+                                  "size = [320, 240]\n"
+                                  "\n"
+                                  "[[level.entity]]\n"
+                                  "blueprint = \"counter\"\n"
+                                  "pos = [10, 10]\n"
+                                  "\n"
+                                  "[[level.entity]]\n"
+                                  "blueprint = \"target\"\n"
+                                  "pos = [50, 10]\n"
+                                  "\n"
+                                  "[[level.entity]]\n"
+                                  "blueprint = \"target\"\n"
+                                  "pos = [90, 10]\n";
+
+    GameState state;
+    TEST_ASSERT_TRUE(game_init(&ctx, &state, (RectU32){320, 240}));
+    TEST_ASSERT_TRUE(game_load_gamedata(
+        &ctx, &state, (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));
+
+    /* All three entities must have count = 1 */
+    for (int entity_index = 0; entity_index < state.current_level.entities.count; entity_index++) {
+        const Entity *entity = &state.current_level.entities.data[entity_index];
+        TEST_ASSERT_EQUAL_INT(1, (int)entity_get_float(entity, "count", 0.0F));
+    }
+
+    game_free(&ctx, &state);
+}
+
+void test_integration_for_each_condition_filter(void)
+{
+    /* Only entities with is_enemy attr get hit_count incremented.
+     * Fixture: one watcher (has the rule), one enemy, one bystander.
+     * After load: enemy.hit_count = 1, bystander.hit_count = 0. */
+    static const char *gamedata = "[[blueprint]]\n"
+                                  "name = \"watcher\"\n"
+                                  "texture = \"t.png\"\n"
+                                  "src = [0, 0, 16, 16]\n"
+                                  "\n"
+                                  "[[blueprint.rule]]\n"
+                                  "trigger = \"on_spawn\"\n"
+                                  "actions = [{ for_each = \"entities\", conditions = [\"attr:is_enemy\"], "
+                                  "do = [\"add_attr:self.hit_count,1\"] }]\n"
+                                  "\n"
+                                  "[[blueprint]]\n"
+                                  "name = \"enemy\"\n"
+                                  "texture = \"t.png\"\n"
+                                  "src = [0, 0, 16, 16]\n"
+                                  "is_enemy = 1\n"
+                                  "hit_count = 0\n"
+                                  "\n"
+                                  "[[blueprint]]\n"
+                                  "name = \"bystander\"\n"
+                                  "texture = \"t.png\"\n"
+                                  "src = [0, 0, 16, 16]\n"
+                                  "hit_count = 0\n"
+                                  "\n"
+                                  "[[level]]\n"
+                                  "name = \"test\"\n"
+                                  "size = [320, 240]\n"
+                                  "\n"
+                                  "[[level.entity]]\n"
+                                  "blueprint = \"watcher\"\n"
+                                  "pos = [10, 10]\n"
+                                  "\n"
+                                  "[[level.entity]]\n"
+                                  "blueprint = \"enemy\"\n"
+                                  "pos = [50, 10]\n"
+                                  "\n"
+                                  "[[level.entity]]\n"
+                                  "blueprint = \"bystander\"\n"
+                                  "pos = [90, 10]\n";
+
+    GameState state;
+    TEST_ASSERT_TRUE(game_init(&ctx, &state, (RectU32){320, 240}));
+    TEST_ASSERT_TRUE(game_load_gamedata(
+        &ctx, &state, (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));
+
+    TEST_ASSERT_EQUAL_INT(3, state.current_level.entities.count);
+    /* entity 1 = enemy, entity 2 = bystander */
+    const Entity *enemy = &state.current_level.entities.data[1];
+    const Entity *bystander = &state.current_level.entities.data[2];
+    TEST_ASSERT_EQUAL_INT(1, (int)entity_get_float(enemy, "hit_count", 0.0F));
+    TEST_ASSERT_EQUAL_INT(0, (int)entity_get_float(bystander, "hit_count", 0.0F));
+
+    game_free(&ctx, &state);
+}
+
+void test_integration_for_each_bind_mode(void)
+{
+    /* Bind mode: self stays as rule owner; bound variable names the iterated entity.
+     * Fixture: "marker" entity has on_spawn rule, for_each bind="item", add_attr:item.tagged,1.
+     * All entities (including marker itself — no self-exclusion) get tagged = 1. */
+    static const char *gamedata =
+        "[[blueprint]]\n"
+        "name = \"marker\"\n"
+        "texture = \"t.png\"\n"
+        "src = [0, 0, 16, 16]\n"
+        "tagged = 0\n"
+        "\n"
+        "[[blueprint.rule]]\n"
+        "trigger = \"on_spawn\"\n"
+        "actions = [{ for_each = \"entities\", bind = \"item\", do = [\"add_attr:item.tagged,1\"] }]\n"
+        "\n"
+        "[[blueprint]]\n"
+        "name = \"thing\"\n"
+        "texture = \"t.png\"\n"
+        "src = [0, 0, 16, 16]\n"
+        "tagged = 0\n"
+        "\n"
+        "[[level]]\n"
+        "name = \"test\"\n"
+        "size = [320, 240]\n"
+        "\n"
+        "[[level.entity]]\n"
+        "blueprint = \"marker\"\n"
+        "pos = [10, 10]\n"
+        "\n"
+        "[[level.entity]]\n"
+        "blueprint = \"thing\"\n"
+        "pos = [50, 10]\n"
+        "\n"
+        "[[level.entity]]\n"
+        "blueprint = \"thing\"\n"
+        "pos = [90, 10]\n";
+
+    GameState state;
+    TEST_ASSERT_TRUE(game_init(&ctx, &state, (RectU32){320, 240}));
+    TEST_ASSERT_TRUE(game_load_gamedata(
+        &ctx, &state, (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));
+
+    /* All three entities must have tagged = 1 (bind mode still includes self) */
+    for (int entity_index = 0; entity_index < state.current_level.entities.count; entity_index++) {
+        const Entity *entity = &state.current_level.entities.data[entity_index];
+        TEST_ASSERT_EQUAL_INT(1, (int)entity_get_float(entity, "tagged", 0.0F));
+    }
+
+    game_free(&ctx, &state);
+}

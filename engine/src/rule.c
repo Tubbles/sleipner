@@ -376,6 +376,38 @@ static bool parse_branch_array_into(struct EngineContext *ctx,
     return true;
 }
 
+static bool parse_conditions_into(
+    struct EngineContext *ctx, Allocator *alloc, vec_condition *out, toml_array_t *array, const char *context_name)
+{
+    if (!array) {
+        return true;
+    }
+    int count = toml_array_nelem(array);
+    if (count > MAX_CONDITIONS) {
+        error_set(ctx, "%s: too many conditions (%d, max %d)", context_name, count, MAX_CONDITIONS);
+        return false;
+    }
+    for (int index = 0; index < count; index++) {
+        toml_datum_t value = toml_string_at(array, index);
+        if (!value.ok) {
+            error_set(ctx, "%s: condition[%d] is not a string", context_name, index);
+            return false;
+        }
+        Condition cond = {0};
+        if (!condition_parse(ctx, alloc, &cond, value.u.s)) {
+            free(value.u.s);
+            error_wrap(ctx, "%s: condition[%d]", context_name, index);
+            return false;
+        }
+        free(value.u.s);
+        if (!vec_condition_push(out, cond, alloc)) {
+            error_set(ctx, "%s: condition[%d]: out of memory", context_name, index);
+            return false;
+        }
+    }
+    return true;
+}
+
 static bool parse_one_cf_node(struct EngineContext *ctx,
                               Allocator *alloc,
                               ActionNode *node,
@@ -386,13 +418,10 @@ static bool parse_one_cf_node(struct EngineContext *ctx,
 {
     memset(node, 0, sizeof(*node));
 
-    toml_datum_t if_cond = toml_string_in(table, "if");
-    if (if_cond.ok) {
+    toml_array_t *if_conds = toml_array_in(table, "if");
+    if (if_conds) {
         node->type = ACTION_IF_ELSE;
-        bool alloc_ok = str_from_cstr(alloc, &node->argument, if_cond.u.s);
-        free(if_cond.u.s);
-        if (!alloc_ok) {
-            error_set(ctx, "parse_one_cf_node: allocation failed");
+        if (!parse_conditions_into(ctx, alloc, &node->conditions, if_conds, "if")) {
             return false;
         }
         if (!parse_branch_array_into(ctx, alloc, &node->children, &node->child_count, toml_array_in(table, "then"),
@@ -410,6 +439,35 @@ static bool parse_one_cf_node(struct EngineContext *ctx,
         free(repeat_str.u.s);
         if (!alloc_ok) {
             error_set(ctx, "parse_one_cf_node: allocation failed");
+            return false;
+        }
+        return parse_branch_array_into(ctx, alloc, &node->children, &node->child_count, toml_array_in(table, "do"),
+                                       arena, "do", task_stack, task_top);
+    }
+
+    toml_datum_t for_each_str = toml_string_in(table, "for_each");
+    if (for_each_str.ok) {
+        node->type = ACTION_FOR_EACH;
+        bool alloc_ok = str_from_cstr(alloc, &node->argument, for_each_str.u.s);
+        free(for_each_str.u.s);
+        if (!alloc_ok) {
+            error_set(ctx, "parse_one_cf_node: allocation failed for for_each");
+            return false;
+        }
+        if (strcmp(node->argument.ptr, "entities") != 0) {
+            error_set(ctx, "for_each: unknown collection '%s' (supported: 'entities')", node->argument.ptr);
+            return false;
+        }
+        toml_datum_t bind_str = toml_string_in(table, "bind");
+        if (bind_str.ok) {
+            bool bind_ok = str_from_cstr(alloc, &node->second_argument, bind_str.u.s);
+            free(bind_str.u.s);
+            if (!bind_ok) {
+                error_set(ctx, "parse_one_cf_node: allocation failed for bind");
+                return false;
+            }
+        }
+        if (!parse_conditions_into(ctx, alloc, &node->conditions, toml_array_in(table, "conditions"), "for_each")) {
             return false;
         }
         return parse_branch_array_into(ctx, alloc, &node->children, &node->child_count, toml_array_in(table, "do"),
@@ -451,33 +509,7 @@ bool action_node_parse(struct EngineContext *ctx, Allocator *alloc, ActionNode *
 
 static bool parse_conditions_array(struct EngineContext *ctx, Allocator *alloc, Rule *rule, toml_array_t *conditions)
 {
-    if (!conditions) {
-        return true;
-    }
-    int count = toml_array_nelem(conditions);
-    if (count > MAX_CONDITIONS) {
-        error_set(ctx, "too many conditions (%d, max %d)", count, MAX_CONDITIONS);
-        return false;
-    }
-    for (int index = 0; index < count; index++) {
-        toml_datum_t value = toml_string_at(conditions, index);
-        if (!value.ok) {
-            error_set(ctx, "condition[%d] is not a string", index);
-            return false;
-        }
-        Condition cond = {0};
-        if (!condition_parse(ctx, alloc, &cond, value.u.s)) {
-            error_wrap(ctx, "condition[%d]", index);
-            free(value.u.s);
-            return false;
-        }
-        free(value.u.s);
-        if (!vec_condition_push(&rule->conditions, cond, alloc)) {
-            error_set(ctx, "condition[%d]: out of memory", index);
-            return false;
-        }
-    }
-    return true;
+    return parse_conditions_into(ctx, alloc, &rule->conditions, conditions, "rule");
 }
 
 static bool
@@ -734,23 +766,22 @@ static Entity *resolve_target(const char *target_spec, ActionContext context, ch
     char tag[MAX_ARG];
     strv_copy_to_cstr(head, tag, MAX_ARG);
     strv_copy_to_cstr(strv, attr_name_out, (size_t)attr_name_max);
-    return entity_find_by_tag_mut(context.entity, tag, context.entities, context.entity_count);
-}
 
-static bool evaluate_condition_string(struct EngineContext *ctx,
-                                      Allocator *alloc,
-                                      const char *condition_str,
-                                      ConditionContext context)
-{
-    Condition temp_cond = {0};
-    if (!condition_parse(ctx, alloc, &temp_cond, condition_str)) {
-        debug_log(ctx, "control flow: failed to parse condition '%s'", condition_str);
-        str_free(alloc, &temp_cond.argument);
-        return false;
+    Entity *tagged = entity_find_by_tag_mut(context.entity, tag, context.entities, context.entity_count);
+    if (tagged) {
+        return tagged;
     }
-    bool result = evaluate_single_condition(&temp_cond, context);
-    str_free(alloc, &temp_cond.argument);
-    return result;
+
+    /* Fallback: walk the LocalScope chain for entity index bindings */
+    for (const LocalScope *scope = context.scope; scope; scope = scope->outer) {
+        if (strv_eq_cstr(str_to_strv(scope->bind_name), tag)) {
+            int idx = scope->entity_index;
+            if (idx >= 0 && idx < context.entity_count) {
+                return &context.entities[idx];
+            }
+        }
+    }
+    return NULL;
 }
 
 static const Attribute *lookup_var(const char *varname, ActionContext context)
@@ -940,7 +971,6 @@ static bool push_branch_nodes(
 
 static bool expand_if_else_node(struct EngineContext *ctx,
                                 const ActionNode *node,
-                                Allocator *alloc,
                                 ActionContext context,
                                 const ActionNode **exec_stack,
                                 int *stack_top)
@@ -953,7 +983,7 @@ static bool expand_if_else_node(struct EngineContext *ctx,
         .local_vars = context.local_vars,
         .global_vars = context.global_vars,
     };
-    bool condition_met = evaluate_condition_string(ctx, alloc, node->argument.ptr, cond_ctx);
+    bool condition_met = conditions_evaluate(node->conditions.data, node->conditions.count, cond_ctx);
     const ActionNode *branch;
     int branch_count;
     if (condition_met) {
@@ -1012,20 +1042,80 @@ dispatch_simple_action(struct EngineContext *ctx, Allocator *alloc, const Action
     }
 }
 
-bool action_node_execute(struct EngineContext *ctx, Allocator *alloc, const ActionNode *node, ActionContext context)
+/* Forward declaration — execute_action_nodes and execute_for_each_node are mutually recursive */
+static bool execute_action_nodes(
+    struct EngineContext *ctx, Allocator *alloc, const ActionNode *nodes, int count, ActionContext context);
+
+// NOLINTBEGIN(misc-no-recursion) -- mutually recursive; bounded by for_each nesting depth
+static bool
+execute_for_each_node(struct EngineContext *ctx, Allocator *alloc, const ActionNode *node, ActionContext context)
+{
+    bool has_bind = node->second_argument.len > 0;
+    for (int entity_index = 0; entity_index < context.entity_count; entity_index++) {
+        if (!entity_get_bool(&context.entities[entity_index], "active", true)) {
+            continue;
+        }
+        ConditionContext cond_ctx = {
+            .entity = &context.entities[entity_index],
+            .entities = context.entities,
+            .entity_count = context.entity_count,
+            .flags = context.flags,
+            .local_vars = context.local_vars,
+            .global_vars = context.global_vars,
+        };
+        if (!conditions_evaluate(node->conditions.data, node->conditions.count, cond_ctx)) {
+            continue;
+        }
+        if (has_bind) {
+            /* Bind mode: self = rule owner; iterated entity accessible via bind name */
+            LocalScope iter_scope = {
+                .bind_name = node->second_argument,
+                .entity_index = entity_index,
+                .outer = context.scope,
+            };
+            ActionContext iter_ctx = context;
+            iter_ctx.scope = &iter_scope;
+            if (!execute_action_nodes(ctx, alloc, node->children, node->child_count, iter_ctx)) {
+                return false;
+            }
+        } else {
+            /* Simple mode: self = iterated entity */
+            ActionContext iter_ctx = context;
+            iter_ctx.entity = &context.entities[entity_index];
+            iter_ctx.entity_index = entity_index;
+            if (!execute_action_nodes(ctx, alloc, node->children, node->child_count, iter_ctx)) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+static bool execute_action_nodes(
+    struct EngineContext *ctx, Allocator *alloc, const ActionNode *nodes, int count, ActionContext context)
 {
     const ActionNode *exec_stack[MAX_EXEC_STACK];
     int stack_top = 0;
-    exec_stack[stack_top++] = node;
+    for (int index = count - 1; index >= 0; index--) {
+        if (stack_top >= MAX_EXEC_STACK) {
+            error_set(ctx, "action execution stack overflow");
+            return false;
+        }
+        exec_stack[stack_top++] = &nodes[index];
+    }
 
     while (stack_top > 0) {
         const ActionNode *current = exec_stack[--stack_top];
         if (current->type == ACTION_IF_ELSE) {
-            if (!expand_if_else_node(ctx, current, alloc, context, exec_stack, &stack_top)) {
+            if (!expand_if_else_node(ctx, current, context, exec_stack, &stack_top)) {
                 return false;
             }
         } else if (current->type == ACTION_REPEAT) {
             if (!expand_repeat_node(ctx, current, exec_stack, &stack_top)) {
+                return false;
+            }
+        } else if (current->type == ACTION_FOR_EACH) {
+            if (!execute_for_each_node(ctx, alloc, current, context)) {
                 return false;
             }
         } else if (!dispatch_simple_action(ctx, alloc, current, context)) {
@@ -1033,6 +1123,12 @@ bool action_node_execute(struct EngineContext *ctx, Allocator *alloc, const Acti
         }
     }
     return true;
+}
+// NOLINTEND(misc-no-recursion)
+
+bool action_node_execute(struct EngineContext *ctx, Allocator *alloc, const ActionNode *node, ActionContext context)
+{
+    return execute_action_nodes(ctx, alloc, node, 1, context);
 }
 
 /* ---- Evaluation loop ---- */
