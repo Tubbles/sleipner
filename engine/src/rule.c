@@ -155,6 +155,16 @@ bool trigger_parse(struct EngineContext *ctx, Allocator *alloc, Trigger *trigger
         trigger->type = TRIGGER_DEFEAT;
         return true;
     }
+    if (strv_starts_with_cstr(strv, "collide:")) {
+        trigger->type = TRIGGER_COLLIDE;
+        Strv rest = strv;
+        (void)strv_split(&rest, ':');
+        if (!str_from_strv(alloc, &trigger->argument, rest)) {
+            error_set(ctx, "trigger_parse: allocation failed");
+            return false;
+        }
+        return true;
+    }
     if (strv_eq_cstr(strv, "collide")) {
         trigger->type = TRIGGER_COLLIDE;
         return true;
@@ -681,6 +691,9 @@ bool trigger_matches(const Trigger *trigger, const TriggerEvent *event)
         trigger->type == TRIGGER_TIMER_PERIODIC) {
         return strcmp(trigger->argument.ptr, event->argument.ptr) == 0;
     }
+    if (trigger->type == TRIGGER_COLLIDE && trigger->argument.len > 0) {
+        return (bool)(event->argument.ptr != NULL && strcmp(trigger->argument.ptr, event->argument.ptr) == 0);
+    }
     return true;
 }
 
@@ -914,19 +927,29 @@ execute_set_attr_action(struct EngineContext *ctx, Allocator *alloc, const Actio
         debug_log(ctx, "set_attr: target not found: %s", node->argument.ptr);
         return true;
     }
+    float old_health = strcmp(attr_name, "health") == 0 ? entity_get_float(target, "health", 0.0F) : 0.0F;
     char resolved[MAX_ARG];
     resolve_arg(resolved, MAX_ARG, node->second_argument.ptr, context);
     float value = strtof(resolved, NULL);
+    bool attr_set_ok;
     if (strchr(resolved, '.')) {
-        return attr_set_float(alloc, &target->attrs, attr_name, value);
+        attr_set_ok = attr_set_float(alloc, &target->attrs, attr_name, value);
+    } else if (strcmp(resolved, "true") == 0) {
+        attr_set_ok = attr_set_bool(alloc, &target->attrs, attr_name, true);
+    } else if (strcmp(resolved, "false") == 0) {
+        attr_set_ok = attr_set_bool(alloc, &target->attrs, attr_name, false);
+    } else {
+        attr_set_ok = attr_set_int(alloc, &target->attrs, attr_name, (int)value);
     }
-    if (strcmp(resolved, "true") == 0) {
-        return attr_set_bool(alloc, &target->attrs, attr_name, true);
+    if (!attr_set_ok) {
+        return false;
     }
-    if (strcmp(resolved, "false") == 0) {
-        return attr_set_bool(alloc, &target->attrs, attr_name, false);
+    if (strcmp(attr_name, "health") == 0 && old_health > 0.0F && entity_get_float(target, "health", 0.0F) <= 0.0F) {
+        int target_index = (int)(target - context.entities);
+        TriggerEvent defeat = {.type = TRIGGER_DEFEAT, .entity_index = target_index};
+        (void)trigger_event_queue_push(context.event_queue, defeat);
     }
-    return attr_set_int(alloc, &target->attrs, attr_name, (int)value);
+    return true;
 }
 
 static bool
@@ -939,14 +962,26 @@ execute_add_attr_action(struct EngineContext *ctx, Allocator *alloc, const Actio
         return true;
     }
     const Attribute *existing = entity_get_attr(target, attr_name);
+    float old_health = strcmp(attr_name, "health") == 0 ? entity_get_float(target, "health", 0.0F) : 0.0F;
     char resolved[MAX_ARG];
     resolve_arg(resolved, MAX_ARG, node->second_argument.ptr, context);
     float delta = strtof(resolved, NULL);
+    bool attr_set_ok;
     if (existing && existing->type == ATTR_FLOAT) {
-        return attr_set_float(alloc, &target->attrs, attr_name, existing->value.f + delta);
+        attr_set_ok = attr_set_float(alloc, &target->attrs, attr_name, existing->value.f + delta);
+    } else {
+        int current_val = existing ? existing->value.i : 0;
+        attr_set_ok = attr_set_int(alloc, &target->attrs, attr_name, current_val + (int)delta);
     }
-    int current_val = existing ? existing->value.i : 0;
-    return attr_set_int(alloc, &target->attrs, attr_name, current_val + (int)delta);
+    if (!attr_set_ok) {
+        return false;
+    }
+    if (strcmp(attr_name, "health") == 0 && old_health > 0.0F && entity_get_float(target, "health", 0.0F) <= 0.0F) {
+        int target_index = (int)(target - context.entities);
+        TriggerEvent defeat = {.type = TRIGGER_DEFEAT, .entity_index = target_index};
+        (void)trigger_event_queue_push(context.event_queue, defeat);
+    }
+    return true;
 }
 
 static bool
@@ -1120,9 +1155,12 @@ dispatch_simple_action(struct EngineContext *ctx, Allocator *alloc, const Action
         return execute_toggle_attr_action(ctx, alloc, node, context);
     case ACTION_SET_VAR:
         return execute_set_var_action(ctx, alloc, node, context);
-    case ACTION_DESTROY:
+    case ACTION_DESTROY: {
+        TriggerEvent destroy_event = {.type = TRIGGER_ON_DESTROY, .entity_index = context.entity_index};
+        (void)trigger_event_queue_push(context.event_queue, destroy_event);
         (void)attr_set_bool(alloc, &context.entity->attrs, "active", false);
         return true;
+    }
     case ACTION_FIRE_EVENT: {
         TriggerEvent fire = {.type = TRIGGER_EVENT, .entity_index = -1, .argument = node->argument};
         return trigger_event_queue_push(context.event_queue, fire);
@@ -1354,7 +1392,19 @@ void rules_evaluate_batch(struct EngineContext *ctx,
         for (int entity_index = 0; entity_index < entity_count; entity_index++) {
             Entity *entity = &entities[entity_index];
             if (!entity_get_bool(entity, "active", true)) {
-                continue;
+                /* Inactive entities skip rule evaluation unless they have a pending
+                 * on_destroy event — those rules must still fire. */
+                bool has_on_destroy = false;
+                for (int event_index = 0; event_index < pending_events.count; event_index++) {
+                    if (pending_events.events[event_index].type == TRIGGER_ON_DESTROY &&
+                        pending_events.events[event_index].entity_index == entity_index) {
+                        has_on_destroy = true;
+                        break;
+                    }
+                }
+                if (!has_on_destroy) {
+                    continue;
+                }
             }
             evaluate_entity_rules(ctx, alloc, entity, entity_index, entities, entity_count, flags, global_vars,
                                   &pending_events, &next_events, rule_table, subroutines, timers);

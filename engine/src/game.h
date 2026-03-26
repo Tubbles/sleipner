@@ -31,7 +31,8 @@ typedef struct {
     Arena gamedata_arena;
     ArenaCheckpoint gamedata_base; /* offset just above persistent assets (textures, fonts) */
     Arena scratch_arena;
-    vec_bool prev_player_overlaps; /* one entry per level entity: true if player overlapped last frame */
+    vec_bool prev_player_overlaps;  /* one entry per level entity: true if player overlapped last frame */
+    vec_bool prev_solid_collisions; /* entity_count² entries: true if pair [a*count+b] overlapped last frame */
     BlueprintTable blueprints;
     map_entity_ruleset rule_table;
     vec_subroutine subroutines;

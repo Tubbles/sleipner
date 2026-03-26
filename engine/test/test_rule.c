@@ -1640,6 +1640,133 @@ void test_integration_timer_destroy_cancels(void)
     game_free(&ctx, &state);
 }
 
+/* ---- Integration: on_destroy trigger ---- */
+
+void test_integration_on_destroy_fires(void)
+{
+    /* Entity destroys itself on_spawn; on_destroy rule must run while it is inactive. */
+    static const char *gamedata = "[[blueprint]]\n"
+                                  "name = \"thing\"\n"
+                                  "texture = \"t.png\"\n"
+                                  "src = [0, 0, 16, 16]\n"
+                                  "\n"
+                                  "[[blueprint.rule]]\n"
+                                  "trigger = \"on_spawn\"\n"
+                                  "actions = [\"destroy\"]\n"
+                                  "\n"
+                                  "[[blueprint.rule]]\n"
+                                  "trigger = \"on_destroy\"\n"
+                                  "actions = [\"set_flag:thing_destroyed\"]\n"
+                                  "\n"
+                                  "[[level]]\n"
+                                  "name = \"test\"\n"
+                                  "size = [320, 240]\n"
+                                  "\n"
+                                  "[[level.entity]]\n"
+                                  "blueprint = \"thing\"\n"
+                                  "pos = [10, 10]\n";
+
+    GameState state;
+    TEST_ASSERT_TRUE(game_init(&ctx, &state, (RectU32){320, 240}));
+    TEST_ASSERT_TRUE(game_load_gamedata(
+        &ctx, &state, (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));
+
+    /* Entity must be inactive and the on_destroy flag must be set */
+    const Entity *thing = &state.current_level.entities.data[0];
+    TEST_ASSERT_FALSE(entity_get_bool(thing, "active", true));
+    TEST_ASSERT_TRUE(flag_get(&state.flags, "thing_destroyed"));
+
+    game_free(&ctx, &state);
+}
+
+/* ---- Integration: defeat trigger ---- */
+
+void test_integration_defeat_fires_when_health_drops_to_zero(void)
+{
+    /* Entity starts with health=5; on_spawn subtracts 10 → health=-5 (crosses 0 → defeat). */
+    /* health = [current, max] is the blueprint format; parse_health stores it as health=5 */
+    static const char *gamedata = "[[blueprint]]\n"
+                                  "name = \"enemy\"\n"
+                                  "texture = \"t.png\"\n"
+                                  "src = [0, 0, 16, 16]\n"
+                                  "health = [5, 10]\n"
+                                  "\n"
+                                  "[[blueprint.rule]]\n"
+                                  "trigger = \"on_spawn\"\n"
+                                  "actions = [\"add_attr:self.health,-10\"]\n"
+                                  "\n"
+                                  "[[blueprint.rule]]\n"
+                                  "trigger = \"defeat\"\n"
+                                  "actions = [\"set_flag:enemy_defeated\"]\n"
+                                  "\n"
+                                  "[[level]]\n"
+                                  "name = \"test\"\n"
+                                  "size = [320, 240]\n"
+                                  "\n"
+                                  "[[level.entity]]\n"
+                                  "blueprint = \"enemy\"\n"
+                                  "pos = [10, 10]\n";
+
+    GameState state;
+    TEST_ASSERT_TRUE(game_init(&ctx, &state, (RectU32){320, 240}));
+    TEST_ASSERT_TRUE(game_load_gamedata(
+        &ctx, &state, (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));
+
+    TEST_ASSERT_TRUE(flag_get(&state.flags, "enemy_defeated"));
+
+    game_free(&ctx, &state);
+}
+
+/* ---- Integration: collide trigger ---- */
+
+void test_integration_collide_fires_on_overlap(void)
+{
+    /* Two solid entities placed at the same position — they overlap immediately.
+     * After the first game_update both should receive TRIGGER_COLLIDE.
+     * The "rock" blueprint has a collide rule that sets a flag. */
+    static const char *gamedata = "[[blueprint]]\n"
+                                  "name = \"rock\"\n"
+                                  "texture = \"t.png\"\n"
+                                  "src = [0, 0, 16, 16]\n"
+                                  "collision_size = [16, 16]\n"
+                                  "\n"
+                                  "[[blueprint.rule]]\n"
+                                  "trigger = \"collide\"\n"
+                                  "actions = [\"set_flag:rock_hit\"]\n"
+                                  "\n"
+                                  "[[blueprint]]\n"
+                                  "name = \"barrel\"\n"
+                                  "texture = \"t.png\"\n"
+                                  "src = [0, 0, 16, 16]\n"
+                                  "collision_size = [16, 16]\n"
+                                  "\n"
+                                  "[[level]]\n"
+                                  "name = \"test\"\n"
+                                  "size = [320, 240]\n"
+                                  "\n"
+                                  "[[level.entity]]\n"
+                                  "blueprint = \"rock\"\n"
+                                  "pos = [10, 10]\n"
+                                  "\n"
+                                  "[[level.entity]]\n"
+                                  "blueprint = \"barrel\"\n"
+                                  "pos = [10, 10]\n";
+
+    GameState state;
+    TEST_ASSERT_TRUE(game_init(&ctx, &state, (RectU32){320, 240}));
+    TEST_ASSERT_TRUE(game_load_gamedata(
+        &ctx, &state, (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));
+
+    /* No collide event yet — prev_solid_collisions initialised to false */
+    TEST_ASSERT_FALSE(flag_get(&state.flags, "rock_hit"));
+
+    /* First update — overlap detected for the first time → fire */
+    game_update(&ctx, &state, (InputState){0}, 0.016F);
+    TEST_ASSERT_TRUE(flag_get(&state.flags, "rock_hit"));
+
+    game_free(&ctx, &state);
+}
+
 void test_integration_subroutine_missing_is_soft_fail(void)
 {
     /* Calling a non-existent subroutine must not crash — subsequent actions still run. */

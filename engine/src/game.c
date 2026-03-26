@@ -65,6 +65,7 @@ bool game_load_gamedata(struct EngineContext *ctx, GameState *state, GamedataPar
     state->subroutines = (vec_subroutine){0};
     state->timers = (vec_timer){0};
     state->prev_player_overlaps = (vec_bool){0};
+    state->prev_solid_collisions = (vec_bool){0};
 
     if (!root) {
         error_set(ctx, "toml_parse: %s", errbuf);
@@ -97,6 +98,12 @@ bool game_load_gamedata(struct EngineContext *ctx, GameState *state, GamedataPar
         /* Initialize overlap tracking: one false entry per entity */
         for (int index = 0; index < state->current_level.entities.count; index++) {
             (void)vec_bool_push(&state->prev_player_overlaps, false, &gamedata_alloc);
+        }
+
+        /* Initialize solid-pair collision tracking: entity_count² entries */
+        int entity_count = state->current_level.entities.count;
+        for (int pair_index = 0; pair_index < entity_count * entity_count; pair_index++) {
+            (void)vec_bool_push(&state->prev_solid_collisions, false, &gamedata_alloc);
         }
 
         /* Fire on_spawn for every entity now that the rule table is ready */
@@ -298,6 +305,38 @@ static void detect_enter_targets(const Entity *player,
     }
 }
 
+static void
+detect_solid_collisions(Level *level, vec_bool *prev_collisions, vec_trigger_event *out_events, Allocator *alloc)
+{
+    if (prev_collisions->count == 0) {
+        return;
+    }
+    Entity *entities = level->entities.data;
+    int entity_count = level->entities.count;
+    for (int entity_a = 0; entity_a < entity_count; entity_a++) {
+        if (!entity_get_bool(&entities[entity_a], "solid", false)) {
+            continue;
+        }
+        for (int entity_b = entity_a + 1; entity_b < entity_count; entity_b++) {
+            if (!entity_get_bool(&entities[entity_b], "solid", false)) {
+                continue;
+            }
+            int pair_index = (entity_a * entity_count) + entity_b;
+            bool currently = CheckCollisionRecs(entities[entity_a].collision, entities[entity_b].collision);
+            bool was = prev_collisions->data[pair_index];
+            prev_collisions->data[pair_index] = currently;
+            if (currently && !was) {
+                TriggerEvent event_a = {
+                    .type = TRIGGER_COLLIDE, .entity_index = entity_a, .argument = entities[entity_b].blueprint_name};
+                TriggerEvent event_b = {
+                    .type = TRIGGER_COLLIDE, .entity_index = entity_b, .argument = entities[entity_a].blueprint_name};
+                (void)vec_trigger_event_push(out_events, event_a, alloc);
+                (void)vec_trigger_event_push(out_events, event_b, alloc);
+            }
+        }
+    }
+}
+
 static void collect_trigger_events(
     struct EngineContext *ctx, GameState *state, InputState input, vec_trigger_event *out_events, Allocator *alloc)
 {
@@ -347,6 +386,9 @@ void game_update(struct EngineContext *ctx, GameState *state, InputState input, 
     SCRATCH_SCOPE(&state->scratch_arena);
     Allocator scratch_alloc = allocator_arena(ctx, &state->scratch_arena);
     vec_trigger_event trigger_events = {0};
+
+    /* Detect new solid-entity overlaps and fire collide events on both parties */
+    detect_solid_collisions(&state->current_level, &state->prev_solid_collisions, &trigger_events, &scratch_alloc);
 
     /* Tick timers and collect fired events */
     for (int timer_index = state->timers.count - 1; timer_index >= 0; timer_index--) {
