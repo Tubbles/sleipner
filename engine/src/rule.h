@@ -206,7 +206,7 @@ typedef struct {
 bool conditions_evaluate(const Condition *conditions, int count, ConditionContext context);
 
 /* --- Action execution --- */
-#define MAX_CALL_DEPTH 8
+#define MAX_CALL_DEPTH 32
 
 typedef struct {
     Entity *entity;
