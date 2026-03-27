@@ -64,17 +64,7 @@ RUN wget -qO /tmp/gradle.zip https://services.gradle.org/distributions/gradle-8.
     && rm /tmp/gradle.zip
 ENV PATH="/opt/gradle-8.11.1/bin:${PATH}"
 
-WORKDIR /src
-
 # Install conan in a venv
 RUN python3 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 RUN pip install --no-cache-dir conan
-
-# Configure conan profile for clang-22
-RUN conan profile detect \
-    && sed -i 's/compiler=gcc/compiler=clang/' ~/.conan2/profiles/default \
-    && sed -i 's/compiler.version=.*/compiler.version=22/' ~/.conan2/profiles/default \
-    && sed -i '/compiler.cppstd/d' ~/.conan2/profiles/default \
-    && printf '\n[conf]\ntools.build:compiler_executables={"c": "clang", "cpp": "clang++"}\n' >> ~/.conan2/profiles/default \
-    && sed -i 's/"21"\]/"21", "22"]/' ~/.conan2/settings.yml
