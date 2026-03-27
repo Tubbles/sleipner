@@ -826,11 +826,6 @@ int main(void)
         /* Update (pure logic — no rendering) */
         game_update(ctx, &state, input, delta_time);
 
-        /* Heartbeat every ~5 seconds */
-        if (state.frame % HEARTBEAT_INTERVAL == 0) {
-            debug_log(ctx, "frame=%d t=%.1fs dt=%.4f fps=%d", state.frame, state.elapsed, delta_time, GetFPS());
-        }
-
         render_frame(ctx, &state,
                      (RenderParams){
                          .target = target,
