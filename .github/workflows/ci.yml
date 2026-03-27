@@ -27,6 +27,15 @@ jobs:
           docker buildx create --use
           docker buildx build --cache-from=type=local,src=/tmp/.buildx-cache --cache-to=type=local,dest=/tmp/.buildx-cache --load -t sleipner-toolchain .
 
+      # Cache conan packages
+      - name: Cache Conan build
+        uses: actions/cache@v4
+        with:
+          path: build/.conan2
+          key: ${{ runner.os }}-conan-${{ hashFiles('conanfile.py') }}
+          restore-keys: |
+            ${{ runner.os }}-conan-
+
       - name: Check formatting
         run: CONTAINER_CMD=docker ./ci.sh check check.log
 
