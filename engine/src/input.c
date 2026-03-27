@@ -68,17 +68,20 @@ InputState input_read_keyboard(void)
 {
     InputState state = {0};
 
+    state.left_stick.x = 0.0F;
+    state.left_stick.y = 0.0F;
+
     if (IsKeyDown(KEY_LEFT) || IsKeyDown(KEY_A)) {
-        state.left_stick.x = -1.0F;
+        state.left_stick.x += -1.0F;
     }
     if (IsKeyDown(KEY_RIGHT) || IsKeyDown(KEY_D)) {
-        state.left_stick.x = 1.0F;
+        state.left_stick.x += 1.0F;
     }
     if (IsKeyDown(KEY_UP) || IsKeyDown(KEY_W)) {
-        state.left_stick.y = -1.0F;
+        state.left_stick.y += -1.0F;
     }
     if (IsKeyDown(KEY_DOWN) || IsKeyDown(KEY_S)) {
-        state.left_stick.y = 1.0F;
+        state.left_stick.y += 1.0F;
     }
 
     if (IsKeyDown(KEY_Q)) {
