@@ -929,7 +929,7 @@ This is bounded (one leaked backing per growth event) and reclaimed on level rel
 - [x] Free camera with cursor
 - [x] Save to gamedata.toml (TOML emitter, atomic write)
 - [x] Browse mode: select entities, inspect attributes
-- [ ] Edit mode: move entities, resize collision boxes with visual handles
+- [x] Edit mode: move entities, resize collision boxes with visual handles
 - [ ] Scene mode: place/move/delete entities, inspect properties
 - [ ] Blueprint mode: create/edit blueprints (texture, collision, behavior, attributes, rules, children)
 - [ ] Tile mode: paint ground and overlay layers, tile palette

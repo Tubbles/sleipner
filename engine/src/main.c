@@ -566,7 +566,7 @@ static void
 handle_hot_reload(struct EngineContext *ctx, GameState *state, EditorState *editor_state, WatchList *watches)
 {
     if (poll_hot_reload(ctx, state)) {
-        *editor_state = (EditorState){.selected_entity_index = -1};
+        *editor_state = (EditorState){.selected_entity_index = -1, .sub_mode = EDITOR_SUB_BROWSE};
         *watches = (WatchList){0};
     }
 }
@@ -607,6 +607,21 @@ static void draw_entities_depth_sorted(const GameState *state)
     }
 }
 
+static void
+handle_save_input(struct EngineContext *ctx, GameState *state, EditorState *editor_state, WatchList *watches)
+{
+    if (toggle_pressed((ToggleBinding){KEY_F9, GAMEPAD_BUTTON_RIGHT_FACE_UP})) {
+        if (!save_gamedata(ctx, state)) {
+            debug_log(ctx, "save error: %s", error_get(ctx));
+            error_clear(ctx);
+        } else {
+            load_gamedata(ctx, state);
+            *editor_state = (EditorState){.selected_entity_index = -1, .sub_mode = EDITOR_SUB_BROWSE};
+            *watches = (WatchList){0};
+        }
+    }
+}
+
 static void handle_editor_input(struct EngineContext *ctx,
                                 GameState *state,
                                 Camera2D *camera,
@@ -615,41 +630,15 @@ static void handle_editor_input(struct EngineContext *ctx,
                                 InputState input,
                                 float delta_time)
 {
-    if (toggle_pressed((ToggleBinding){KEY_F9, GAMEPAD_BUTTON_RIGHT_FACE_UP})) {
-        if (!save_gamedata(ctx, state)) {
-            debug_log(ctx, "save error: %s", error_get(ctx));
-            error_clear(ctx);
-        } else {
-            load_gamedata(ctx, state);
-            *editor_state = (EditorState){.selected_entity_index = -1};
-            *watches = (WatchList){0};
-        }
+    handle_save_input(ctx, state, editor_state, watches);
+    handle_mode_transitions(state, editor_state);
+    if (editor_state->sub_mode == EDITOR_SUB_DRAG) {
+        handle_drag_input(state, editor_state, input, delta_time);
+    } else if (editor_state->sub_mode == EDITOR_SUB_HANDLES) {
+        handle_handle_input(ctx, state, editor_state, input, delta_time);
+    } else {
+        handle_browse_input(state, camera, editor_state, watches, input, delta_time);
     }
-    if (toggle_pressed((ToggleBinding){KEY_ENTER, GAMEPAD_BUTTON_RIGHT_FACE_DOWN})) {
-        editor_state->selected_entity_index = find_nearest_entity(&state->current_level, camera->target);
-    }
-    if (toggle_pressed((ToggleBinding){KEY_ESCAPE, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT})) {
-        editor_state->selected_entity_index = -1;
-    }
-    if (toggle_pressed((ToggleBinding){KEY_LEFT_SHIFT, GAMEPAD_BUTTON_RIGHT_FACE_LEFT})) {
-        int sel = editor_state->selected_entity_index;
-        if (sel >= 0) {
-            bool found = false;
-            for (int index = 0; index < watches->count; index++) {
-                if (watches->entity_indices[index] == sel) {
-                    watches->entity_indices[index] = watches->entity_indices[watches->count - 1];
-                    watches->count--;
-                    found = true;
-                    break;
-                }
-            }
-            if (!found && watches->count < EDITOR_WATCH_MAX) {
-                watches->entity_indices[watches->count] = sel;
-                watches->count++;
-            }
-        }
-    }
-    update_editor_camera(camera, input, delta_time);
 }
 
 typedef struct {
@@ -673,6 +662,7 @@ static void render_frame(struct EngineContext *ctx, const GameState *state, Rend
     if (state->editor_mode) {
         int hover_index = find_nearest_entity(&state->current_level, params.editor_camera.target);
         draw_editor_highlights(state, &params.editor_state, hover_index);
+        draw_collision_handles(state, &params.editor_state);
         EndMode2D();
         draw_editor_crosshair(params.game_bounds);
     }
@@ -692,7 +682,7 @@ static void render_frame(struct EngineContext *ctx, const GameState *state, Rend
         draw_editor_panel(ctx, state, &params.editor_state);
     }
     draw_watch_overlay(ctx, state, params.watches);
-    draw_hints_bar(state->editor_mode, ctx);
+    draw_hints_bar(state->editor_mode, &params.editor_state, ctx);
     EndDrawing();
 }
 
@@ -773,7 +763,7 @@ int main(void)
         .target = {(float)game_bounds.width / 2.0F, (float)game_bounds.height / 2.0F},
         .zoom = 1.0F,
     };
-    EditorState editor_state = {.selected_entity_index = -1};
+    EditorState editor_state = {.selected_entity_index = -1, .sub_mode = EDITOR_SUB_BROWSE};
     WatchList watches = {0};
 
     debug_log(ctx, "gamedata path: %s", GAMEDATA_PATH);

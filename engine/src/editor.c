@@ -1,7 +1,9 @@
 #include "engine_context.h"
 #include "raylib.h"
 
+#include "alloc.h"
 #include "attribute.h"
+#include "blueprint.h"
 #include "editor.h"
 #include "entity.h"
 #include "game.h"
@@ -9,9 +11,13 @@
 #include "level.h"
 #include "rect.h"
 
+#include <string.h>
+
 const Color debug_text_color = {200, 220, 240, 255};
 const Color debug_log_color = {180, 210, 180, 255};
 const Color debug_bg_color = {20, 25, 35, DEBUG_BG_ALPHA};
+
+static const Color handle_color = {0, 255, 255, 255}; /* cyan: collision handles */
 
 bool toggle_pressed(ToggleBinding binding)
 {
@@ -35,13 +41,20 @@ void draw_editor_crosshair(RectU32 game_bounds)
     DrawLine(center_x, center_y - EDITOR_CROSSHAIR_HALF, center_x, center_y + EDITOR_CROSSHAIR_HALF, WHITE);
 }
 
-void draw_hints_bar(bool editor_mode, const struct EngineContext *hints_ctx)
+void draw_hints_bar(bool editor_mode, const EditorState *editor_state, const struct EngineContext *hints_ctx)
 {
     int bar_y = hints_ctx->screen_height - HINTS_BAR_HEIGHT;
     DrawRectangle(0, bar_y, hints_ctx->screen_width, HINTS_BAR_HEIGHT, debug_bg_color);
     const char *hints;
     if (editor_mode) {
-        hints = "F5: Play  |  F9/Y: Save  |  A/Ent: Sel  |  B/Esc: Desel  |  X/Shift: Watch  |  Stick: Pan";
+        if (editor_state->sub_mode == EDITOR_SUB_DRAG) {
+            hints = "F9/Y: Save  |  A/Ent: Confirm  |  B/Esc: Cancel  |  Stick: Move entity";
+        } else if (editor_state->sub_mode == EDITOR_SUB_HANDLES) {
+            hints = "F9/Y: Save  |  A/Ent: Confirm  |  B/Esc: Cancel  |  Stick: Move  |  R-Stick: Resize";
+        } else {
+            hints = "F5: Play  |  F9/Y: Save  |  A/Ent: Sel  |  B/Esc: Desel  |  X/Shift: Watch  |  G/L3: Grab  |  "
+                    "H/L1: Handles  |  Stick: Pan";
+        }
     } else {
         hints = "F5: Editor  |  F3: Debug  |  F4: Fonts";
     }
@@ -169,4 +182,169 @@ void draw_watch_overlay(const struct EngineContext *ctx, const GameState *state,
         }
         y_offset += EDITOR_PANEL_LINE_HEIGHT;
     }
+}
+
+static Blueprint *find_blueprint_by_name(GameState *state, const char *name)
+{
+    for (int index = 0; index < state->blueprints.entries.count; index++) {
+        Blueprint *blueprint = &state->blueprints.entries.data[index];
+        const char *blueprint_name = attr_get_string(&blueprint->attrs, "name");
+        if (blueprint_name != NULL && strcmp(blueprint_name, name) == 0) {
+            return blueprint;
+        }
+    }
+    return NULL;
+}
+
+static void propagate_collision_to_entities(GameState *state, const Blueprint *blueprint)
+{
+    const char *blueprint_name = attr_get_string(&blueprint->attrs, "name");
+    for (int index = 0; index < state->current_level.entities.count; index++) {
+        Entity *entity = &state->current_level.entities.data[index];
+        if (strcmp(entity->blueprint_name.ptr, blueprint_name) == 0) {
+            entity->collision_offset = blueprint_get_collision_offset(blueprint);
+            entity->collision_size = blueprint_get_collision_size(blueprint);
+            entity_update_collision(entity);
+        }
+    }
+}
+
+void draw_collision_handles(const GameState *state, const EditorState *editor_state)
+{
+    if (editor_state->sub_mode != EDITOR_SUB_HANDLES) {
+        return;
+    }
+    int sel = editor_state->selected_entity_index;
+    if (sel < 0 || sel >= state->current_level.entities.count) {
+        return;
+    }
+    Rectangle col = state->current_level.entities.data[sel].collision;
+    DrawRectangleLinesEx(col, 2.0F, handle_color);
+    int half = EDITOR_HANDLE_SIZE / 2;
+    DrawRectangle((int)col.x - half, (int)col.y - half, EDITOR_HANDLE_SIZE, EDITOR_HANDLE_SIZE, handle_color);
+    DrawRectangle((int)(col.x + col.width) - half, (int)col.y - half, EDITOR_HANDLE_SIZE, EDITOR_HANDLE_SIZE,
+                  handle_color);
+    DrawRectangle((int)col.x - half, (int)(col.y + col.height) - half, EDITOR_HANDLE_SIZE, EDITOR_HANDLE_SIZE,
+                  handle_color);
+    DrawRectangle((int)(col.x + col.width) - half, (int)(col.y + col.height) - half, EDITOR_HANDLE_SIZE,
+                  EDITOR_HANDLE_SIZE, handle_color);
+}
+
+void handle_browse_input(GameState *state,
+                         Camera2D *camera,
+                         EditorState *editor_state,
+                         WatchList *watches,
+                         InputState input,
+                         float delta_time)
+{
+    if (toggle_pressed((ToggleBinding){KEY_ENTER, GAMEPAD_BUTTON_RIGHT_FACE_DOWN})) {
+        editor_state->selected_entity_index = find_nearest_entity(&state->current_level, camera->target);
+    }
+    if (toggle_pressed((ToggleBinding){KEY_ESCAPE, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT})) {
+        editor_state->selected_entity_index = -1;
+    }
+    if (toggle_pressed((ToggleBinding){KEY_LEFT_SHIFT, GAMEPAD_BUTTON_RIGHT_FACE_LEFT})) {
+        int sel = editor_state->selected_entity_index;
+        if (sel >= 0) {
+            bool found = false;
+            for (int index = 0; index < watches->count; index++) {
+                if (watches->entity_indices[index] == sel) {
+                    watches->entity_indices[index] = watches->entity_indices[watches->count - 1];
+                    watches->count--;
+                    found = true;
+                    break;
+                }
+            }
+            if (!found && watches->count < EDITOR_WATCH_MAX) {
+                watches->entity_indices[watches->count] = sel;
+                watches->count++;
+            }
+        }
+    }
+    update_editor_camera(camera, input, delta_time);
+}
+
+void handle_mode_transitions(const GameState *state, EditorState *editor_state)
+{
+    if (editor_state->sub_mode != EDITOR_SUB_BROWSE) {
+        return;
+    }
+    int sel = editor_state->selected_entity_index;
+    if (sel < 0 || sel >= state->current_level.entities.count) {
+        return;
+    }
+    const Entity *entity = &state->current_level.entities.data[sel];
+    if (toggle_pressed((ToggleBinding){KEY_G, GAMEPAD_BUTTON_LEFT_THUMB})) {
+        editor_state->saved_position = entity->position;
+        editor_state->sub_mode = EDITOR_SUB_DRAG;
+    }
+    if (toggle_pressed((ToggleBinding){KEY_H, GAMEPAD_BUTTON_LEFT_TRIGGER_1})) {
+        editor_state->saved_col_offset = entity->collision_offset;
+        editor_state->saved_col_size = entity->collision_size;
+        editor_state->sub_mode = EDITOR_SUB_HANDLES;
+    }
+}
+
+void handle_drag_input(GameState *state, EditorState *editor_state, InputState input, float delta_time)
+{
+    int sel = editor_state->selected_entity_index;
+    if (sel < 0 || sel >= state->current_level.entities.count) {
+        return;
+    }
+    Entity *entity = &state->current_level.entities.data[sel];
+    if (toggle_pressed((ToggleBinding){KEY_ENTER, GAMEPAD_BUTTON_RIGHT_FACE_DOWN})) {
+        editor_state->sub_mode = EDITOR_SUB_BROWSE;
+        return;
+    }
+    if (toggle_pressed((ToggleBinding){KEY_ESCAPE, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT})) {
+        entity->position = editor_state->saved_position;
+        entity_update_collision(entity);
+        editor_state->sub_mode = EDITOR_SUB_BROWSE;
+        return;
+    }
+    entity->position.x += input.left_stick.x * EDITOR_CAMERA_SPEED * delta_time;
+    entity->position.y += input.left_stick.y * EDITOR_CAMERA_SPEED * delta_time;
+    entity_update_collision(entity);
+}
+
+void handle_handle_input(
+    struct EngineContext *ctx, GameState *state, EditorState *editor_state, InputState input, float delta_time)
+{
+    int sel = editor_state->selected_entity_index;
+    if (sel < 0 || sel >= state->current_level.entities.count) {
+        return;
+    }
+    Entity *entity = &state->current_level.entities.data[sel];
+    if (toggle_pressed((ToggleBinding){KEY_ENTER, GAMEPAD_BUTTON_RIGHT_FACE_DOWN})) {
+        Blueprint *blueprint = find_blueprint_by_name(state, entity->blueprint_name.ptr);
+        if (blueprint != NULL) {
+            Allocator alloc = allocator_arena(ctx, &state->gamedata_arena);
+            /* Attrs already exist on this blueprint; attr_set_float updates in-place, no arena growth. */
+            (void)attr_set_float(&alloc, &blueprint->attrs, "collision_offset_x", entity->collision_offset.x);
+            (void)attr_set_float(&alloc, &blueprint->attrs, "collision_offset_y", entity->collision_offset.y);
+            (void)attr_set_float(&alloc, &blueprint->attrs, "collision_w", entity->collision_size.x);
+            (void)attr_set_float(&alloc, &blueprint->attrs, "collision_h", entity->collision_size.y);
+            propagate_collision_to_entities(state, blueprint);
+        }
+        editor_state->sub_mode = EDITOR_SUB_BROWSE;
+        return;
+    }
+    if (toggle_pressed((ToggleBinding){KEY_ESCAPE, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT})) {
+        entity->collision_offset = editor_state->saved_col_offset;
+        entity->collision_size = editor_state->saved_col_size;
+        entity_update_collision(entity);
+        editor_state->sub_mode = EDITOR_SUB_BROWSE;
+        return;
+    }
+    entity->collision_offset.x += input.left_stick.x * EDITOR_HANDLE_SPEED * delta_time;
+    entity->collision_offset.y += input.left_stick.y * EDITOR_HANDLE_SPEED * delta_time;
+    entity->collision_size.x += input.right_stick.x * EDITOR_HANDLE_SPEED * delta_time;
+    entity->collision_size.y += input.right_stick.y * EDITOR_HANDLE_SPEED * delta_time;
+    if (entity->collision_size.x < 0.0F) {
+        entity->collision_size.x = 0.0F;
+    }
+    if (entity->collision_size.y < 0.0F) {
+        entity->collision_size.y = 0.0F;
+    }
+    entity_update_collision(entity);
 }
