@@ -928,7 +928,7 @@ This is bounded (one leaked backing per growth event) and reclaimed on level rel
 - [x] On-screen button hints (context-sensitive, always visible)
 - [x] Free camera with cursor
 - [x] Save to gamedata.toml (TOML emitter, atomic write)
-- [ ] Browse mode: select entities, inspect attributes
+- [x] Browse mode: select entities, inspect attributes
 - [ ] Edit mode: move entities, resize collision boxes with visual handles
 - [ ] Scene mode: place/move/delete entities, inspect properties
 - [ ] Blueprint mode: create/edit blueprints (texture, collision, behavior, attributes, rules, children)
@@ -946,7 +946,7 @@ This is bounded (one leaked backing per growth event) and reclaimed on level rel
 - [ ] Attribute editor (built-in + custom, with diff view)
 - [ ] Child entity editor (composition, tags)
 - [ ] Undo (snapshot-based, arena memcpy)
-- [ ] Attribute watcher (pin to debug overlay, live values during play)
+- [x] Attribute watcher (pin to debug overlay, live values during play)
 
 ### Phase 6 — Multiplayer
 - [ ] Input source abstraction (decouple player behavior from hardcoded gamepad)
