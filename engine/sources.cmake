@@ -15,6 +15,7 @@ set(ENGINE_SOURCE_FILES
     blueprint.c
     collision.c
     debug.c
+    editor.c
     entity.c
     error.c
     game.c
