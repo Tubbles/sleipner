@@ -22,6 +22,18 @@
   requires `ActionNode` to be complete, but `ActionNode` can't embed
   `vec_action_node` before the vec type is declared.
 
+## Architecture audit findings
+
+- **Editor test coverage is zero** — radial picker, word builder, scroll picker,
+  value adjuster (~1034 lines) have no unit or integration tests. Violates
+  "every feature ships with tests" in CLAUDE.md.
+- **`TriggerEventQueue` uses fixed array** — `rule.h` defines
+  `events[MAX_CASCADE_EVENTS]` instead of a vec. Violates "prefer vec over
+  fixed-size arrays with MAX_* constants" in CLAUDE.md.
+- **`nullptr` vs `NULL` inconsistency** — `str.c:17` uses `nullptr` while the
+  rest of the codebase uses `NULL`. Minor style issue (see also the `NULL` →
+  `nullptr` migration item below).
+
 ## misc
 
 - remove allocator fallback of NULL -> libc heap from all our data types

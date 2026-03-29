@@ -16,6 +16,7 @@ add_executable(engine_tests
     test_shape.c
     test_particle.c
     test_collision.c
+    test_editor.c
     test_toml_emitter.c
     test_rule.c
     test_str.c
@@ -23,4 +24,5 @@ add_executable(engine_tests
     test_strv.c
     test_toml_str.c
 )
+target_compile_definitions(engine_tests PRIVATE _GNU_SOURCE)
 target_link_libraries(engine_tests PRIVATE engine unity m)
