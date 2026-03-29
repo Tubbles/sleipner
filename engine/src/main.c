@@ -46,8 +46,8 @@ VEC_IMPL(texture_entry, TextureEntry)
 #define TILE_SIZE 16
 #define DEBUG_LOG_LINES 20
 #define DEBUG_LOG_LINE_LEN 128
-#define DEBUG_FONT_SIZE 20
-#define DEBUG_LINE_HEIGHT 22
+#define DEBUG_FONT_SIZE 22
+#define DEBUG_LINE_HEIGHT 26
 #define DEBUG_PANEL_WIDTH 420
 #define DEBUG_LINES 14
 #define FONT_PREVIEW_SIZE 32

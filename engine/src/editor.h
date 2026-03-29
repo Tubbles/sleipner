@@ -13,11 +13,11 @@
 
 #define EDITOR_CAMERA_SPEED 120.0F
 #define EDITOR_CROSSHAIR_HALF 6
-#define HINTS_BAR_HEIGHT 24
-#define HINTS_FONT_SIZE 16
+#define HINTS_BAR_HEIGHT 28
+#define HINTS_FONT_SIZE 20
 #define EDITOR_PANEL_WIDTH 380
-#define EDITOR_PANEL_FONT_SIZE 16
-#define EDITOR_PANEL_LINE_HEIGHT 20
+#define EDITOR_PANEL_FONT_SIZE 20
+#define EDITOR_PANEL_LINE_HEIGHT 24
 /* Fixed-size: 4 slots is a hard UI display limit — the watch overlay has room for
  * exactly EDITOR_WATCH_MAX entries; more would overflow the panel. */
 #define EDITOR_WATCH_MAX 4
