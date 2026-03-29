@@ -23,6 +23,7 @@
 #define EDITOR_WATCH_MAX 4
 #define EDITOR_HANDLE_SIZE 4      /* corner handle square side, world pixels */
 #define EDITOR_HANDLE_SPEED 60.0F /* px/s for collision offset/size editing */
+#define EDITOR_ATTR_LARGE_STEP 10 /* ±10 step for attribute value adjuster (bumpers/brackets) */
 
 extern const Color debug_text_color;
 extern const Color debug_bg_color;
@@ -38,6 +39,7 @@ typedef enum {
     EDITOR_SUB_DRAG,
     EDITOR_SUB_HANDLES,
     EDITOR_SUB_PLACE,
+    EDITOR_SUB_ATTR_EDIT, /* numeric/bool value adjustment */
 } EditorSubMode;
 
 typedef struct {
@@ -47,6 +49,10 @@ typedef struct {
     Vector2 saved_col_offset;
     Vector2 saved_col_size;
     int place_blueprint_index; /* index into state->blueprints.entries */
+    int selected_attr_index;   /* -1 = none; index into merged instance+blueprint list */
+    float saved_attr_float;    /* original float value saved on entering ATTR_EDIT */
+    int saved_attr_int;        /* original int value saved on entering ATTR_EDIT */
+    bool saved_attr_bool;      /* original bool value saved on entering ATTR_EDIT */
 } EditorState;
 
 typedef struct {
@@ -76,5 +82,6 @@ void handle_mode_transitions(const GameState *state, EditorState *editor_state);
 void handle_drag_input(GameState *state, EditorState *editor_state, InputState input, float delta_time);
 void handle_handle_input(
     struct EngineContext *ctx, GameState *state, EditorState *editor_state, InputState input, float delta_time);
+void handle_attr_edit_input(GameState *state, EditorState *editor_state, float delta_time);
 
 #endif

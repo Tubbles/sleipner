@@ -55,9 +55,11 @@ void draw_hints_bar(bool editor_mode, const EditorState *editor_state, const str
             hints = "F9/Y: Save  |  A/Ent: Confirm  |  B/Esc: Cancel  |  Stick: Move  |  R-Stick: Resize";
         } else if (editor_state->sub_mode == EDITOR_SUB_PLACE) {
             hints = "A/Ent: Spawn  |  B/Esc: Cancel  |  Q/L1: Prev BP  |  E/R1: Next BP  |  Stick: Pan";
+        } else if (editor_state->sub_mode == EDITOR_SUB_ATTR_EDIT) {
+            hints = "A/Ent: Confirm  |  B/Esc: Cancel  |  Left/Right: ±1  |  [/L1: -10  |  ]/R1: +10";
         } else {
-            hints = "F5: Play  |  F9/Y: Save  |  A/Ent: Sel  |  B/Esc: Desel  |  Shift/L2: Watch  |  Del/X: Delete  |  "
-                    "G/L3: Grab  |  H/L1: Handles  |  P/R1: Place  |  Stick: Pan";
+            hints = "F5: Play  |  F9/Y: Save  |  A/Ent: Sel  |  B/Esc: Desel  |  Up/Down: Attr  |  "
+                    "Shift/L2: Watch  |  Del/X: Delete  |  G/L3: Grab  |  H/L1: Handles  |  P/R1: Place  |  Stick: Pan";
         }
     } else {
         hints = "F5: Editor  |  F3: Debug  |  F4: Fonts";
@@ -123,12 +125,13 @@ static const char *attr_display_value(const Attribute *attr)
     return "";
 }
 
-static void draw_attr_section(const AttrSet *set, int panel_x, int *y_offset)
+static void draw_attr_section(const AttrSet *set, int panel_x, int *y_offset, int base_index, int selected_attr_index)
 {
     for (int index = 0; index < set->entries.count; index++) {
         const Attribute *attr = &set->entries.data[index];
+        Color text_color = (base_index + index == selected_attr_index) ? WHITE : debug_text_color;
         DrawText(TextFormat("  %s: %s", attr->name.ptr, attr_display_value(attr)), panel_x + DEBUG_MARGIN, *y_offset,
-                 EDITOR_PANEL_FONT_SIZE, debug_text_color);
+                 EDITOR_PANEL_FONT_SIZE, text_color);
         *y_offset += EDITOR_PANEL_LINE_HEIGHT;
     }
 }
@@ -151,11 +154,13 @@ void draw_editor_panel(const struct EngineContext *ctx, const GameState *state, 
     y_offset += EDITOR_PANEL_LINE_HEIGHT * 2;
     DrawText("--- instance ---", panel_x + DEBUG_MARGIN, y_offset, EDITOR_PANEL_FONT_SIZE, debug_text_color);
     y_offset += EDITOR_PANEL_LINE_HEIGHT;
-    draw_attr_section(&entity->attrs, panel_x, &y_offset);
+    int sel_attr = editor_state->selected_attr_index;
+    draw_attr_section(&entity->attrs, panel_x, &y_offset, 0, sel_attr);
     if (entity->defaults) {
         DrawText("--- blueprint ---", panel_x + DEBUG_MARGIN, y_offset, EDITOR_PANEL_FONT_SIZE, debug_text_color);
         y_offset += EDITOR_PANEL_LINE_HEIGHT;
-        draw_attr_section(entity->defaults, panel_x, &y_offset);
+        int blueprint_base = entity->attrs.entries.count;
+        draw_attr_section(entity->defaults, panel_x, &y_offset, blueprint_base, sel_attr);
     }
 }
 
@@ -198,6 +203,54 @@ static Blueprint *find_blueprint_by_name(GameState *state, const char *name)
         }
     }
     return NULL;
+}
+
+static int total_attr_count(const Entity *entity)
+{
+    int instance_count = entity->attrs.entries.count;
+    int blueprint_count = entity->defaults ? entity->defaults->entries.count : 0;
+    return instance_count + blueprint_count;
+}
+
+/* entity must not be NULL; resolves blueprint attrs via find_blueprint_by_name */
+static Attribute *attr_at_display_index(GameState *state, Entity *entity, int attr_index)
+{
+    int instance_count = entity->attrs.entries.count;
+    if (attr_index < instance_count) {
+        return &entity->attrs.entries.data[attr_index];
+    }
+    Blueprint *blueprint = find_blueprint_by_name(state, entity->blueprint_name.ptr);
+    if (!blueprint) {
+        return NULL;
+    }
+    int blueprint_index = attr_index - instance_count;
+    if (blueprint_index >= blueprint->attrs.entries.count) {
+        return NULL;
+    }
+    return &blueprint->attrs.entries.data[blueprint_index];
+}
+
+static bool is_blueprint_attr(const Entity *entity, int attr_index)
+{
+    return attr_index >= entity->attrs.entries.count;
+}
+
+static int read_value_delta(void)
+{
+    int delta = 0;
+    if (toggle_pressed((ToggleBinding){KEY_LEFT, GAMEPAD_BUTTON_LEFT_FACE_LEFT})) {
+        delta--;
+    }
+    if (toggle_pressed((ToggleBinding){KEY_RIGHT, GAMEPAD_BUTTON_LEFT_FACE_RIGHT})) {
+        delta++;
+    }
+    if (toggle_pressed((ToggleBinding){KEY_LEFT_BRACKET, GAMEPAD_BUTTON_LEFT_TRIGGER_1})) {
+        delta -= EDITOR_ATTR_LARGE_STEP;
+    }
+    if (toggle_pressed((ToggleBinding){KEY_RIGHT_BRACKET, GAMEPAD_BUTTON_RIGHT_TRIGGER_1})) {
+        delta += EDITOR_ATTR_LARGE_STEP;
+    }
+    return delta;
 }
 
 static void propagate_collision_to_entities(GameState *state, const Blueprint *blueprint)
@@ -357,6 +410,69 @@ delete_selected_entity(struct EngineContext *ctx, GameState *state, EditorState 
     editor_state->selected_entity_index = -1;
 }
 
+static void handle_browse_select(GameState *state, Camera2D *camera, EditorState *editor_state)
+{
+    int sel = editor_state->selected_entity_index;
+    if (sel < 0) {
+        editor_state->selected_entity_index = find_nearest_entity(&state->current_level, camera->target);
+        editor_state->selected_attr_index = -1;
+        return;
+    }
+    Entity *entity = &state->current_level.entities.data[sel];
+    int attr_idx = editor_state->selected_attr_index;
+    if (attr_idx < 0) {
+        return;
+    }
+    Attribute *attr = attr_at_display_index(state, entity, attr_idx);
+    if (!attr) {
+        return;
+    }
+    if (attr->type == ATTR_BOOL) {
+        attr->value.b = !attr->value.b;
+        if (is_blueprint_attr(entity, attr_idx)) {
+            Blueprint *blueprint = find_blueprint_by_name(state, entity->blueprint_name.ptr);
+            if (blueprint) {
+                propagate_collision_to_entities(state, blueprint);
+            }
+        }
+    } else if (attr->type == ATTR_INT) {
+        editor_state->saved_attr_int = attr->value.i;
+        editor_state->sub_mode = EDITOR_SUB_ATTR_EDIT;
+    } else if (attr->type == ATTR_FLOAT) {
+        editor_state->saved_attr_float = attr->value.f;
+        editor_state->sub_mode = EDITOR_SUB_ATTR_EDIT;
+    }
+    /* ATTR_STRING: no-op */
+}
+
+static void handle_browse_cancel(EditorState *editor_state)
+{
+    if (editor_state->selected_attr_index >= 0) {
+        editor_state->selected_attr_index = -1;
+    } else {
+        editor_state->selected_entity_index = -1;
+    }
+}
+
+static void handle_browse_attr_navigate(const GameState *state, EditorState *editor_state, int direction)
+{
+    int sel = editor_state->selected_entity_index;
+    if (sel < 0 || sel >= state->current_level.entities.count) {
+        return;
+    }
+    const Entity *entity = &state->current_level.entities.data[sel];
+    int total = total_attr_count(entity);
+    if (total <= 0) {
+        return;
+    }
+    int current = editor_state->selected_attr_index;
+    if (current < 0) {
+        editor_state->selected_attr_index = (direction > 0) ? 0 : total - 1;
+    } else {
+        editor_state->selected_attr_index = (current + direction + total) % total;
+    }
+}
+
 void handle_browse_input(struct EngineContext *ctx,
                          GameState *state,
                          Camera2D *camera,
@@ -366,10 +482,16 @@ void handle_browse_input(struct EngineContext *ctx,
                          float delta_time)
 {
     if (toggle_pressed((ToggleBinding){KEY_ENTER, GAMEPAD_BUTTON_RIGHT_FACE_DOWN})) {
-        editor_state->selected_entity_index = find_nearest_entity(&state->current_level, camera->target);
+        handle_browse_select(state, camera, editor_state);
     }
     if (toggle_pressed((ToggleBinding){KEY_ESCAPE, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT})) {
-        editor_state->selected_entity_index = -1;
+        handle_browse_cancel(editor_state);
+    }
+    if (toggle_pressed((ToggleBinding){KEY_DOWN, GAMEPAD_BUTTON_LEFT_FACE_DOWN})) {
+        handle_browse_attr_navigate(state, editor_state, 1);
+    }
+    if (toggle_pressed((ToggleBinding){KEY_UP, GAMEPAD_BUTTON_LEFT_FACE_UP})) {
+        handle_browse_attr_navigate(state, editor_state, -1);
     }
     if (toggle_pressed((ToggleBinding){KEY_LEFT_SHIFT, GAMEPAD_BUTTON_LEFT_TRIGGER_2})) {
         int sel = editor_state->selected_entity_index;
@@ -484,4 +606,51 @@ void handle_handle_input(
         entity->collision_size.y = 0.0F;
     }
     entity_update_collision(entity);
+}
+
+void handle_attr_edit_input(GameState *state, EditorState *editor_state, float delta_time)
+{
+    (void)delta_time;
+    int sel = editor_state->selected_entity_index;
+    int attr_idx = editor_state->selected_attr_index;
+    if (sel < 0 || attr_idx < 0) {
+        editor_state->sub_mode = EDITOR_SUB_BROWSE;
+        return;
+    }
+    Entity *entity = &state->current_level.entities.data[sel];
+    if (toggle_pressed((ToggleBinding){KEY_ENTER, GAMEPAD_BUTTON_RIGHT_FACE_DOWN})) {
+        if (is_blueprint_attr(entity, attr_idx)) {
+            Blueprint *blueprint = find_blueprint_by_name(state, entity->blueprint_name.ptr);
+            if (blueprint) {
+                propagate_collision_to_entities(state, blueprint);
+            }
+        }
+        editor_state->sub_mode = EDITOR_SUB_BROWSE;
+        return;
+    }
+    if (toggle_pressed((ToggleBinding){KEY_ESCAPE, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT})) {
+        Attribute *attr = attr_at_display_index(state, entity, attr_idx);
+        if (attr) {
+            if (attr->type == ATTR_INT) {
+                attr->value.i = editor_state->saved_attr_int;
+            } else if (attr->type == ATTR_FLOAT) {
+                attr->value.f = editor_state->saved_attr_float;
+            }
+        }
+        editor_state->sub_mode = EDITOR_SUB_BROWSE;
+        return;
+    }
+    int delta = read_value_delta();
+    if (delta == 0) {
+        return;
+    }
+    Attribute *attr = attr_at_display_index(state, entity, attr_idx);
+    if (!attr) {
+        return;
+    }
+    if (attr->type == ATTR_INT) {
+        attr->value.i += delta;
+    } else if (attr->type == ATTR_FLOAT) {
+        attr->value.f += (float)delta;
+    }
 }

@@ -566,7 +566,8 @@ static void
 handle_hot_reload(struct EngineContext *ctx, GameState *state, EditorState *editor_state, WatchList *watches)
 {
     if (poll_hot_reload(ctx, state)) {
-        *editor_state = (EditorState){.selected_entity_index = -1, .sub_mode = EDITOR_SUB_BROWSE};
+        *editor_state =
+            (EditorState){.selected_entity_index = -1, .sub_mode = EDITOR_SUB_BROWSE, .selected_attr_index = -1};
         *watches = (WatchList){0};
     }
 }
@@ -616,7 +617,8 @@ handle_save_input(struct EngineContext *ctx, GameState *state, EditorState *edit
             error_clear(ctx);
         } else {
             load_gamedata(ctx, state);
-            *editor_state = (EditorState){.selected_entity_index = -1, .sub_mode = EDITOR_SUB_BROWSE};
+            *editor_state =
+                (EditorState){.selected_entity_index = -1, .sub_mode = EDITOR_SUB_BROWSE, .selected_attr_index = -1};
             *watches = (WatchList){0};
         }
     }
@@ -673,6 +675,8 @@ static void handle_editor_input(struct EngineContext *ctx,
         handle_handle_input(ctx, state, editor_state, input, delta_time);
     } else if (editor_state->sub_mode == EDITOR_SUB_PLACE) {
         handle_place_input(ctx, state, camera, editor_state, input, delta_time);
+    } else if (editor_state->sub_mode == EDITOR_SUB_ATTR_EDIT) {
+        handle_attr_edit_input(state, editor_state, delta_time);
     } else {
         handle_browse_input(ctx, state, camera, editor_state, watches, input, delta_time);
     }
@@ -805,7 +809,7 @@ int main(void)
         .target = {(float)game_bounds.width / 2.0F, (float)game_bounds.height / 2.0F},
         .zoom = 1.0F,
     };
-    EditorState editor_state = {.selected_entity_index = -1, .sub_mode = EDITOR_SUB_BROWSE};
+    EditorState editor_state = {.selected_entity_index = -1, .sub_mode = EDITOR_SUB_BROWSE, .selected_attr_index = -1};
     WatchList watches = {0};
 
     debug_log(ctx, "gamedata path: %s", GAMEDATA_PATH);
