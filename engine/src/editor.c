@@ -5,7 +5,9 @@
 #include "arena.h"
 #include "attribute.h"
 #include "blueprint.h"
+#include "debug.h"
 #include "editor.h"
+#include "error.h"
 #include "entity.h"
 #include "game.h"
 #include "input.h"
@@ -62,6 +64,8 @@ void draw_hints_bar(bool editor_mode, const EditorState *editor_state, const str
                     "-100  |  PgUp/R2: +100";
         } else if (editor_state->sub_mode == EDITOR_SUB_RADIAL) {
             hints = "Stick: Pick tool  |  A/Ent: Confirm  |  B/Esc: Cancel";
+        } else if (editor_state->sub_mode == EDITOR_SUB_WORD_BUILDER) {
+            hints = "A/Ent: Pick / Done  |  B/Esc: Undo / Cancel  |  Up/Down: Scroll  |  L1/Q: PgUp  |  R1/E: PgDn";
         } else {
             hints = "F5: Play  |  F9/Y: Save  |  Tab/Sel: Tools  |  A/Ent: Sel  |  B/Esc: Desel  |  Up/Down: Attr  |  "
                     "Shift/L2: Watch  |  Del/X: Delete  |  G/L3: Grab  |  H/L1: Handles  |  P/R1: Place  |  Stick: Pan";
@@ -484,8 +488,18 @@ static void handle_browse_select(GameState *state, Camera2D *camera, EditorState
     } else if (attr->type == ATTR_FLOAT) {
         editor_state->saved_attr_float = attr->value.f;
         editor_state->sub_mode = EDITOR_SUB_ATTR_EDIT;
+    } else if (attr->type == ATTR_STRING) {
+        const char *existing = attr->value.str.ptr ? attr->value.str.ptr : "";
+        int existing_len = (int)strlen(existing);
+        if (existing_len >= WORD_BUILDER_BUF_SIZE) {
+            existing_len = WORD_BUILDER_BUF_SIZE - 1;
+        }
+        memcpy(editor_state->word_builder_buf, existing, (size_t)existing_len);
+        editor_state->word_builder_buf[existing_len] = '\0';
+        editor_state->word_builder_len = existing_len;
+        editor_state->word_builder_scroll = 0;
+        editor_state->sub_mode = EDITOR_SUB_WORD_BUILDER;
     }
-    /* ATTR_STRING: no-op */
 }
 
 static void handle_browse_cancel(EditorState *editor_state)
@@ -838,5 +852,183 @@ void handle_radial_input(EditorState *editor_state, InputState input)
     if (toggle_pressed((ToggleBinding){KEY_ENTER, GAMEPAD_BUTTON_RIGHT_FACE_DOWN})) {
         editor_state->radial_confirmed = editor_state->radial_selected;
         editor_state->sub_mode = EDITOR_SUB_BROWSE;
+    }
+}
+
+/* --- Word builder -------------------------------------------------------- */
+
+static const char *const word_builder_builtin[] = {
+    "chest", "locked",  "magic", "key",   "door",  "open", "closed", "hidden",  "secret", "boss",    "enemy",
+    "spawn", "trigger", "zone",  "north", "south", "east", "west",   "bridge",  "gate",   "switch",  "lever",
+    "fire",  "ice",     "water", "stone", "wood",  "gold", "silver", "sword",   "shield", "bow",     "arrow",
+    "heart", "potion",  "fairy", "dark",  "light", "cave", "forest", "dungeon", "castle", "village", "temple",
+    "tower", "path",    "wall",  "floor", "roof",  "big",  "small",  "red",     "blue",   "green",
+};
+#define WORD_BUILDER_BUILTIN_COUNT (int)(sizeof(word_builder_builtin) / sizeof(word_builder_builtin[0]))
+
+static int word_builder_total_count(const GameState *state)
+{
+    return 1 + WORD_BUILDER_BUILTIN_COUNT + state->blueprints.entries.count;
+}
+
+static const char *word_builder_item(const GameState *state, int index)
+{
+    if (index <= 0) {
+        return "[ DONE ]";
+    }
+    int builtin_index = index - 1;
+    if (builtin_index < WORD_BUILDER_BUILTIN_COUNT) {
+        return word_builder_builtin[builtin_index];
+    }
+    int blueprint_index = builtin_index - WORD_BUILDER_BUILTIN_COUNT;
+    if (blueprint_index < state->blueprints.entries.count) {
+        const char *name = attr_get_string(&state->blueprints.entries.data[blueprint_index].attrs, "name");
+        return name ? name : "?";
+    }
+    return "";
+}
+
+static void word_builder_append(EditorState *editor_state, const char *word)
+{
+    int word_len = (int)strlen(word);
+    int separator = (editor_state->word_builder_len > 0) ? 1 : 0;
+    int needed = editor_state->word_builder_len + separator + word_len;
+    if (needed >= WORD_BUILDER_BUF_SIZE) {
+        return;
+    }
+    if (separator > 0) {
+        editor_state->word_builder_buf[editor_state->word_builder_len] = '_';
+        editor_state->word_builder_len++;
+    }
+    memcpy(editor_state->word_builder_buf + editor_state->word_builder_len, word, (size_t)word_len);
+    editor_state->word_builder_len += word_len;
+    editor_state->word_builder_buf[editor_state->word_builder_len] = '\0';
+}
+
+static void word_builder_pop(EditorState *editor_state)
+{
+    if (editor_state->word_builder_len == 0) {
+        return;
+    }
+    for (int index = editor_state->word_builder_len - 1; index >= 0; index--) {
+        if (editor_state->word_builder_buf[index] == '_') {
+            editor_state->word_builder_buf[index] = '\0';
+            editor_state->word_builder_len = index;
+            return;
+        }
+    }
+    editor_state->word_builder_buf[0] = '\0';
+    editor_state->word_builder_len = 0;
+}
+
+void draw_word_builder_panel(const struct EngineContext *ctx, const GameState *state, const EditorState *editor_state)
+{
+    if (editor_state->sub_mode != EDITOR_SUB_WORD_BUILDER) {
+        return;
+    }
+    int panel_x = ctx->screen_width - EDITOR_PANEL_WIDTH;
+    DrawRectangle(panel_x, 0, EDITOR_PANEL_WIDTH, ctx->screen_height, debug_bg_color);
+    int y_offset = 0;
+    DrawText("[ Word Builder ]", panel_x + DEBUG_MARGIN, y_offset, EDITOR_PANEL_FONT_SIZE, debug_text_color);
+    y_offset += EDITOR_PANEL_LINE_HEIGHT;
+    DrawText(TextFormat("  %s", editor_state->word_builder_buf), panel_x + DEBUG_MARGIN, y_offset,
+             EDITOR_PANEL_FONT_SIZE, WHITE);
+    y_offset += EDITOR_PANEL_LINE_HEIGHT * 2;
+
+    int total = word_builder_total_count(state);
+    int scroll = editor_state->word_builder_scroll;
+    int visible = place_visible_count(ctx->screen_height);
+    int scroll_offset = scroll - (visible / 2);
+    if (scroll_offset < 0) {
+        scroll_offset = 0;
+    }
+    int max_scroll = total - visible;
+    if (max_scroll < 0) {
+        max_scroll = 0;
+    }
+    if (scroll_offset > max_scroll) {
+        scroll_offset = max_scroll;
+    }
+    int end = scroll_offset + visible;
+    if (end > total) {
+        end = total;
+    }
+    for (int index = scroll_offset; index < end; index++) {
+        const char *item = word_builder_item(state, index);
+        bool selected = (index == scroll);
+        Color color = selected ? WHITE : debug_text_color;
+        DrawText(TextFormat("%s %s", selected ? ">" : " ", item), panel_x + DEBUG_MARGIN, y_offset,
+                 EDITOR_PANEL_FONT_SIZE, color);
+        y_offset += EDITOR_PANEL_LINE_HEIGHT;
+    }
+}
+
+static void word_builder_confirm(struct EngineContext *ctx, GameState *state, EditorState *editor_state)
+{
+    int sel = editor_state->selected_entity_index;
+    int attr_idx = editor_state->selected_attr_index;
+    if (sel < 0 || attr_idx < 0) {
+        return;
+    }
+    Entity *entity = &state->current_level.entities.data[sel];
+    Attribute *attr = attr_at_display_index(state, entity, attr_idx);
+    if (!attr) {
+        return;
+    }
+    AttrSet *target = &entity->attrs;
+    if (is_blueprint_attr(entity, attr_idx)) {
+        Blueprint *blueprint = find_blueprint_by_name(state, entity->blueprint_name.ptr);
+        if (blueprint) {
+            target = &blueprint->attrs;
+        }
+    }
+    Allocator alloc = allocator_arena(ctx, &state->gamedata_arena);
+    AttrStringPair pair = {attr->name.ptr, editor_state->word_builder_buf};
+    if (!attr_set_string(&alloc, target, pair)) {
+        debug_log(ctx, "word builder: attr_set_string failed: %s", error_get(ctx));
+        error_clear(ctx);
+    }
+}
+
+static void word_builder_navigate(EditorState *editor_state, int total)
+{
+    if (toggle_pressed((ToggleBinding){KEY_UP, GAMEPAD_BUTTON_LEFT_FACE_UP})) {
+        if (editor_state->word_builder_scroll > 0) {
+            editor_state->word_builder_scroll--;
+        }
+    }
+    if (toggle_pressed((ToggleBinding){KEY_DOWN, GAMEPAD_BUTTON_LEFT_FACE_DOWN})) {
+        if (editor_state->word_builder_scroll < total - 1) {
+            editor_state->word_builder_scroll++;
+        }
+    }
+    if (toggle_pressed((ToggleBinding){KEY_Q, GAMEPAD_BUTTON_LEFT_TRIGGER_1})) {
+        int new_scroll = editor_state->word_builder_scroll - WORD_BUILDER_PAGE_SIZE;
+        editor_state->word_builder_scroll = (new_scroll < 0) ? 0 : new_scroll;
+    }
+    if (toggle_pressed((ToggleBinding){KEY_E, GAMEPAD_BUTTON_RIGHT_TRIGGER_1})) {
+        int new_scroll = editor_state->word_builder_scroll + WORD_BUILDER_PAGE_SIZE;
+        editor_state->word_builder_scroll = (new_scroll >= total) ? total - 1 : new_scroll;
+    }
+}
+
+void handle_word_builder_input(struct EngineContext *ctx, GameState *state, EditorState *editor_state)
+{
+    int total = word_builder_total_count(state);
+    word_builder_navigate(editor_state, total);
+    if (toggle_pressed((ToggleBinding){KEY_ENTER, GAMEPAD_BUTTON_RIGHT_FACE_DOWN})) {
+        if (editor_state->word_builder_scroll == 0) {
+            word_builder_confirm(ctx, state, editor_state);
+            editor_state->sub_mode = EDITOR_SUB_BROWSE;
+        } else {
+            word_builder_append(editor_state, word_builder_item(state, editor_state->word_builder_scroll));
+        }
+    }
+    if (toggle_pressed((ToggleBinding){KEY_ESCAPE, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT})) {
+        if (editor_state->word_builder_len > 0) {
+            word_builder_pop(editor_state);
+        } else {
+            editor_state->sub_mode = EDITOR_SUB_BROWSE;
+        }
     }
 }

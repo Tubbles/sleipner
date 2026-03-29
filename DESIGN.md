@@ -939,7 +939,7 @@ This is bounded (one leaked backing per growth event) and reclaimed on level rel
 - [ ] Level mode: create levels, set size/music/spawn/transitions
 - [x] Radial picker widget (generic N-item; Tab/Select opens tool picker)
 - [x] Scroll picker widget
-- [ ] Word builder (seeded vocabulary + gamedata vocabulary)
+- [x] Word builder (seeded vocabulary + blueprint names; builds underscore-separated strings)
 - [ ] Fuzzy finder for existing names
 - [x] Value adjuster with auto-repeat and ±100 step (hold for acceleration)
 - [ ] Gamepad keyboard (last resort)

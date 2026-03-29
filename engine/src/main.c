@@ -694,6 +694,8 @@ static void handle_editor_input(struct EngineContext *ctx,
         handle_attr_edit_input(state, editor_state, delta_time);
     } else if (editor_state->sub_mode == EDITOR_SUB_RADIAL) {
         handle_radial_input(editor_state, input);
+    } else if (editor_state->sub_mode == EDITOR_SUB_WORD_BUILDER) {
+        handle_word_builder_input(ctx, state, editor_state);
     } else {
         handle_browse_input(ctx, state, camera, editor_state, watches, input, delta_time);
     }
@@ -740,6 +742,8 @@ static void render_frame(struct EngineContext *ctx, const GameState *state, Rend
     if (state->editor_mode) {
         if (params.editor_state.sub_mode == EDITOR_SUB_PLACE) {
             draw_place_panel(ctx, state, &params.editor_state);
+        } else if (params.editor_state.sub_mode == EDITOR_SUB_WORD_BUILDER) {
+            draw_word_builder_panel(ctx, state, &params.editor_state);
         } else {
             draw_editor_panel(ctx, state, &params.editor_state);
         }

@@ -38,6 +38,8 @@
 #define RADIAL_FULL_CIRCLE_DEG 360.0F    /* degrees in a full circle */
 #define RADIAL_NORTH_OFFSET_DEG 90.0F    /* rotation offset so top is north (12 o'clock) */
 #define RADIAL_DEG_TO_RAD 0.01745329252F /* multiplier to convert degrees to radians */
+#define WORD_BUILDER_BUF_SIZE 256        /* max length of word builder output */
+#define WORD_BUILDER_PAGE_SIZE 5         /* page-jump size for L1/R1 in word builder */
 
 extern const Color debug_text_color;
 extern const Color debug_bg_color;
@@ -57,8 +59,9 @@ typedef enum {
     EDITOR_SUB_DRAG,
     EDITOR_SUB_HANDLES,
     EDITOR_SUB_PLACE,
-    EDITOR_SUB_ATTR_EDIT, /* numeric/bool value adjustment */
-    EDITOR_SUB_RADIAL,    /* generic N-item radial picker overlay */
+    EDITOR_SUB_ATTR_EDIT,    /* numeric/bool value adjustment */
+    EDITOR_SUB_RADIAL,       /* generic N-item radial picker overlay */
+    EDITOR_SUB_WORD_BUILDER, /* string attribute editing via vocabulary picker */
 } EditorSubMode;
 
 typedef struct {
@@ -67,18 +70,21 @@ typedef struct {
     Vector2 saved_position;
     Vector2 saved_col_offset;
     Vector2 saved_col_size;
-    int place_blueprint_index;    /* index into state->blueprints.entries */
-    int selected_attr_index;      /* -1 = none; index into merged instance+blueprint list */
-    float saved_attr_float;       /* original float value saved on entering ATTR_EDIT */
-    int saved_attr_int;           /* original int value saved on entering ATTR_EDIT */
-    bool saved_attr_bool;         /* original bool value saved on entering ATTR_EDIT */
-    float attr_hold_total;        /* cumulative time held in current direction */
-    float attr_hold_subtick;      /* time since last auto-repeat fire */
-    int attr_hold_dir;            /* -1 / 0 / +1: direction currently held for auto-repeat */
-    int radial_selected;          /* -1 = center/none; 0..N-1 = highlighted sector */
-    int radial_confirmed;         /* -1 = no pending; >=0 = confirmed index (read+cleared in browse) */
-    int radial_item_count;        /* N items in the current picker */
-    RadialContext radial_context; /* which context opened the picker */
+    int place_blueprint_index;                    /* index into state->blueprints.entries */
+    int selected_attr_index;                      /* -1 = none; index into merged instance+blueprint list */
+    float saved_attr_float;                       /* original float value saved on entering ATTR_EDIT */
+    int saved_attr_int;                           /* original int value saved on entering ATTR_EDIT */
+    bool saved_attr_bool;                         /* original bool value saved on entering ATTR_EDIT */
+    float attr_hold_total;                        /* cumulative time held in current direction */
+    float attr_hold_subtick;                      /* time since last auto-repeat fire */
+    int attr_hold_dir;                            /* -1 / 0 / +1: direction currently held for auto-repeat */
+    int radial_selected;                          /* -1 = center/none; 0..N-1 = highlighted sector */
+    int radial_confirmed;                         /* -1 = no pending; >=0 = confirmed index (read+cleared in browse) */
+    int radial_item_count;                        /* N items in the current picker */
+    RadialContext radial_context;                 /* which context opened the picker */
+    int word_builder_scroll;                      /* scroll index in vocabulary list (0 = DONE) */
+    int word_builder_len;                         /* current built string length */
+    char word_builder_buf[WORD_BUILDER_BUF_SIZE]; /* current built string (null-terminated) */
 } EditorState;
 
 typedef struct {
@@ -111,5 +117,7 @@ void handle_handle_input(
 void handle_attr_edit_input(GameState *state, EditorState *editor_state, float delta_time);
 void draw_radial_picker(const struct EngineContext *ctx, const EditorState *editor_state);
 void handle_radial_input(EditorState *editor_state, InputState input);
+void handle_word_builder_input(struct EngineContext *ctx, GameState *state, EditorState *editor_state);
+void draw_word_builder_panel(const struct EngineContext *ctx, const GameState *state, const EditorState *editor_state);
 
 #endif
