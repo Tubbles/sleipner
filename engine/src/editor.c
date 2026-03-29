@@ -56,7 +56,8 @@ void draw_hints_bar(bool editor_mode, const EditorState *editor_state, const str
         } else if (editor_state->sub_mode == EDITOR_SUB_PLACE) {
             hints = "A/Ent: Spawn  |  B/Esc: Cancel  |  Up/Down: Scroll  |  L1/Q: PgUp  |  R1/E: PgDn  |  Stick: Pan";
         } else if (editor_state->sub_mode == EDITOR_SUB_ATTR_EDIT) {
-            hints = "A/Ent: Confirm  |  B/Esc: Cancel  |  Left/Right: ±1  |  [/L1: -10  |  ]/R1: +10";
+            hints = "A/Ent: Confirm  |  B/Esc: Cancel  |  Left/Right: ±1 (hold: repeat)  |  [/L1: ±10  |  PgDn/L2: "
+                    "-100  |  PgUp/R2: +100";
         } else {
             hints = "F5: Play  |  F9/Y: Save  |  A/Ent: Sel  |  B/Esc: Desel  |  Up/Down: Attr  |  "
                     "Shift/L2: Watch  |  Del/X: Delete  |  G/L3: Grab  |  H/L1: Handles  |  P/R1: Place  |  Stick: Pan";
@@ -238,19 +239,30 @@ static bool is_blueprint_attr(const Entity *entity, int attr_index)
 static int read_value_delta(void)
 {
     int delta = 0;
-    if (toggle_pressed((ToggleBinding){KEY_LEFT, GAMEPAD_BUTTON_LEFT_FACE_LEFT})) {
-        delta--;
-    }
-    if (toggle_pressed((ToggleBinding){KEY_RIGHT, GAMEPAD_BUTTON_LEFT_FACE_RIGHT})) {
-        delta++;
-    }
     if (toggle_pressed((ToggleBinding){KEY_LEFT_BRACKET, GAMEPAD_BUTTON_LEFT_TRIGGER_1})) {
         delta -= EDITOR_ATTR_LARGE_STEP;
     }
     if (toggle_pressed((ToggleBinding){KEY_RIGHT_BRACKET, GAMEPAD_BUTTON_RIGHT_TRIGGER_1})) {
         delta += EDITOR_ATTR_LARGE_STEP;
     }
+    if (toggle_pressed((ToggleBinding){KEY_PAGE_DOWN, GAMEPAD_BUTTON_LEFT_TRIGGER_2})) {
+        delta -= EDITOR_ATTR_HUGE_STEP;
+    }
+    if (toggle_pressed((ToggleBinding){KEY_PAGE_UP, GAMEPAD_BUTTON_RIGHT_TRIGGER_2})) {
+        delta += EDITOR_ATTR_HUGE_STEP;
+    }
     return delta;
+}
+
+static int read_held_dir(void)
+{
+    if (IsKeyDown(KEY_LEFT) || IsGamepadButtonDown(0, GAMEPAD_BUTTON_LEFT_FACE_LEFT)) {
+        return -1;
+    }
+    if (IsKeyDown(KEY_RIGHT) || IsGamepadButtonDown(0, GAMEPAD_BUTTON_LEFT_FACE_RIGHT)) {
+        return 1;
+    }
+    return 0;
 }
 
 static void propagate_collision_to_entities(GameState *state, const Blueprint *blueprint)
@@ -635,12 +647,30 @@ void handle_handle_input(
     entity_update_collision(entity);
 }
 
+static void apply_attr_delta(GameState *state, EditorState *editor_state, int delta)
+{
+    int sel = editor_state->selected_entity_index;
+    int attr_idx = editor_state->selected_attr_index;
+    Entity *entity = &state->current_level.entities.data[sel];
+    Attribute *attr = attr_at_display_index(state, entity, attr_idx);
+    if (!attr) {
+        return;
+    }
+    if (attr->type == ATTR_INT) {
+        attr->value.i += delta;
+    } else if (attr->type == ATTR_FLOAT) {
+        attr->value.f += (float)delta;
+    }
+}
+
 void handle_attr_edit_input(GameState *state, EditorState *editor_state, float delta_time)
 {
-    (void)delta_time;
     int sel = editor_state->selected_entity_index;
     int attr_idx = editor_state->selected_attr_index;
     if (sel < 0 || attr_idx < 0) {
+        editor_state->attr_hold_total = 0.0F;
+        editor_state->attr_hold_subtick = 0.0F;
+        editor_state->attr_hold_dir = 0;
         editor_state->sub_mode = EDITOR_SUB_BROWSE;
         return;
     }
@@ -652,6 +682,9 @@ void handle_attr_edit_input(GameState *state, EditorState *editor_state, float d
                 propagate_collision_to_entities(state, blueprint);
             }
         }
+        editor_state->attr_hold_total = 0.0F;
+        editor_state->attr_hold_subtick = 0.0F;
+        editor_state->attr_hold_dir = 0;
         editor_state->sub_mode = EDITOR_SUB_BROWSE;
         return;
     }
@@ -664,20 +697,37 @@ void handle_attr_edit_input(GameState *state, EditorState *editor_state, float d
                 attr->value.f = editor_state->saved_attr_float;
             }
         }
+        editor_state->attr_hold_total = 0.0F;
+        editor_state->attr_hold_subtick = 0.0F;
+        editor_state->attr_hold_dir = 0;
         editor_state->sub_mode = EDITOR_SUB_BROWSE;
         return;
     }
-    int delta = read_value_delta();
-    if (delta == 0) {
+    int multi_delta = read_value_delta();
+    if (multi_delta != 0) {
+        apply_attr_delta(state, editor_state, multi_delta);
+    }
+    int held = read_held_dir();
+    if (held != editor_state->attr_hold_dir) {
+        editor_state->attr_hold_dir = held;
+        editor_state->attr_hold_total = 0.0F;
+        editor_state->attr_hold_subtick = 0.0F;
+    }
+    if (held == 0) {
         return;
     }
-    Attribute *attr = attr_at_display_index(state, entity, attr_idx);
-    if (!attr) {
+    editor_state->attr_hold_total += delta_time;
+    editor_state->attr_hold_subtick += delta_time;
+    if (editor_state->attr_hold_total < ATTR_REPEAT_DELAY) {
         return;
     }
-    if (attr->type == ATTR_INT) {
-        attr->value.i += delta;
-    } else if (attr->type == ATTR_FLOAT) {
-        attr->value.f += (float)delta;
+    float hold_excess = editor_state->attr_hold_total - ATTR_REPEAT_DELAY;
+    float period = ATTR_REPEAT_PERIOD / (1.0F + (ATTR_REPEAT_ACCEL * hold_excess));
+    if (period < ATTR_REPEAT_MIN_PERIOD) {
+        period = ATTR_REPEAT_MIN_PERIOD;
+    }
+    while (editor_state->attr_hold_subtick >= period) {
+        editor_state->attr_hold_subtick -= period;
+        apply_attr_delta(state, editor_state, held);
     }
 }

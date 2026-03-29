@@ -21,10 +21,15 @@
 /* Fixed-size: 4 slots is a hard UI display limit — the watch overlay has room for
  * exactly EDITOR_WATCH_MAX entries; more would overflow the panel. */
 #define EDITOR_WATCH_MAX 4
-#define EDITOR_HANDLE_SIZE 4      /* corner handle square side, world pixels */
-#define EDITOR_HANDLE_SPEED 60.0F /* px/s for collision offset/size editing */
-#define EDITOR_ATTR_LARGE_STEP 10 /* ±10 step for attribute value adjuster (bumpers/brackets) */
-#define EDITOR_PLACE_PAGE_SIZE 5  /* blueprint page-jump size for L1/R1 in scroll picker */
+#define EDITOR_HANDLE_SIZE 4          /* corner handle square side, world pixels */
+#define EDITOR_HANDLE_SPEED 60.0F     /* px/s for collision offset/size editing */
+#define EDITOR_ATTR_LARGE_STEP 10     /* ±10 step for attribute value adjuster (bumpers/brackets) */
+#define EDITOR_ATTR_HUGE_STEP 100     /* ±100 step for value adjuster (L2/R2 / PgDn/PgUp) */
+#define EDITOR_PLACE_PAGE_SIZE 5      /* blueprint page-jump size for L1/R1 in scroll picker */
+#define ATTR_REPEAT_DELAY 0.4F        /* seconds before auto-repeat starts on hold */
+#define ATTR_REPEAT_PERIOD 0.1F       /* initial repeat interval (10 Hz) */
+#define ATTR_REPEAT_MIN_PERIOD 0.025F /* fastest interval after acceleration (40 Hz) */
+#define ATTR_REPEAT_ACCEL 4.0F        /* period halves every 1/ACCEL seconds of hold */
 
 extern const Color debug_text_color;
 extern const Color debug_bg_color;
@@ -54,6 +59,9 @@ typedef struct {
     float saved_attr_float;    /* original float value saved on entering ATTR_EDIT */
     int saved_attr_int;        /* original int value saved on entering ATTR_EDIT */
     bool saved_attr_bool;      /* original bool value saved on entering ATTR_EDIT */
+    float attr_hold_total;     /* cumulative time held in current direction */
+    float attr_hold_subtick;   /* time since last auto-repeat fire */
+    int attr_hold_dir;         /* -1 / 0 / +1: direction currently held for auto-repeat */
 } EditorState;
 
 typedef struct {
