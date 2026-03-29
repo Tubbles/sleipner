@@ -566,8 +566,11 @@ static void
 handle_hot_reload(struct EngineContext *ctx, GameState *state, EditorState *editor_state, WatchList *watches)
 {
     if (poll_hot_reload(ctx, state)) {
-        *editor_state =
-            (EditorState){.selected_entity_index = -1, .sub_mode = EDITOR_SUB_BROWSE, .selected_attr_index = -1};
+        *editor_state = (EditorState){.selected_entity_index = -1,
+                                      .sub_mode = EDITOR_SUB_BROWSE,
+                                      .selected_attr_index = -1,
+                                      .radial_confirmed = -1,
+                                      .radial_selected = -1};
         *watches = (WatchList){0};
     }
 }
@@ -617,8 +620,11 @@ handle_save_input(struct EngineContext *ctx, GameState *state, EditorState *edit
             error_clear(ctx);
         } else {
             load_gamedata(ctx, state);
-            *editor_state =
-                (EditorState){.selected_entity_index = -1, .sub_mode = EDITOR_SUB_BROWSE, .selected_attr_index = -1};
+            *editor_state = (EditorState){.selected_entity_index = -1,
+                                          .sub_mode = EDITOR_SUB_BROWSE,
+                                          .selected_attr_index = -1,
+                                          .radial_confirmed = -1,
+                                          .radial_selected = -1};
             *watches = (WatchList){0};
         }
     }
@@ -686,6 +692,8 @@ static void handle_editor_input(struct EngineContext *ctx,
         handle_place_input(ctx, state, camera, editor_state, input, delta_time);
     } else if (editor_state->sub_mode == EDITOR_SUB_ATTR_EDIT) {
         handle_attr_edit_input(state, editor_state, delta_time);
+    } else if (editor_state->sub_mode == EDITOR_SUB_RADIAL) {
+        handle_radial_input(editor_state, input);
     } else {
         handle_browse_input(ctx, state, camera, editor_state, watches, input, delta_time);
     }
@@ -737,6 +745,7 @@ static void render_frame(struct EngineContext *ctx, const GameState *state, Rend
         }
     }
     draw_watch_overlay(ctx, state, params.watches);
+    draw_radial_picker(ctx, &params.editor_state);
     draw_hints_bar(state->editor_mode, &params.editor_state, ctx);
     EndDrawing();
 }
@@ -818,7 +827,11 @@ int main(void)
         .target = {(float)game_bounds.width / 2.0F, (float)game_bounds.height / 2.0F},
         .zoom = 1.0F,
     };
-    EditorState editor_state = {.selected_entity_index = -1, .sub_mode = EDITOR_SUB_BROWSE, .selected_attr_index = -1};
+    EditorState editor_state = {.selected_entity_index = -1,
+                                .sub_mode = EDITOR_SUB_BROWSE,
+                                .selected_attr_index = -1,
+                                .radial_confirmed = -1,
+                                .radial_selected = -1};
     WatchList watches = {0};
 
     debug_log(ctx, "gamedata path: %s", GAMEDATA_PATH);
@@ -838,8 +851,8 @@ int main(void)
             handle_hot_reload(ctx, &state, &editor_state, &watches);
         }
 
-        /* Toggle debug overlay: F3 or gamepad Select */
-        if (toggle_pressed((ToggleBinding){KEY_F3, GAMEPAD_BUTTON_MIDDLE_LEFT})) {
+        /* Toggle debug overlay: F3 only (Select/MIDDLE_LEFT is now used by radial picker) */
+        if (IsKeyPressed(KEY_F3)) {
             state.debug_enabled = (bool)!state.debug_enabled;
             debug_log(ctx, "debug %s (frame %d)", (int)state.debug_enabled ? "ON" : "OFF", state.frame);
         }

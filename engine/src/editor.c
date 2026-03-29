@@ -12,14 +12,16 @@
 #include "level.h"
 #include "rect.h"
 
+#include <math.h>
 #include <string.h>
 
 const Color debug_text_color = {200, 220, 240, 255};
 const Color debug_log_color = {180, 210, 180, 255};
 const Color debug_bg_color = {20, 25, 35, DEBUG_BG_ALPHA};
 
-static const Color handle_color = {0, 255, 255, 255};        /* cyan: collision handles */
-static const Color place_ghost_color = {100, 255, 100, 180}; /* semi-transparent green: place preview */
+static const Color handle_color = {0, 255, 255, 255};            /* cyan: collision handles */
+static const Color place_ghost_color = {100, 255, 100, 180};     /* semi-transparent green: place preview */
+static const Color radial_highlight_color = {255, 200, 50, 200}; /* amber: selected radial sector */
 
 bool toggle_pressed(ToggleBinding binding)
 {
@@ -58,8 +60,10 @@ void draw_hints_bar(bool editor_mode, const EditorState *editor_state, const str
         } else if (editor_state->sub_mode == EDITOR_SUB_ATTR_EDIT) {
             hints = "A/Ent: Confirm  |  B/Esc: Cancel  |  Left/Right: ±1 (hold: repeat)  |  [/L1: ±10  |  PgDn/L2: "
                     "-100  |  PgUp/R2: +100";
+        } else if (editor_state->sub_mode == EDITOR_SUB_RADIAL) {
+            hints = "Stick: Pick tool  |  A/Ent: Confirm  |  B/Esc: Cancel";
         } else {
-            hints = "F5: Play  |  F9/Y: Save  |  A/Ent: Sel  |  B/Esc: Desel  |  Up/Down: Attr  |  "
+            hints = "F5: Play  |  F9/Y: Save  |  Tab/Sel: Tools  |  A/Ent: Sel  |  B/Esc: Desel  |  Up/Down: Attr  |  "
                     "Shift/L2: Watch  |  Del/X: Delete  |  G/L3: Grab  |  H/L1: Handles  |  P/R1: Place  |  Stick: Pan";
         }
     } else {
@@ -512,6 +516,31 @@ static void handle_browse_attr_navigate(const GameState *state, EditorState *edi
     }
 }
 
+static void
+dispatch_radial_confirm(struct EngineContext *ctx, GameState *state, EditorState *editor_state, WatchList *watches)
+{
+    int confirmed = editor_state->radial_confirmed;
+    editor_state->radial_confirmed = -1;
+    if (editor_state->radial_context == RADIAL_CTX_TOOLS) {
+        int sel = editor_state->selected_entity_index;
+        if (confirmed == 0 && sel >= 0) { /* Grab */
+            editor_state->saved_position = state->current_level.entities.data[sel].position;
+            editor_state->sub_mode = EDITOR_SUB_DRAG;
+        } else if (confirmed == 1) { /* Place */
+            if (state->blueprints.entries.count > 0) {
+                editor_state->place_blueprint_index = find_place_blueprint_index(state, editor_state);
+                editor_state->sub_mode = EDITOR_SUB_PLACE;
+            }
+        } else if (confirmed == 2 && sel >= 0) { /* Handles */
+            editor_state->saved_col_offset = state->current_level.entities.data[sel].collision_offset;
+            editor_state->saved_col_size = state->current_level.entities.data[sel].collision_size;
+            editor_state->sub_mode = EDITOR_SUB_HANDLES;
+        } else if (confirmed == 3) { /* Delete */
+            delete_selected_entity(ctx, state, editor_state, watches);
+        }
+    }
+}
+
 void handle_browse_input(struct EngineContext *ctx,
                          GameState *state,
                          Camera2D *camera,
@@ -520,6 +549,18 @@ void handle_browse_input(struct EngineContext *ctx,
                          InputState input,
                          float delta_time)
 {
+    if (editor_state->radial_confirmed >= 0) {
+        dispatch_radial_confirm(ctx, state, editor_state, watches);
+        return;
+    }
+    if (toggle_pressed((ToggleBinding){KEY_TAB, GAMEPAD_BUTTON_MIDDLE_LEFT})) {
+        editor_state->radial_selected = -1;
+        editor_state->radial_confirmed = -1;
+        editor_state->radial_item_count = 4;
+        editor_state->radial_context = RADIAL_CTX_TOOLS;
+        editor_state->sub_mode = EDITOR_SUB_RADIAL;
+        return;
+    }
     if (toggle_pressed((ToggleBinding){KEY_ENTER, GAMEPAD_BUTTON_RIGHT_FACE_DOWN})) {
         handle_browse_select(state, camera, editor_state);
     }
@@ -729,5 +770,73 @@ void handle_attr_edit_input(GameState *state, EditorState *editor_state, float d
     while (editor_state->attr_hold_subtick >= period) {
         editor_state->attr_hold_subtick -= period;
         apply_attr_delta(state, editor_state, held);
+    }
+}
+
+static int radial_sector_from_stick(Vector2 stick, int item_count)
+{
+    float magnitude = sqrtf((stick.x * stick.x) + (stick.y * stick.y));
+    if (magnitude < RADIAL_STICK_THRESHOLD) {
+        return -1;
+    }
+    float angle = atan2f(stick.y, stick.x);
+    float two_pi = 2.0F * (float)M_PI;
+    float normalized = fmodf(angle + ((float)M_PI / 2.0F) + two_pi, two_pi);
+    return (int)(normalized * (float)item_count / two_pi) % item_count;
+}
+
+static const char *radial_label(const EditorState *editor_state, int index)
+{
+    if (editor_state->radial_context == RADIAL_CTX_TOOLS) {
+        static const char *tools[] = {"Grab", "Place", "Handles", "Delete"};
+        if (index >= 0 && index < 4) {
+            return tools[index];
+        }
+    }
+    return "";
+}
+
+void draw_radial_picker(const struct EngineContext *ctx, const EditorState *editor_state)
+{
+    if (editor_state->sub_mode != EDITOR_SUB_RADIAL) {
+        return;
+    }
+    int center_x = ctx->screen_width / 2;
+    int center_y = ctx->screen_height / 2;
+    DrawCircle(center_x, center_y, RADIAL_OUTER_RADIUS + RADIAL_BG_PADDING, debug_bg_color);
+    int item_count = editor_state->radial_item_count;
+    float sector_deg = RADIAL_FULL_CIRCLE_DEG / (float)item_count;
+    for (int index = 0; index < item_count; index++) {
+        float start = ((float)index * sector_deg) - RADIAL_NORTH_OFFSET_DEG;
+        float end = start + sector_deg;
+        bool selected = (index == editor_state->radial_selected);
+        Color sector_color = selected ? radial_highlight_color
+                                      : (Color){radial_highlight_color.r, radial_highlight_color.g,
+                                                radial_highlight_color.b, radial_highlight_color.a / 2};
+        DrawRing((Vector2){(float)center_x, (float)center_y}, RADIAL_INNER_RADIUS, RADIAL_OUTER_RADIUS, start, end, 16,
+                 sector_color);
+        float mid_deg = start + (sector_deg / 2.0F);
+        float mid_rad = mid_deg * RADIAL_DEG_TO_RAD;
+        float label_radius = (RADIAL_INNER_RADIUS + RADIAL_OUTER_RADIUS) / 2.0F;
+        int label_x = center_x + (int)(cosf(mid_rad) * label_radius);
+        int label_y = center_y + (int)(sinf(mid_rad) * label_radius);
+        const char *label = radial_label(editor_state, index);
+        int text_width = MeasureText(label, RADIAL_FONT_SIZE);
+        DrawText(label, label_x - (text_width / 2), label_y - (RADIAL_FONT_SIZE / 2), RADIAL_FONT_SIZE, sector_color);
+    }
+    DrawCircle(center_x, center_y, RADIAL_INNER_RADIUS, debug_bg_color);
+}
+
+void handle_radial_input(EditorState *editor_state, InputState input)
+{
+    editor_state->radial_selected = radial_sector_from_stick(input.left_stick, editor_state->radial_item_count);
+    if (toggle_pressed((ToggleBinding){KEY_ESCAPE, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT})) {
+        editor_state->radial_confirmed = -1;
+        editor_state->sub_mode = EDITOR_SUB_BROWSE;
+        return;
+    }
+    if (toggle_pressed((ToggleBinding){KEY_ENTER, GAMEPAD_BUTTON_RIGHT_FACE_DOWN})) {
+        editor_state->radial_confirmed = editor_state->radial_selected;
+        editor_state->sub_mode = EDITOR_SUB_BROWSE;
     }
 }

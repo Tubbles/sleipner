@@ -937,11 +937,11 @@ This is bounded (one leaked backing per growth event) and reclaimed on level rel
 - [ ] Animation mode: define frame sequences, preview playback, link directional states
 - [ ] Rule mode: visual trigger/condition/action editor, test by switching to play
 - [ ] Level mode: create levels, set size/music/spawn/transitions
-- [ ] Radial picker widget
+- [x] Radial picker widget (generic N-item; Tab/Select opens tool picker)
 - [x] Scroll picker widget
 - [ ] Word builder (seeded vocabulary + gamedata vocabulary)
 - [ ] Fuzzy finder for existing names
-- [ ] Value adjuster with visual feedback
+- [x] Value adjuster with auto-repeat and ±100 step (hold for acceleration)
 - [ ] Gamepad keyboard (last resort)
 - [ ] Attribute editor (built-in + custom, with diff view)
 - [ ] Child entity editor (composition, tags)
