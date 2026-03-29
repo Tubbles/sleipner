@@ -648,13 +648,22 @@ static void handle_place_input(struct EngineContext *ctx,
     if (toggle_pressed((ToggleBinding){KEY_ESCAPE, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT})) {
         editor_state->sub_mode = EDITOR_SUB_BROWSE;
     }
-    if (toggle_pressed((ToggleBinding){KEY_Q, GAMEPAD_BUTTON_LEFT_TRIGGER_1})) {
+    if (toggle_pressed((ToggleBinding){KEY_UP, GAMEPAD_BUTTON_LEFT_FACE_UP})) {
         int count = state->blueprints.entries.count;
         editor_state->place_blueprint_index = (editor_state->place_blueprint_index - 1 + count) % count;
     }
-    if (toggle_pressed((ToggleBinding){KEY_E, GAMEPAD_BUTTON_RIGHT_TRIGGER_1})) {
+    if (toggle_pressed((ToggleBinding){KEY_DOWN, GAMEPAD_BUTTON_LEFT_FACE_DOWN})) {
         int count = state->blueprints.entries.count;
         editor_state->place_blueprint_index = (editor_state->place_blueprint_index + 1) % count;
+    }
+    if (toggle_pressed((ToggleBinding){KEY_Q, GAMEPAD_BUTTON_LEFT_TRIGGER_1})) {
+        int new_index = editor_state->place_blueprint_index - EDITOR_PLACE_PAGE_SIZE;
+        editor_state->place_blueprint_index = (new_index < 0) ? 0 : new_index;
+    }
+    if (toggle_pressed((ToggleBinding){KEY_E, GAMEPAD_BUTTON_RIGHT_TRIGGER_1})) {
+        int count = state->blueprints.entries.count;
+        int new_index = editor_state->place_blueprint_index + EDITOR_PLACE_PAGE_SIZE;
+        editor_state->place_blueprint_index = (new_index >= count) ? count - 1 : new_index;
     }
     update_editor_camera(camera, input, delta_time);
 }

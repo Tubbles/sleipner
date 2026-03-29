@@ -54,7 +54,7 @@ void draw_hints_bar(bool editor_mode, const EditorState *editor_state, const str
         } else if (editor_state->sub_mode == EDITOR_SUB_HANDLES) {
             hints = "F9/Y: Save  |  A/Ent: Confirm  |  B/Esc: Cancel  |  Stick: Move  |  R-Stick: Resize";
         } else if (editor_state->sub_mode == EDITOR_SUB_PLACE) {
-            hints = "A/Ent: Spawn  |  B/Esc: Cancel  |  Q/L1: Prev BP  |  E/R1: Next BP  |  Stick: Pan";
+            hints = "A/Ent: Spawn  |  B/Esc: Cancel  |  Up/Down: Scroll  |  L1/Q: PgUp  |  R1/E: PgDn  |  Stick: Pan";
         } else if (editor_state->sub_mode == EDITOR_SUB_ATTR_EDIT) {
             hints = "A/Ent: Confirm  |  B/Esc: Cancel  |  Left/Right: ±1  |  [/L1: -10  |  ]/R1: +10";
         } else {
@@ -303,6 +303,11 @@ static int find_place_blueprint_index(const GameState *state, const EditorState 
     return 0;
 }
 
+static int place_visible_count(int screen_height)
+{
+    return (screen_height - HINTS_BAR_HEIGHT - EDITOR_PANEL_LINE_HEIGHT) / EDITOR_PANEL_LINE_HEIGHT;
+}
+
 void draw_place_panel(const struct EngineContext *ctx, const GameState *state, const EditorState *editor_state)
 {
     if (editor_state->sub_mode != EDITOR_SUB_PLACE) {
@@ -313,14 +318,36 @@ void draw_place_panel(const struct EngineContext *ctx, const GameState *state, c
         return;
     }
     int bp_index = editor_state->place_blueprint_index;
-    const char *bp_name = attr_get_string(&state->blueprints.entries.data[bp_index].attrs, "name");
     int panel_x = ctx->screen_width - EDITOR_PANEL_WIDTH;
-    DrawRectangle(panel_x, 0, EDITOR_PANEL_WIDTH, EDITOR_PANEL_LINE_HEIGHT * 3, debug_bg_color);
+    DrawRectangle(panel_x, 0, EDITOR_PANEL_WIDTH, ctx->screen_height, debug_bg_color);
     int y_offset = 0;
     DrawText("[ Place Mode ]", panel_x + DEBUG_MARGIN, y_offset, EDITOR_PANEL_FONT_SIZE, debug_text_color);
     y_offset += EDITOR_PANEL_LINE_HEIGHT;
-    DrawText(TextFormat("Blueprint: %s  [%d/%d]", bp_name ? bp_name : "?", bp_index + 1, count), panel_x + DEBUG_MARGIN,
-             y_offset, EDITOR_PANEL_FONT_SIZE, debug_text_color);
+
+    int visible = place_visible_count(ctx->screen_height);
+    int scroll = bp_index - (visible / 2);
+    if (scroll < 0) {
+        scroll = 0;
+    }
+    int max_scroll = count - visible;
+    if (max_scroll < 0) {
+        max_scroll = 0;
+    }
+    if (scroll > max_scroll) {
+        scroll = max_scroll;
+    }
+    int end = scroll + visible;
+    if (end > count) {
+        end = count;
+    }
+    for (int index = scroll; index < end; index++) {
+        const char *name = attr_get_string(&state->blueprints.entries.data[index].attrs, "name");
+        bool selected = (index == bp_index);
+        Color color = selected ? WHITE : debug_text_color;
+        DrawText(TextFormat("%s %s", selected ? ">" : " ", name ? name : "?"), panel_x + DEBUG_MARGIN, y_offset,
+                 EDITOR_PANEL_FONT_SIZE, color);
+        y_offset += EDITOR_PANEL_LINE_HEIGHT;
+    }
 }
 
 void draw_place_preview(const GameState *state, const EditorState *editor_state, Camera2D camera)

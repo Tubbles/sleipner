@@ -24,6 +24,7 @@
 #define EDITOR_HANDLE_SIZE 4      /* corner handle square side, world pixels */
 #define EDITOR_HANDLE_SPEED 60.0F /* px/s for collision offset/size editing */
 #define EDITOR_ATTR_LARGE_STEP 10 /* ±10 step for attribute value adjuster (bumpers/brackets) */
+#define EDITOR_PLACE_PAGE_SIZE 5  /* blueprint page-jump size for L1/R1 in scroll picker */
 
 extern const Color debug_text_color;
 extern const Color debug_bg_color;
