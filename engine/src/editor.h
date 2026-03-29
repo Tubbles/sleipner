@@ -37,6 +37,7 @@ typedef enum {
     EDITOR_SUB_BROWSE,
     EDITOR_SUB_DRAG,
     EDITOR_SUB_HANDLES,
+    EDITOR_SUB_PLACE,
 } EditorSubMode;
 
 typedef struct {
@@ -45,6 +46,7 @@ typedef struct {
     Vector2 saved_position;
     Vector2 saved_col_offset;
     Vector2 saved_col_size;
+    int place_blueprint_index; /* index into state->blueprints.entries */
 } EditorState;
 
 typedef struct {
@@ -68,6 +70,8 @@ void handle_browse_input(struct EngineContext *ctx,
                          WatchList *watches,
                          InputState input,
                          float delta_time);
+void draw_place_panel(const struct EngineContext *ctx, const GameState *state, const EditorState *editor_state);
+void draw_place_preview(const GameState *state, const EditorState *editor_state, Camera2D camera);
 void handle_mode_transitions(const GameState *state, EditorState *editor_state);
 void handle_drag_input(GameState *state, EditorState *editor_state, InputState input, float delta_time);
 void handle_handle_input(

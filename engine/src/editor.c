@@ -18,7 +18,8 @@ const Color debug_text_color = {200, 220, 240, 255};
 const Color debug_log_color = {180, 210, 180, 255};
 const Color debug_bg_color = {20, 25, 35, DEBUG_BG_ALPHA};
 
-static const Color handle_color = {0, 255, 255, 255}; /* cyan: collision handles */
+static const Color handle_color = {0, 255, 255, 255};        /* cyan: collision handles */
+static const Color place_ghost_color = {100, 255, 100, 180}; /* semi-transparent green: place preview */
 
 bool toggle_pressed(ToggleBinding binding)
 {
@@ -52,10 +53,11 @@ void draw_hints_bar(bool editor_mode, const EditorState *editor_state, const str
             hints = "F9/Y: Save  |  A/Ent: Confirm  |  B/Esc: Cancel  |  Stick: Move entity";
         } else if (editor_state->sub_mode == EDITOR_SUB_HANDLES) {
             hints = "F9/Y: Save  |  A/Ent: Confirm  |  B/Esc: Cancel  |  Stick: Move  |  R-Stick: Resize";
+        } else if (editor_state->sub_mode == EDITOR_SUB_PLACE) {
+            hints = "A/Ent: Spawn  |  B/Esc: Cancel  |  Q/L1: Prev BP  |  E/R1: Next BP  |  Stick: Pan";
         } else {
             hints = "F5: Play  |  F9/Y: Save  |  A/Ent: Sel  |  B/Esc: Desel  |  Shift/L2: Watch  |  Del/X: Delete  |  "
-                    "G/L3: Grab  |  "
-                    "H/L1: Handles  |  Stick: Pan";
+                    "G/L3: Grab  |  H/L1: Handles  |  P/R1: Place  |  Stick: Pan";
         }
     } else {
         hints = "F5: Editor  |  F3: Debug  |  F4: Fonts";
@@ -232,6 +234,57 @@ void draw_collision_handles(const GameState *state, const EditorState *editor_st
                   EDITOR_HANDLE_SIZE, handle_color);
 }
 
+static int find_place_blueprint_index(const GameState *state, const EditorState *editor_state)
+{
+    int sel = editor_state->selected_entity_index;
+    if (sel < 0 || sel >= state->current_level.entities.count) {
+        return 0;
+    }
+    const char *name = state->current_level.entities.data[sel].blueprint_name.ptr;
+    for (int index = 0; index < state->blueprints.entries.count; index++) {
+        const char *bp_name = attr_get_string(&state->blueprints.entries.data[index].attrs, "name");
+        if (bp_name && strcmp(bp_name, name) == 0) {
+            return index;
+        }
+    }
+    return 0;
+}
+
+void draw_place_panel(const struct EngineContext *ctx, const GameState *state, const EditorState *editor_state)
+{
+    if (editor_state->sub_mode != EDITOR_SUB_PLACE) {
+        return;
+    }
+    int count = state->blueprints.entries.count;
+    if (count == 0) {
+        return;
+    }
+    int bp_index = editor_state->place_blueprint_index;
+    const char *bp_name = attr_get_string(&state->blueprints.entries.data[bp_index].attrs, "name");
+    int panel_x = ctx->screen_width - EDITOR_PANEL_WIDTH;
+    DrawRectangle(panel_x, 0, EDITOR_PANEL_WIDTH, EDITOR_PANEL_LINE_HEIGHT * 3, debug_bg_color);
+    int y_offset = 0;
+    DrawText("[ Place Mode ]", panel_x + DEBUG_MARGIN, y_offset, EDITOR_PANEL_FONT_SIZE, debug_text_color);
+    y_offset += EDITOR_PANEL_LINE_HEIGHT;
+    DrawText(TextFormat("Blueprint: %s  [%d/%d]", bp_name ? bp_name : "?", bp_index + 1, count), panel_x + DEBUG_MARGIN,
+             y_offset, EDITOR_PANEL_FONT_SIZE, debug_text_color);
+}
+
+void draw_place_preview(const GameState *state, const EditorState *editor_state, Camera2D camera)
+{
+    if (editor_state->sub_mode != EDITOR_SUB_PLACE) {
+        return;
+    }
+    if (state->blueprints.entries.count == 0) {
+        return;
+    }
+    const Blueprint *blueprint = &state->blueprints.entries.data[editor_state->place_blueprint_index];
+    Vector2 offset = blueprint_get_collision_offset(blueprint);
+    Vector2 size = blueprint_get_collision_size(blueprint);
+    Rectangle ghost = {camera.target.x + offset.x, camera.target.y + offset.y, size.x, size.y};
+    DrawRectangleLinesEx(ghost, 2.0F, place_ghost_color);
+}
+
 static void mark_deleted_descendants(const Level *level, bool *is_deleted, int count)
 {
     bool changed = true;
@@ -338,6 +391,12 @@ void handle_browse_input(struct EngineContext *ctx,
     }
     if (toggle_pressed((ToggleBinding){KEY_DELETE, GAMEPAD_BUTTON_RIGHT_FACE_LEFT})) {
         delete_selected_entity(ctx, state, editor_state, watches);
+    }
+    if (toggle_pressed((ToggleBinding){KEY_P, GAMEPAD_BUTTON_RIGHT_TRIGGER_1})) {
+        if (state->blueprints.entries.count > 0) {
+            editor_state->place_blueprint_index = find_place_blueprint_index(state, editor_state);
+            editor_state->sub_mode = EDITOR_SUB_PLACE;
+        }
     }
     update_editor_camera(camera, input, delta_time);
 }

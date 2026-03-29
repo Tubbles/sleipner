@@ -26,6 +26,17 @@ typedef struct {
 /* Free level name, music name, and all entity Str fields and attrs. */
 void level_free(Allocator *alloc, Level *level);
 
+/* Spawn a new root entity from a blueprint at the given position.
+ * Instantiates children; assigns next_entity_id. Returns true on success. */
+[[nodiscard]] bool level_spawn_entity(struct EngineContext *ctx,
+                                      Level *level,
+                                      const Blueprint *blueprint,
+                                      Vector2 position,
+                                      const BlueprintTable *blueprints,
+                                      TextureLookupFn texture_lookup,
+                                      void *texture_user_data,
+                                      Allocator *alloc);
+
 /* Parse the first [[level]] (or the one matching `level_name` if non-NULL)
  * from a tomlc99 root table. Instantiates entities from blueprints.
  * Returns true on success. */

@@ -622,6 +622,41 @@ handle_save_input(struct EngineContext *ctx, GameState *state, EditorState *edit
     }
 }
 
+static void handle_place_input(struct EngineContext *ctx,
+                               GameState *state,
+                               Camera2D *camera,
+                               EditorState *editor_state,
+                               InputState input,
+                               float delta_time)
+{
+    if (state->blueprints.entries.count == 0) {
+        editor_state->sub_mode = EDITOR_SUB_BROWSE;
+        return;
+    }
+    if (toggle_pressed((ToggleBinding){KEY_ENTER, GAMEPAD_BUTTON_RIGHT_FACE_DOWN})) {
+        int bp_index = editor_state->place_blueprint_index;
+        const Blueprint *blueprint = &state->blueprints.entries.data[bp_index];
+        Allocator alloc = allocator_arena(ctx, &state->gamedata_arena);
+        if (!level_spawn_entity(ctx, &state->current_level, blueprint, camera->target, &state->blueprints,
+                                texture_registry_lookup, ctx, &alloc)) {
+            debug_log(ctx, "error: %s", error_get(ctx));
+            error_clear(ctx);
+        }
+    }
+    if (toggle_pressed((ToggleBinding){KEY_ESCAPE, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT})) {
+        editor_state->sub_mode = EDITOR_SUB_BROWSE;
+    }
+    if (toggle_pressed((ToggleBinding){KEY_Q, GAMEPAD_BUTTON_LEFT_TRIGGER_1})) {
+        int count = state->blueprints.entries.count;
+        editor_state->place_blueprint_index = (editor_state->place_blueprint_index - 1 + count) % count;
+    }
+    if (toggle_pressed((ToggleBinding){KEY_E, GAMEPAD_BUTTON_RIGHT_TRIGGER_1})) {
+        int count = state->blueprints.entries.count;
+        editor_state->place_blueprint_index = (editor_state->place_blueprint_index + 1) % count;
+    }
+    update_editor_camera(camera, input, delta_time);
+}
+
 static void handle_editor_input(struct EngineContext *ctx,
                                 GameState *state,
                                 Camera2D *camera,
@@ -636,6 +671,8 @@ static void handle_editor_input(struct EngineContext *ctx,
         handle_drag_input(state, editor_state, input, delta_time);
     } else if (editor_state->sub_mode == EDITOR_SUB_HANDLES) {
         handle_handle_input(ctx, state, editor_state, input, delta_time);
+    } else if (editor_state->sub_mode == EDITOR_SUB_PLACE) {
+        handle_place_input(ctx, state, camera, editor_state, input, delta_time);
     } else {
         handle_browse_input(ctx, state, camera, editor_state, watches, input, delta_time);
     }
@@ -663,6 +700,7 @@ static void render_frame(struct EngineContext *ctx, const GameState *state, Rend
         int hover_index = find_nearest_entity(&state->current_level, params.editor_camera.target);
         draw_editor_highlights(state, &params.editor_state, hover_index);
         draw_collision_handles(state, &params.editor_state);
+        draw_place_preview(state, &params.editor_state, params.editor_camera);
         EndMode2D();
         draw_editor_crosshair(params.game_bounds);
     }
@@ -679,7 +717,11 @@ static void render_frame(struct EngineContext *ctx, const GameState *state, Rend
         draw_font_preview(ctx);
     }
     if (state->editor_mode) {
-        draw_editor_panel(ctx, state, &params.editor_state);
+        if (params.editor_state.sub_mode == EDITOR_SUB_PLACE) {
+            draw_place_panel(ctx, state, &params.editor_state);
+        } else {
+            draw_editor_panel(ctx, state, &params.editor_state);
+        }
     }
     draw_watch_overlay(ctx, state, params.watches);
     draw_hints_bar(state->editor_mode, &params.editor_state, ctx);

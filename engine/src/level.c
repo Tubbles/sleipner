@@ -248,6 +248,46 @@ static toml_table_t *find_level_table(toml_array_t *levels, const char *level_na
     return NULL;
 }
 
+bool level_spawn_entity(struct EngineContext *ctx,
+                        Level *level,
+                        const Blueprint *blueprint,
+                        Vector2 position,
+                        const BlueprintTable *blueprints,
+                        TextureLookupFn texture_lookup,
+                        void *texture_user_data,
+                        Allocator *alloc)
+{
+    const char *texture_name = attr_get_string(&blueprint->attrs, "texture");
+    Texture2D *texture = texture_lookup(texture_name, texture_user_data);
+    if (!texture) {
+        error_set(ctx, "level_spawn_entity: texture '%s' not found", texture_name ? texture_name : "(null)");
+        return false;
+    }
+    EntitySpec spec = {
+        .blueprint_name = strv_from_cstr(attr_get_string(&blueprint->attrs, "name")),
+        .defaults = &blueprint->attrs,
+        .collision_offset = blueprint_get_collision_offset(blueprint),
+        .collision_size = blueprint_get_collision_size(blueprint),
+        .texture = texture,
+    };
+    int entity_index = level->entities.count;
+    Entity entity = {0};
+    if (!entity_init(&entity, spec, position, alloc)) {
+        error_wrap(ctx, "level_spawn_entity");
+        return false;
+    }
+    entity.id = level->next_entity_id++;
+    if (!vec_entity_push(&level->entities, entity, alloc)) {
+        error_set(ctx, "level_spawn_entity: out of memory");
+        return false;
+    }
+    if (!instantiate_children(alloc, level, entity_index, blueprints, texture_lookup, texture_user_data)) {
+        error_wrap(ctx, "level_spawn_entity");
+        return false;
+    }
+    return true;
+}
+
 void level_free(Allocator *alloc, Level *level)
 {
     str_free(alloc, &level->name);
