@@ -61,7 +61,8 @@ void draw_editor_highlights(const GameState *state, const EditorState *editor_st
 void draw_editor_panel(const struct EngineContext *ctx, const GameState *state, const EditorState *editor_state);
 void draw_watch_overlay(const struct EngineContext *ctx, const GameState *state, const WatchList *watches);
 void draw_collision_handles(const GameState *state, const EditorState *editor_state);
-void handle_browse_input(GameState *state,
+void handle_browse_input(struct EngineContext *ctx,
+                         GameState *state,
                          Camera2D *camera,
                          EditorState *editor_state,
                          WatchList *watches,

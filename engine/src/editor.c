@@ -2,6 +2,7 @@
 #include "raylib.h"
 
 #include "alloc.h"
+#include "arena.h"
 #include "attribute.h"
 #include "blueprint.h"
 #include "editor.h"
@@ -52,7 +53,8 @@ void draw_hints_bar(bool editor_mode, const EditorState *editor_state, const str
         } else if (editor_state->sub_mode == EDITOR_SUB_HANDLES) {
             hints = "F9/Y: Save  |  A/Ent: Confirm  |  B/Esc: Cancel  |  Stick: Move  |  R-Stick: Resize";
         } else {
-            hints = "F5: Play  |  F9/Y: Save  |  A/Ent: Sel  |  B/Esc: Desel  |  X/Shift: Watch  |  G/L3: Grab  |  "
+            hints = "F5: Play  |  F9/Y: Save  |  A/Ent: Sel  |  B/Esc: Desel  |  Shift/L2: Watch  |  Del/X: Delete  |  "
+                    "G/L3: Grab  |  "
                     "H/L1: Handles  |  Stick: Pan";
         }
     } else {
@@ -230,7 +232,80 @@ void draw_collision_handles(const GameState *state, const EditorState *editor_st
                   EDITOR_HANDLE_SIZE, handle_color);
 }
 
-void handle_browse_input(GameState *state,
+static void mark_deleted_descendants(const Level *level, bool *is_deleted, int count)
+{
+    bool changed = true;
+    while (changed) {
+        changed = false;
+        for (int index = 0; index < count; index++) {
+            if (is_deleted[index]) {
+                continue;
+            }
+            int parent = level->entities.data[index].parent_index;
+            if (parent >= 0 && is_deleted[parent]) {
+                is_deleted[index] = true;
+                changed = true;
+            }
+        }
+    }
+}
+
+static void
+delete_selected_entity(struct EngineContext *ctx, GameState *state, EditorState *editor_state, WatchList *watches)
+{
+    int sel = editor_state->selected_entity_index;
+    if (sel < 0) {
+        return;
+    }
+    if (state->current_level.entities.data[sel].parent_index >= 0) {
+        return;
+    }
+    int count = state->current_level.entities.count;
+    SCRATCH_SCOPE(&state->scratch_arena);
+    bool *is_deleted = arena_alloc_n(ctx, &state->scratch_arena, (size_t)count * sizeof(bool));
+    int *new_index_map = arena_alloc_n(ctx, &state->scratch_arena, (size_t)count * sizeof(int));
+    memset(is_deleted, 0, (size_t)count * sizeof(bool));
+    is_deleted[sel] = true;
+    mark_deleted_descendants(&state->current_level, is_deleted, count);
+    int new_count = 0;
+    for (int index = 0; index < count; index++) {
+        if (is_deleted[index]) {
+            new_index_map[index] = -1;
+            continue;
+        }
+        new_index_map[index] = new_count++;
+    }
+    for (int index = 0; index < count; index++) {
+        if (!is_deleted[index]) {
+            int parent = state->current_level.entities.data[index].parent_index;
+            if (parent >= 0) {
+                state->current_level.entities.data[index].parent_index = new_index_map[parent];
+            }
+        }
+    }
+    int write = 0;
+    for (int index = 0; index < count; index++) {
+        if (!is_deleted[index]) {
+            state->current_level.entities.data[write++] = state->current_level.entities.data[index];
+        }
+    }
+    state->current_level.entities.count = write;
+    if (state->player_index >= 0) {
+        state->player_index = new_index_map[state->player_index];
+    }
+    int new_watch_count = 0;
+    for (int watch_index = 0; watch_index < watches->count; watch_index++) {
+        int entity_index = watches->entity_indices[watch_index];
+        if (entity_index < count && !is_deleted[entity_index]) {
+            watches->entity_indices[new_watch_count++] = new_index_map[entity_index];
+        }
+    }
+    watches->count = new_watch_count;
+    editor_state->selected_entity_index = -1;
+}
+
+void handle_browse_input(struct EngineContext *ctx,
+                         GameState *state,
                          Camera2D *camera,
                          EditorState *editor_state,
                          WatchList *watches,
@@ -243,7 +318,7 @@ void handle_browse_input(GameState *state,
     if (toggle_pressed((ToggleBinding){KEY_ESCAPE, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT})) {
         editor_state->selected_entity_index = -1;
     }
-    if (toggle_pressed((ToggleBinding){KEY_LEFT_SHIFT, GAMEPAD_BUTTON_RIGHT_FACE_LEFT})) {
+    if (toggle_pressed((ToggleBinding){KEY_LEFT_SHIFT, GAMEPAD_BUTTON_LEFT_TRIGGER_2})) {
         int sel = editor_state->selected_entity_index;
         if (sel >= 0) {
             bool found = false;
@@ -260,6 +335,9 @@ void handle_browse_input(GameState *state,
                 watches->count++;
             }
         }
+    }
+    if (toggle_pressed((ToggleBinding){KEY_DELETE, GAMEPAD_BUTTON_RIGHT_FACE_LEFT})) {
+        delete_selected_entity(ctx, state, editor_state, watches);
     }
     update_editor_camera(camera, input, delta_time);
 }

@@ -637,7 +637,7 @@ static void handle_editor_input(struct EngineContext *ctx,
     } else if (editor_state->sub_mode == EDITOR_SUB_HANDLES) {
         handle_handle_input(ctx, state, editor_state, input, delta_time);
     } else {
-        handle_browse_input(state, camera, editor_state, watches, input, delta_time);
+        handle_browse_input(ctx, state, camera, editor_state, watches, input, delta_time);
     }
 }
 
