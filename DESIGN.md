@@ -938,7 +938,7 @@ This is bounded (one leaked backing per growth event) and reclaimed on level rel
 - [ ] Rule mode: visual trigger/condition/action editor, test by switching to play
 - [ ] Level mode: create levels, set size/music/spawn/transitions
 - [ ] Radial picker widget
-- [ ] Scroll picker widget
+- [x] Scroll picker widget
 - [ ] Word builder (seeded vocabulary + gamedata vocabulary)
 - [ ] Fuzzy finder for existing names
 - [ ] Value adjuster with visual feedback
