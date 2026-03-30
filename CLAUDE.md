@@ -58,7 +58,11 @@ conan build .
 
 **ALL engine memory is arena-backed. Using `malloc`, `realloc`, or `free` anywhere in engine code is strictly forbidden — no exceptions, no workarounds, no "just this once".** The only permitted exemptions are: (1) the `NULL`-allocator fallback path inside the allocator infrastructure itself, and (2) `free(datum.u.s)` calls for TOML vendor string datums (a vendor limitation). If you find yourself reaching for `malloc`, the architecture is wrong — restructure to pass an arena allocator instead.
 
-### Two arenas in `GameState`
+### Arena philosophy
+
+Keep the number of arenas as low as possible, but don't force incompatible lifetimes into a single arena — object lifetimes can cross arena boundaries. Each arena must have a clearly defined lifetime and purpose. Add new arenas consciously and document what lifetime they correspond to.
+
+### Current arenas in `GameState`
 
 - **`gamedata_arena`** — all persistent data: blueprints, levels, entity strings, attribute names/values, rules, runtime flags, asset vecs (textures, fonts). On hot-reload/level transition, rewound to `gamedata_base` via `arena_restore` — **not** `arena_reset`. `arena_reset` (which calls `MADV_DONTNEED`) is only for full teardown.
 - **`scratch_arena`** — temporaries that must not outlive their enclosing scope. Always used via `SCRATCH_SCOPE` — no exceptions. `arena_restore` does a bare pointer rewind with no `madvise`; scratch memory is reused immediately.
