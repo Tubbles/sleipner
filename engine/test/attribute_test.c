@@ -1,7 +1,7 @@
 #include "unity.h"
 
 #include "attribute.h"
-#include "helpers_test.h"
+#include "test_helpers.h"
 
 void test_attr_set_and_get_float(void)
 {

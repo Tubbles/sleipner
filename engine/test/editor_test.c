@@ -22,7 +22,7 @@ FAKE_VALUE_FUNC(bool, IsGamepadButtonDown_mock, int, int);
 
 #include "unity.h"
 
-#include "helpers_test.h"
+#include "test_helpers.h"
 
 #include <string.h>
 

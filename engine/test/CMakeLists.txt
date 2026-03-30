@@ -1,6 +1,6 @@
 add_executable(engine_tests
     main_test.c
-    helpers_test.c
+    test_helpers.c
     stub_test.c
     vec_test.c
     map_test.c

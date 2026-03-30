@@ -5,7 +5,7 @@
 #include "entity.h"
 #include "str.h"
 #include "strv.h"
-#include "helpers_test.h"
+#include "test_helpers.h"
 
 #include <string.h>
 
