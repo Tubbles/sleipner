@@ -809,19 +809,29 @@ state, the plan is to split into two data arenas:
   spawned/deleted markers, editor mutations. Survives reloads for the lifetime of the
   game session.
 
-**String-based indirection at the boundary.** Runtime state refers to gamedata by name,
-not by pointer. An entity holds its blueprint name as a string (or `Strv`), not a
-`Blueprint *`. Looking up blueprint defaults is a string lookup into the blueprint table.
-This means reloading gamedata is:
+**All cross-object references are by ID or name, never by pointer.** This applies to
+both runtime→gamedata and runtime→runtime references. An entity holds its blueprint as a
+name string, not a `Blueprint *`. An entity refers to its parent by entity ID, not an
+`Entity *`. Attribute access is by name string. This rule exists for two reasons:
+
+1. **Hot-reload safety.** Reloading gamedata changes all gamedata addresses. String
+   lookups naturally re-resolve against the fresh data — no migration needed.
+2. **Vec growth safety.** Within the runtime arena, vec growth can orphan old backing
+   arrays (bump + leak). Any `Entity *` or `Attribute *` cached across a vec push becomes
+   stale. ID/name lookups are always re-derived from the current vec state.
+
+Pointers are only valid within a single lookup scope — derive, use, discard. Never store
+a pointer to another object across a call that might grow a vec or reload gamedata.
+
+Reloading gamedata becomes:
 
 1. `arena_restore(gamedata_arena, gamedata_base)` + re-parse `gamedata.toml`.
-2. Done. The runtime arena is untouched. String lookups naturally re-resolve against the
-   fresh gamedata.
+2. Done. The runtime arena is untouched. String/ID lookups naturally re-resolve.
 
-No migration, no snapshot/reconcile. The only cost is string-based lookups at the
-gamedata↔runtime boundary. If profiling shows these are hot, cache the resolved pointer
-with invalidation on reload — the cache is a performance optimization, not a correctness
-requirement.
+No migration, no snapshot/reconcile. The only cost is string/ID-based lookups at object
+boundaries. If profiling shows these are hot, cache the resolved pointer with
+invalidation on reload or vec growth — the cache is a performance optimization, not a
+correctness requirement.
 
 **Editor implications.** Edits to instance attributes (move an entity, change its HP) go
 into the runtime arena. Edits to blueprint attributes (change collision size for all
