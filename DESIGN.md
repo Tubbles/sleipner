@@ -850,6 +850,34 @@ scratch_arena:
   [checkpoint .. top)     per-scope temporaries (rewound at SCRATCH_SCOPE exit)
 ```
 
+#### Lookup functions, not raw access
+
+All cross-object access must go through dedicated lookup functions — never index into a
+vec or dereference a pointer directly at the call site. Examples:
+
+- `blueprint_by_name(state, "chest")` → `Blueprint *`
+- `entity_by_id(level, 42)` → `Entity *`
+- `attr_get_int(attrs, "hp")` → `int`
+
+These lookup functions are the **only** place that translates an ID/name into a pointer.
+Call-site code receives the pointer, uses it within the current scope, and never stores it
+across a call that might mutate the backing data.
+
+This buys two things:
+
+1. **Single point of optimization.** If profiling shows a lookup is hot, add caching
+   inside the lookup function itself — callers don't change. A generation counter on the
+   backing vec lets the function serve a cached pointer when the generation matches and
+   re-derive when it doesn't.
+2. **Single point of invalidation.** Only the lookup function knows about the cache, so
+   only the lookup function needs invalidation logic. No scattered caches across
+   subsystems, no observer pattern, no central registry.
+
+The recommendation is to ship without caching — make the lookup functions fast (hash maps
+for name→index, flat arrays for ID→entity) and only add the generation-counter cache if
+profiling proves a specific lookup is a bottleneck. The architecture supports bolting it
+on later without changing any call site.
+
 ### Key Rules
 
 - `arena_restore` is the only lifecycle operation called at runtime — a bare pointer rewind, no syscall.
