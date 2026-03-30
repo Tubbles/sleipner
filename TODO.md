@@ -24,9 +24,9 @@
 
 ## Architecture audit findings
 
-- **Editor test coverage is zero** — radial picker, word builder, scroll picker,
-  value adjuster (~1034 lines) have no unit or integration tests. Violates
-  "every feature ships with tests" in CLAUDE.md.
+- **Editor test coverage — Phase 3** — 62 unit tests (45 pure-logic + 17
+  mocked-input via fff.h). Still missing: integration tests for full editor
+  workflows (select → edit → confirm), draw function testing.
 - **`TriggerEventQueue` uses fixed array** — `rule.h` defines
   `events[MAX_CASCADE_EVENTS]` instead of a vec. Violates "prefer vec over
   fixed-size arrays with MAX_* constants" in CLAUDE.md.

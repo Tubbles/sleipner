@@ -420,6 +420,23 @@ void test_editor_apply_attr_delta_null_attr_no_crash(void);
 void test_editor_attr_at_display_index_instance(void);
 void test_editor_attr_at_display_index_blueprint(void);
 void test_editor_attr_at_display_index_out_of_range(void);
+void test_editor_toggle_pressed_key(void);
+void test_editor_toggle_pressed_gamepad(void);
+void test_editor_toggle_pressed_neither(void);
+void test_editor_read_value_delta_no_input(void);
+void test_editor_read_value_delta_large_minus(void);
+void test_editor_read_value_delta_large_plus(void);
+void test_editor_read_value_delta_huge_minus(void);
+void test_editor_read_value_delta_combined(void);
+void test_editor_read_held_dir_left_key(void);
+void test_editor_read_held_dir_right_gamepad(void);
+void test_editor_read_held_dir_none(void);
+void test_editor_word_builder_nav_up(void);
+void test_editor_word_builder_nav_up_clamped(void);
+void test_editor_word_builder_nav_down(void);
+void test_editor_word_builder_nav_down_clamped(void);
+void test_editor_word_builder_nav_page_up(void);
+void test_editor_word_builder_nav_page_down(void);
 
 int main(void)
 {
@@ -817,6 +834,23 @@ int main(void)
     RUN_TEST(test_editor_attr_at_display_index_instance);
     RUN_TEST(test_editor_attr_at_display_index_blueprint);
     RUN_TEST(test_editor_attr_at_display_index_out_of_range);
+    RUN_TEST(test_editor_toggle_pressed_key);
+    RUN_TEST(test_editor_toggle_pressed_gamepad);
+    RUN_TEST(test_editor_toggle_pressed_neither);
+    RUN_TEST(test_editor_read_value_delta_no_input);
+    RUN_TEST(test_editor_read_value_delta_large_minus);
+    RUN_TEST(test_editor_read_value_delta_large_plus);
+    RUN_TEST(test_editor_read_value_delta_huge_minus);
+    RUN_TEST(test_editor_read_value_delta_combined);
+    RUN_TEST(test_editor_read_held_dir_left_key);
+    RUN_TEST(test_editor_read_held_dir_right_gamepad);
+    RUN_TEST(test_editor_read_held_dir_none);
+    RUN_TEST(test_editor_word_builder_nav_up);
+    RUN_TEST(test_editor_word_builder_nav_up_clamped);
+    RUN_TEST(test_editor_word_builder_nav_down);
+    RUN_TEST(test_editor_word_builder_nav_down_clamped);
+    RUN_TEST(test_editor_word_builder_nav_page_up);
+    RUN_TEST(test_editor_word_builder_nav_page_down);
 
     return UNITY_END();
 }

@@ -25,4 +25,5 @@ add_executable(engine_tests
     test_toml_str.c
 )
 target_compile_definitions(engine_tests PRIVATE _GNU_SOURCE)
+target_include_directories(engine_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../vendor/fff)
 target_link_libraries(engine_tests PRIVATE engine unity m)

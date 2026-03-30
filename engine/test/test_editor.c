@@ -1,3 +1,22 @@
+/* fff.h must come first — its macros must be visible before editor.c is preprocessed. */
+#include "fff.h"
+
+/* Redirect raylib input functions to fff.h fakes before compiling editor.c.
+ * Draw/utility functions are NOT redirected — they still resolve to real raylib at link
+ * time (tests never call draw functions). */
+// NOLINTBEGIN(readability-identifier-naming,readability-else-after-return)
+#define IsKeyPressed IsKeyPressed_mock                     // NOLINT
+#define IsKeyDown IsKeyDown_mock                           // NOLINT
+#define IsGamepadButtonPressed IsGamepadButtonPressed_mock // NOLINT
+#define IsGamepadButtonDown IsGamepadButtonDown_mock       // NOLINT
+
+DEFINE_FFF_GLOBALS;
+FAKE_VALUE_FUNC(bool, IsKeyPressed_mock, int);
+FAKE_VALUE_FUNC(bool, IsKeyDown_mock, int);
+FAKE_VALUE_FUNC(bool, IsGamepadButtonPressed_mock, int, int);
+FAKE_VALUE_FUNC(bool, IsGamepadButtonDown_mock, int, int);
+// NOLINTEND(readability-identifier-naming,readability-else-after-return)
+
 /* Include the implementation file to access static functions directly. */
 #include "../src/editor.c" // NOLINT(bugprone-suspicious-include)
 
@@ -526,4 +545,194 @@ void test_editor_attr_at_display_index_out_of_range(void)
     TEST_ASSERT_NULL(attr);
 
     test_attr_set_free(&entity.attrs);
+}
+
+/* ==== Phase 2: mocked raylib input tests ================================= */
+
+static void reset_input_fakes(void)
+{
+    RESET_FAKE(IsKeyPressed_mock);
+    RESET_FAKE(IsKeyDown_mock);
+    RESET_FAKE(IsGamepadButtonPressed_mock);
+    RESET_FAKE(IsGamepadButtonDown_mock);
+    FFF_RESET_HISTORY(); // NOLINT(bugprone-multi-level-implicit-pointer-conversion)
+}
+
+static int target_key_for_press;
+static bool press_specific_key(int key)
+{
+    return key == target_key_for_press;
+}
+
+static int target_key_for_down;
+static bool down_specific_key(int key)
+{
+    return key == target_key_for_down;
+}
+
+static int target_button_for_down;
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
+static bool down_specific_button(int gamepad, int button)
+{
+    (void)gamepad;
+    return button == target_button_for_down;
+}
+
+/* ---- toggle_pressed ----------------------------------------------------- */
+
+void test_editor_toggle_pressed_key(void)
+{
+    reset_input_fakes();
+    IsKeyPressed_mock_fake.return_val = true;
+    TEST_ASSERT_TRUE(toggle_pressed((ToggleBinding){KEY_SPACE, GAMEPAD_BUTTON_RIGHT_FACE_DOWN}));
+    TEST_ASSERT_EQUAL_INT(1, IsKeyPressed_mock_fake.call_count);
+    TEST_ASSERT_EQUAL_INT(0, IsGamepadButtonPressed_mock_fake.call_count);
+}
+
+void test_editor_toggle_pressed_gamepad(void)
+{
+    reset_input_fakes();
+    IsKeyPressed_mock_fake.return_val = false;
+    IsGamepadButtonPressed_mock_fake.return_val = true;
+    TEST_ASSERT_TRUE(toggle_pressed((ToggleBinding){KEY_SPACE, GAMEPAD_BUTTON_RIGHT_FACE_DOWN}));
+    TEST_ASSERT_EQUAL_INT(1, IsKeyPressed_mock_fake.call_count);
+    TEST_ASSERT_EQUAL_INT(1, IsGamepadButtonPressed_mock_fake.call_count);
+}
+
+void test_editor_toggle_pressed_neither(void)
+{
+    reset_input_fakes();
+    TEST_ASSERT_FALSE(toggle_pressed((ToggleBinding){KEY_SPACE, GAMEPAD_BUTTON_RIGHT_FACE_DOWN}));
+}
+
+/* ---- read_value_delta --------------------------------------------------- */
+
+void test_editor_read_value_delta_no_input(void)
+{
+    reset_input_fakes();
+    TEST_ASSERT_EQUAL_INT(0, read_value_delta());
+}
+
+void test_editor_read_value_delta_large_minus(void)
+{
+    reset_input_fakes();
+    target_key_for_press = KEY_LEFT_BRACKET;
+    IsKeyPressed_mock_fake.custom_fake = press_specific_key;
+    TEST_ASSERT_EQUAL_INT(-EDITOR_ATTR_LARGE_STEP, read_value_delta());
+}
+
+void test_editor_read_value_delta_large_plus(void)
+{
+    reset_input_fakes();
+    target_key_for_press = KEY_RIGHT_BRACKET;
+    IsKeyPressed_mock_fake.custom_fake = press_specific_key;
+    TEST_ASSERT_EQUAL_INT(EDITOR_ATTR_LARGE_STEP, read_value_delta());
+}
+
+void test_editor_read_value_delta_huge_minus(void)
+{
+    reset_input_fakes();
+    target_key_for_press = KEY_PAGE_DOWN;
+    IsKeyPressed_mock_fake.custom_fake = press_specific_key;
+    TEST_ASSERT_EQUAL_INT(-EDITOR_ATTR_HUGE_STEP, read_value_delta());
+}
+
+void test_editor_read_value_delta_combined(void)
+{
+    reset_input_fakes();
+    IsKeyPressed_mock_fake.return_val = true;
+    int expected = -EDITOR_ATTR_LARGE_STEP + EDITOR_ATTR_LARGE_STEP - EDITOR_ATTR_HUGE_STEP + EDITOR_ATTR_HUGE_STEP;
+    TEST_ASSERT_EQUAL_INT(expected, read_value_delta());
+}
+
+/* ---- read_held_dir ------------------------------------------------------ */
+
+void test_editor_read_held_dir_left_key(void)
+{
+    reset_input_fakes();
+    target_key_for_down = KEY_LEFT;
+    IsKeyDown_mock_fake.custom_fake = down_specific_key;
+    TEST_ASSERT_EQUAL_INT(-1, read_held_dir());
+}
+
+void test_editor_read_held_dir_right_gamepad(void)
+{
+    reset_input_fakes();
+    target_button_for_down = GAMEPAD_BUTTON_LEFT_FACE_RIGHT;
+    IsGamepadButtonDown_mock_fake.custom_fake = down_specific_button;
+    TEST_ASSERT_EQUAL_INT(1, read_held_dir());
+}
+
+void test_editor_read_held_dir_none(void)
+{
+    reset_input_fakes();
+    TEST_ASSERT_EQUAL_INT(0, read_held_dir());
+}
+
+/* ---- word_builder_navigate ---------------------------------------------- */
+
+void test_editor_word_builder_nav_up(void)
+{
+    reset_input_fakes();
+    target_key_for_press = KEY_UP;
+    IsKeyPressed_mock_fake.custom_fake = press_specific_key;
+
+    EditorState editor_state = {.word_builder_scroll = 5};
+    word_builder_navigate(&editor_state, 10);
+    TEST_ASSERT_EQUAL_INT(4, editor_state.word_builder_scroll);
+}
+
+void test_editor_word_builder_nav_up_clamped(void)
+{
+    reset_input_fakes();
+    target_key_for_press = KEY_UP;
+    IsKeyPressed_mock_fake.custom_fake = press_specific_key;
+
+    EditorState editor_state = {.word_builder_scroll = 0};
+    word_builder_navigate(&editor_state, 10);
+    TEST_ASSERT_EQUAL_INT(0, editor_state.word_builder_scroll);
+}
+
+void test_editor_word_builder_nav_down(void)
+{
+    reset_input_fakes();
+    target_key_for_press = KEY_DOWN;
+    IsKeyPressed_mock_fake.custom_fake = press_specific_key;
+
+    EditorState editor_state = {.word_builder_scroll = 0};
+    word_builder_navigate(&editor_state, 10);
+    TEST_ASSERT_EQUAL_INT(1, editor_state.word_builder_scroll);
+}
+
+void test_editor_word_builder_nav_down_clamped(void)
+{
+    reset_input_fakes();
+    target_key_for_press = KEY_DOWN;
+    IsKeyPressed_mock_fake.custom_fake = press_specific_key;
+
+    EditorState editor_state = {.word_builder_scroll = 9};
+    word_builder_navigate(&editor_state, 10);
+    TEST_ASSERT_EQUAL_INT(9, editor_state.word_builder_scroll);
+}
+
+void test_editor_word_builder_nav_page_up(void)
+{
+    reset_input_fakes();
+    target_key_for_press = KEY_Q;
+    IsKeyPressed_mock_fake.custom_fake = press_specific_key;
+
+    EditorState editor_state = {.word_builder_scroll = 8};
+    word_builder_navigate(&editor_state, 20);
+    TEST_ASSERT_EQUAL_INT(8 - WORD_BUILDER_PAGE_SIZE, editor_state.word_builder_scroll);
+}
+
+void test_editor_word_builder_nav_page_down(void)
+{
+    reset_input_fakes();
+    target_key_for_press = KEY_E;
+    IsKeyPressed_mock_fake.custom_fake = press_specific_key;
+
+    EditorState editor_state = {.word_builder_scroll = 0};
+    word_builder_navigate(&editor_state, 20);
+    TEST_ASSERT_EQUAL_INT(WORD_BUILDER_PAGE_SIZE, editor_state.word_builder_scroll);
 }
