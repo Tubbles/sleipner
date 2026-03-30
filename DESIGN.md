@@ -820,8 +820,11 @@ name string, not a `Blueprint *`. An entity refers to its parent by entity ID, n
    arrays (bump + leak). Any `Entity *` or `Attribute *` cached across a vec push becomes
    stale. ID/name lookups are always re-derived from the current vec state.
 
-Pointers are only valid within a single lookup scope — derive, use, discard. Never store
-a pointer to another object across a call that might grow a vec or reload gamedata.
+Pointers returned by lookups are valid within the current scope — derive, use, discard.
+Never store a cross-object pointer in a struct field or hold it across a call that might
+grow a vec or reload gamedata. Direct vec indexing within a function (e.g.
+`level->entities.data[i]`) is fine — the rule targets stored pointers that outlive their
+validity, not scoped access into your own data.
 
 Reloading gamedata becomes:
 
@@ -850,18 +853,22 @@ scratch_arena:
   [checkpoint .. top)     per-scope temporaries (rewound at SCRATCH_SCOPE exit)
 ```
 
-#### Lookup functions, not raw access
+#### Lookup functions for cross-object references
 
-All cross-object access must go through dedicated lookup functions — never index into a
-vec or dereference a pointer directly at the call site. Examples:
+Cross-object references (entity→blueprint, entity→parent, etc.) must go through dedicated
+lookup functions that translate an ID or name into a pointer. Examples:
 
 - `blueprint_by_name(state, "chest")` → `Blueprint *`
 - `entity_by_id(level, 42)` → `Entity *`
 - `attr_get_int(attrs, "hp")` → `int`
 
-These lookup functions are the **only** place that translates an ID/name into a pointer.
-Call-site code receives the pointer, uses it within the current scope, and never stores it
-across a call that might mutate the backing data.
+The returned pointer is valid within the current scope — use it and discard it. Never
+store it in a struct field or hold it across a call that might mutate the backing data.
+
+**Direct vec indexing within a scope is fine.** Accessing `level->entities.data[i]` to
+work with an element you already have an index for is normal — it's a direct access into
+your own data, not a cross-object reference. The rule targets *stored pointers that
+outlive their validity*, not how you access elements within a function.
 
 This buys two things:
 
