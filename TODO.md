@@ -37,7 +37,7 @@
 ## Rework unit test harness
 
 - **Self-contained test executables** — each `test_*.c` file gets its own
-  `main()` and `RUN_TEST()` calls. Remove `test_main.c` entirely.
+  `main()` and `RUN_TEST()` calls. Remove `main_test.c` entirely.
 - **No linking against engine or raylib** — unit test binaries compile only the
   file under test (`#include "../src/foo.c"`) plus test helpers. No linking
   against `libengine.a`, `raylib`, or any other library beyond Unity and libc.

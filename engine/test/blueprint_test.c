@@ -6,7 +6,7 @@ static struct EngineContext ctx;
 #include "arena.h"
 #include "attribute.h"
 #include "blueprint.h"
-#include "test_helpers.h"
+#include "helpers_test.h"
 
 #include "toml.h"
 

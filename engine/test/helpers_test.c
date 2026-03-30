@@ -1,4 +1,4 @@
-#include "test_helpers.h"
+#include "helpers_test.h"
 #include "str.h"
 
 void test_blueprint_table_free(BlueprintTable *table)

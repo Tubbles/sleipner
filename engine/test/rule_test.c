@@ -8,7 +8,7 @@ static struct EngineContext ctx;
 #include "entity.h"
 #include "game.h"
 #include "rule.h"
-#include "test_helpers.h"
+#include "helpers_test.h"
 
 #include "toml.h"
 

@@ -6,10 +6,10 @@ static struct EngineContext ctx;
 void setUp(void) {}
 void tearDown(void) {}
 
-/* test_stub.c */
+/* stub_test.c */
 void test_stub_passes(void);
 
-/* test_map.c */
+/* map_test.c */
 void test_map_initial_state_count_is_zero(void);
 void test_map_initial_state_capacity_is_zero(void);
 void test_map_initial_state_entries_is_null(void);
@@ -36,7 +36,7 @@ void test_map_int_i64_set_and_get(void);
 void test_map_get_returns_pointer_to_stored_slot(void);
 void test_map_arena_allocator(void);
 
-/* test_vec.c */
+/* vec_test.c */
 void test_vec_initial_state_count_is_zero(void);
 void test_vec_initial_state_capacity_is_zero(void);
 void test_vec_initial_state_data_is_null(void);
@@ -67,7 +67,7 @@ void test_vec_u32_push_and_read(void);
 void test_vec_struct_push_and_read(void);
 void test_vec_struct_growth_preserves_fields(void);
 
-/* test_attribute.c */
+/* attribute_test.c */
 void test_attr_set_and_get_float(void);
 void test_attr_set_and_get_int(void);
 void test_attr_set_and_get_bool(void);
@@ -79,7 +79,7 @@ void test_attr_type_change(void);
 void test_attr_scoped_instance_overrides_blueprint(void);
 void test_attr_multiple_types(void);
 
-/* test_arena.c */
+/* arena_test.c */
 void test_arena_init_and_free(void);
 void test_arena_alloc_basic(void);
 void test_arena_alloc_alignment(void);
@@ -95,14 +95,14 @@ void test_arena_realloc_copies_when_not_at_top(void);
 void test_arena_scratch_scope_auto_pop(void);
 void test_arena_scratch_scope_nested(void);
 
-/* test_alloc.c */
+/* alloc_test.c */
 void test_alloc_heap_malloc_and_free(void);
 void test_alloc_heap_realloc(void);
 void test_alloc_arena_malloc(void);
 void test_alloc_arena_free_is_noop(void);
 void test_alloc_arena_realloc_in_place(void);
 
-/* test_blueprint.c */
+/* blueprint_test.c */
 void test_blueprint_load_single(void);
 void test_blueprint_load_multiple(void);
 void test_blueprint_find(void);
@@ -117,7 +117,7 @@ void test_blueprint_multiple_children(void);
 void test_blueprint_child_no_tag(void);
 void test_blueprint_child_default_offset(void);
 
-/* test_error.c */
+/* error_test.c */
 void test_error_initially_null(void);
 void test_error_set_and_get(void);
 void test_error_set_with_format(void);
@@ -126,7 +126,7 @@ void test_error_wrap_on_empty_is_noop(void);
 void test_error_clear_resets(void);
 void test_error_set_overwrites_previous(void);
 
-/* test_entity.c */
+/* entity_test.c */
 void test_entity_init_from_blueprint(void);
 void test_entity_get_attr_from_blueprint(void);
 void test_entity_instance_overrides_blueprint(void);
@@ -146,7 +146,7 @@ void test_entity_is_visible_both_visible(void);
 void test_entity_is_active_parent_inactive(void);
 void test_entity_is_active_both_active(void);
 
-/* test_game.c */
+/* game_test.c */
 void test_game_init_defaults(void);
 void test_game_update_increments_frame(void);
 void test_game_update_accumulates_elapsed(void);
@@ -157,7 +157,7 @@ void test_game_player_clamps_to_bounds(void);
 void test_game_player_collision_from_blueprint(void);
 void test_game_update_resolves_obstacle_collision(void);
 
-/* test_level.c */
+/* level_test.c */
 void test_level_load_first(void);
 void test_level_load_by_name(void);
 void test_level_load_nonexistent(void);
@@ -168,7 +168,7 @@ void test_level_child_entity_positions(void);
 void test_level_child_entity_tags(void);
 void test_level_nested_children(void);
 
-/* test_integration.c */
+/* integration_test.c */
 void test_integration_load_gamedata(void);
 void test_integration_load_specific_level(void);
 void test_integration_walk_and_collide(void);
@@ -179,13 +179,13 @@ void test_integration_on_spawn_trigger_fires_on_load(void);
 void test_integration_enter_trigger_fires_on_overlap(void);
 void test_integration_enter_trigger_fires_only_once(void);
 
-/* test_shape.c */
+/* shape_test.c */
 void test_circle_bounds_centered(void);
 void test_square_bounds_same_as_circle(void);
 void test_bounds_scale_affects_size(void);
 void test_star_bounds_at_origin(void);
 
-/* test_particle.c */
+/* particle_test.c */
 void test_particle_init(void);
 void test_particle_spawn_increases_count(void);
 void test_particle_lifetime_expiry(void);
@@ -193,7 +193,7 @@ void test_particle_position_updates(void);
 void test_particle_capacity_grows(void);
 void test_particle_free_cleans_up(void);
 
-/* test_str.c */
+/* str_test.c */
 void test_str_from_cstr_len(void);
 void test_str_from_cstr_content(void);
 void test_str_from_cstr_null_terminated(void);
@@ -216,7 +216,7 @@ void test_str_clear_null_terminates(void);
 void test_str_free_zeros_struct(void);
 void test_str_free_on_zero_is_safe(void);
 
-/* test_strv.c */
+/* strv_test.c */
 void test_strv_from_cstr(void);
 void test_strv_shrink_left(void);
 void test_strv_shrink_left_clamp(void);
@@ -246,11 +246,11 @@ void test_strv_copy_to_cstr(void);
 void test_strv_copy_to_cstr_truncates(void);
 void test_strv_copy_to_cstr_subview(void);
 
-/* test_toml_str.c */
+/* toml_str_test.c */
 void test_toml_str_content_is_copied(void);
 void test_toml_str_datum_nulled_after_call(void);
 
-/* test_toml_emitter.c */
+/* toml_emitter_test.c */
 void test_toml_emit_blueprints(void);
 void test_toml_emit_level_with_entities(void);
 void test_toml_emit_round_trip(void);
@@ -262,7 +262,7 @@ void test_toml_emit_custom_attrs(void);
 void test_toml_emit_health(void);
 void test_toml_emit_rules(void);
 
-/* test_rule.c */
+/* rule_test.c */
 void test_flag_set_and_get(void);
 void test_flag_clear(void);
 void test_flag_unset_returns_false(void);
@@ -342,7 +342,7 @@ void test_var_condition_falsy_when_unset(void);
 void test_var_substitution_in_set_attr(void);
 void test_local_var_scoped_per_rule(void);
 
-/* test_touch.c */
+/* touch_test.c */
 void test_touch_initial_state_is_none(void);
 void test_touch_first_touch_outside_button_sets_stick_mode(void);
 void test_touch_first_touch_sets_origin(void);
@@ -357,7 +357,7 @@ void test_touch_get_stick_right_returns_positive_x(void);
 void test_touch_get_stick_clamps_to_one(void);
 void test_touch_not_triggered_outside_button(void);
 
-/* test_collision.c */
+/* collision_test.c */
 void test_rect_rect_overlap(void);
 void test_rect_rect_no_overlap(void);
 void test_rect_rect_rotated(void);
@@ -374,7 +374,7 @@ void test_tri_tri_no_overlap(void);
 void test_tri_circle_overlap(void);
 void test_tri_rect_overlap(void);
 
-/* test_editor.c */
+/* editor_test.c */
 void test_editor_radial_dead_zone_returns_negative_one(void);
 void test_editor_radial_stick_up_four_items(void);
 void test_editor_radial_stick_right_four_items(void);

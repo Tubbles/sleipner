@@ -1,28 +1,28 @@
 add_executable(engine_tests
-    test_main.c
-    test_helpers.c
-    test_stub.c
-    test_vec.c
-    test_map.c
-    test_arena.c
-    test_alloc.c
-    test_attribute.c
-    test_blueprint.c
-    test_entity.c
-    test_error.c
-    test_game.c
-    test_integration.c
-    test_level.c
-    test_shape.c
-    test_particle.c
-    test_collision.c
-    test_editor.c
-    test_toml_emitter.c
-    test_rule.c
-    test_str.c
-    test_touch.c
-    test_strv.c
-    test_toml_str.c
+    main_test.c
+    helpers_test.c
+    stub_test.c
+    vec_test.c
+    map_test.c
+    arena_test.c
+    alloc_test.c
+    attribute_test.c
+    blueprint_test.c
+    entity_test.c
+    error_test.c
+    game_test.c
+    integration_test.c
+    level_test.c
+    shape_test.c
+    particle_test.c
+    collision_test.c
+    editor_test.c
+    toml_emitter_test.c
+    rule_test.c
+    str_test.c
+    touch_test.c
+    strv_test.c
+    toml_str_test.c
 )
 target_compile_definitions(engine_tests PRIVATE _GNU_SOURCE)
 target_include_directories(engine_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../vendor/fff)

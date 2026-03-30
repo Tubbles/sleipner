@@ -7,7 +7,7 @@ static struct EngineContext ctx;
 #include "blueprint.h"
 #include "entity.h"
 #include "level.h"
-#include "test_helpers.h"
+#include "helpers_test.h"
 
 #include "toml.h"
 
