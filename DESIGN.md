@@ -796,6 +796,50 @@ scratch_arena:
   [checkpoint .. top)     per-scope temporaries (rewound at SCRATCH_SCOPE exit)
 ```
 
+### Runtime Arena (planned)
+
+Currently all entity instance data lives in `gamedata_arena` alongside blueprints and
+rules. This means hot-reloading gamedata wipes all runtime state (entity positions, HP
+overrides, spawned entities, editor changes). To support hot-reload with preserved runtime
+state, the plan is to split into two data arenas:
+
+- **`gamedata_arena`** — the "definition" layer. Blueprints, rules, level templates —
+  everything parsed from `gamedata.toml`. Wiped and re-parsed on reload.
+- **`runtime_arena`** — the "instance" layer. Live entities, attribute overrides,
+  spawned/deleted markers, editor mutations. Survives reloads for the lifetime of the
+  game session.
+
+**String-based indirection at the boundary.** Runtime state refers to gamedata by name,
+not by pointer. An entity holds its blueprint name as a string (or `Strv`), not a
+`Blueprint *`. Looking up blueprint defaults is a string lookup into the blueprint table.
+This means reloading gamedata is:
+
+1. `arena_restore(gamedata_arena, gamedata_base)` + re-parse `gamedata.toml`.
+2. Done. The runtime arena is untouched. String lookups naturally re-resolve against the
+   fresh gamedata.
+
+No migration, no snapshot/reconcile. The only cost is string-based lookups at the
+gamedata↔runtime boundary. If profiling shows these are hot, cache the resolved pointer
+with invalidation on reload — the cache is a performance optimization, not a correctness
+requirement.
+
+**Editor implications.** Edits to instance attributes (move an entity, change its HP) go
+into the runtime arena. Edits to blueprint attributes (change collision size for all
+entities of a type) go into gamedata and get written back to TOML. The two concerns never
+share memory.
+
+```
+gamedata_arena (after runtime arena split):
+  [0 .. gamedata_base)    textures + fonts (survive all reloads)
+  [gamedata_base .. top)  blueprints, rules, level templates (rewound on reload)
+
+runtime_arena:
+  [0 .. top)              live entities, instance attrs, spawned state (survives reloads)
+
+scratch_arena:
+  [checkpoint .. top)     per-scope temporaries (rewound at SCRATCH_SCOPE exit)
+```
+
 ### Key Rules
 
 - `arena_restore` is the only lifecycle operation called at runtime — a bare pointer rewind, no syscall.
