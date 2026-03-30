@@ -34,6 +34,23 @@
   rest of the codebase uses `NULL`. Minor style issue (see also the `NULL` →
   `nullptr` migration item below).
 
+## Rework unit test harness
+
+- **Self-contained test executables** — each `test_*.c` file gets its own
+  `main()` and `RUN_TEST()` calls. Remove `test_main.c` entirely.
+- **No linking against engine or raylib** — unit test binaries compile only the
+  file under test (`#include "../src/foo.c"`) plus test helpers. No linking
+  against `libengine.a`, `raylib`, or any other library beyond Unity and libc.
+- **Mock all external dependencies** — every function external to the unit under
+  test is mocked via fff.h (or a manual stub). This includes raylib, other
+  engine modules, and any transitive dependency.
+- **Shared custom mock routines** — when a mock needs non-trivial behavior
+  (beyond an empty stub / zero return), put the custom fake in a shared helper
+  file (e.g. `test_mocks.c`) so it can be reused across test files without
+  duplication.
+- **Scope: unit tests only** — integration tests remain as-is (linked against
+  the full engine, real subsystem interactions).
+
 ## misc
 
 - remove allocator fallback of NULL -> libc heap from all our data types
