@@ -873,6 +873,20 @@ This buys two things:
    only the lookup function needs invalidation logic. No scattered caches across
    subsystems, no observer pattern, no central registry.
 
+**Cache state lives on the container, not the caller.** The lookup function already
+receives the container struct (`Level *`, `GameState *`). If caching is added later, the
+cache (generation counter, resolved-pointer table) becomes a field on that container
+struct. The lookup function has access to both the data and the cache through the pointer
+it already receives — call sites don't change and don't need to know caching exists.
+
+```c
+// No cache — works today:
+Entity *entity = entity_by_id(&level, 42);
+
+// Cache added later inside Level — exact same call site:
+Entity *entity = entity_by_id(&level, 42);
+```
+
 The recommendation is to ship without caching — make the lookup functions fast (hash maps
 for name→index, flat arrays for ID→entity) and only add the generation-counter cache if
 profiling proves a specific lookup is a bottleneck. The architecture supports bolting it
