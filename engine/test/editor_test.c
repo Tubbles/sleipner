@@ -235,24 +235,29 @@ void test_editor_total_attr_count_instance_only(void)
     TEST_ASSERT_TRUE(attr_set_int(NULL, &entity.attrs, "speed", 10));
     TEST_ASSERT_TRUE(attr_set_int(NULL, &entity.attrs, "health", 5));
 
-    TEST_ASSERT_EQUAL_INT(2, total_attr_count(&entity));
+    BlueprintTable empty = {0};
+    TEST_ASSERT_EQUAL_INT(2, total_attr_count(&entity, &empty));
 
     test_attr_set_free(&entity.attrs);
 }
 
 void test_editor_total_attr_count_with_blueprint(void)
 {
-    AttrSet blueprint_attrs = {0};
-    TEST_ASSERT_TRUE(attr_set_int(NULL, &blueprint_attrs, "bp_attr", 42));
+    BlueprintTable table = {0};
+    Blueprint blueprint = make_named_blueprint("test_bp");
+    TEST_ASSERT_TRUE(attr_set_int(NULL, &blueprint.attrs, "bp_attr", 42));
+    TEST_ASSERT_TRUE(vec_blueprint_push(&table.entries, blueprint, NULL));
 
     Entity entity = {0};
+    TEST_ASSERT_TRUE(str_from_cstr(NULL, &entity.blueprint_name, "test_bp"));
     TEST_ASSERT_TRUE(attr_set_int(NULL, &entity.attrs, "inst_attr", 10));
-    entity.defaults = &blueprint_attrs;
 
-    TEST_ASSERT_EQUAL_INT(2, total_attr_count(&entity));
+    /* name + bp_attr in blueprint, inst_attr in instance */
+    TEST_ASSERT_EQUAL_INT(3, total_attr_count(&entity, &table));
 
     test_attr_set_free(&entity.attrs);
-    test_attr_set_free(&blueprint_attrs);
+    str_free(NULL, &entity.blueprint_name);
+    blueprint_table_free(NULL, &table);
 }
 
 /* ---- is_blueprint_attr -------------------------------------------------- */
