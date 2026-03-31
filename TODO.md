@@ -54,10 +54,17 @@
 
 ## Type safety cleanup
 
-- **`resolve_target` should return vec index** — currently returns
-  `Entity *`, forcing callers to do `(int)(target - context.entities)` to
-  index the parallel `entity_defaults[]` array. Return the index directly;
-  callers derive the pointer from it.
+- **Replace pre-resolved `entity_defaults[]` array with callback-based
+  resolver** — rule.c currently receives a parallel `const AttrSet *const
+  *entity_defaults` array (indexed by vec position) that game.c pre-builds
+  before each rule evaluation. This couples rule contexts to vec indices and
+  forces `resolve_target` callers to do pointer subtraction. Replace with a
+  `DefaultsResolver` struct (function pointer + `void *` state), same
+  pattern as C callback APIs. game.c provides the implementation that chains
+  `entity_id → map → blueprint → &bp->attrs`; rule.c calls through the
+  function pointer without knowing about GameState or blueprints. This also
+  eliminates `entity_find_by_tag_mut` (exists only to cast away const for
+  pointer returns) and the `resolve_target` return-type question entirely.
 - **AttrSet value type rethink** — consider what AttrValue should support
   beyond float/int/bool/string: entity handles, blueprint handles? Current
   int↔float coercion in `attr_get_scoped_*` silently papers over type
