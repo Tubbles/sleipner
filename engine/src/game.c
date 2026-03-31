@@ -221,9 +221,9 @@ update_player(Entity *player, const AttrSet *player_defaults, InputState input, 
     entity_update_collision(player);
 }
 
-static void resolve_player_obstacles(const GameState *state, int player_index)
+static void resolve_player_obstacles(GameState *state, int player_index)
 {
-    Level *level = (Level *)&state->current_level;
+    Level *level = &state->current_level;
     Entity *player = &level->entities.data[player_index];
     for (int index = 0; index < level->entities.count; index++) {
         const AttrSet *defaults = entity_resolve_defaults(state, level->entities.data[index].id);

@@ -63,9 +63,6 @@
   int↔float coercion in `attr_get_scoped_*` silently papers over type
   mismatches — should probably be strict, with the parser deciding canonical
   types.
-- **`resolve_player_obstacles` const cast** — casts away const on
-  `state->current_level` via `(Level *)`. Fix by taking `GameState *`
-  instead of `const GameState *`.
 - **`subroutines_parse` void pointer** — takes `void *toml_root` to avoid
   including toml.h in the header, then casts to `toml_table_t *`. Use the
   actual type.
