@@ -753,108 +753,47 @@ Dependencies" below.
 
 ### Header dependency graph
 
+Foundation modules (`alloc`, `arena`, `vec`, `str`, `map`, `error`, `debug`, `rect`, `strv`,
+`assets`) and vendor libraries (`raylib`, `toml`) are used pervasively and omitted from the
+graph to reduce noise. Only domain-level and structural dependencies are shown.
+
 ```mermaid
-graph TD
-    subgraph Foundation
-        rect
-        strv
-        assets
-        arena
-        error
-        debug
-    end
-
-    subgraph Allocator
-        alloc --> arena
-    end
-
-    subgraph Data Structures
-        vec --> alloc
-        str --> alloc
-        str --> strv
-        map --> alloc
-        map --> str
-    end
-
-    subgraph Vendor
-        raylib["raylib (vendor)"]
-        toml["toml (vendor)"]
-    end
-
+graph LR
     subgraph Graphics
-        shape --> raylib
-        particle --> alloc
-        particle --> raylib
-        particle --> vec
-        render --> raylib
         render --> particle
-        render --> rect
         render --> shape
-        collision --> raylib
-        collision --> rect
-        collision --> vec
+        collision
     end
 
-    subgraph Input
-        input --> alloc
-        input --> raylib
-        touch --> raylib
-    end
-
-    subgraph Game Domain
-        attribute --> alloc
-        attribute --> str
-        attribute --> vec
-        entity --> alloc
-        entity --> attribute
-        entity --> str
-        entity --> vec
-        entity --> raylib
-        rule --> alloc
-        rule --> arena
-        rule --> entity
-        rule --> map
-        rule --> str
-        rule --> vec
-        rule --> toml
-        blueprint --> alloc
-        blueprint --> arena
-        blueprint --> attribute
-        blueprint --> rule
-        blueprint --> str
-        blueprint --> vec
-        blueprint --> raylib
-        level --> alloc
-        level --> blueprint
-        level --> entity
-        level --> str
-    end
-
-    subgraph TOML I/O
-        toml_str --> str
-        toml_str --> toml
+    subgraph Input/Output
+        input
+        touch
+        audio
+        toml_str
         toml_emitter --> blueprint
         toml_emitter --> level
     end
 
+    subgraph Game Domain
+        entity --> attribute
+        rule --> entity
+        blueprint --> attribute
+        blueprint --> rule
+        level --> blueprint
+        level --> entity
+    end
+
     subgraph Integration
-        game --> arena
         game --> blueprint
-        game --> input
         game --> level
-        game --> rect
         game --> rule
-        game --> vec
-        audio
-        engine_context --> audio
+        game --> input
         engine_context --> game
-        engine_context --> vec
+        engine_context --> audio
         editor --> engine_context
         editor --> game
         editor --> input
         editor --> level
-        editor --> raylib
-        editor --> rect
     end
 ```
 
