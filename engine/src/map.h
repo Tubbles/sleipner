@@ -22,6 +22,7 @@
  * Pass NULL to use libc malloc/free (heap fallback). */
 
 #include "alloc.h"
+#include "str.h"
 
 #include <stdbool.h>
 #include <stddef.h> // IWYU pragma: export
@@ -195,5 +196,6 @@ MAP_DECL(int_u8, int, uint8_t)
 MAP_DECL(int_u16, int, uint16_t)
 MAP_DECL(int_u32, int, uint32_t)
 MAP_DECL(int_u64, int, uint64_t)
+MAP_DECL(int_str, int, Str)
 
 #endif

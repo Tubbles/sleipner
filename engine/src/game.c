@@ -10,6 +10,7 @@
 #include "level.h"
 #include "rect.h"
 #include "rule.h"
+#include "str.h"
 
 #include "raylib.h"
 #include "toml.h"
@@ -37,6 +38,16 @@ bool game_init(struct EngineContext *ctx, GameState *state, RectU32 game_bounds)
     return true;
 }
 
+const AttrSet *entity_resolve_defaults(const GameState *state, int entity_id)
+{
+    const Str *name = map_int_str_get((map_int_str *)&state->entity_blueprints, entity_id);
+    if (!name) {
+        return NULL;
+    }
+    const Blueprint *blueprint = blueprint_find(&state->blueprints, name->ptr);
+    return blueprint ? &blueprint->attrs : NULL;
+}
+
 static int find_player_entity(const Level *level)
 {
     for (int index = 0; index < level->entities.count; index++) {
@@ -62,6 +73,7 @@ bool game_load_gamedata(struct EngineContext *ctx, GameState *state, GamedataPar
     toml_table_t *root = toml_parse(buffer, errbuf, (int)sizeof(errbuf));
     arena_restore(&state->gamedata_arena, state->gamedata_base);
     state->rule_table = (map_entity_ruleset){0};
+    state->entity_blueprints = (map_int_str){0};
     state->subroutines = (vec_subroutine){0};
     state->timers = (vec_timer){0};
     state->prev_player_overlaps = (vec_bool){0};
@@ -89,6 +101,9 @@ bool game_load_gamedata(struct EngineContext *ctx, GameState *state, GamedataPar
         state->player_index = find_player_entity(&state->current_level);
         for (int index = 0; index < state->current_level.entities.count; index++) {
             const Entity *entity = &state->current_level.entities.data[index];
+            Str bp_name = {0};
+            (void)str_from_strv(&gamedata_alloc, &bp_name, str_to_strv(entity->blueprint_name));
+            (void)map_int_str_set(&state->entity_blueprints, entity->id, bp_name, &gamedata_alloc);
             const Blueprint *blueprint = blueprint_find(&state->blueprints, entity->blueprint_name.ptr);
             if (blueprint && blueprint->rules.count > 0) {
                 (void)map_entity_ruleset_set(&state->rule_table, entity->id, blueprint->rules, &gamedata_alloc);

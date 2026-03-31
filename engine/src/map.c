@@ -17,4 +17,5 @@ MAP_IMPL(int_u8,     int, uint8_t,  map_hash_int, map_eq_int)
 MAP_IMPL(int_u16,    int, uint16_t, map_hash_int, map_eq_int)
 MAP_IMPL(int_u32,    int, uint32_t, map_hash_int, map_eq_int)
 MAP_IMPL(int_u64,    int, uint64_t, map_hash_int, map_eq_int)
+MAP_IMPL(int_str,    int, Str,      map_hash_int, map_eq_int)
 // clang-format on

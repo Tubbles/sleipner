@@ -35,6 +35,7 @@ typedef struct {
     vec_bool prev_solid_collisions; /* entity_count² entries: true if pair [a*count+b] overlapped last frame */
     BlueprintTable blueprints;
     map_entity_ruleset rule_table;
+    map_int_str entity_blueprints;
     vec_subroutine subroutines;
     vec_timer timers;
     Level current_level;
@@ -62,5 +63,9 @@ void game_update(struct EngineContext *ctx, GameState *state, InputState input, 
 Entity *game_get_player(GameState *state);
 const Entity *game_get_player_const(const GameState *state);
 void game_free(struct EngineContext *ctx, GameState *state);
+
+/* Resolve an entity's blueprint defaults via the entity→blueprint map.
+ * Returns NULL if entity has no blueprint mapping or blueprint not found. */
+const AttrSet *entity_resolve_defaults(const GameState *state, int entity_id);
 
 #endif
