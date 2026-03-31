@@ -744,6 +744,135 @@ pos = [320, 180]
 - The editor modifies in-memory state and writes the entire file back on save via a TOML serializer (tomlc99 is read-only, so we write a simple emitter ourselves).
 - Hot-reload: optionally watch the file's mtime and reload when it changes (useful when editing on phone while running on desktop, or vice versa).
 
+## Module Dependencies
+
+The engine is structured as an acyclic dependency graph. Lower-level modules (arena, alloc,
+strings) know nothing about the game; higher-level modules (game, editor) compose them. No
+circular includes exist — cycles are broken by the patterns described in "Cross-Module
+Dependencies" below.
+
+### Header dependency graph
+
+```mermaid
+graph TD
+    subgraph Foundation
+        rect
+        strv
+        assets
+        arena
+        error
+        debug
+    end
+
+    subgraph Allocator
+        alloc --> arena
+    end
+
+    subgraph Data Structures
+        vec --> alloc
+        str --> alloc
+        str --> strv
+        map --> alloc
+        map --> str
+    end
+
+    subgraph Vendor
+        raylib["raylib (vendor)"]
+        toml["toml (vendor)"]
+    end
+
+    subgraph Graphics
+        shape --> raylib
+        particle --> alloc
+        particle --> raylib
+        particle --> vec
+        render --> raylib
+        render --> particle
+        render --> rect
+        render --> shape
+        collision --> raylib
+        collision --> rect
+        collision --> vec
+    end
+
+    subgraph Input
+        input --> alloc
+        input --> raylib
+        touch --> raylib
+    end
+
+    subgraph Game Domain
+        attribute --> alloc
+        attribute --> str
+        attribute --> vec
+        entity --> alloc
+        entity --> attribute
+        entity --> str
+        entity --> vec
+        entity --> raylib
+        rule --> alloc
+        rule --> arena
+        rule --> entity
+        rule --> map
+        rule --> str
+        rule --> vec
+        rule --> toml
+        blueprint --> alloc
+        blueprint --> arena
+        blueprint --> attribute
+        blueprint --> rule
+        blueprint --> str
+        blueprint --> vec
+        blueprint --> raylib
+        level --> alloc
+        level --> blueprint
+        level --> entity
+        level --> str
+    end
+
+    subgraph TOML I/O
+        toml_str --> str
+        toml_str --> toml
+        toml_emitter --> blueprint
+        toml_emitter --> level
+    end
+
+    subgraph Integration
+        game --> arena
+        game --> blueprint
+        game --> input
+        game --> level
+        game --> rect
+        game --> rule
+        game --> vec
+        audio
+        engine_context --> audio
+        engine_context --> game
+        engine_context --> vec
+        editor --> engine_context
+        editor --> game
+        editor --> input
+        editor --> level
+        editor --> raylib
+        editor --> rect
+    end
+```
+
+### `struct EngineContext` forward declaration spread
+
+13 headers forward-declare `struct EngineContext;` to accept an `EngineContext *` parameter
+without including `engine_context.h` (which sits at the top of the dependency tree):
+
+```
+alloc.h, arena.h, audio.h, blueprint.h, collision.h, debug.h,
+error.h, game.h, input.h, level.h, rule.h, vec.h, map.h
+```
+
+This is the single remaining architectural violation of the "no opaque cross-module forward
+declarations" rule. The fix is to decompose `EngineContext` — extract the pieces each module
+actually needs (error context, log sink, arena pointers) into lightweight structs that live
+at the foundation level. See TODO.md for the plan.
+
 ## Memory Architecture
 
 All engine memory is arena-backed — no `malloc`/`free` anywhere except tomlc99 vendor internals and the allocator infrastructure's `NULL` fallback. The two arenas in `GameState` have distinct lifetimes, and data is loaded incrementally in layers.

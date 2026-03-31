@@ -2,15 +2,15 @@
 
 ## Engineering Goals
 
-- **No opaque cross-module forward declarations** — `struct EngineContext;` in
-  `debug.h` (and transitively in `alloc.h` and files that include them) is
-  the last one. Eliminate by decomposing EngineContext into what each
-  lower-level module actually needs: `alloc.h` uses EngineContext only for
-  error reporting in arena operations — extract that into a lightweight
-  struct (or remove the dependency entirely) so alloc.h no longer needs the
-  forward declaration. Same approach for `debug.h`. Also investigate
-  cppcheck for a built-in check; if none exists, write a small cppcheck
-  Python plugin (lives in this repo) to enforce it automatically.
+- **No opaque cross-module forward declarations** — `struct EngineContext;`
+  appears in 13 headers: alloc.h, arena.h, audio.h, blueprint.h,
+  collision.h, debug.h, error.h, game.h, input.h, level.h, rule.h, vec.h,
+  map.h. Eliminate by decomposing EngineContext into what each lower-level
+  module actually needs (error context, log sink, arena pointers) as
+  lightweight structs at the foundation level. See DESIGN.md "Module
+  Dependencies" for the full dependency graph. Also investigate cppcheck for
+  a built-in check; if none exists, write a small cppcheck Python plugin
+  (lives in this repo) to enforce it automatically.
 - **Vec types for all linear data** — `ActionNode.children` /
   `ActionNode.else_children` still use raw pointers (blocked, see below)
 
