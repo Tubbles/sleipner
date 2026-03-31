@@ -165,5 +165,56 @@ const Attribute *attr_get_scoped(const AttrSet *instance, const AttrSet *bluepri
     if (entry) {
         return entry;
     }
+    if (!blueprint) {
+        return NULL;
+    }
     return attr_get(blueprint, name);
+}
+
+float attr_get_scoped_float(const AttrSet *instance, const AttrSet *defaults, const char *name, float fallback)
+{
+    const Attribute *entry = attr_get_scoped(instance, defaults, name);
+    if (!entry) {
+        return fallback;
+    }
+    if (entry->type == ATTR_FLOAT) {
+        return entry->value.f;
+    }
+    if (entry->type == ATTR_INT) {
+        return (float)entry->value.i;
+    }
+    return fallback;
+}
+
+int attr_get_scoped_int(const AttrSet *instance, const AttrSet *defaults, const char *name, int fallback)
+{
+    const Attribute *entry = attr_get_scoped(instance, defaults, name);
+    if (!entry) {
+        return fallback;
+    }
+    if (entry->type == ATTR_INT) {
+        return entry->value.i;
+    }
+    if (entry->type == ATTR_FLOAT) {
+        return (int)entry->value.f;
+    }
+    return fallback;
+}
+
+bool attr_get_scoped_bool(const AttrSet *instance, const AttrSet *defaults, const char *name, bool fallback)
+{
+    const Attribute *entry = attr_get_scoped(instance, defaults, name);
+    if (entry && entry->type == ATTR_BOOL) {
+        return entry->value.b;
+    }
+    return fallback;
+}
+
+const char *attr_get_scoped_string(const AttrSet *instance, const AttrSet *defaults, const char *name)
+{
+    const Attribute *entry = attr_get_scoped(instance, defaults, name);
+    if (entry && entry->type == ATTR_STRING) {
+        return entry->value.str.ptr;
+    }
+    return NULL;
 }

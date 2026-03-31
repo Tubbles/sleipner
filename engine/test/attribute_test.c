@@ -137,3 +137,113 @@ void test_attr_multiple_types(void)
     TEST_ASSERT_EQUAL_STRING("chest", attr_get_string(&set, "name"));
     test_attr_set_free(&set);
 }
+
+void test_attr_get_scoped_float(void)
+{
+    AttrSet blueprint = {0};
+    TEST_ASSERT_TRUE(attr_set_float(NULL, &blueprint, "speed", 80.0F));
+    TEST_ASSERT_TRUE(attr_set_int(NULL, &blueprint, "damage", 5));
+
+    AttrSet instance = {0};
+    TEST_ASSERT_TRUE(attr_set_float(NULL, &instance, "speed", 120.0F));
+
+    /* Instance overrides blueprint */
+    TEST_ASSERT_FLOAT_WITHIN(0.01F, 120.0F, attr_get_scoped_float(&instance, &blueprint, "speed", 0.0F));
+
+    /* Falls back to blueprint */
+    TEST_ASSERT_FLOAT_WITHIN(0.01F, 80.0F, attr_get_scoped_float(&instance, &blueprint, "hp", 80.0F));
+
+    /* Int-to-float coercion from blueprint */
+    TEST_ASSERT_FLOAT_WITHIN(0.01F, 5.0F, attr_get_scoped_float(&instance, &blueprint, "damage", 0.0F));
+
+    /* Missing in both returns fallback */
+    TEST_ASSERT_FLOAT_WITHIN(0.01F, 99.0F, attr_get_scoped_float(&instance, &blueprint, "missing", 99.0F));
+
+    test_attr_set_free(&blueprint);
+    test_attr_set_free(&instance);
+}
+
+void test_attr_get_scoped_int(void)
+{
+    AttrSet blueprint = {0};
+    TEST_ASSERT_TRUE(attr_set_int(NULL, &blueprint, "health", 100));
+    TEST_ASSERT_TRUE(attr_set_float(NULL, &blueprint, "level", 3.0F));
+
+    AttrSet instance = {0};
+    TEST_ASSERT_TRUE(attr_set_int(NULL, &instance, "health", 50));
+
+    /* Instance overrides */
+    TEST_ASSERT_EQUAL_INT(50, attr_get_scoped_int(&instance, &blueprint, "health", 0));
+
+    /* Falls back to blueprint */
+    TEST_ASSERT_EQUAL_INT(100, attr_get_scoped_int(&instance, &blueprint, "mana", 100));
+
+    /* Float-to-int coercion from blueprint */
+    TEST_ASSERT_EQUAL_INT(3, attr_get_scoped_int(&instance, &blueprint, "level", 0));
+
+    test_attr_set_free(&blueprint);
+    test_attr_set_free(&instance);
+}
+
+void test_attr_get_scoped_bool(void)
+{
+    AttrSet blueprint = {0};
+    TEST_ASSERT_TRUE(attr_set_bool(NULL, &blueprint, "visible", false));
+    TEST_ASSERT_TRUE(attr_set_bool(NULL, &blueprint, "solid", true));
+
+    AttrSet instance = {0};
+    TEST_ASSERT_TRUE(attr_set_bool(NULL, &instance, "visible", true));
+
+    /* Instance overrides */
+    TEST_ASSERT_TRUE(attr_get_scoped_bool(&instance, &blueprint, "visible", false));
+
+    /* Falls back to blueprint */
+    TEST_ASSERT_TRUE(attr_get_scoped_bool(&instance, &blueprint, "solid", false));
+
+    /* Missing returns fallback */
+    TEST_ASSERT_FALSE(attr_get_scoped_bool(&instance, &blueprint, "active", false));
+
+    test_attr_set_free(&blueprint);
+    test_attr_set_free(&instance);
+}
+
+void test_attr_get_scoped_string(void)
+{
+    AttrSet blueprint = {0};
+    TEST_ASSERT_TRUE(attr_set_string(NULL, &blueprint, (AttrStringPair){.name = "behavior", .value = "npc"}));
+    TEST_ASSERT_TRUE(attr_set_string(NULL, &blueprint, (AttrStringPair){.name = "loot", .value = "common"}));
+
+    AttrSet instance = {0};
+    TEST_ASSERT_TRUE(attr_set_string(NULL, &instance, (AttrStringPair){.name = "behavior", .value = "player"}));
+
+    /* Instance overrides */
+    TEST_ASSERT_EQUAL_STRING("player", attr_get_scoped_string(&instance, &blueprint, "behavior"));
+
+    /* Falls back to blueprint */
+    TEST_ASSERT_EQUAL_STRING("common", attr_get_scoped_string(&instance, &blueprint, "loot"));
+
+    /* Missing returns NULL */
+    TEST_ASSERT_NULL(attr_get_scoped_string(&instance, &blueprint, "missing"));
+
+    test_attr_set_free(&blueprint);
+    test_attr_set_free(&instance);
+}
+
+void test_attr_get_scoped_null_blueprint(void)
+{
+    AttrSet instance = {0};
+    TEST_ASSERT_TRUE(attr_set_float(NULL, &instance, "speed", 50.0F));
+
+    /* NULL blueprint — instance-only lookup */
+    TEST_ASSERT_FLOAT_WITHIN(0.01F, 50.0F, attr_get_scoped_float(&instance, NULL, "speed", 0.0F));
+    TEST_ASSERT_FLOAT_WITHIN(0.01F, 99.0F, attr_get_scoped_float(&instance, NULL, "missing", 99.0F));
+    TEST_ASSERT_NULL(attr_get_scoped_string(&instance, NULL, "missing"));
+
+    /* Raw attr_get_scoped with NULL blueprint */
+    const Attribute *found = attr_get_scoped(&instance, NULL, "speed");
+    TEST_ASSERT_NOT_NULL(found);
+    const Attribute *not_found = attr_get_scoped(&instance, NULL, "missing");
+    TEST_ASSERT_NULL(not_found);
+
+    test_attr_set_free(&instance);
+}

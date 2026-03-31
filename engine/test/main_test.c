@@ -78,6 +78,11 @@ void test_attr_push_many_entries(void);
 void test_attr_type_change(void);
 void test_attr_scoped_instance_overrides_blueprint(void);
 void test_attr_multiple_types(void);
+void test_attr_get_scoped_float(void);
+void test_attr_get_scoped_int(void);
+void test_attr_get_scoped_bool(void);
+void test_attr_get_scoped_string(void);
+void test_attr_get_scoped_null_blueprint(void);
 
 /* arena_test.c */
 void test_arena_init_and_free(void);
@@ -510,6 +515,11 @@ int main(void)
     RUN_TEST(test_attr_type_change);
     RUN_TEST(test_attr_scoped_instance_overrides_blueprint);
     RUN_TEST(test_attr_multiple_types);
+    RUN_TEST(test_attr_get_scoped_float);
+    RUN_TEST(test_attr_get_scoped_int);
+    RUN_TEST(test_attr_get_scoped_bool);
+    RUN_TEST(test_attr_get_scoped_string);
+    RUN_TEST(test_attr_get_scoped_null_blueprint);
 
     RUN_TEST(test_arena_init_and_free);
     RUN_TEST(test_arena_alloc_basic);
