@@ -63,9 +63,7 @@
   int↔float coercion in `attr_get_scoped_*` silently papers over type
   mismatches — should probably be strict, with the parser deciding canonical
   types.
-- **`subroutines_parse` void pointer** — takes `void *toml_root` to avoid
-  including toml.h in the header, then casts to `toml_table_t *`. Use the
-  actual type.
+
 
 ## misc
 

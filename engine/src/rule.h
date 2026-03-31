@@ -202,10 +202,10 @@ typedef struct {
 [[nodiscard]] bool
 condition_parse(struct EngineContext *ctx, Allocator *alloc, Condition *condition, const char *string);
 [[nodiscard]] bool action_node_parse(struct EngineContext *ctx, Allocator *alloc, ActionNode *node, toml_datum_t value);
-[[nodiscard]] bool
-rules_parse(struct EngineContext *ctx, Allocator *alloc, vec_rule *rules, void *toml_blueprint_table, Arena *arena);
+[[nodiscard]] bool rules_parse(
+    struct EngineContext *ctx, Allocator *alloc, vec_rule *rules, toml_table_t *toml_blueprint_table, Arena *arena);
 [[nodiscard]] bool subroutines_parse(
-    struct EngineContext *ctx, Allocator *alloc, vec_subroutine *subroutines, void *toml_root, Arena *arena);
+    struct EngineContext *ctx, Allocator *alloc, vec_subroutine *subroutines, toml_table_t *toml_root, Arena *arena);
 
 /* --- Trigger matching --- */
 bool trigger_matches(const Trigger *trigger, const TriggerEvent *event);

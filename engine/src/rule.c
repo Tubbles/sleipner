@@ -638,7 +638,8 @@ parse_single_rule(struct EngineContext *ctx, Allocator *alloc, Rule *rule, toml_
     return true;
 }
 
-bool rules_parse(struct EngineContext *ctx, Allocator *alloc, vec_rule *rules, void *toml_blueprint_table, Arena *arena)
+bool rules_parse(
+    struct EngineContext *ctx, Allocator *alloc, vec_rule *rules, toml_table_t *toml_blueprint_table, Arena *arena)
 {
     *rules = (vec_rule){0};
 
@@ -1442,9 +1443,9 @@ void rules_evaluate_batch(struct EngineContext *ctx,
 /* ---- Subroutine parsing ---- */
 
 bool subroutines_parse(
-    struct EngineContext *ctx, Allocator *alloc, vec_subroutine *subroutines, void *toml_root, Arena *arena)
+    struct EngineContext *ctx, Allocator *alloc, vec_subroutine *subroutines, toml_table_t *toml_root, Arena *arena)
 {
-    toml_array_t *sub_array = toml_array_in((toml_table_t *)toml_root, "subroutine");
+    toml_array_t *sub_array = toml_array_in(toml_root, "subroutine");
     if (!sub_array) {
         return true; /* no subroutines — fine */
     }
