@@ -899,7 +899,7 @@ for name→index, flat arrays for ID→entity) and only add the generation-count
 profiling proves a specific lookup is a bottleneck. The architecture supports bolting it
 on later without changing any call site.
 
-#### Entity–blueprint connection (planned)
+#### Entity–blueprint connection
 
 An entity is an instance of a blueprint. The blueprint defines default attribute values; the
 entity holds runtime overrides. Attribute lookup is a two-level operation: check instance
@@ -908,54 +908,50 @@ choice — it preserves the distinction between "what the blueprint says" and "w
 runtime," which is essential for hot-reload migration and the editor's separate
 instance/blueprint display.
 
-**Current state (temporary).** `Entity` stores both `Str blueprint_name` and
-`const AttrSet *defaults`. The name is the stable reference; the `defaults` pointer is a
-stored cross-object pointer into `gamedata_arena` (violates the "references by ID or name"
-rule above). The `entity_get_*` functions in `entity.h` perform the two-level lookup
-internally. This works today because entities and blueprints share `gamedata_arena` — the
-pointer is always valid during the entity's lifetime. It will break with the runtime arena
-split.
-
 **Do not copy blueprint defaults into instance attrs.** This was tried and reverted. Copying
 destroys the override/default distinction, wastes arena memory for attrs that are never
 overridden, and makes hot-reload migration impossible (can't tell which instance attrs are
 runtime overrides vs copies of defaults).
 
-**Target design.** Entity becomes a pure runtime data bag with no blueprint knowledge:
+**Implementation.** Entity is a pure runtime data bag with no stored blueprint pointer:
 
-1. **External map for entity→blueprint tracking.** A `map<entity_id, Str>` in `GameState`
-   maps each entity to its blueprint name. This is the single source of truth for which
-   blueprint an entity came from. Populated during level loading / entity spawning.
+1. **External map for entity→blueprint tracking.** `map_int_str entity_blueprints` in
+   `GameState` maps each entity ID to its blueprint name. Populated during level loading /
+   entity spawning. This is the single source of truth for which blueprint an entity came
+   from.
 
-2. **Two-level lookup moves to AttrSet level.** `attr_get_scoped` (already exists in
-   `attribute.h`) is the primitive. Typed wrappers (`attr_get_scoped_float`,
-   `attr_get_scoped_int`, etc.) are added alongside it. `entity_get_*` functions are removed.
+2. **Two-level lookup at AttrSet level.** `attr_get_scoped` in `attribute.h` is the
+   primitive (NULL-safe — returns instance-only when defaults is NULL). Typed wrappers
+   (`attr_get_scoped_float`, `attr_get_scoped_int`, `attr_get_scoped_bool`,
+   `attr_get_scoped_string`) include int↔float coercion to match the old `entity_get_*`
+   behavior.
 
-3. **Resolution chain at call sites.** Callers that need attribute access resolve the
-   blueprint by name and pass the defaults as a scoped pointer:
+3. **Resolution chain.** `entity_resolve_defaults(state, entity_id)` in `game.h` resolves
+   the full chain:
 
    ```
-   entity.id → map → blueprint_name → blueprint_find → &bp->attrs
-                                                            ↓
+   entity.id → map_int_str_get → blueprint_name → blueprint_find → &bp->attrs
+                                                                        ↓
                   attr_get_scoped_float(&entity->attrs, defaults, "speed", 0.0F)
    ```
 
-4. **Dependency injection.** The entity→blueprint map and `BlueprintTable` are threaded
-   through the call chain via function parameters and context structs
-   (`ConditionContext`, `ActionContext`). The map lives in `GameState`; callers receive it
-   from there.
+4. **Pre-resolved defaults for rule evaluation.** `ConditionContext` and `ActionContext`
+   carry a `const AttrSet *const *entity_defaults` array (parallel to the entities array),
+   built on `scratch_arena` at both `rules_evaluate_batch` call sites. Rule code receives
+   pure AttrSet pointers — no blueprint dependency, no circular includes.
 
 5. **Hot-reload.** The map stores names (strings). After gamedata reload, names resolve
-   against the fresh `BlueprintTable`. Instance attrs in `runtime_arena` are untouched.
-   New blueprint defaults apply automatically because the next `attr_get_scoped` call
-   resolves against the reloaded blueprint.
+   against the fresh `BlueprintTable`. Instance attrs are untouched. New blueprint defaults
+   apply automatically because the next `attr_get_scoped` call resolves against the
+   reloaded blueprint.
 
-**What Entity keeps.** After the migration: `AttrSet attrs` (instance overrides),
-`Texture2D *texture`, `Str tag`, `int id`, position/collision/animation fields. No
-`blueprint_name`, no `defaults`.
+**What Entity keeps.** `AttrSet attrs` (instance overrides), `Str blueprint_name` (for
+debug display and editor — future work: move to the external map), `Texture2D *texture`,
+`Str tag`, `int id`, position/collision/animation fields. No `defaults` pointer.
 
-**What moves out.** `blueprint_name` → external `map<entity_id, Str>` in `GameState`.
-`defaults` → gone; callers resolve via the map at each call site.
+**Solid auto-derive.** Moved from `entity_init` to `level.c` (the 3 entity creation sites).
+If the blueprint does not explicitly set "solid", it is derived from collision size. Tests
+that need "solid" set it explicitly via `attr_set_bool`.
 
 ### Key Rules
 

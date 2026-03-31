@@ -101,7 +101,6 @@ static bool spawn_children_for(Allocator *alloc,
         Vector2 child_position = {parent_position.x + child_def->offset.x, parent_position.y + child_def->offset.y};
         EntitySpec child_spec = {
             .blueprint_name = strv_from_cstr(attr_get_string(&child_blueprint->attrs, "name")),
-            .defaults = &child_blueprint->attrs,
             .collision_offset = blueprint_get_collision_offset(child_blueprint),
             .collision_size = blueprint_get_collision_size(child_blueprint),
             .texture = texture,
@@ -112,6 +111,10 @@ static bool spawn_children_for(Allocator *alloc,
             error_set(ctx, "entity_init failed for child blueprint '%s'",
                       attr_get_string(&child_blueprint->attrs, "name"));
             return false;
+        }
+        if (!attr_get(&child_blueprint->attrs, "solid")) {
+            bool is_solid = (child_spec.collision_size.x > 0.0F) || (child_spec.collision_size.y > 0.0F);
+            (void)attr_set_bool(alloc, &child.attrs, "solid", is_solid);
         }
         child.id = level->next_entity_id++;
         child.parent_index = parent_index;
@@ -205,7 +208,6 @@ static void parse_entity(Allocator *alloc,
 
     EntitySpec spec = {
         .blueprint_name = strv_from_cstr(attr_get_string(&blueprint->attrs, "name")),
-        .defaults = &blueprint->attrs,
         .collision_offset = blueprint_get_collision_offset(blueprint),
         .collision_size = blueprint_get_collision_size(blueprint),
         .texture = texture,
@@ -215,6 +217,10 @@ static void parse_entity(Allocator *alloc,
     if (!entity_init(&entity_temp, spec, (Vector2){position_x, position_y}, alloc)) {
         debug_log(ctx, "ent[%d]: entity_init failed", entity_index);
         return;
+    }
+    if (!attr_get(&blueprint->attrs, "solid")) {
+        bool is_solid = (spec.collision_size.x > 0.0F) || (spec.collision_size.y > 0.0F);
+        (void)attr_set_bool(alloc, &entity_temp.attrs, "solid", is_solid);
     }
     entity_temp.id = level->next_entity_id++;
     parse_instance_overrides(alloc, &entity_temp, entity_table);
@@ -265,7 +271,6 @@ bool level_spawn_entity(struct EngineContext *ctx,
     }
     EntitySpec spec = {
         .blueprint_name = strv_from_cstr(attr_get_string(&blueprint->attrs, "name")),
-        .defaults = &blueprint->attrs,
         .collision_offset = blueprint_get_collision_offset(blueprint),
         .collision_size = blueprint_get_collision_size(blueprint),
         .texture = texture,
@@ -275,6 +280,10 @@ bool level_spawn_entity(struct EngineContext *ctx,
     if (!entity_init(&entity, spec, position, alloc)) {
         error_wrap(ctx, "level_spawn_entity");
         return false;
+    }
+    if (!attr_get(&blueprint->attrs, "solid")) {
+        bool is_solid = (spec.collision_size.x > 0.0F) || (spec.collision_size.y > 0.0F);
+        (void)attr_set_bool(alloc, &entity.attrs, "solid", is_solid);
     }
     entity.id = level->next_entity_id++;
     if (!vec_entity_push(&level->entities, entity, alloc)) {

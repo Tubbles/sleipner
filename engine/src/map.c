@@ -1,4 +1,5 @@
 #include "map.h"
+#include "str.h"
 
 /* Primitive map implementations (int-keyed).
  * Structs and prototypes are in map.h — include that to use these types. */

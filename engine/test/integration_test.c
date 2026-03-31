@@ -260,12 +260,13 @@ void test_integration_player_entity_spawns(void)
     TEST_ASSERT_NOT_NULL(player);
 
     /* Player must have behavior="player" attribute (via blueprint) */
-    const char *behavior = entity_get_string(player, "behavior");
+    const AttrSet *player_defaults = entity_resolve_defaults(&state, player->id);
+    const char *behavior = attr_get_scoped_string(&player->attrs, player_defaults, "behavior");
     TEST_ASSERT_NOT_NULL(behavior);
     TEST_ASSERT_EQUAL_STRING("player", behavior);
 
-    /* Player must have valid defaults and texture */
-    TEST_ASSERT_NOT_NULL(player->defaults);
+    /* Player must have valid blueprint and texture */
+    TEST_ASSERT_NOT_NULL(player_defaults);
     TEST_ASSERT_NOT_NULL(player->texture);
     TEST_ASSERT_EQUAL_STRING("player", player->blueprint_name.ptr);
 
@@ -375,7 +376,7 @@ void test_integration_enter_trigger_fires_only_once(void)
 
     /* enter_count must be exactly 1 — edge-triggered, not level-triggered */
     const Entity *zone = &state.current_level.entities.data[1];
-    TEST_ASSERT_EQUAL_INT(1, (int)entity_get_float(zone, "enter_count", 0.0F));
+    TEST_ASSERT_EQUAL_INT(1, (int)attr_get_scoped_float(&zone->attrs, NULL, "enter_count", 0.0F));
 
     game_free(&ctx, &state);
 }

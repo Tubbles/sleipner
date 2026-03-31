@@ -11,62 +11,6 @@ VEC_IMPL(entity, Entity)
 
 #include <string.h>
 
-const Attribute *entity_get_attr(const Entity *entity, const char *name)
-{
-    if (entity->defaults) {
-        return attr_get_scoped(&entity->attrs, entity->defaults, name);
-    }
-    return attr_get(&entity->attrs, name);
-}
-
-float entity_get_float(const Entity *entity, const char *name, float fallback)
-{
-    const Attribute *entry = entity_get_attr(entity, name);
-    if (!entry) {
-        return fallback;
-    }
-    if (entry->type == ATTR_FLOAT) {
-        return entry->value.f;
-    }
-    if (entry->type == ATTR_INT) {
-        return (float)entry->value.i;
-    }
-    return fallback;
-}
-
-int entity_get_int(const Entity *entity, const char *name, int fallback)
-{
-    const Attribute *entry = entity_get_attr(entity, name);
-    if (!entry) {
-        return fallback;
-    }
-    if (entry->type == ATTR_INT) {
-        return entry->value.i;
-    }
-    if (entry->type == ATTR_FLOAT) {
-        return (int)entry->value.f;
-    }
-    return fallback;
-}
-
-bool entity_get_bool(const Entity *entity, const char *name, bool fallback)
-{
-    const Attribute *entry = entity_get_attr(entity, name);
-    if (entry && entry->type == ATTR_BOOL) {
-        return entry->value.b;
-    }
-    return fallback;
-}
-
-const char *entity_get_string(const Entity *entity, const char *name)
-{
-    const Attribute *entry = entity_get_attr(entity, name);
-    if (entry && entry->type == ATTR_STRING) {
-        return entry->value.str.ptr;
-    }
-    return NULL;
-}
-
 bool entity_init(Entity *entity, EntitySpec spec, Vector2 position, Allocator *alloc)
 {
     memset(entity, 0, sizeof(*entity));
@@ -74,7 +18,6 @@ bool entity_init(Entity *entity, EntitySpec spec, Vector2 position, Allocator *a
     if (!str_from_strv(alloc, &entity->blueprint_name, spec.blueprint_name)) {
         return false;
     }
-    entity->defaults = spec.defaults;
 
     entity->position = position;
     entity->texture = spec.texture;
@@ -87,14 +30,6 @@ bool entity_init(Entity *entity, EntitySpec spec, Vector2 position, Allocator *a
         spec.collision_size.y,
     };
 
-    /* Only auto-derive solid from collision size if the blueprint does not explicitly set it */
-    if (!spec.defaults || !attr_get(spec.defaults, "solid")) {
-        bool is_solid = (bool)((spec.collision_size.x > 0.0F) || (spec.collision_size.y > 0.0F));
-        if (!attr_set_bool(alloc, &entity->attrs, "solid", is_solid)) {
-            str_free(alloc, &entity->blueprint_name);
-            return false;
-        }
-    }
     entity->parent_index = -1;
     return true;
 }
@@ -165,21 +100,11 @@ Entity *entity_find_by_tag_mut(Entity *source, const char *tag, Entity *entities
     return &entities[result - entities];
 }
 
-Rectangle entity_get_source(const Entity *entity)
-{
-    return (Rectangle){
-        entity_get_float(entity, "src_x", 0.0F),
-        entity_get_float(entity, "src_y", 0.0F),
-        entity_get_float(entity, "src_w", 0.0F),
-        entity_get_float(entity, "src_h", 0.0F),
-    };
-}
-
-bool entity_is_visible(int entity_index, const Entity *entities)
+bool entity_is_visible(int entity_index, const Entity *entities, const AttrSet *const *entity_defaults)
 {
     int current = entity_index;
     while (current >= 0) {
-        if (!entity_get_bool(&entities[current], "visible", true)) {
+        if (!attr_get_scoped_bool(&entities[current].attrs, entity_defaults[current], "visible", true)) {
             return false;
         }
         current = entities[current].parent_index;
@@ -187,11 +112,11 @@ bool entity_is_visible(int entity_index, const Entity *entities)
     return true;
 }
 
-bool entity_is_active(int entity_index, const Entity *entities)
+bool entity_is_active(int entity_index, const Entity *entities, const AttrSet *const *entity_defaults)
 {
     int current = entity_index;
     while (current >= 0) {
-        if (!entity_get_bool(&entities[current], "active", true)) {
+        if (!attr_get_scoped_bool(&entities[current].attrs, entity_defaults[current], "active", true)) {
             return false;
         }
         current = entities[current].parent_index;

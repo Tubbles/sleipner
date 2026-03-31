@@ -595,7 +595,7 @@ void test_action_set_attr_int(void)
         .entity_defaults = (const AttrSet *[]){NULL},
     };
     TEST_ASSERT_TRUE(action_node_execute(&ctx, NULL, &action, context));
-    TEST_ASSERT_EQUAL_INT(42, entity_get_int(&entity, "health", 0));
+    TEST_ASSERT_EQUAL_INT(42, attr_get_int(&entity.attrs, "health", 0));
     str_free(NULL, &action.argument);
     str_free(NULL, &action.second_argument);
     attr_set_free(NULL, &entity.attrs);
@@ -622,7 +622,7 @@ void test_action_add_attr(void)
         .entity_defaults = (const AttrSet *[]){NULL},
     };
     TEST_ASSERT_TRUE(action_node_execute(&ctx, NULL, &action, context));
-    TEST_ASSERT_EQUAL_INT(7, entity_get_int(&entity, "health", 0));
+    TEST_ASSERT_EQUAL_INT(7, attr_get_int(&entity.attrs, "health", 0));
     str_free(NULL, &action.argument);
     str_free(NULL, &action.second_argument);
     attr_set_free(NULL, &entity.attrs);
@@ -648,7 +648,7 @@ void test_action_toggle_attr(void)
         .entity_defaults = (const AttrSet *[]){NULL},
     };
     TEST_ASSERT_TRUE(action_node_execute(&ctx, NULL, &action, context));
-    TEST_ASSERT_FALSE(entity_get_bool(&entity, "visible", true));
+    TEST_ASSERT_FALSE(attr_get_bool(&entity.attrs, "visible", true));
     str_free(NULL, &action.argument);
     attr_set_free(NULL, &entity.attrs);
     test_flag_set_free(&flags);
@@ -669,7 +669,7 @@ void test_action_destroy(void)
         .entity_defaults = (const AttrSet *[]){NULL},
     };
     TEST_ASSERT_TRUE(action_node_execute(&ctx, NULL, &action, context));
-    TEST_ASSERT_FALSE(entity_get_bool(&entity, "active", true));
+    TEST_ASSERT_FALSE(attr_get_bool(&entity.attrs, "active", true));
     test_flag_set_free(&flags);
     test_attr_set_free(&entity.attrs);
 }
@@ -1118,7 +1118,7 @@ void test_var_substitution_in_set_attr(void)
         .entity_defaults = (const AttrSet *[]){NULL},
     };
     TEST_ASSERT_TRUE(action_node_execute(&ctx, NULL, &action, context));
-    TEST_ASSERT_EQUAL_INT(5, entity_get_int(&entity, "health", 0));
+    TEST_ASSERT_EQUAL_INT(5, attr_get_int(&entity.attrs, "health", 0));
     str_free(NULL, &action.argument);
     str_free(NULL, &action.second_argument);
     attr_set_free(NULL, &local_vars);
@@ -1332,7 +1332,7 @@ void test_integration_for_each_no_bind_iterates_all_entities(void)
     /* All three entities must have count = 1 */
     for (int entity_index = 0; entity_index < state.current_level.entities.count; entity_index++) {
         const Entity *entity = &state.current_level.entities.data[entity_index];
-        TEST_ASSERT_EQUAL_INT(1, (int)entity_get_float(entity, "count", 0.0F));
+        TEST_ASSERT_EQUAL_INT(1, (int)attr_get_scoped_float(&entity->attrs, NULL, "count", 0.0F));
     }
 
     game_free(&ctx, &state);
@@ -1391,8 +1391,8 @@ void test_integration_for_each_condition_filter(void)
     /* entity 1 = enemy, entity 2 = bystander */
     const Entity *enemy = &state.current_level.entities.data[1];
     const Entity *bystander = &state.current_level.entities.data[2];
-    TEST_ASSERT_EQUAL_INT(1, (int)entity_get_float(enemy, "hit_count", 0.0F));
-    TEST_ASSERT_EQUAL_INT(0, (int)entity_get_float(bystander, "hit_count", 0.0F));
+    TEST_ASSERT_EQUAL_INT(1, (int)attr_get_scoped_float(&enemy->attrs, NULL, "hit_count", 0.0F));
+    TEST_ASSERT_EQUAL_INT(0, (int)attr_get_scoped_float(&bystander->attrs, NULL, "hit_count", 0.0F));
 
     game_free(&ctx, &state);
 }
@@ -1443,7 +1443,7 @@ void test_integration_for_each_bind_mode(void)
     /* All three entities must have tagged = 1 (bind mode still includes self) */
     for (int entity_index = 0; entity_index < state.current_level.entities.count; entity_index++) {
         const Entity *entity = &state.current_level.entities.data[entity_index];
-        TEST_ASSERT_EQUAL_INT(1, (int)entity_get_float(entity, "tagged", 0.0F));
+        TEST_ASSERT_EQUAL_INT(1, (int)attr_get_scoped_float(&entity->attrs, NULL, "tagged", 0.0F));
     }
 
     game_free(&ctx, &state);
@@ -1518,7 +1518,7 @@ void test_integration_subroutine_inherits_self(void)
 
     /* Called twice — count must be 2 */
     const Entity *counter = &state.current_level.entities.data[0];
-    TEST_ASSERT_EQUAL_INT(2, (int)entity_get_float(counter, "count", 0.0F));
+    TEST_ASSERT_EQUAL_INT(2, (int)attr_get_scoped_float(&counter->attrs, NULL, "count", 0.0F));
 
     game_free(&ctx, &state);
 }
@@ -1559,16 +1559,16 @@ void test_integration_timer_oneshot_fires_once(void)
     /* 1 timer created, none fired yet */
     TEST_ASSERT_EQUAL_INT(1, state.timers.count);
     const Entity *thing = &state.current_level.entities.data[0];
-    TEST_ASSERT_EQUAL_INT(0, (int)entity_get_float(thing, "fired_count", 0.0F));
+    TEST_ASSERT_EQUAL_INT(0, (int)attr_get_scoped_float(&thing->attrs, NULL, "fired_count", 0.0F));
 
     /* Advance past duration — timer fires once */
     game_update(&ctx, &state, (InputState){0}, 0.6F);
     TEST_ASSERT_EQUAL_INT(0, state.timers.count);
-    TEST_ASSERT_EQUAL_INT(1, (int)entity_get_float(thing, "fired_count", 0.0F));
+    TEST_ASSERT_EQUAL_INT(1, (int)attr_get_scoped_float(&thing->attrs, NULL, "fired_count", 0.0F));
 
     /* Second tick — no timer left, count stays at 1 */
     game_update(&ctx, &state, (InputState){0}, 0.6F);
-    TEST_ASSERT_EQUAL_INT(1, (int)entity_get_float(thing, "fired_count", 0.0F));
+    TEST_ASSERT_EQUAL_INT(1, (int)attr_get_scoped_float(&thing->attrs, NULL, "fired_count", 0.0F));
 
     game_free(&ctx, &state);
 }
@@ -1606,11 +1606,11 @@ void test_integration_timer_periodic_fires_repeatedly(void)
     /* Advance 0.6 s — one fire */
     game_update(&ctx, &state, (InputState){0}, 0.6F);
     const Entity *thing = &state.current_level.entities.data[0];
-    TEST_ASSERT_EQUAL_INT(1, (int)entity_get_float(thing, "pulse_count", 0.0F));
+    TEST_ASSERT_EQUAL_INT(1, (int)attr_get_scoped_float(&thing->attrs, NULL, "pulse_count", 0.0F));
 
     /* Advance another 0.6 s — second fire; timer still alive */
     game_update(&ctx, &state, (InputState){0}, 0.6F);
-    TEST_ASSERT_EQUAL_INT(2, (int)entity_get_float(thing, "pulse_count", 0.0F));
+    TEST_ASSERT_EQUAL_INT(2, (int)attr_get_scoped_float(&thing->attrs, NULL, "pulse_count", 0.0F));
     TEST_ASSERT_EQUAL_INT(1, state.timers.count);
 
     game_free(&ctx, &state);
@@ -1672,7 +1672,7 @@ void test_integration_timer_destroy_cancels(void)
     /* Advance past duration — no fire */
     game_update(&ctx, &state, (InputState){0}, 0.6F);
     const Entity *thing = &state.current_level.entities.data[0];
-    TEST_ASSERT_EQUAL_INT(0, (int)entity_get_float(thing, "fired_count", 0.0F));
+    TEST_ASSERT_EQUAL_INT(0, (int)attr_get_scoped_float(&thing->attrs, NULL, "fired_count", 0.0F));
 
     game_free(&ctx, &state);
 }
@@ -1710,7 +1710,7 @@ void test_integration_on_destroy_fires(void)
 
     /* Entity must be inactive and the on_destroy flag must be set */
     const Entity *thing = &state.current_level.entities.data[0];
-    TEST_ASSERT_FALSE(entity_get_bool(thing, "active", true));
+    TEST_ASSERT_FALSE(attr_get_bool(&thing->attrs, "active", true));
     TEST_ASSERT_TRUE(flag_get(&state.flags, "thing_destroyed"));
 
     game_free(&ctx, &state);
@@ -1832,7 +1832,7 @@ void test_integration_subroutine_missing_is_soft_fail(void)
 
     /* count must be 1 — add_attr ran after the failed call: */
     const Entity *thing = &state.current_level.entities.data[0];
-    TEST_ASSERT_EQUAL_INT(1, (int)entity_get_float(thing, "count", 0.0F));
+    TEST_ASSERT_EQUAL_INT(1, (int)attr_get_scoped_float(&thing->attrs, NULL, "count", 0.0F));
 
     game_free(&ctx, &state);
 }

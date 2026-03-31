@@ -13,7 +13,6 @@ static EntitySpec spec_from_blueprint(const Blueprint *blueprint, Texture2D *tex
 {
     return (EntitySpec){
         .blueprint_name = strv_from_cstr(attr_get_string(&blueprint->attrs, "name")),
-        .defaults = &blueprint->attrs,
         .collision_offset = blueprint_get_collision_offset(blueprint),
         .collision_size = blueprint_get_collision_size(blueprint),
         .texture = texture,
@@ -48,30 +47,25 @@ void test_entity_init_from_blueprint(void)
 {
     Blueprint blueprint = make_test_blueprint();
     Texture2D dummy = {0};
-    EntitySpec spec = {
-        .blueprint_name = strv_from_cstr(attr_get_string(&blueprint.attrs, "name")),
-        .defaults = &blueprint.attrs,
-        .collision_offset = blueprint_get_collision_offset(&blueprint),
-        .collision_size = blueprint_get_collision_size(&blueprint),
-        .texture = &dummy,
-    };
+    EntitySpec spec = spec_from_blueprint(&blueprint, &dummy);
     Entity entity;
 
     TEST_ASSERT_TRUE(entity_init(&entity, spec, (Vector2){100, 200}, NULL));
 
     TEST_ASSERT_EQUAL_STRING("chest", entity.blueprint_name.ptr);
-    TEST_ASSERT_TRUE(entity.defaults == &blueprint.attrs);
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 100.0F, entity.position.x);
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 200.0F, entity.position.y);
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 102.0F, entity.collision.x);
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 204.0F, entity.collision.y);
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 12.0F, entity.collision.width);
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 8.0F, entity.collision.height);
-    TEST_ASSERT_EQUAL_INT(3, entity_get_int(&entity, "health", 0));
-    TEST_ASSERT_EQUAL_INT(5, entity_get_int(&entity, "max_health", 0));
-    TEST_ASSERT_TRUE(entity_get_bool(&entity, "visible", true));
-    TEST_ASSERT_TRUE(entity_get_bool(&entity, "active", true));
-    TEST_ASSERT_TRUE(entity_get_bool(&entity, "solid", false));
+    const AttrSet *defaults = &blueprint.attrs;
+    TEST_ASSERT_EQUAL_INT(3, attr_get_scoped_int(&entity.attrs, defaults, "health", 0));
+    TEST_ASSERT_EQUAL_INT(5, attr_get_scoped_int(&entity.attrs, defaults, "max_health", 0));
+    TEST_ASSERT_TRUE(attr_get_scoped_bool(&entity.attrs, defaults, "visible", true));
+    TEST_ASSERT_TRUE(attr_get_scoped_bool(&entity.attrs, defaults, "active", true));
+    /* solid is now set by level.c, not entity_init — check collision size instead */
+    TEST_ASSERT_TRUE(spec.collision_size.x > 0.0F || spec.collision_size.y > 0.0F);
     TEST_ASSERT_EQUAL_INT(-1, entity.parent_index);
     test_blueprint_free(&blueprint);
     test_entity_free(&entity);
@@ -85,10 +79,10 @@ void test_entity_get_attr_from_blueprint(void)
 
     TEST_ASSERT_TRUE(entity_init(&entity, spec_from_blueprint(&blueprint, &dummy), (Vector2){0, 0}, NULL));
 
-    /* No instance overrides — falls back to blueprint */
-    TEST_ASSERT_EQUAL_STRING("static", entity_get_string(&entity, "behavior"));
-    TEST_ASSERT_TRUE(entity_get_bool(&entity, "is_locked", false));
-    TEST_ASSERT_FLOAT_WITHIN(0.01F, 0.0F, entity_get_float(&entity, "speed", -1.0F));
+    const AttrSet *defaults = &blueprint.attrs;
+    TEST_ASSERT_EQUAL_STRING("static", attr_get_scoped_string(&entity.attrs, defaults, "behavior"));
+    TEST_ASSERT_TRUE(attr_get_scoped_bool(&entity.attrs, defaults, "is_locked", false));
+    TEST_ASSERT_FLOAT_WITHIN(0.01F, 0.0F, attr_get_scoped_float(&entity.attrs, defaults, "speed", -1.0F));
     test_blueprint_free(&blueprint);
     test_entity_free(&entity);
 }
@@ -105,12 +99,13 @@ void test_entity_instance_overrides_blueprint(void)
     TEST_ASSERT_TRUE(attr_set_bool(NULL, &entity.attrs, "is_locked", false));
     TEST_ASSERT_TRUE(attr_set_float(NULL, &entity.attrs, "speed", 50.0F));
 
+    const AttrSet *defaults = &blueprint.attrs;
     /* Instance wins */
-    TEST_ASSERT_FALSE(entity_get_bool(&entity, "is_locked", true));
-    TEST_ASSERT_FLOAT_WITHIN(0.01F, 50.0F, entity_get_float(&entity, "speed", 0));
+    TEST_ASSERT_FALSE(attr_get_scoped_bool(&entity.attrs, defaults, "is_locked", true));
+    TEST_ASSERT_FLOAT_WITHIN(0.01F, 50.0F, attr_get_scoped_float(&entity.attrs, defaults, "speed", 0));
 
     /* Blueprint still provides unoverridden attrs */
-    TEST_ASSERT_EQUAL_STRING("static", entity_get_string(&entity, "behavior"));
+    TEST_ASSERT_EQUAL_STRING("static", attr_get_scoped_string(&entity.attrs, defaults, "behavior"));
     test_blueprint_free(&blueprint);
     test_entity_free(&entity);
 }
@@ -123,8 +118,9 @@ void test_entity_get_missing_attr(void)
 
     TEST_ASSERT_TRUE(entity_init(&entity, spec_from_blueprint(&blueprint, &dummy), (Vector2){0, 0}, NULL));
 
-    TEST_ASSERT_EQUAL_INT(42, entity_get_int(&entity, "nonexistent", 42));
-    TEST_ASSERT_NULL(entity_get_string(&entity, "nope"));
+    const AttrSet *defaults = &blueprint.attrs;
+    TEST_ASSERT_EQUAL_INT(42, attr_get_scoped_int(&entity.attrs, defaults, "nonexistent", 42));
+    TEST_ASSERT_NULL(attr_get_scoped_string(&entity.attrs, defaults, "nope"));
     test_blueprint_free(&blueprint);
     test_entity_free(&entity);
 }
@@ -139,8 +135,9 @@ void test_entity_int_float_coercion(void)
     Entity entity;
     TEST_ASSERT_TRUE(entity_init(&entity, spec_from_blueprint(&blueprint, &dummy), (Vector2){0, 0}, NULL));
 
+    const AttrSet *defaults = &blueprint.attrs;
     /* Int attr retrieved as float via coercion */
-    TEST_ASSERT_FLOAT_WITHIN(0.1F, 80.0F, entity_get_float(&entity, "speed", 0));
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 80.0F, attr_get_scoped_float(&entity.attrs, defaults, "speed", 0));
     test_blueprint_free(&blueprint);
     test_entity_free(&entity);
 }
@@ -152,24 +149,21 @@ void test_entity_no_blueprint(void)
 
     TEST_ASSERT_TRUE(attr_set_float(NULL, &entity.attrs, "speed", 100.0F));
 
-    /* Works without defaults */
-    TEST_ASSERT_FLOAT_WITHIN(0.1F, 100.0F, entity_get_float(&entity, "speed", 0));
-    TEST_ASSERT_EQUAL_INT(0, entity_get_int(&entity, "missing", 0));
+    /* Works without defaults (NULL) */
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 100.0F, attr_get_scoped_float(&entity.attrs, NULL, "speed", 0));
+    TEST_ASSERT_EQUAL_INT(0, attr_get_scoped_int(&entity.attrs, NULL, "missing", 0));
     test_entity_free(&entity);
 }
 
 void test_entity_solid_from_collision(void)
 {
-    Blueprint no_collision = {0};
-    TEST_ASSERT_TRUE(attr_set_string(NULL, &no_collision.attrs, (AttrStringPair){.name = "name", .value = "ghost"}));
-    /* collision_size is (0, 0) */
+    /* Solid is no longer auto-derived in entity_init — it's set by level.c.
+     * Test the logic directly: no collision size means not solid. */
+    Entity entity = {0};
+    entity.parent_index = -1;
+    TEST_ASSERT_TRUE(attr_set_bool(NULL, &entity.attrs, "solid", false));
 
-    Texture2D dummy = {0};
-    Entity entity;
-    TEST_ASSERT_TRUE(entity_init(&entity, spec_from_blueprint(&no_collision, &dummy), (Vector2){0, 0}, NULL));
-
-    TEST_ASSERT_FALSE(entity_get_bool(&entity, "solid", true));
-    test_blueprint_free(&no_collision);
+    TEST_ASSERT_FALSE(attr_get_scoped_bool(&entity.attrs, NULL, "solid", true));
     test_entity_free(&entity);
 }
 
@@ -261,8 +255,9 @@ void test_entity_is_visible_standalone(void)
 {
     Entity entity = {0};
     entity.parent_index = -1;
+    const AttrSet *defaults[] = {NULL};
 
-    TEST_ASSERT_TRUE(entity_is_visible(0, &entity));
+    TEST_ASSERT_TRUE(entity_is_visible(0, &entity, defaults));
     test_entity_free(&entity);
 }
 
@@ -270,11 +265,12 @@ void test_entity_is_visible_parent_hidden(void)
 {
     Entity entities[3];
     make_entity_tree(entities);
+    const AttrSet *defaults[] = {NULL, NULL, NULL};
 
     /* Child is visible, but parent is hidden */
     TEST_ASSERT_TRUE(attr_set_bool(NULL, &entities[0].attrs, "visible", false));
 
-    TEST_ASSERT_FALSE(entity_is_visible(1, entities));
+    TEST_ASSERT_FALSE(entity_is_visible(1, entities, defaults));
     free_entity_tree(entities);
 }
 
@@ -282,8 +278,9 @@ void test_entity_is_visible_both_visible(void)
 {
     Entity entities[3];
     make_entity_tree(entities);
+    const AttrSet *defaults[] = {NULL, NULL, NULL};
 
-    TEST_ASSERT_TRUE(entity_is_visible(1, entities));
+    TEST_ASSERT_TRUE(entity_is_visible(1, entities, defaults));
     free_entity_tree(entities);
 }
 
@@ -291,10 +288,11 @@ void test_entity_is_active_parent_inactive(void)
 {
     Entity entities[3];
     make_entity_tree(entities);
+    const AttrSet *defaults[] = {NULL, NULL, NULL};
 
     TEST_ASSERT_TRUE(attr_set_bool(NULL, &entities[0].attrs, "active", false));
 
-    TEST_ASSERT_FALSE(entity_is_active(1, entities));
+    TEST_ASSERT_FALSE(entity_is_active(1, entities, defaults));
     free_entity_tree(entities);
 }
 
@@ -302,7 +300,8 @@ void test_entity_is_active_both_active(void)
 {
     Entity entities[3];
     make_entity_tree(entities);
+    const AttrSet *defaults[] = {NULL, NULL, NULL};
 
-    TEST_ASSERT_TRUE(entity_is_active(1, entities));
+    TEST_ASSERT_TRUE(entity_is_active(1, entities, defaults));
     free_entity_tree(entities);
 }

@@ -2,18 +2,14 @@
 
 ## Engineering Goals
 
-- **Entity–blueprint connection** — `Entity` currently stores
-  `const AttrSet *defaults` (cross-object pointer, violates DESIGN.md) and
-  `Str blueprint_name`. Both must be removed per the target design: external
-  `map<entity_id, Str>` in GameState for tracking, `attr_get_scoped_*` typed
-  wrappers in attribute.h for two-level lookup, `entity_get_*` removed. See
-  DESIGN.md § "Entity–blueprint connection (planned)" for full spec.
-- **No opaque cross-module forward declarations** — `struct EngineContext;` is
-  the last one; eliminate it by splitting the logging/error concern into a
-  lightweight header with no upward dependencies (see Coding Style in
-  CLAUDE.md). Also investigate cppcheck for a built-in check; if none exists,
-  write a small cppcheck Python plugin (lives in this repo) to enforce it
-  automatically.
+- **No opaque cross-module forward declarations** — `struct EngineContext;` in
+  `debug.h` (and transitively in files that include it) is the last one;
+  eliminate it by splitting the logging/error concern into a lightweight header
+  with no upward dependencies (see Coding Style in CLAUDE.md). The former
+  `struct EngineContext;` in `attribute.h` was removed as part of the
+  entity–blueprint connection work. Also investigate cppcheck for a built-in
+  check; if none exists, write a small cppcheck Python plugin (lives in this
+  repo) to enforce it automatically.
 - **Vec types for all linear data** — `ActionNode.children` /
   `ActionNode.else_children` still use raw pointers (blocked, see below)
 

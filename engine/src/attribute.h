@@ -6,8 +6,6 @@
 #include "vec.h"
 #include <stdbool.h>
 
-struct EngineContext;
-
 typedef enum {
     ATTR_FLOAT,
     ATTR_INT,
@@ -67,8 +65,7 @@ void attr_remove(Allocator *alloc, AttrSet *set, const char *name);
  * connection". */
 const Attribute *attr_get_scoped(const AttrSet *instance, const AttrSet *blueprint, const char *name);
 
-/* Typed scoped getters with instance -> defaults fallback and int/float coercion.
- * These replace entity_get_* as the standard two-level attribute lookup. */
+/* Typed scoped getters with instance -> defaults fallback and int/float coercion. */
 float attr_get_scoped_float(const AttrSet *instance, const AttrSet *defaults, const char *name, float fallback);
 int attr_get_scoped_int(const AttrSet *instance, const AttrSet *defaults, const char *name, int fallback);
 bool attr_get_scoped_bool(const AttrSet *instance, const AttrSet *defaults, const char *name, bool fallback);

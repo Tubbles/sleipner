@@ -15,19 +15,12 @@
  * beyond that call. */
 typedef struct {
     Strv blueprint_name;
-    const AttrSet *defaults;
     Vector2 collision_offset;
     Vector2 collision_size;
     Texture2D *texture;
 } EntitySpec;
 
 typedef struct {
-    /* PLANNED REMOVAL: defaults and blueprint_name will move out of Entity.
-     * defaults is a stored cross-object pointer (violates DESIGN.md "references
-     * by ID or name" rule). blueprint_name will move to an external
-     * map<entity_id, Str> in GameState. See DESIGN.md § "Entity–blueprint
-     * connection" for the target design. */
-    const AttrSet *defaults;
     Texture2D *texture;
 
     AttrSet attrs;
@@ -55,26 +48,8 @@ typedef struct {
     bool moving;
 } Entity;
 
-/* PLANNED REMOVAL: entity_get_* will be replaced by attr_get_scoped_* typed
- * wrappers in attribute.h. The two-level instance→defaults lookup is a generic
- * AttrSet operation, not entity-specific. See DESIGN.md § "Entity–blueprint
- * connection". */
-
-/* Get an attribute with instance -> defaults fallback.
- * Returns NULL if not found in either. */
-const Attribute *entity_get_attr(const Entity *entity, const char *name);
-
-/* Typed getters with instance -> defaults fallback. */
-float entity_get_float(const Entity *entity, const char *name, float fallback);
-int entity_get_int(const Entity *entity, const char *name, int fallback);
-bool entity_get_bool(const Entity *entity, const char *name, bool fallback);
-const char *entity_get_string(const Entity *entity, const char *name);
-
-/* Source rectangle from src_x/y/w/h attrs (instance -> defaults fallback). */
-Rectangle entity_get_source(const Entity *entity);
-
-/* Initialize an entity from a spec. Copies blueprint_name; borrows defaults
- * pointer. Returns false on allocation failure. */
+/* Initialize an entity from a spec. Copies blueprint_name.
+ * Returns false on allocation failure. */
 [[nodiscard]] bool entity_init(Entity *entity, EntitySpec spec, Vector2 position, Allocator *alloc);
 
 /* Recompute collision rect from position + entity's stored collision_offset.
@@ -90,10 +65,10 @@ const Entity *entity_find_by_tag(const Entity *source, const char *tag, const En
 Entity *entity_find_by_tag_mut(Entity *source, const char *tag, Entity *entities, int entity_count);
 
 /* Effective visibility: own visible AND all ancestors visible. */
-bool entity_is_visible(int entity_index, const Entity *entities);
+bool entity_is_visible(int entity_index, const Entity *entities, const AttrSet *const *entity_defaults);
 
 /* Effective active state: own active AND all ancestors active. */
-bool entity_is_active(int entity_index, const Entity *entities);
+bool entity_is_active(int entity_index, const Entity *entities, const AttrSet *const *entity_defaults);
 
 VEC_DECL(entity, Entity)
 

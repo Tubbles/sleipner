@@ -210,16 +210,20 @@ void test_level_entity_source_rects(void)
     TEST_ASSERT_TRUE(level_load(&ctx, &level, root, "overworld", &blueprints, test_texture_lookup, NULL, NULL));
 
     /* Tree source rect from blueprint */
-    Rectangle src0 = entity_get_source(&level.entities.data[0]);
-    TEST_ASSERT_FLOAT_WITHIN(0.1f, 0.0f, src0.x);
-    TEST_ASSERT_FLOAT_WITHIN(0.1f, 0.0f, src0.y);
-    TEST_ASSERT_FLOAT_WITHIN(0.1f, 64.0f, src0.width);
-    TEST_ASSERT_FLOAT_WITHIN(0.1f, 80.0f, src0.height);
+    const Entity *tree = &level.entities.data[0];
+    const Blueprint *tree_bp = blueprint_find(&blueprints, tree->blueprint_name.ptr);
+    const AttrSet *tree_defaults = tree_bp ? &tree_bp->attrs : NULL;
+    TEST_ASSERT_FLOAT_WITHIN(0.1f, 0.0f, attr_get_scoped_float(&tree->attrs, tree_defaults, "src_x", 0.0F));
+    TEST_ASSERT_FLOAT_WITHIN(0.1f, 0.0f, attr_get_scoped_float(&tree->attrs, tree_defaults, "src_y", 0.0F));
+    TEST_ASSERT_FLOAT_WITHIN(0.1f, 64.0f, attr_get_scoped_float(&tree->attrs, tree_defaults, "src_w", 0.0F));
+    TEST_ASSERT_FLOAT_WITHIN(0.1f, 80.0f, attr_get_scoped_float(&tree->attrs, tree_defaults, "src_h", 0.0F));
 
     /* Chest source rect from blueprint */
-    Rectangle src1 = entity_get_source(&level.entities.data[1]);
-    TEST_ASSERT_FLOAT_WITHIN(0.1f, 16.0f, src1.width);
-    TEST_ASSERT_FLOAT_WITHIN(0.1f, 16.0f, src1.height);
+    const Entity *chest = &level.entities.data[1];
+    const Blueprint *chest_bp = blueprint_find(&blueprints, chest->blueprint_name.ptr);
+    const AttrSet *chest_defaults = chest_bp ? &chest_bp->attrs : NULL;
+    TEST_ASSERT_FLOAT_WITHIN(0.1f, 16.0f, attr_get_scoped_float(&chest->attrs, chest_defaults, "src_w", 0.0F));
+    TEST_ASSERT_FLOAT_WITHIN(0.1f, 16.0f, attr_get_scoped_float(&chest->attrs, chest_defaults, "src_h", 0.0F));
 
     test_level_free(&level);
     (void)blueprints;
