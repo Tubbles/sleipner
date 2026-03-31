@@ -48,10 +48,12 @@ const AttrSet *entity_resolve_defaults(const GameState *state, int entity_id)
     return blueprint ? &blueprint->attrs : NULL;
 }
 
-static int find_player_entity(const Level *level)
+static int find_player_entity(const GameState *state)
 {
+    const Level *level = &state->current_level;
     for (int index = 0; index < level->entities.count; index++) {
-        const char *behavior = entity_get_string(&level->entities.data[index], "behavior");
+        const AttrSet *defaults = entity_resolve_defaults(state, level->entities.data[index].id);
+        const char *behavior = attr_get_scoped_string(&level->entities.data[index].attrs, defaults, "behavior");
         if (behavior && strcmp(behavior, "player") == 0) {
             return index;
         }
@@ -98,7 +100,6 @@ bool game_load_gamedata(struct EngineContext *ctx, GameState *state, GamedataPar
     state->gamedata_loaded = level_ok;
 
     if (level_ok) {
-        state->player_index = find_player_entity(&state->current_level);
         for (int index = 0; index < state->current_level.entities.count; index++) {
             const Entity *entity = &state->current_level.entities.data[index];
             Str bp_name = {0};
@@ -109,6 +110,7 @@ bool game_load_gamedata(struct EngineContext *ctx, GameState *state, GamedataPar
                 (void)map_entity_ruleset_set(&state->rule_table, entity->id, blueprint->rules, &gamedata_alloc);
             }
         }
+        state->player_index = find_player_entity(state);
 
         /* Initialize overlap tracking: one false entry per entity */
         for (int index = 0; index < state->current_level.entities.count; index++) {
@@ -167,11 +169,12 @@ const Entity *game_get_player_const(const GameState *state)
     return &state->current_level.entities.data[state->player_index];
 }
 
-static void update_player(Entity *player, InputState input, float delta_time, RectU32 bounds)
+static void
+update_player(Entity *player, const AttrSet *player_defaults, InputState input, float delta_time, RectU32 bounds)
 {
     player->moving = false;
 
-    float speed = entity_get_float(player, "speed", DEFAULT_PLAYER_SPEED);
+    float speed = attr_get_scoped_float(&player->attrs, player_defaults, "speed", DEFAULT_PLAYER_SPEED);
 
     if (input.left_stick.x != 0.0F || input.left_stick.y != 0.0F) {
         player->position.x += input.left_stick.x * speed * delta_time;
@@ -218,11 +221,14 @@ static void update_player(Entity *player, InputState input, float delta_time, Re
     entity_update_collision(player);
 }
 
-static void resolve_player_obstacles(Level *level, int player_index)
+static void resolve_player_obstacles(const GameState *state, int player_index)
 {
+    Level *level = (Level *)&state->current_level;
     Entity *player = &level->entities.data[player_index];
     for (int index = 0; index < level->entities.count; index++) {
-        if (index == player_index || !entity_get_bool(&level->entities.data[index], "solid", false)) {
+        const AttrSet *defaults = entity_resolve_defaults(state, level->entities.data[index].id);
+        if (index == player_index ||
+            !attr_get_scoped_bool(&level->entities.data[index].attrs, defaults, "solid", false)) {
             continue;
         }
         Rectangle hitbox = player->collision;
@@ -281,6 +287,7 @@ static void update_child_positions(Level *level)
 }
 
 static void detect_interact_targets(struct EngineContext *ctx,
+                                    const GameState *state,
                                     const Entity *player,
                                     int player_index,
                                     const Entity *entities,
@@ -289,7 +296,8 @@ static void detect_interact_targets(struct EngineContext *ctx,
                                     Allocator *alloc)
 {
     for (int index = 0; index < entity_count; index++) {
-        if (index == player_index || !entity_get_bool(&entities[index], "active", true)) {
+        const AttrSet *defaults = entity_resolve_defaults(state, entities[index].id);
+        if (index == player_index || !attr_get_scoped_bool(&entities[index].attrs, defaults, "active", true)) {
             continue;
         }
         float delta_x = entities[index].position.x - player->position.x;
@@ -304,7 +312,8 @@ static void detect_interact_targets(struct EngineContext *ctx,
     }
 }
 
-static void detect_enter_targets(const Entity *player,
+static void detect_enter_targets(const GameState *state,
+                                 const Entity *player,
                                  int player_index,
                                  const Entity *entities,
                                  int entity_count,
@@ -313,7 +322,8 @@ static void detect_enter_targets(const Entity *player,
                                  Allocator *alloc)
 {
     for (int index = 0; index < entity_count && index < overlaps->count; index++) {
-        if (index == player_index || !entity_get_bool(&entities[index], "active", true)) {
+        const AttrSet *defaults = entity_resolve_defaults(state, entities[index].id);
+        if (index == player_index || !attr_get_scoped_bool(&entities[index].attrs, defaults, "active", true)) {
             overlaps->data[index] = false;
             continue;
         }
@@ -327,8 +337,8 @@ static void detect_enter_targets(const Entity *player,
     }
 }
 
-static void
-detect_solid_collisions(Level *level, vec_bool *prev_collisions, vec_trigger_event *out_events, Allocator *alloc)
+static void detect_solid_collisions(
+    const GameState *state, Level *level, vec_bool *prev_collisions, vec_trigger_event *out_events, Allocator *alloc)
 {
     if (prev_collisions->count == 0) {
         return;
@@ -336,11 +346,13 @@ detect_solid_collisions(Level *level, vec_bool *prev_collisions, vec_trigger_eve
     Entity *entities = level->entities.data;
     int entity_count = level->entities.count;
     for (int entity_a = 0; entity_a < entity_count; entity_a++) {
-        if (!entity_get_bool(&entities[entity_a], "solid", false)) {
+        const AttrSet *defaults_a = entity_resolve_defaults(state, entities[entity_a].id);
+        if (!attr_get_scoped_bool(&entities[entity_a].attrs, defaults_a, "solid", false)) {
             continue;
         }
         for (int entity_b = entity_a + 1; entity_b < entity_count; entity_b++) {
-            if (!entity_get_bool(&entities[entity_b], "solid", false)) {
+            const AttrSet *defaults_b = entity_resolve_defaults(state, entities[entity_b].id);
+            if (!attr_get_scoped_bool(&entities[entity_b].attrs, defaults_b, "solid", false)) {
                 continue;
             }
             int pair_index = (entity_a * entity_count) + entity_b;
@@ -377,7 +389,7 @@ static void collect_trigger_events(
         if (state->player_index >= 0) {
             const Entity *player = game_get_player_const(state);
             if (player) {
-                detect_interact_targets(ctx, player, state->player_index, state->current_level.entities.data,
+                detect_interact_targets(ctx, state, player, state->player_index, state->current_level.entities.data,
                                         state->current_level.entities.count, out_events, alloc);
             }
         }
@@ -386,7 +398,7 @@ static void collect_trigger_events(
     if (state->player_index >= 0 && state->prev_player_overlaps.count > 0) {
         const Entity *player = game_get_player_const(state);
         if (player) {
-            detect_enter_targets(player, state->player_index, state->current_level.entities.data,
+            detect_enter_targets(state, player, state->player_index, state->current_level.entities.data,
                                  state->current_level.entities.count, &state->prev_player_overlaps, out_events, alloc);
         }
     }
@@ -400,8 +412,9 @@ void game_update(struct EngineContext *ctx, GameState *state, InputState input, 
     if (!state->editor_mode) {
         Entity *player = game_get_player(state);
         if (player) {
-            update_player(player, input, delta_time, state->game_bounds);
-            resolve_player_obstacles(&state->current_level, state->player_index);
+            const AttrSet *player_defaults = entity_resolve_defaults(state, player->id);
+            update_player(player, player_defaults, input, delta_time, state->game_bounds);
+            resolve_player_obstacles(state, state->player_index);
         }
     }
 
@@ -413,7 +426,8 @@ void game_update(struct EngineContext *ctx, GameState *state, InputState input, 
         vec_trigger_event trigger_events = {0};
 
         /* Detect new solid-entity overlaps and fire collide events on both parties */
-        detect_solid_collisions(&state->current_level, &state->prev_solid_collisions, &trigger_events, &scratch_alloc);
+        detect_solid_collisions(state, &state->current_level, &state->prev_solid_collisions, &trigger_events,
+                                &scratch_alloc);
 
         /* Tick timers and collect fired events */
         for (int timer_index = state->timers.count - 1; timer_index >= 0; timer_index--) {
