@@ -626,7 +626,7 @@ assets/
 └── sfx/           # sound effects
 ```
 
-### Game Data (`data/gamedata.txt`)
+### Game Data (`data/gamedata.toml`)
 
 All game data — blueprints, levels, tile palettes — lives in a **single file**. This is the creative output that the editor reads and writes. Must be:
 
@@ -643,17 +643,17 @@ Why a single file: hard links only work on files, not directories. A single file
   ──────────────                       ─────────────────
   Edit in-game, save                   Edit by hand or via Claude
         ↓                                    ↓
-  ~/Sync/sleipner/gamedata.txt  ←→     data/gamedata.txt
+  ~/Sync/sleipner/gamedata.toml  ←→     data/gamedata.toml
   (hard link to same inode             (hard link to same inode
    on dev machine)                      in Syncthing share)
                                              ↓
                                        git commit & push
 ```
 
-**Setup:** `ln data/gamedata.txt ~/Sync/sleipner/gamedata.txt`
+**Setup:** `ln data/gamedata.toml ~/Sync/sleipner/gamedata.toml`
 
-**Desktop path:** Game reads `data/gamedata.txt` (relative to binary / repo root).
-**Android path:** Game reads from Syncthing folder (e.g. `/storage/emulated/0/Sync/sleipner/gamedata.txt`).
+**Desktop path:** Game reads `data/gamedata.toml` (relative to binary / repo root).
+**Android path:** Game reads from Syncthing folder (e.g. `/storage/emulated/0/Sync/sleipner/gamedata.toml`).
 
 Both sides edit the same file. Syncthing syncs to the phone. Git versions the repo copy. The hard link means they are the same file on the dev machine — no copy step needed.
 
@@ -1116,7 +1116,7 @@ This is bounded (one leaked backing per growth event) and reclaimed on level rel
 - [x] Variable system (local per-execution, global persistent, $ references in parameters)
 - [x] Subroutines (named reusable action sequences, callable via `call:`)
 - [x] Timer management (create, destroy named timers)
-- [x] Enter/on_spawn trigger detection (simple AABB overlap for now — will be replaced by composable collision shapes, see Phase 9)
+- [x] Enter/on_spawn trigger detection (AABB overlap — Phase 9 wires in composable shapes)
 - [x] Remaining triggers (collide, defeat, timer, timer_periodic, on_destroy)
 
 ### Phase 5 — Editor Mode
@@ -1176,17 +1176,20 @@ This is bounded (one leaked backing per growth event) and reclaimed on level rel
 - [ ] NPC behaviors (patrol, dialogue)
 - [ ] Save/load system (persistent world state, delta from gamedata, auto-save, slots)
 
-### Phase 9 — Collision Engine
+### Phase 9 — Collision Engine Integration
 
-Replace the AABB-only collision system with composable collision shapes. Each entity's collision volume is a list of primitives; the engine tests all pairs.
+Collision primitives (circle, rect, triangle) and composable shapes are implemented in
+`collision.h`/`collision.c` with full pairwise resolvers and tests. The game loop still uses
+AABB rectangles everywhere. This phase wires the shape system into the game.
 
-- [ ] Collision primitive types: circle, rectangle, triangle
-- [ ] Composable collision volumes (list of primitives per entity, combined for resolution)
-- [ ] Replace simple AABB overlap in `enter` trigger detection with full shape system
-- [ ] Replace player/obstacle AABB resolution with primitive-pair resolution
+- [x] Collision primitive types: circle, rectangle, triangle
+- [x] Composable collision volumes (list of primitives per entity, combined for resolution)
+- [x] Pairwise primitive resolvers (all 9 combinations) with unit tests
+- [ ] Wire `CollisionShape` into entity struct (replace `Rectangle collision`)
+- [ ] Replace player/obstacle AABB resolution in game.c with `resolve_composite`
+- [ ] Replace simple AABB overlap in `enter` trigger detection with shape-based overlap
 - [ ] Slope and angled surface support
 - [ ] One-way platforms (jump-down ledges)
-- [ ] Trigger volumes of arbitrary shape (enter trigger uses shape, not AABB)
 - [ ] Editor visualization: draw all primitives in debug mode
 
 ## Resolved Decisions
@@ -1279,52 +1282,29 @@ Replace the AABB-only collision system with composable collision shapes. Each en
 
 ### Collision System Evolution
 
-Planned in Phase 9. The current AABB system will be replaced with the `Shape` / `Region` type system described below. This supersedes the existing `CollisionPrim` / `CollisionShape` types, which will be deleted.
+The primitive and composite resolver layer is implemented (`CollisionPrimitive` /
+`CollisionShape` in `collision.h`). The remaining work is integration: replacing `Rectangle
+collision` on Entity with `CollisionShape`, wiring `resolve_composite` into the game loop,
+and adding named regions (collision vs trigger vs hitbox). See Phase 9 in the roadmap.
 
-When Phase 9 lands, the simple AABB overlap used for `enter` trigger detection will be ripped out and replaced with the full shape system. The rule integration (`enter` fires when a player's region overlaps an entity's region) stays the same — only the underlying geometry changes.
+#### Named regions (planned)
 
-#### Type Definitions
-
-**`Shape`** — a single convex primitive, positioned relative to its owning `Region`. Tagged union:
-
-```c
-typedef enum { SHAPE_CIRCLE, SHAPE_RECT, SHAPE_TRIANGLE } ShapeKind;
-
-typedef struct {
-    ShapeKind kind;
-    Vector2 offset;   // relative to owning Region's offset
-    union {
-        struct { float radius; }                  circle;
-        struct { float half_w, half_h, angle; }  rect;
-        struct { Vector2 vertices[3]; }           triangle; // relative to shape offset
-    };
-} Shape;
-```
-
-**`Region`** — a composed volume: one or more `Shape`s plus a local offset:
+Separate collision and trigger volumes on each entity, replacing the single `Rectangle
+collision` field:
 
 ```c
-typedef struct {
-    Vector2 offset;   // relative to entity position
-    vec_shape shapes; // arena-backed; empty vec = no region
-} Region;
-```
-
-World position of a shape = `entity.position + region.offset + shape.offset`.
-
-**Named regions on `Entity`** — separate fields, not a vec, for clarity:
-
-```c
-Region collision_region;  // physics resolution (blocks movement)
-Region trigger_region;    // enter trigger detection
+CollisionShape collision_region;  // physics resolution (blocks movement)
+CollisionShape trigger_region;    // enter trigger detection
 // future: attack_hitbox, hurt_box, ...
 ```
 
-An empty `vec_shape` (`.shapes.count == 0`) means the region is absent — no special sentinel needed.
+An empty shape (`.prims.count == 0`) means the region is absent — no special sentinel needed.
 
 #### Decomposability
 
-Each primitive is convex by construction. Arbitrary polygons — including concave ones — are representable by composing triangles (triangulation). There is no concave polygon primitive and none is needed: the composition mechanism provides it for free. This is an intentional design property, not a limitation.
+Each primitive is convex by construction. Arbitrary polygons — including concave ones — are
+representable by composing triangles (triangulation). There is no concave polygon primitive
+and none is needed: the composition mechanism provides it for free.
 
 ### Modding
 - The data-driven architecture makes modding nearly free — worth designing for explicitly?
