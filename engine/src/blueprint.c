@@ -42,8 +42,8 @@ static bool parse_float_array(toml_array_t *array, float *out, int expected_coun
 /* Keys with dedicated parsing — not treated as custom attributes */
 static bool is_known_key(const char *key)
 {
-    static const char *known[] = {"name", "src", "collision_offset", "collision_size", "health", "animation", "child",
-                                  "rule", NULL};
+    static const char *known[] = {"name", "src",  "collision_offset", "collision_size", "health", "animation", "child",
+                                  "rule", nullptr};
     for (int index = 0; known[index]; index++) {
         if (strcmp(key, known[index]) == 0) {
             return true;
@@ -379,7 +379,7 @@ int blueprints_load(struct EngineContext *ctx, BlueprintTable *table, void *toml
     for (int index = 0; index < count; index++) {
         toml_table_t *entry = toml_table_at(blueprints, index);
         if (!entry) {
-            debug_log(ctx, "bp[%d]: toml_table_at returned NULL", index);
+            debug_log(ctx, "bp[%d]: toml_table_at returned nullptr", index);
             continue;
         }
 
@@ -427,5 +427,5 @@ const Blueprint *blueprint_find(const BlueprintTable *table, const char *name)
             return &table->entries.data[index];
         }
     }
-    return NULL;
+    return nullptr;
 }

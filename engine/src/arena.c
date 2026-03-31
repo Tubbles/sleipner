@@ -8,10 +8,10 @@
 bool arena_init(struct EngineContext *ctx, Arena *arena)
 {
     arena->buffer =
-        mmap(NULL, ARENA_VIRTUAL_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
+        mmap(nullptr, ARENA_VIRTUAL_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
     if (arena->buffer == MAP_FAILED) {
         error_set(ctx, "mmap(%zu) failed", (size_t)ARENA_VIRTUAL_SIZE);
-        arena->buffer = NULL;
+        arena->buffer = nullptr;
         arena->offset = 0;
         return false;
     }
@@ -37,7 +37,7 @@ void arena_reset(Arena *arena)
 void arena_free(Arena *arena)
 {
     (void)munmap(arena->buffer, ARENA_VIRTUAL_SIZE);
-    arena->buffer = NULL;
+    arena->buffer = nullptr;
     arena->offset = 0;
 }
 

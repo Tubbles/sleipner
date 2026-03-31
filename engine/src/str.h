@@ -8,10 +8,10 @@
 #include <stddef.h>
 
 /* Owning, heap-backed, growable string.  ptr[len] == '\0' is always maintained.
- * All functions that allocate take alloc; pass NULL to use libc heap.
+ * All functions that allocate take alloc; pass nullptr to use libc heap.
  * A zero-initialised Str {0} is uninitialized; call str_from_* before use. */
 typedef struct {
-    char *ptr;  /* null-terminated; never NULL after a successful str_from_* */
+    char *ptr;  /* null-terminated; never nullptr after a successful str_from_* */
     size_t len; /* character count, NOT including the null terminator */
     size_t cap; /* allocated bytes, NOT counting the null terminator */
 } Str;

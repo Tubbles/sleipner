@@ -35,7 +35,7 @@ void error_wrap(struct EngineContext *ctx, const char *format, ...)
 const char *error_get(struct EngineContext *ctx)
 {
     if (ctx->error.error_buffer[0] == '\0') {
-        return NULL;
+        return nullptr;
     }
     return ctx->error.error_buffer;
 }

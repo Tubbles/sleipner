@@ -50,7 +50,7 @@ static inline void arena_scope_pop(ArenaScope *scope)
 /* Reserve virtual address space for an arena. Returns false on mmap failure. */
 [[nodiscard]] bool arena_init(struct EngineContext *ctx, Arena *arena);
 
-/* Allocate from the arena per the given request. Never returns NULL. */
+/* Allocate from the arena per the given request. Never returns nullptr. */
 [[nodiscard]] void *arena_alloc(struct EngineContext *ctx, Arena *arena, AllocRequest request);
 
 /* Reset the arena — all previous allocations become invalid.
@@ -64,11 +64,11 @@ void arena_free(Arena *arena);
 size_t arena_used(const Arena *arena);
 
 /* Reallocate an existing arena allocation.
- * If old_ptr is NULL, behaves like arena_alloc.
+ * If old_ptr is nullptr, behaves like arena_alloc.
  * If request.size <= old_size, returns old_ptr unchanged.
  * If old_ptr is at the top of the arena, extends in-place.
  * Otherwise, allocates new space, copies, and returns new pointer (old space leaked).
- * Never returns NULL. */
+ * Never returns nullptr. */
 [[nodiscard]] void *
 arena_realloc(struct EngineContext *ctx, Arena *arena, void *old_ptr, size_t old_size, AllocRequest request);
 

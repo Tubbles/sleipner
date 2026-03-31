@@ -337,7 +337,7 @@ void test_condition_flag_true(void)
     TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &condition.argument, "test_flag"));
 
     Entity entity = {0};
-    const AttrSet *entity_defs[] = {NULL};
+    const AttrSet *entity_defs[] = {nullptr};
     ConditionContext context = {.entity = &entity, .flags = &flags, .entity_defaults = entity_defs};
     TEST_ASSERT_TRUE(conditions_evaluate(&condition, 1, context));
     str_free(&test_heap_alloc, &condition.argument);
@@ -352,7 +352,7 @@ void test_condition_flag_false(void)
     TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &condition.argument, "test_flag"));
 
     Entity entity = {0};
-    const AttrSet *entity_defs[] = {NULL};
+    const AttrSet *entity_defs[] = {nullptr};
     ConditionContext context = {.entity = &entity, .flags = &flags, .entity_defaults = entity_defs};
     TEST_ASSERT_FALSE(conditions_evaluate(&condition, 1, context));
     str_free(&test_heap_alloc, &condition.argument);
@@ -367,7 +367,7 @@ void test_condition_not_flag(void)
     TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &condition.argument, "test_flag"));
 
     Entity entity = {0};
-    const AttrSet *entity_defs[] = {NULL};
+    const AttrSet *entity_defs[] = {nullptr};
     ConditionContext context = {.entity = &entity, .flags = &flags, .entity_defaults = entity_defs};
     TEST_ASSERT_TRUE(conditions_evaluate(&condition, 1, context));
     str_free(&test_heap_alloc, &condition.argument);
@@ -383,7 +383,7 @@ void test_condition_attr_truthy(void)
     TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &condition.argument, "is_locked"));
 
     FlagSet flags = {0};
-    const AttrSet *entity_defs[] = {NULL};
+    const AttrSet *entity_defs[] = {nullptr};
     ConditionContext context = {.entity = &entity, .flags = &flags, .entity_defaults = entity_defs};
     TEST_ASSERT_TRUE(conditions_evaluate(&condition, 1, context));
     str_free(&test_heap_alloc, &condition.argument);
@@ -400,7 +400,7 @@ void test_condition_attr_falsy(void)
     TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &condition.argument, "is_locked"));
 
     FlagSet flags = {0};
-    const AttrSet *entity_defs[] = {NULL};
+    const AttrSet *entity_defs[] = {nullptr};
     ConditionContext context = {.entity = &entity, .flags = &flags, .entity_defaults = entity_defs};
     TEST_ASSERT_FALSE(conditions_evaluate(&condition, 1, context));
     str_free(&test_heap_alloc, &condition.argument);
@@ -416,7 +416,7 @@ void test_condition_attr_missing(void)
     TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &condition.argument, "nonexistent"));
 
     FlagSet flags = {0};
-    const AttrSet *entity_defs[] = {NULL};
+    const AttrSet *entity_defs[] = {nullptr};
     ConditionContext context = {.entity = &entity, .flags = &flags, .entity_defaults = entity_defs};
     TEST_ASSERT_FALSE(conditions_evaluate(&condition, 1, context));
     str_free(&test_heap_alloc, &condition.argument);
@@ -432,7 +432,7 @@ void test_condition_attr_less_than(void)
     TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &condition.argument, "health"));
 
     FlagSet flags = {0};
-    const AttrSet *entity_defs[] = {NULL};
+    const AttrSet *entity_defs[] = {nullptr};
     ConditionContext context = {.entity = &entity, .flags = &flags, .entity_defaults = entity_defs};
     TEST_ASSERT_TRUE(conditions_evaluate(&condition, 1, context));
     str_free(&test_heap_alloc, &condition.argument);
@@ -449,7 +449,7 @@ void test_condition_attr_greater_than(void)
     TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &condition.argument, "speed"));
 
     FlagSet flags = {0};
-    const AttrSet *entity_defs[] = {NULL};
+    const AttrSet *entity_defs[] = {nullptr};
     ConditionContext context = {.entity = &entity, .flags = &flags, .entity_defaults = entity_defs};
     TEST_ASSERT_TRUE(conditions_evaluate(&condition, 1, context));
     str_free(&test_heap_alloc, &condition.argument);
@@ -471,7 +471,7 @@ void test_condition_and_logic_all_pass(void)
     TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &conditions[1].argument, "flag_b"));
 
     Entity entity = {0};
-    const AttrSet *entity_defs[] = {NULL};
+    const AttrSet *entity_defs[] = {nullptr};
     ConditionContext context = {.entity = &entity, .flags = &flags, .entity_defaults = entity_defs};
     TEST_ASSERT_TRUE(conditions_evaluate(conditions, 2, context));
     str_free(&test_heap_alloc, &conditions[0].argument);
@@ -492,7 +492,7 @@ void test_condition_and_logic_one_fails(void)
     TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &conditions[1].argument, "flag_b"));
 
     Entity entity = {0};
-    const AttrSet *entity_defs[] = {NULL};
+    const AttrSet *entity_defs[] = {nullptr};
     ConditionContext context = {.entity = &entity, .flags = &flags, .entity_defaults = entity_defs};
     TEST_ASSERT_FALSE(conditions_evaluate(conditions, 2, context));
     str_free(&test_heap_alloc, &conditions[0].argument);
@@ -515,7 +515,7 @@ void test_action_set_flag_executes(void)
         .entity = &entity,
         .flags = &flags,
         .event_queue = &queue,
-        .entity_defaults = (const AttrSet *[]){NULL},
+        .entity_defaults = (const AttrSet *[]){nullptr},
     };
     TEST_ASSERT_TRUE(action_node_execute(&ctx, &test_heap_alloc, &action, context));
     TEST_ASSERT_TRUE(flag_get(&flags, "chest_opened"));
@@ -537,7 +537,7 @@ void test_action_clear_flag_executes(void)
         .entity = &entity,
         .flags = &flags,
         .event_queue = &queue,
-        .entity_defaults = (const AttrSet *[]){NULL},
+        .entity_defaults = (const AttrSet *[]){nullptr},
     };
     TEST_ASSERT_TRUE(action_node_execute(&ctx, &test_heap_alloc, &action, context));
     TEST_ASSERT_FALSE(flag_get(&flags, "door_locked"));
@@ -562,7 +562,7 @@ void test_action_set_attr_bool(void)
         .entity_count = 1,
         .flags = &flags,
         .event_queue = &queue,
-        .entity_defaults = (const AttrSet *[]){NULL},
+        .entity_defaults = (const AttrSet *[]){nullptr},
     };
     TEST_ASSERT_TRUE(action_node_execute(&ctx, &test_heap_alloc, &action, context));
 
@@ -592,7 +592,7 @@ void test_action_set_attr_int(void)
         .entity_count = 1,
         .flags = &flags,
         .event_queue = &queue,
-        .entity_defaults = (const AttrSet *[]){NULL},
+        .entity_defaults = (const AttrSet *[]){nullptr},
     };
     TEST_ASSERT_TRUE(action_node_execute(&ctx, &test_heap_alloc, &action, context));
     TEST_ASSERT_EQUAL_INT(42, attr_get_int(&entity.attrs, "health", 0));
@@ -619,7 +619,7 @@ void test_action_add_attr(void)
         .entity_count = 1,
         .flags = &flags,
         .event_queue = &queue,
-        .entity_defaults = (const AttrSet *[]){NULL},
+        .entity_defaults = (const AttrSet *[]){nullptr},
     };
     TEST_ASSERT_TRUE(action_node_execute(&ctx, &test_heap_alloc, &action, context));
     TEST_ASSERT_EQUAL_INT(7, attr_get_int(&entity.attrs, "health", 0));
@@ -645,7 +645,7 @@ void test_action_toggle_attr(void)
         .entity_count = 1,
         .flags = &flags,
         .event_queue = &queue,
-        .entity_defaults = (const AttrSet *[]){NULL},
+        .entity_defaults = (const AttrSet *[]){nullptr},
     };
     TEST_ASSERT_TRUE(action_node_execute(&ctx, &test_heap_alloc, &action, context));
     TEST_ASSERT_FALSE(attr_get_bool(&entity.attrs, "visible", true));
@@ -666,7 +666,7 @@ void test_action_destroy(void)
         .entity = &entity,
         .flags = &flags,
         .event_queue = &queue,
-        .entity_defaults = (const AttrSet *[]){NULL},
+        .entity_defaults = (const AttrSet *[]){nullptr},
     };
     TEST_ASSERT_TRUE(action_node_execute(&ctx, &test_heap_alloc, &action, context));
     TEST_ASSERT_FALSE(attr_get_bool(&entity.attrs, "active", true));
@@ -687,7 +687,7 @@ void test_action_fire_event_queues(void)
         .entity = &entity,
         .flags = &flags,
         .event_queue = &queue,
-        .entity_defaults = (const AttrSet *[]){NULL},
+        .entity_defaults = (const AttrSet *[]){nullptr},
     };
     TEST_ASSERT_TRUE(action_node_execute(&ctx, &test_heap_alloc, &action, context));
     TEST_ASSERT_EQUAL_INT(1, queue.count);
@@ -714,7 +714,7 @@ void test_action_execution_order(void)
         .entity = &entity,
         .flags = &flags,
         .event_queue = &queue,
-        .entity_defaults = (const AttrSet *[]){NULL},
+        .entity_defaults = (const AttrSet *[]){nullptr},
     };
     (void)action_node_execute(&ctx, &test_heap_alloc, &actions[0], context);
     (void)action_node_execute(&ctx, &test_heap_alloc, &actions[1], context);
@@ -857,8 +857,8 @@ void test_evaluate_interact_sets_flag(void)
     TriggerEvent event = {.type = TRIGGER_INTERACT, .entity_index = 0};
     const AttrSet *defaults_array[] = {&blueprint.attrs};
 
-    rules_evaluate_batch(&ctx, &test_heap_alloc, &entity, 1, &event, 1, &flags, &global_vars, &rule_table, NULL, NULL,
-                         defaults_array);
+    rules_evaluate_batch(&ctx, &test_heap_alloc, &entity, 1, &event, 1, &flags, &global_vars, &rule_table, nullptr,
+                         nullptr, defaults_array);
     TEST_ASSERT_TRUE(flag_get(&flags, "chest_opened"));
 
     arena_free(&arena);
@@ -905,8 +905,8 @@ void test_evaluate_condition_blocks_action(void)
     TriggerEvent event = {.type = TRIGGER_INTERACT, .entity_index = 0};
     const AttrSet *defaults_array[] = {&blueprint.attrs};
 
-    rules_evaluate_batch(&ctx, &test_heap_alloc, &entity, 1, &event, 1, &flags, &global_vars, &rule_table, NULL, NULL,
-                         defaults_array);
+    rules_evaluate_batch(&ctx, &test_heap_alloc, &entity, 1, &event, 1, &flags, &global_vars, &rule_table, nullptr,
+                         nullptr, defaults_array);
     TEST_ASSERT_FALSE(flag_get(&flags, "chest_opened"));
 
     arena_free(&arena);
@@ -964,8 +964,8 @@ void test_evaluate_fire_event_cascading(void)
     TriggerEvent event = {.type = TRIGGER_INTERACT, .entity_index = 0};
     const AttrSet *defaults_array[] = {&bp_switch.attrs, &bp_door.attrs};
 
-    rules_evaluate_batch(&ctx, &test_heap_alloc, entities, 2, &event, 1, &flags, &global_vars, &rule_table, NULL, NULL,
-                         defaults_array);
+    rules_evaluate_batch(&ctx, &test_heap_alloc, entities, 2, &event, 1, &flags, &global_vars, &rule_table, nullptr,
+                         nullptr, defaults_array);
     TEST_ASSERT_TRUE(flag_get(&flags, "door_opened"));
 
     arena_free(&arena);
@@ -1000,7 +1000,7 @@ void test_var_set_local(void)
         .event_queue = &queue,
         .local_vars = &local_vars,
         .global_vars = &global_vars,
-        .entity_defaults = (const AttrSet *[]){NULL},
+        .entity_defaults = (const AttrSet *[]){nullptr},
     };
     TEST_ASSERT_TRUE(action_node_execute(&ctx, &test_heap_alloc, &action, context));
     TEST_ASSERT_EQUAL_INT(42, attr_get_int(&local_vars, "damage", 0));
@@ -1032,7 +1032,7 @@ void test_var_set_global(void)
         .event_queue = &queue,
         .local_vars = &local_vars,
         .global_vars = &global_vars,
-        .entity_defaults = (const AttrSet *[]){NULL},
+        .entity_defaults = (const AttrSet *[]){nullptr},
     };
     TEST_ASSERT_TRUE(action_node_execute(&ctx, &test_heap_alloc, &action, context));
     TEST_ASSERT_EQUAL_INT(100, attr_get_int(&global_vars, "score", 0));
@@ -1055,7 +1055,7 @@ void test_var_condition_truthy(void)
     Condition cond = {.type = COND_VAR};
     TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &cond.argument, "active"));
 
-    const AttrSet *var_defs[] = {NULL};
+    const AttrSet *var_defs[] = {nullptr};
     ConditionContext context = {
         .entity = &entity,
         .entities = &entity,
@@ -1082,7 +1082,7 @@ void test_var_condition_falsy_when_unset(void)
     Condition cond = {.type = COND_VAR};
     TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &cond.argument, "missing"));
 
-    const AttrSet *var_defs2[] = {NULL};
+    const AttrSet *var_defs2[] = {nullptr};
     ConditionContext context = {
         .entity = &entity,
         .entities = &entity,
@@ -1119,7 +1119,7 @@ void test_var_substitution_in_set_attr(void)
         .event_queue = &queue,
         .local_vars = &local_vars,
         .global_vars = &global_vars,
-        .entity_defaults = (const AttrSet *[]){NULL},
+        .entity_defaults = (const AttrSet *[]){nullptr},
     };
     TEST_ASSERT_TRUE(action_node_execute(&ctx, &test_heap_alloc, &action, context));
     TEST_ASSERT_EQUAL_INT(5, attr_get_int(&entity.attrs, "health", 0));
@@ -1336,7 +1336,7 @@ void test_integration_for_each_no_bind_iterates_all_entities(void)
     /* All three entities must have count = 1 */
     for (int entity_index = 0; entity_index < state.current_level.entities.count; entity_index++) {
         const Entity *entity = &state.current_level.entities.data[entity_index];
-        TEST_ASSERT_EQUAL_INT(1, (int)attr_get_scoped_float(&entity->attrs, NULL, "count", 0.0F));
+        TEST_ASSERT_EQUAL_INT(1, (int)attr_get_scoped_float(&entity->attrs, nullptr, "count", 0.0F));
     }
 
     game_free(&ctx, &state);
@@ -1395,8 +1395,8 @@ void test_integration_for_each_condition_filter(void)
     /* entity 1 = enemy, entity 2 = bystander */
     const Entity *enemy = &state.current_level.entities.data[1];
     const Entity *bystander = &state.current_level.entities.data[2];
-    TEST_ASSERT_EQUAL_INT(1, (int)attr_get_scoped_float(&enemy->attrs, NULL, "hit_count", 0.0F));
-    TEST_ASSERT_EQUAL_INT(0, (int)attr_get_scoped_float(&bystander->attrs, NULL, "hit_count", 0.0F));
+    TEST_ASSERT_EQUAL_INT(1, (int)attr_get_scoped_float(&enemy->attrs, nullptr, "hit_count", 0.0F));
+    TEST_ASSERT_EQUAL_INT(0, (int)attr_get_scoped_float(&bystander->attrs, nullptr, "hit_count", 0.0F));
 
     game_free(&ctx, &state);
 }
@@ -1447,7 +1447,7 @@ void test_integration_for_each_bind_mode(void)
     /* All three entities must have tagged = 1 (bind mode still includes self) */
     for (int entity_index = 0; entity_index < state.current_level.entities.count; entity_index++) {
         const Entity *entity = &state.current_level.entities.data[entity_index];
-        TEST_ASSERT_EQUAL_INT(1, (int)attr_get_scoped_float(&entity->attrs, NULL, "tagged", 0.0F));
+        TEST_ASSERT_EQUAL_INT(1, (int)attr_get_scoped_float(&entity->attrs, nullptr, "tagged", 0.0F));
     }
 
     game_free(&ctx, &state);
@@ -1522,7 +1522,7 @@ void test_integration_subroutine_inherits_self(void)
 
     /* Called twice — count must be 2 */
     const Entity *counter = &state.current_level.entities.data[0];
-    TEST_ASSERT_EQUAL_INT(2, (int)attr_get_scoped_float(&counter->attrs, NULL, "count", 0.0F));
+    TEST_ASSERT_EQUAL_INT(2, (int)attr_get_scoped_float(&counter->attrs, nullptr, "count", 0.0F));
 
     game_free(&ctx, &state);
 }
@@ -1563,16 +1563,16 @@ void test_integration_timer_oneshot_fires_once(void)
     /* 1 timer created, none fired yet */
     TEST_ASSERT_EQUAL_INT(1, state.timers.count);
     const Entity *thing = &state.current_level.entities.data[0];
-    TEST_ASSERT_EQUAL_INT(0, (int)attr_get_scoped_float(&thing->attrs, NULL, "fired_count", 0.0F));
+    TEST_ASSERT_EQUAL_INT(0, (int)attr_get_scoped_float(&thing->attrs, nullptr, "fired_count", 0.0F));
 
     /* Advance past duration — timer fires once */
     game_update(&ctx, &state, (InputState){0}, 0.6F);
     TEST_ASSERT_EQUAL_INT(0, state.timers.count);
-    TEST_ASSERT_EQUAL_INT(1, (int)attr_get_scoped_float(&thing->attrs, NULL, "fired_count", 0.0F));
+    TEST_ASSERT_EQUAL_INT(1, (int)attr_get_scoped_float(&thing->attrs, nullptr, "fired_count", 0.0F));
 
     /* Second tick — no timer left, count stays at 1 */
     game_update(&ctx, &state, (InputState){0}, 0.6F);
-    TEST_ASSERT_EQUAL_INT(1, (int)attr_get_scoped_float(&thing->attrs, NULL, "fired_count", 0.0F));
+    TEST_ASSERT_EQUAL_INT(1, (int)attr_get_scoped_float(&thing->attrs, nullptr, "fired_count", 0.0F));
 
     game_free(&ctx, &state);
 }
@@ -1610,11 +1610,11 @@ void test_integration_timer_periodic_fires_repeatedly(void)
     /* Advance 0.6 s — one fire */
     game_update(&ctx, &state, (InputState){0}, 0.6F);
     const Entity *thing = &state.current_level.entities.data[0];
-    TEST_ASSERT_EQUAL_INT(1, (int)attr_get_scoped_float(&thing->attrs, NULL, "pulse_count", 0.0F));
+    TEST_ASSERT_EQUAL_INT(1, (int)attr_get_scoped_float(&thing->attrs, nullptr, "pulse_count", 0.0F));
 
     /* Advance another 0.6 s — second fire; timer still alive */
     game_update(&ctx, &state, (InputState){0}, 0.6F);
-    TEST_ASSERT_EQUAL_INT(2, (int)attr_get_scoped_float(&thing->attrs, NULL, "pulse_count", 0.0F));
+    TEST_ASSERT_EQUAL_INT(2, (int)attr_get_scoped_float(&thing->attrs, nullptr, "pulse_count", 0.0F));
     TEST_ASSERT_EQUAL_INT(1, state.timers.count);
 
     game_free(&ctx, &state);
@@ -1676,7 +1676,7 @@ void test_integration_timer_destroy_cancels(void)
     /* Advance past duration — no fire */
     game_update(&ctx, &state, (InputState){0}, 0.6F);
     const Entity *thing = &state.current_level.entities.data[0];
-    TEST_ASSERT_EQUAL_INT(0, (int)attr_get_scoped_float(&thing->attrs, NULL, "fired_count", 0.0F));
+    TEST_ASSERT_EQUAL_INT(0, (int)attr_get_scoped_float(&thing->attrs, nullptr, "fired_count", 0.0F));
 
     game_free(&ctx, &state);
 }
@@ -1836,7 +1836,7 @@ void test_integration_subroutine_missing_is_soft_fail(void)
 
     /* count must be 1 — add_attr ran after the failed call: */
     const Entity *thing = &state.current_level.entities.data[0];
-    TEST_ASSERT_EQUAL_INT(1, (int)attr_get_scoped_float(&thing->attrs, NULL, "count", 0.0F));
+    TEST_ASSERT_EQUAL_INT(1, (int)attr_get_scoped_float(&thing->attrs, nullptr, "count", 0.0F));
 
     game_free(&ctx, &state);
 }

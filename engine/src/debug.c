@@ -25,7 +25,7 @@ void debug_init(struct EngineContext *ctx, const char *trace_path)
     ctx->debug.log_head = 0;
     ctx->debug.log_count = 0;
     memset(ctx->debug.log_lines, 0, sizeof(ctx->debug.log_lines));
-    ctx->debug.trace_file = NULL;
+    ctx->debug.trace_file = nullptr;
 
     if (trace_path) {
         ctx->debug.trace_file = fopen(trace_path, "ae");
@@ -41,7 +41,7 @@ void debug_shutdown(struct EngineContext *ctx)
 {
     if (ctx->debug.trace_file) {
         (void)fclose(ctx->debug.trace_file);
-        ctx->debug.trace_file = NULL;
+        ctx->debug.trace_file = nullptr;
     }
 }
 

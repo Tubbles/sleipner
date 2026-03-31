@@ -32,7 +32,7 @@ typedef struct {
     vec_attribute entries;
 } AttrSet;
 
-/* Find an attribute by name. Returns NULL if not found. */
+/* Find an attribute by name. Returns nullptr if not found. */
 const Attribute *attr_get(const AttrSet *set, const char *name);
 
 /* Free all name allocations and the underlying vec. */
@@ -60,7 +60,7 @@ const char *attr_get_string(const AttrSet *set, const char *name);
 void attr_remove(Allocator *alloc, AttrSet *set, const char *name);
 
 /* Look up an attribute by name, falling back to a second set if not found
- * in the first. NULL-safe: if blueprint is NULL, only instance is searched.
+ * in the first. nullptr-safe: if blueprint is nullptr, only instance is searched.
  * Used for instance -> blueprint scoping. See DESIGN.md § "Entity–blueprint
  * connection". */
 const Attribute *attr_get_scoped(const AttrSet *instance, const AttrSet *blueprint, const char *name);

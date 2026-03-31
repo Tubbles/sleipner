@@ -49,8 +49,8 @@ static void arena_free_fn(struct EngineContext *ctx, struct Arena *arena, void *
 Allocator allocator_heap(void)
 {
     return (Allocator){
-        .ctx = NULL,
-        .arena = NULL,
+        .ctx = nullptr,
+        .arena = nullptr,
         .malloc_fn = heap_malloc_fn,
         .realloc_fn = heap_realloc_fn,
         .free_fn = heap_free_fn,

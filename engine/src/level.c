@@ -251,7 +251,7 @@ static toml_table_t *find_level_table(toml_array_t *levels, const char *level_na
             }
         }
     }
-    return NULL;
+    return nullptr;
 }
 
 bool level_spawn_entity(struct EngineContext *ctx,
@@ -371,7 +371,7 @@ bool level_load(struct EngineContext *ctx,
         if (entity_table) {
             parse_entity(alloc, level, index, entity_table, blueprints, texture_lookup, texture_user_data);
         } else {
-            debug_log(ctx, "ent[%d]: toml_table_at returned NULL", index);
+            debug_log(ctx, "ent[%d]: toml_table_at returned nullptr", index);
         }
     }
 

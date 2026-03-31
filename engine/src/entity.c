@@ -69,12 +69,12 @@ const Entity *entity_find_by_tag(const Entity *source, const char *tag, const En
         if (source->parent_index >= 0) {
             return &entities[source->parent_index];
         }
-        return NULL;
+        return nullptr;
     }
 
     int source_index = find_entity_index(source, entities, entity_count);
     if (source_index < 0) {
-        return NULL;
+        return nullptr;
     }
 
     if (strcmp(tag, "root") == 0) {
@@ -88,14 +88,14 @@ const Entity *entity_find_by_tag(const Entity *source, const char *tag, const En
             return &entities[index];
         }
     }
-    return NULL;
+    return nullptr;
 }
 
 Entity *entity_find_by_tag_mut(Entity *source, const char *tag, Entity *entities, int entity_count)
 {
     const Entity *result = entity_find_by_tag((const Entity *)source, tag, (const Entity *)entities, entity_count);
     if (!result) {
-        return NULL;
+        return nullptr;
     }
     return &entities[result - entities];
 }

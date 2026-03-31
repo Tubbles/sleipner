@@ -187,7 +187,7 @@ static int parse_condition_attr_comparison(Allocator *alloc, Condition *conditio
         if (!str_from_strv(alloc, &condition->argument, name)) {
             return -1;
         }
-        condition->compare_value = strtof(equals + 2, NULL);
+        condition->compare_value = strtof(equals + 2, nullptr);
         return 1;
     }
     if (less_than) {
@@ -196,7 +196,7 @@ static int parse_condition_attr_comparison(Allocator *alloc, Condition *conditio
         if (!str_from_strv(alloc, &condition->argument, name)) {
             return -1;
         }
-        condition->compare_value = strtof(less_than + 1, NULL);
+        condition->compare_value = strtof(less_than + 1, nullptr);
         return 1;
     }
     if (greater_than) {
@@ -205,7 +205,7 @@ static int parse_condition_attr_comparison(Allocator *alloc, Condition *conditio
         if (!str_from_strv(alloc, &condition->argument, name)) {
             return -1;
         }
-        condition->compare_value = strtof(greater_than + 1, NULL);
+        condition->compare_value = strtof(greater_than + 1, nullptr);
         return 1;
     }
 
@@ -336,7 +336,7 @@ static const ActionMapping action_mappings[] = {
     {"create_timer_periodic:", ACTION_CREATE_TIMER_PERIODIC, true},
     {"create_timer:", ACTION_CREATE_TIMER, true},
     {"destroy_timer:", ACTION_DESTROY_TIMER, true},
-    {NULL, 0, false},
+    {nullptr, 0, false},
 };
 
 static bool parse_simple_action(struct EngineContext *ctx, Allocator *alloc, ActionNode *node, const char *string)
@@ -660,7 +660,7 @@ bool rules_parse(
     for (int index = 0; index < count; index++) {
         toml_table_t *entry = toml_table_at(rule_array, index);
         if (!entry) {
-            error_set(ctx, "rule[%d]: toml_table_at returned NULL", index);
+            error_set(ctx, "rule[%d]: toml_table_at returned nullptr", index);
             return false;
         }
         Rule rule = {0};
@@ -693,7 +693,7 @@ bool trigger_matches(const Trigger *trigger, const TriggerEvent *event)
         return strcmp(trigger->argument.ptr, event->argument.ptr) == 0;
     }
     if (trigger->type == TRIGGER_COLLIDE && trigger->argument.len > 0) {
-        return event->argument.ptr != NULL && strcmp(trigger->argument.ptr, event->argument.ptr) == 0;
+        return event->argument.ptr != nullptr && strcmp(trigger->argument.ptr, event->argument.ptr) == 0;
     }
     return true;
 }
@@ -784,7 +784,7 @@ static bool evaluate_single_condition(const Condition *condition, ConditionConte
     case COND_HAS_ITEM:
         return true;
     case COND_VAR: {
-        const Attribute *var = NULL;
+        const Attribute *var = nullptr;
         if (context.local_vars) {
             var = attr_get(context.local_vars, condition->argument.ptr);
         }
@@ -842,7 +842,7 @@ static Entity *resolve_target(const char *target_spec, ActionContext context, ch
             }
         }
     }
-    return NULL;
+    return nullptr;
 }
 
 static const Attribute *lookup_var(const char *varname, ActionContext context)
@@ -856,7 +856,7 @@ static const Attribute *lookup_var(const char *varname, ActionContext context)
     if (context.global_vars) {
         return attr_get(context.global_vars, varname);
     }
-    return NULL;
+    return nullptr;
 }
 
 static void format_var_value(char *out, int out_size, const Attribute *var)
@@ -940,7 +940,7 @@ execute_set_attr_action(struct EngineContext *ctx, Allocator *alloc, const Actio
                            : 0.0F;
     char resolved[MAX_ARG];
     resolve_arg(resolved, MAX_ARG, node->second_argument.ptr, context);
-    float value = strtof(resolved, NULL);
+    float value = strtof(resolved, nullptr);
     bool attr_set_ok;
     if (strchr(resolved, '.')) {
         attr_set_ok = attr_set_float(alloc, &target->attrs, attr_name, value);
@@ -979,7 +979,7 @@ execute_add_attr_action(struct EngineContext *ctx, Allocator *alloc, const Actio
                            : 0.0F;
     char resolved[MAX_ARG];
     resolve_arg(resolved, MAX_ARG, node->second_argument.ptr, context);
-    float delta = strtof(resolved, NULL);
+    float delta = strtof(resolved, nullptr);
     bool attr_set_ok;
     if (existing && existing->type == ATTR_FLOAT) {
         attr_set_ok = attr_set_float(alloc, &target->attrs, attr_name, existing->value.f + delta);
@@ -1039,7 +1039,7 @@ execute_set_var_action(struct EngineContext *ctx, Allocator *alloc, const Action
         return attr_set_bool(alloc, target_vars, var_name, false);
     }
     if (strchr(resolved_value, '.')) {
-        return attr_set_float(alloc, target_vars, var_name, strtof(resolved_value, NULL));
+        return attr_set_float(alloc, target_vars, var_name, strtof(resolved_value, nullptr));
     }
     char *endptr;
     long ival = strtol(resolved_value, &endptr, RADIX_DECIMAL);
@@ -1094,7 +1094,7 @@ static bool expand_if_else_node(struct EngineContext *ctx,
 static bool
 expand_repeat_node(struct EngineContext *ctx, const ActionNode *node, const ActionNode **exec_stack, int *stack_top)
 {
-    int repeat_count = (int)strtol(node->argument.ptr, NULL, RADIX_DECIMAL);
+    int repeat_count = (int)strtol(node->argument.ptr, nullptr, RADIX_DECIMAL);
     if (repeat_count <= 0) {
         repeat_count = 1;
     }
@@ -1113,7 +1113,7 @@ static bool execute_create_timer_action(
         debug_log(ctx, "create_timer: no timer list in context");
         return true;
     }
-    float duration = node->second_argument.len > 0 ? strtof(node->second_argument.ptr, NULL) : 1.0F;
+    float duration = node->second_argument.len > 0 ? strtof(node->second_argument.ptr, nullptr) : 1.0F;
     /* Replace existing timer with same name + entity, or append */
     for (int timer_index = 0; timer_index < context.timers->count; timer_index++) {
         Timer *existing = &context.timers->data[timer_index];

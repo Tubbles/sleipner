@@ -48,7 +48,7 @@ int blueprints_load(struct EngineContext *ctx, BlueprintTable *table, void *toml
 /* Free all blueprints and their children/attrs from a table, and the table's vec. */
 void blueprint_table_free(Allocator *alloc, BlueprintTable *table);
 
-/* Find a blueprint by name. Returns NULL if not found. */
+/* Find a blueprint by name. Returns nullptr if not found. */
 const Blueprint *blueprint_find(const BlueprintTable *table, const char *name);
 
 #endif

@@ -17,7 +17,7 @@
  * First push allocates VEC_INITIAL_CAPACITY elements.
  * Access elements directly via vec.data[index] — it is a typed pointer.
  *
- * Pass an Allocator * to push/free — NULL is not permitted. */
+ * Pass an Allocator * to push/free — nullptr is not permitted. */
 
 #include "alloc.h"
 

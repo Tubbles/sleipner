@@ -376,7 +376,7 @@ void test_integration_enter_trigger_fires_only_once(void)
 
     /* enter_count must be exactly 1 — edge-triggered, not level-triggered */
     const Entity *zone = &state.current_level.entities.data[1];
-    TEST_ASSERT_EQUAL_INT(1, (int)attr_get_scoped_float(&zone->attrs, NULL, "enter_count", 0.0F));
+    TEST_ASSERT_EQUAL_INT(1, (int)attr_get_scoped_float(&zone->attrs, nullptr, "enter_count", 0.0F));
 
     game_free(&ctx, &state);
 }

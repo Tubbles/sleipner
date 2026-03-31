@@ -93,7 +93,7 @@ void test_toml_emit_level_with_entities(void)
     toml_table_t *root = parse_toml(fixture_gamedata);
     TEST_ASSERT_NOT_NULL(root);
     blueprints_load(&ctx, &blueprints, root, &arena);
-    TEST_ASSERT_TRUE(level_load(&ctx, &level, root, NULL, &blueprints, dummy_lookup, NULL, &test_heap_alloc));
+    TEST_ASSERT_TRUE(level_load(&ctx, &level, root, nullptr, &blueprints, dummy_lookup, nullptr, &test_heap_alloc));
     toml_free(root);
 
     char output[4096];
@@ -125,7 +125,7 @@ void test_toml_emit_round_trip(void)
     toml_table_t *root = parse_toml(fixture_gamedata);
     TEST_ASSERT_NOT_NULL(root);
     blueprints_load(&ctx, &blueprints, root, &arena);
-    TEST_ASSERT_TRUE(level_load(&ctx, &level, root, NULL, &blueprints, dummy_lookup, NULL, &test_heap_alloc));
+    TEST_ASSERT_TRUE(level_load(&ctx, &level, root, nullptr, &blueprints, dummy_lookup, nullptr, &test_heap_alloc));
     toml_free(root);
 
     /* Emit */
@@ -142,7 +142,7 @@ void test_toml_emit_round_trip(void)
     toml_table_t *root2 = parse_toml(output);
     TEST_ASSERT_NOT_NULL(root2);
     blueprints_load(&ctx, &blueprints2, root2, &arena2);
-    TEST_ASSERT_TRUE(level_load(&ctx, &level2, root2, NULL, &blueprints2, dummy_lookup, NULL, &test_heap_alloc));
+    TEST_ASSERT_TRUE(level_load(&ctx, &level2, root2, nullptr, &blueprints2, dummy_lookup, nullptr, &test_heap_alloc));
     toml_free(root2);
 
     /* Verify round-trip preserves data */
@@ -186,7 +186,7 @@ void test_toml_emit_buffer_too_small(void)
         attr_set_string(&test_heap_alloc, &entry->attrs, (AttrStringPair){.name = "texture", .value = "test.png"}));
 
     char tiny[10];
-    int written = toml_emit_gamedata(&ctx, tiny, (int)sizeof(tiny), &blueprints, NULL, 0);
+    int written = toml_emit_gamedata(&ctx, tiny, (int)sizeof(tiny), &blueprints, nullptr, 0);
     TEST_ASSERT_EQUAL_INT(-1, written);
     test_blueprint_table_free(&blueprints);
 }
@@ -251,7 +251,7 @@ void test_toml_emit_skips_child_entities(void)
     toml_table_t *root = parse_toml(child_fixture);
     TEST_ASSERT_NOT_NULL(root);
     blueprints_load(&ctx, &blueprints, root, &arena);
-    TEST_ASSERT_TRUE(level_load(&ctx, &level, root, "test", &blueprints, dummy_lookup, NULL, &test_heap_alloc));
+    TEST_ASSERT_TRUE(level_load(&ctx, &level, root, "test", &blueprints, dummy_lookup, nullptr, &test_heap_alloc));
     toml_free(root);
 
     /* Level has 2 entities (wagon + lantern child) */
@@ -267,7 +267,7 @@ void test_toml_emit_skips_child_entities(void)
     /* Count occurrences of [[level.entity]] — should be 1 */
     int count = 0;
     const char *search = output;
-    while ((search = strstr(search, "[[level.entity]]")) != NULL) {
+    while ((search = strstr(search, "[[level.entity]]")) != nullptr) {
         count++;
         search += 16;
     }

@@ -58,7 +58,7 @@ void entity_update_collision(Entity *entity);
 
 /* Find an entity by tag within the same composition tree as source.
  * Handles implicit tags: "self", "parent", "root".
- * Returns NULL if not found. */
+ * Returns nullptr if not found. */
 const Entity *entity_find_by_tag(const Entity *source, const char *tag, const Entity *entities, int entity_count);
 
 /* Mutable version of entity_find_by_tag. */

@@ -66,14 +66,14 @@ static Texture2D *texture_registry_lookup(const char *filename, void *user_data)
 {
     struct EngineContext *ctx = (struct EngineContext *)user_data;
     if (!ctx) {
-        return NULL;
+        return nullptr;
     }
     for (int index = 0; index < ctx->assets.textures.count; index++) {
         if (strcmp(ctx->assets.textures.data[index].filename, filename) == 0) {
             return &ctx->assets.textures.data[index].texture;
         }
     }
-    return NULL;
+    return nullptr;
 }
 
 static Texture2D load_embedded_texture(EmbeddedAsset asset)
@@ -88,7 +88,7 @@ static void font_preview_add(struct EngineContext *ctx, const char *name, Embedd
 {
     FontPreviewEntry entry = {0};
     strncpy(entry.name, name, FONT_NAME_LEN - 1);
-    entry.font = LoadFontFromMemory(".ttf", asset.data, asset.size, FONT_PREVIEW_SIZE, NULL, 0);
+    entry.font = LoadFontFromMemory(".ttf", asset.data, asset.size, FONT_PREVIEW_SIZE, nullptr, 0);
     entry.valid = IsFontValid(entry.font);
     if (entry.valid) {
         debug_log(ctx, "font[%d]: '%s' (%d bytes)", ctx->assets.font_previews.count, name, asset.size);
@@ -441,7 +441,7 @@ static char *read_file_text(struct EngineContext *ctx, const char *path, Arena *
     struct stat file_stat;
     if (stat(path, &file_stat) != 0) {
         error_set(ctx, "stat(%s): %s", path, strerror(errno));
-        return NULL;
+        return nullptr;
     }
     debug_log(ctx, "gamedata: stat(%s): size=%ld mode=%o uid=%d gid=%d", path, (long)file_stat.st_size,
               (unsigned)file_stat.st_mode, (int)file_stat.st_uid, (int)file_stat.st_gid);
@@ -449,14 +449,14 @@ static char *read_file_text(struct EngineContext *ctx, const char *path, Arena *
     FILE *file = fopen(path, "re");
     if (!file) {
         error_set(ctx, "fopen(%s): %s", path, strerror(errno));
-        return NULL;
+        return nullptr;
     }
 
     ArenaCheckpoint read_cp = arena_save(arena);
     char *buffer = arena_alloc_n(ctx, arena, MAX_GAMEDATA_SIZE + 1);
     if (!buffer) {
         (void)fclose(file);
-        return NULL;
+        return nullptr;
     }
     /* Pre-zero so null termination is automatic; avoids tainted-index write after fread */
     (void)memset(buffer, 0, MAX_GAMEDATA_SIZE + 1);
@@ -466,7 +466,7 @@ static char *read_file_text(struct EngineContext *ctx, const char *path, Arena *
         error_set(ctx, "fread(%s): %s", path, strerror(errno));
         arena_restore(arena, read_cp);
         (void)fclose(file);
-        return NULL;
+        return nullptr;
     }
     (void)fclose(file);
     debug_log(ctx, "gamedata: read %zu bytes from %s", bytes_read, path);
@@ -542,7 +542,7 @@ static void load_gamedata(struct EngineContext *ctx, GameState *state)
         for (int index = 0; index < state->current_level.entities.count; index++) {
             const Entity *entity = &state->current_level.entities.data[index];
             debug_log(ctx, "  ent[%d]: bp='%s' pos=(%.0f,%.0f) tex=%s", index, entity->blueprint_name.ptr,
-                      entity->position.x, entity->position.y, entity->texture ? "ok" : "NULL");
+                      entity->position.x, entity->position.y, entity->texture ? "ok" : "nullptr");
         }
         if (state->player_index >= 0) {
             debug_log(ctx, "gamedata: player at entity[%d]", state->player_index);

@@ -7,7 +7,7 @@
 #define DEBUG_LOG_LINE_LEN 128
 
 /* Initialize the debug logging system. Call once at startup.
- * If trace_path is non-NULL, opens a trace file at that path. */
+ * If trace_path is non-nullptr, opens a trace file at that path. */
 struct EngineContext;
 
 void debug_init(struct EngineContext *ctx, const char *trace_path);

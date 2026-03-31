@@ -152,9 +152,9 @@ void test_entity_no_blueprint(void)
 
     TEST_ASSERT_TRUE(attr_set_float(&test_heap_alloc, &entity.attrs, "speed", 100.0F));
 
-    /* Works without defaults (NULL) */
-    TEST_ASSERT_FLOAT_WITHIN(0.1F, 100.0F, attr_get_scoped_float(&entity.attrs, NULL, "speed", 0));
-    TEST_ASSERT_EQUAL_INT(0, attr_get_scoped_int(&entity.attrs, NULL, "missing", 0));
+    /* Works without defaults (nullptr) */
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 100.0F, attr_get_scoped_float(&entity.attrs, nullptr, "speed", 0));
+    TEST_ASSERT_EQUAL_INT(0, attr_get_scoped_int(&entity.attrs, nullptr, "missing", 0));
     test_entity_free(&entity);
 }
 
@@ -166,7 +166,7 @@ void test_entity_solid_from_collision(void)
     entity.parent_index = -1;
     TEST_ASSERT_TRUE(attr_set_bool(&test_heap_alloc, &entity.attrs, "solid", false));
 
-    TEST_ASSERT_FALSE(attr_get_scoped_bool(&entity.attrs, NULL, "solid", true));
+    TEST_ASSERT_FALSE(attr_get_scoped_bool(&entity.attrs, nullptr, "solid", true));
     test_entity_free(&entity);
 }
 
@@ -258,7 +258,7 @@ void test_entity_is_visible_standalone(void)
 {
     Entity entity = {0};
     entity.parent_index = -1;
-    const AttrSet *defaults[] = {NULL};
+    const AttrSet *defaults[] = {nullptr};
 
     TEST_ASSERT_TRUE(entity_is_visible(0, &entity, defaults));
     test_entity_free(&entity);
@@ -268,7 +268,7 @@ void test_entity_is_visible_parent_hidden(void)
 {
     Entity entities[3];
     make_entity_tree(entities);
-    const AttrSet *defaults[] = {NULL, NULL, NULL};
+    const AttrSet *defaults[] = {nullptr, nullptr, nullptr};
 
     /* Child is visible, but parent is hidden */
     TEST_ASSERT_TRUE(attr_set_bool(&test_heap_alloc, &entities[0].attrs, "visible", false));
@@ -281,7 +281,7 @@ void test_entity_is_visible_both_visible(void)
 {
     Entity entities[3];
     make_entity_tree(entities);
-    const AttrSet *defaults[] = {NULL, NULL, NULL};
+    const AttrSet *defaults[] = {nullptr, nullptr, nullptr};
 
     TEST_ASSERT_TRUE(entity_is_visible(1, entities, defaults));
     free_entity_tree(entities);
@@ -291,7 +291,7 @@ void test_entity_is_active_parent_inactive(void)
 {
     Entity entities[3];
     make_entity_tree(entities);
-    const AttrSet *defaults[] = {NULL, NULL, NULL};
+    const AttrSet *defaults[] = {nullptr, nullptr, nullptr};
 
     TEST_ASSERT_TRUE(attr_set_bool(&test_heap_alloc, &entities[0].attrs, "active", false));
 
@@ -303,7 +303,7 @@ void test_entity_is_active_both_active(void)
 {
     Entity entities[3];
     make_entity_tree(entities);
-    const AttrSet *defaults[] = {NULL, NULL, NULL};
+    const AttrSet *defaults[] = {nullptr, nullptr, nullptr};
 
     TEST_ASSERT_TRUE(entity_is_active(1, entities, defaults));
     free_entity_tree(entities);

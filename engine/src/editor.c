@@ -220,11 +220,11 @@ static Blueprint *find_blueprint_by_name(GameState *state, const char *name)
     for (int index = 0; index < state->blueprints.entries.count; index++) {
         Blueprint *blueprint = &state->blueprints.entries.data[index];
         const char *blueprint_name = attr_get_string(&blueprint->attrs, "name");
-        if (blueprint_name != NULL && strcmp(blueprint_name, name) == 0) {
+        if (blueprint_name != nullptr && strcmp(blueprint_name, name) == 0) {
             return blueprint;
         }
     }
-    return NULL;
+    return nullptr;
 }
 
 static int total_attr_count(const GameState *state, const Entity *entity)
@@ -235,7 +235,7 @@ static int total_attr_count(const GameState *state, const Entity *entity)
     return instance_count + blueprint_count;
 }
 
-/* entity must not be NULL; resolves blueprint attrs via find_blueprint_by_name */
+/* entity must not be nullptr; resolves blueprint attrs via find_blueprint_by_name */
 static Attribute *attr_at_display_index(GameState *state, Entity *entity, int attr_index)
 {
     int instance_count = entity->attrs.entries.count;
@@ -244,11 +244,11 @@ static Attribute *attr_at_display_index(GameState *state, Entity *entity, int at
     }
     Blueprint *blueprint = find_blueprint_by_name(state, entity->blueprint_name.ptr);
     if (!blueprint) {
-        return NULL;
+        return nullptr;
     }
     int blueprint_index = attr_index - instance_count;
     if (blueprint_index >= blueprint->attrs.entries.count) {
-        return NULL;
+        return nullptr;
     }
     return &blueprint->attrs.entries.data[blueprint_index];
 }
@@ -684,7 +684,7 @@ void handle_handle_input(
     Entity *entity = &state->current_level.entities.data[sel];
     if (toggle_pressed((ToggleBinding){KEY_ENTER, GAMEPAD_BUTTON_RIGHT_FACE_DOWN})) {
         Blueprint *blueprint = find_blueprint_by_name(state, entity->blueprint_name.ptr);
-        if (blueprint != NULL) {
+        if (blueprint != nullptr) {
             Allocator alloc = allocator_arena(ctx, &state->gamedata_arena);
             /* Attrs already exist on this blueprint; attr_set_float updates in-place, no arena growth. */
             (void)attr_set_float(&alloc, &blueprint->attrs, "collision_offset_x", entity->collision_offset.x);

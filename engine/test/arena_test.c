@@ -170,7 +170,7 @@ void test_arena_realloc_null_ptr_acts_as_alloc(void)
     Arena arena;
     TEST_ASSERT_TRUE(arena_init(&ctx, &arena));
 
-    void *ptr = arena_realloc(&ctx, &arena, NULL, 0, (AllocRequest){.size = 32, .alignment = 1});
+    void *ptr = arena_realloc(&ctx, &arena, nullptr, 0, (AllocRequest){.size = 32, .alignment = 1});
     TEST_ASSERT_NOT_NULL(ptr);
     TEST_ASSERT_EQUAL_size_t(32, arena_used(&arena));
 

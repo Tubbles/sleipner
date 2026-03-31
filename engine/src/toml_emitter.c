@@ -52,13 +52,13 @@ static int emit_attr_value(char *buffer, int capacity, int offset, const Attribu
         char tmp[FLOAT_STR_BUFSIZE];
         (void)snprintf(tmp, sizeof(tmp), "%g", (double)attr->value.f);
         /* TOML requires a decimal point so the parser keeps the value as float, not int. */
-        if (strchr(tmp, '.') != NULL) {
+        if (strchr(tmp, '.') != nullptr) {
             return emit_append(buffer, capacity, offset, "%s", tmp);
         }
-        if (strchr(tmp, 'e') != NULL) {
+        if (strchr(tmp, 'e') != nullptr) {
             return emit_append(buffer, capacity, offset, "%s", tmp);
         }
-        if (strchr(tmp, 'E') != NULL) {
+        if (strchr(tmp, 'E') != nullptr) {
             return emit_append(buffer, capacity, offset, "%s", tmp);
         }
         return emit_append(buffer, capacity, offset, "%s.0", tmp);
@@ -84,8 +84,8 @@ static bool is_internal_bp_attr(const char *name)
                                      "collision_h",
                                      "health",
                                      "max_health",
-                                     NULL};
-    for (int index = 0; internal[index] != NULL; index++) {
+                                     nullptr};
+    for (int index = 0; internal[index] != nullptr; index++) {
         if (strcmp(name, internal[index]) == 0) {
             return true;
         }
@@ -111,7 +111,7 @@ static int emit_health_if_present(char *buffer, int capacity, int offset, const 
 {
     const Attribute *health = attr_get(attrs, "health");
     const Attribute *max_health = attr_get(attrs, "max_health");
-    if (health == NULL || max_health == NULL) {
+    if (health == nullptr || max_health == nullptr) {
         return offset;
     }
     int current = (health->type == ATTR_INT) ? health->value.i : (int)health->value.f;
@@ -227,9 +227,9 @@ static const ActionEmitEntry action_emit_table[] = {
     {.prefix = "set_var:", .type = ACTION_SET_VAR, .arg_count = ACTION_EMIT_TWO_ARGS},
     {.prefix = "create_timer:", .type = ACTION_CREATE_TIMER, .arg_count = ACTION_EMIT_TWO_ARGS},
     {.prefix = "create_timer_periodic:", .type = ACTION_CREATE_TIMER_PERIODIC, .arg_count = ACTION_EMIT_TWO_ARGS},
-    {.prefix = NULL, .type = ACTION_IF_ELSE, .arg_count = ACTION_EMIT_NO_ARGS}, /* control flow — no prefix */
-    {.prefix = NULL, .type = ACTION_REPEAT, .arg_count = ACTION_EMIT_NO_ARGS},
-    {.prefix = NULL, .type = ACTION_FOR_EACH, .arg_count = ACTION_EMIT_NO_ARGS},
+    {.prefix = nullptr, .type = ACTION_IF_ELSE, .arg_count = ACTION_EMIT_NO_ARGS}, /* control flow — no prefix */
+    {.prefix = nullptr, .type = ACTION_REPEAT, .arg_count = ACTION_EMIT_NO_ARGS},
+    {.prefix = nullptr, .type = ACTION_FOR_EACH, .arg_count = ACTION_EMIT_NO_ARGS},
 };
 
 static int emit_simple_action_string(char *buffer, int capacity, int offset, const ActionNode *node)
@@ -237,7 +237,7 @@ static int emit_simple_action_string(char *buffer, int capacity, int offset, con
     int table_size = (int)(sizeof(action_emit_table) / sizeof(action_emit_table[0]));
     for (int index = 0; index < table_size; index++) {
         const ActionEmitEntry *entry = &action_emit_table[index];
-        if (entry->prefix == NULL || entry->type != node->type) {
+        if (entry->prefix == nullptr || entry->type != node->type) {
             continue;
         }
         if (entry->arg_count == ACTION_EMIT_NO_ARGS) {

@@ -16,7 +16,7 @@ const Attribute *attr_get(const AttrSet *set, const char *name)
             return &set->entries.data[index];
         }
     }
-    return NULL;
+    return nullptr;
 }
 
 static Attribute *find_or_append(Allocator *alloc, AttrSet *set, const char *name)
@@ -37,14 +37,14 @@ static Attribute *find_or_append(Allocator *alloc, AttrSet *set, const char *nam
         if (alloc && alloc->ctx) {
             error_set(alloc->ctx, "attribute name alloc failed for '%s'", name);
         }
-        return NULL;
+        return nullptr;
     }
     if (!vec_attribute_push(&set->entries, new_entry, alloc)) {
         str_free(alloc, &new_entry.name);
         if (alloc && alloc->ctx) {
             error_set(alloc->ctx, "attribute push failed for '%s'", name);
         }
-        return NULL;
+        return nullptr;
     }
     return &set->entries.data[set->entries.count - 1];
 }
@@ -137,7 +137,7 @@ const char *attr_get_string(const AttrSet *set, const char *name)
     if (entry && entry->type == ATTR_STRING) {
         return entry->value.str.ptr;
     }
-    return NULL;
+    return nullptr;
 }
 
 void attr_remove(Allocator *alloc, AttrSet *set, const char *name)
@@ -166,7 +166,7 @@ const Attribute *attr_get_scoped(const AttrSet *instance, const AttrSet *bluepri
         return entry;
     }
     if (!blueprint) {
-        return NULL;
+        return nullptr;
     }
     return attr_get(blueprint, name);
 }
@@ -216,5 +216,5 @@ const char *attr_get_scoped_string(const AttrSet *instance, const AttrSet *defau
     if (entry && entry->type == ATTR_STRING) {
         return entry->value.str.ptr;
     }
-    return NULL;
+    return nullptr;
 }

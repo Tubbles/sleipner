@@ -37,7 +37,7 @@ void level_free(Allocator *alloc, Level *level);
                                       void *texture_user_data,
                                       Allocator *alloc);
 
-/* Parse the first [[level]] (or the one matching `level_name` if non-NULL)
+/* Parse the first [[level]] (or the one matching `level_name` if non-nullptr)
  * from a tomlc99 root table. Instantiates entities from blueprints.
  * Returns true on success. */
 [[nodiscard]] bool level_load(struct EngineContext *ctx,

@@ -42,10 +42,10 @@ const AttrSet *entity_resolve_defaults(const GameState *state, int entity_id)
 {
     const Str *name = map_int_str_get(&state->entity_blueprints, entity_id);
     if (!name) {
-        return NULL;
+        return nullptr;
     }
     const Blueprint *blueprint = blueprint_find(&state->blueprints, name->ptr);
-    return blueprint ? &blueprint->attrs : NULL;
+    return blueprint ? &blueprint->attrs : nullptr;
 }
 
 static int find_player_entity(const GameState *state)
@@ -156,7 +156,7 @@ bool game_load_gamedata(struct EngineContext *ctx, GameState *state, GamedataPar
 Entity *game_get_player(GameState *state)
 {
     if (state->player_index < 0 || state->player_index >= state->current_level.entities.count) {
-        return NULL;
+        return nullptr;
     }
     return &state->current_level.entities.data[state->player_index];
 }
@@ -164,7 +164,7 @@ Entity *game_get_player(GameState *state)
 const Entity *game_get_player_const(const GameState *state)
 {
     if (state->player_index < 0 || state->player_index >= state->current_level.entities.count) {
-        return NULL;
+        return nullptr;
     }
     return &state->current_level.entities.data[state->player_index];
 }

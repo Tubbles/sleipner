@@ -10,7 +10,7 @@
 #define STR_INITIAL_CAP 16
 
 /* Ensure at least `needed` bytes of capacity are available.
- * Always allocates when ptr is NULL, so ptr is non-NULL on success. */
+ * Always allocates when ptr is nullptr, so ptr is non-nullptr on success. */
 static bool str_ensure_cap(Allocator *alloc, Str *str, size_t needed)
 {
     if (str->ptr != nullptr && needed <= str->cap) {

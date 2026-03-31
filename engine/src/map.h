@@ -18,7 +18,7 @@
  * Rehashes (doubles capacity) when (count + 1) * 4 > capacity * 3  (75% load factor).
  * Deleted entries use tombstone state MAP_ENTRY_DELETED so probe chains stay intact.
  *
- * Pass an Allocator * to set/free — NULL is not permitted. */
+ * Pass an Allocator * to set/free — nullptr is not permitted. */
 
 #include "alloc.h"
 #include "str.h"
@@ -146,7 +146,7 @@ static inline bool map_eq_int(int first, int second)
     }                                                                                      \
     const typeof(value_type) *map_##name##_get(const map_##name *map, key_type key) {     \
         int slot = map_##name##_find_slot(map, key);                                       \
-        return slot >= 0 ? &map->entries[slot].value : NULL;                               \
+        return slot >= 0 ? &map->entries[slot].value : nullptr;                               \
     }                                                                                      \
     bool map_##name##_remove(map_##name *map, key_type key) {                             \
         int slot = map_##name##_find_slot(map, key);                                       \

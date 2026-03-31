@@ -32,9 +32,6 @@
 - **`TriggerEventQueue` uses fixed array** — `rule.h` defines
   `events[MAX_CASCADE_EVENTS]` instead of a vec. Violates "prefer vec over
   fixed-size arrays with MAX_* constants" in CLAUDE.md.
-- **`nullptr` vs `NULL` inconsistency** — `str.c:17` uses `nullptr` while the
-  rest of the codebase uses `NULL`. Minor style issue (see also the `NULL` →
-  `nullptr` migration item below).
 
 ## Rework unit test harness
 
@@ -82,7 +79,6 @@
 
 ## misc
 
-- change all NULL -> nullptr since this is C23
 - change it so vec and friends store their allocators, makes realloc and free
   very easy and their signatures gets simpler. requires the allocator type to be
   a very simple thing with no/low dependencies

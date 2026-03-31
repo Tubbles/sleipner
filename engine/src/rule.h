@@ -96,7 +96,7 @@ typedef enum {
 typedef struct LocalScope {
     Str bind_name;                  /* the bound name, e.g. "enemy" */
     int entity_index;               /* which entity is bound */
-    const struct LocalScope *outer; /* enclosing scope, NULL at top level */
+    const struct LocalScope *outer; /* enclosing scope, nullptr at top level */
 } LocalScope;
 
 /* --- Control flow nodes --- */

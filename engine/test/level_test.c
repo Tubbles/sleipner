@@ -77,7 +77,7 @@ static Texture2D *test_texture_lookup(const char *texture_name, void *user_data)
     if (strcmp(texture_name, "part.png") == 0) {
         return &dummy_part_texture;
     }
-    return NULL;
+    return nullptr;
 }
 
 static toml_table_t *parse_toml(const char *input)
@@ -101,7 +101,7 @@ void test_level_load_first(void)
 
     blueprints_load(&ctx, &blueprints, root, &arena);
 
-    bool loaded = level_load(&ctx, &level, root, NULL, &blueprints, test_texture_lookup, NULL, &test_heap_alloc);
+    bool loaded = level_load(&ctx, &level, root, nullptr, &blueprints, test_texture_lookup, nullptr, &test_heap_alloc);
     TEST_ASSERT_TRUE(loaded);
     TEST_ASSERT_EQUAL_STRING("overworld", level.name.ptr);
     TEST_ASSERT_EQUAL_STRING("bgm.mp3", level.music_name.ptr);
@@ -127,7 +127,8 @@ void test_level_load_by_name(void)
 
     blueprints_load(&ctx, &blueprints, root, &arena);
 
-    bool loaded = level_load(&ctx, &level, root, "dungeon", &blueprints, test_texture_lookup, NULL, &test_heap_alloc);
+    bool loaded =
+        level_load(&ctx, &level, root, "dungeon", &blueprints, test_texture_lookup, nullptr, &test_heap_alloc);
     TEST_ASSERT_TRUE(loaded);
     TEST_ASSERT_EQUAL_STRING("dungeon", level.name.ptr);
     TEST_ASSERT_EQUAL_INT(320, level.width);
@@ -153,7 +154,7 @@ void test_level_load_nonexistent(void)
     blueprints_load(&ctx, &blueprints, root, &arena);
 
     bool loaded =
-        level_load(&ctx, &level, root, "nonexistent", &blueprints, test_texture_lookup, NULL, &test_heap_alloc);
+        level_load(&ctx, &level, root, "nonexistent", &blueprints, test_texture_lookup, nullptr, &test_heap_alloc);
     TEST_ASSERT_FALSE(loaded);
 
     test_level_free(&level);
@@ -174,7 +175,7 @@ void test_level_entity_positions(void)
 
     blueprints_load(&ctx, &blueprints, root, &arena);
     TEST_ASSERT_TRUE(
-        level_load(&ctx, &level, root, "overworld", &blueprints, test_texture_lookup, NULL, &test_heap_alloc));
+        level_load(&ctx, &level, root, "overworld", &blueprints, test_texture_lookup, nullptr, &test_heap_alloc));
 
     /* Tree at (200, 60) with collision_offset (20, 60) and collision_size (24, 16) */
     TEST_ASSERT_FLOAT_WITHIN(0.1f, 200.0f, level.entities.data[0].position.x);
@@ -210,12 +211,12 @@ void test_level_entity_source_rects(void)
 
     blueprints_load(&ctx, &blueprints, root, &arena);
     TEST_ASSERT_TRUE(
-        level_load(&ctx, &level, root, "overworld", &blueprints, test_texture_lookup, NULL, &test_heap_alloc));
+        level_load(&ctx, &level, root, "overworld", &blueprints, test_texture_lookup, nullptr, &test_heap_alloc));
 
     /* Tree source rect from blueprint */
     const Entity *tree = &level.entities.data[0];
     const Blueprint *tree_bp = blueprint_find(&blueprints, tree->blueprint_name.ptr);
-    const AttrSet *tree_defaults = tree_bp ? &tree_bp->attrs : NULL;
+    const AttrSet *tree_defaults = tree_bp ? &tree_bp->attrs : nullptr;
     TEST_ASSERT_FLOAT_WITHIN(0.1f, 0.0f, attr_get_scoped_float(&tree->attrs, tree_defaults, "src_x", 0.0F));
     TEST_ASSERT_FLOAT_WITHIN(0.1f, 0.0f, attr_get_scoped_float(&tree->attrs, tree_defaults, "src_y", 0.0F));
     TEST_ASSERT_FLOAT_WITHIN(0.1f, 64.0f, attr_get_scoped_float(&tree->attrs, tree_defaults, "src_w", 0.0F));
@@ -224,7 +225,7 @@ void test_level_entity_source_rects(void)
     /* Chest source rect from blueprint */
     const Entity *chest = &level.entities.data[1];
     const Blueprint *chest_bp = blueprint_find(&blueprints, chest->blueprint_name.ptr);
-    const AttrSet *chest_defaults = chest_bp ? &chest_bp->attrs : NULL;
+    const AttrSet *chest_defaults = chest_bp ? &chest_bp->attrs : nullptr;
     TEST_ASSERT_FLOAT_WITHIN(0.1f, 16.0f, attr_get_scoped_float(&chest->attrs, chest_defaults, "src_w", 0.0F));
     TEST_ASSERT_FLOAT_WITHIN(0.1f, 16.0f, attr_get_scoped_float(&chest->attrs, chest_defaults, "src_h", 0.0F));
 
@@ -278,7 +279,8 @@ void test_level_child_entities_instantiated(void)
     TEST_ASSERT_NOT_NULL(root);
 
     blueprints_load(&ctx, &blueprints, root, &arena);
-    TEST_ASSERT_TRUE(level_load(&ctx, &level, root, "test", &blueprints, test_texture_lookup, NULL, &test_heap_alloc));
+    TEST_ASSERT_TRUE(
+        level_load(&ctx, &level, root, "test", &blueprints, test_texture_lookup, nullptr, &test_heap_alloc));
 
     /* 1 parent (wagon) + 2 children (lantern, wheel) */
     TEST_ASSERT_EQUAL_INT(3, level.entities.count);
@@ -307,7 +309,8 @@ void test_level_child_entity_positions(void)
     TEST_ASSERT_NOT_NULL(root);
 
     blueprints_load(&ctx, &blueprints, root, &arena);
-    TEST_ASSERT_TRUE(level_load(&ctx, &level, root, "test", &blueprints, test_texture_lookup, NULL, &test_heap_alloc));
+    TEST_ASSERT_TRUE(
+        level_load(&ctx, &level, root, "test", &blueprints, test_texture_lookup, nullptr, &test_heap_alloc));
 
     /* Lantern at wagon(100,50) + offset(56,-8) = (156, 42) */
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 156.0F, level.entities.data[1].position.x);
@@ -334,7 +337,8 @@ void test_level_child_entity_tags(void)
     TEST_ASSERT_NOT_NULL(root);
 
     blueprints_load(&ctx, &blueprints, root, &arena);
-    TEST_ASSERT_TRUE(level_load(&ctx, &level, root, "test", &blueprints, test_texture_lookup, NULL, &test_heap_alloc));
+    TEST_ASSERT_TRUE(
+        level_load(&ctx, &level, root, "test", &blueprints, test_texture_lookup, nullptr, &test_heap_alloc));
 
     TEST_ASSERT_EQUAL_STRING("light", level.entities.data[1].tag.ptr);
     TEST_ASSERT_EQUAL_STRING("front_wheel", level.entities.data[2].tag.ptr);
@@ -389,7 +393,8 @@ void test_level_nested_children(void)
     TEST_ASSERT_NOT_NULL(root);
 
     blueprints_load(&ctx, &blueprints, root, &arena);
-    TEST_ASSERT_TRUE(level_load(&ctx, &level, root, "test", &blueprints, test_texture_lookup, NULL, &test_heap_alloc));
+    TEST_ASSERT_TRUE(
+        level_load(&ctx, &level, root, "test", &blueprints, test_texture_lookup, nullptr, &test_heap_alloc));
 
     /* outer(0) -> mid(1) -> part(2) */
     TEST_ASSERT_EQUAL_INT(3, level.entities.count);
