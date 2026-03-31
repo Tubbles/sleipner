@@ -28,6 +28,7 @@ static float rand_float(float min, float max)
 
 void particles_spawn(ParticlePool *pool, Allocator *alloc, Vector2 pos, Color color, int count)
 {
+    pool->items.alloc = *alloc;
     for (int index = 0; index < count; index++) {
         float angle = rand_float(0.0F, 2.0F * PI);
         float speed = rand_float(PARTICLE_SPEED_MIN, PARTICLE_SPEED_MAX);
@@ -38,7 +39,7 @@ void particles_spawn(ParticlePool *pool, Allocator *alloc, Vector2 pos, Color co
             .lifetime = rand_float(PARTICLE_LIFE_MIN, PARTICLE_LIFE_MAX),
             .size = rand_float(PARTICLE_SIZE_MIN, PARTICLE_SIZE_MAX),
         };
-        (void)vec_particle_push(&pool->items, particle, alloc);
+        (void)vec_particle_push(&pool->items, particle);
     }
 }
 
@@ -63,7 +64,7 @@ void particles_update(ParticlePool *pool, float delta_time)
     }
 }
 
-void particles_free(ParticlePool *pool, Allocator *alloc)
+void particles_free(ParticlePool *pool)
 {
-    vec_particle_free(&pool->items, alloc);
+    vec_particle_free(&pool->items);
 }

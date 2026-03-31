@@ -53,13 +53,14 @@ void flag_set(Allocator *alloc, FlagSet *flags, const char *name)
     if (flag_find(flags, name) >= 0) {
         return;
     }
+    flags->names.alloc = *alloc;
     FlagName entry = {0};
     if (!str_from_cstr(alloc, &entry.name, name)) {
         struct EngineContext *ctx = alloc->ctx;
         debug_log(ctx, "flag_set: allocation failed for '%s'", name);
         return;
     }
-    if (!vec_flag_name_push(&flags->names, entry, alloc)) {
+    if (!vec_flag_name_push(&flags->names, entry)) {
         str_free(alloc, &entry.name);
         struct EngineContext *ctx = alloc->ctx;
         debug_log(ctx, "flag_set: vec push failed for '%s'", name);
@@ -84,7 +85,7 @@ void flag_set_free(Allocator *alloc, FlagSet *flags)
     for (int index = 0; index < flags->names.count; index++) {
         str_free(alloc, &flags->names.data[index].name);
     }
-    vec_flag_name_free(&flags->names, alloc);
+    vec_flag_name_free(&flags->names);
     *flags = (FlagSet){0};
 }
 
@@ -432,6 +433,7 @@ static bool parse_conditions_into(
         error_set(ctx, "%s: too many conditions (%d, max %d)", context_name, count, MAX_CONDITIONS);
         return false;
     }
+    out->alloc = *alloc;
     for (int index = 0; index < count; index++) {
         toml_datum_t value = toml_string_at(array, index);
         if (!value.ok) {
@@ -445,7 +447,7 @@ static bool parse_conditions_into(
             return false;
         }
         free(value.u.s);
-        if (!vec_condition_push(out, cond, alloc)) {
+        if (!vec_condition_push(out, cond)) {
             error_set(ctx, "%s: condition[%d]: out of memory", context_name, index);
             return false;
         }
@@ -568,6 +570,7 @@ static bool parse_action_nodes_into(
         error_set(ctx, "too many actions (%d, max %d)", count, MAX_ACTIONS);
         return false;
     }
+    nodes->alloc = *alloc;
 
     for (int index = 0; index < count; index++) {
         ActionNode node = {0};
@@ -591,7 +594,7 @@ static bool parse_action_nodes_into(
                 return false;
             }
         }
-        if (!vec_action_node_push(nodes, node, alloc)) {
+        if (!vec_action_node_push(nodes, node)) {
             error_set(ctx, "action[%d]: out of memory", index);
             return false;
         }
@@ -630,7 +633,7 @@ parse_single_rule(struct EngineContext *ctx, Allocator *alloc, Rule *rule, toml_
 
     toml_array_t *actions = toml_array_in(entry, "actions");
     if (!parse_actions_array(ctx, alloc, rule, actions, arena)) {
-        vec_condition_free(&rule->conditions, alloc);
+        vec_condition_free(&rule->conditions);
         error_wrap(ctx, "rule actions");
         return false;
     }
@@ -642,6 +645,7 @@ bool rules_parse(
     struct EngineContext *ctx, Allocator *alloc, vec_rule *rules, toml_table_t *toml_blueprint_table, Arena *arena)
 {
     *rules = (vec_rule){0};
+    rules->alloc = *alloc;
 
     toml_array_t *rule_array = toml_array_in(toml_blueprint_table, "rule");
     if (!rule_array) {
@@ -665,14 +669,14 @@ bool rules_parse(
         }
         Rule rule = {0};
         if (!parse_single_rule(ctx, alloc, &rule, entry, arena)) {
-            vec_condition_free(&rule.conditions, alloc);
-            vec_action_node_free(&rule.action_tree.nodes, alloc);
+            vec_condition_free(&rule.conditions);
+            vec_action_node_free(&rule.action_tree.nodes);
             error_wrap(ctx, "rule[%d]", index);
             return false;
         }
-        if (!vec_rule_push(rules, rule, alloc)) {
-            vec_condition_free(&rule.conditions, alloc);
-            vec_action_node_free(&rule.action_tree.nodes, alloc);
+        if (!vec_rule_push(rules, rule)) {
+            vec_condition_free(&rule.conditions);
+            vec_action_node_free(&rule.action_tree.nodes);
             error_set(ctx, "rule[%d]: out of memory", index);
             return false;
         }
@@ -1106,8 +1110,8 @@ expand_repeat_node(struct EngineContext *ctx, const ActionNode *node, const Acti
     return true;
 }
 
-static bool execute_create_timer_action(
-    struct EngineContext *ctx, Allocator *alloc, const ActionNode *node, ActionContext context, bool periodic)
+static bool
+execute_create_timer_action(struct EngineContext *ctx, const ActionNode *node, ActionContext context, bool periodic)
 {
     if (!context.timers) {
         debug_log(ctx, "create_timer: no timer list in context");
@@ -1131,7 +1135,7 @@ static bool execute_create_timer_action(
         .duration = duration,
         .periodic = periodic,
     };
-    if (!vec_timer_push(context.timers, new_timer, alloc)) {
+    if (!vec_timer_push(context.timers, new_timer)) {
         error_set(ctx, "create_timer: allocation failed");
         return false;
     }
@@ -1184,9 +1188,9 @@ dispatch_simple_action(struct EngineContext *ctx, Allocator *alloc, const Action
         return trigger_event_queue_push(context.event_queue, fire);
     }
     case ACTION_CREATE_TIMER:
-        return execute_create_timer_action(ctx, alloc, node, context, false);
+        return execute_create_timer_action(ctx, node, context, false);
     case ACTION_CREATE_TIMER_PERIODIC:
-        return execute_create_timer_action(ctx, alloc, node, context, true);
+        return execute_create_timer_action(ctx, node, context, true);
     case ACTION_DESTROY_TIMER:
         return execute_destroy_timer_action(ctx, node, context);
     default:
@@ -1471,7 +1475,7 @@ bool subroutines_parse(
             error_set(ctx, "subroutine[%d]: allocation failed for name", index);
             return false;
         }
-        if (!vec_subroutine_push(subroutines, stub, alloc)) {
+        if (!vec_subroutine_push(subroutines, stub)) {
             error_set(ctx, "subroutine[%d]: push failed", index);
             return false;
         }

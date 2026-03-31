@@ -55,11 +55,12 @@ VEC_IMPL(texture_entry, TextureEntry)
 /* Texture registry — maps texture filenames to loaded Texture2D handles */
 static void texture_registry_add(struct EngineContext *ctx, const char *filename, Texture2D texture, Allocator *alloc)
 {
+    ctx->assets.textures.alloc = *alloc;
     TextureEntry entry = {0};
     strncpy(entry.filename, filename, MAX_TEXTURE_FILENAME - 1);
     entry.filename[MAX_TEXTURE_FILENAME - 1] = '\0';
     entry.texture = texture;
-    (void)vec_texture_entry_push(&ctx->assets.textures, entry, alloc);
+    (void)vec_texture_entry_push(&ctx->assets.textures, entry);
 }
 
 static Texture2D *texture_registry_lookup(const char *filename, void *user_data)
@@ -95,7 +96,8 @@ static void font_preview_add(struct EngineContext *ctx, const char *name, Embedd
     } else {
         debug_log(ctx, "font[%d]: '%s' failed to load", ctx->assets.font_previews.count, name);
     }
-    (void)vec_font_preview_push(&ctx->assets.font_previews, entry, alloc);
+    ctx->assets.font_previews.alloc = *alloc;
+    (void)vec_font_preview_push(&ctx->assets.font_previews, entry);
 }
 
 static InputState merge_input(InputState base, InputState overlay)

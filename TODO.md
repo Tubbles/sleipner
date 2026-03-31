@@ -79,6 +79,4 @@
 
 ## misc
 
-- change it so vec and friends store their allocators, makes realloc and free
-  very easy and their signatures gets simpler. requires the allocator type to be
-  a very simple thing with no/low dependencies
+- do the same stored-allocator change for map and Str types (parallels vec work)

@@ -81,6 +81,7 @@ static bool parse_custom_attr(Allocator *alloc, AttrSet *attrs, toml_table_t *ta
 static bool inherit_attributes(Allocator *alloc, Blueprint *child, const Blueprint *parent)
 {
     bool changed = false;
+    child->attrs.entries.alloc = *alloc;
 
     for (int attr_index = 0; attr_index < parent->attrs.entries.count; attr_index++) {
         const Attribute *parent_attr = &parent->attrs.entries.data[attr_index];
@@ -100,7 +101,7 @@ static bool inherit_attributes(Allocator *alloc, Blueprint *child, const Bluepri
                 continue;
             }
         }
-        if (!vec_attribute_push(&child->attrs.entries, new_entry, alloc)) {
+        if (!vec_attribute_push(&child->attrs.entries, new_entry)) {
             str_free(alloc, &new_entry.name);
             if (parent_attr->type == ATTR_STRING) {
                 str_free(alloc, &new_entry.value.str);
@@ -255,6 +256,7 @@ static bool parse_children(Allocator *alloc, Blueprint *blueprint, toml_table_t 
     }
 
     int count = toml_array_nelem(children);
+    blueprint->children.alloc = *alloc;
 
     for (int index = 0; index < count; index++) {
         toml_table_t *child_entry = toml_table_at(children, index);
@@ -268,7 +270,7 @@ static bool parse_children(Allocator *alloc, Blueprint *blueprint, toml_table_t 
             }
             return false;
         }
-        if (!vec_blueprint_child_push(&blueprint->children, child_entry_data, alloc)) {
+        if (!vec_blueprint_child_push(&blueprint->children, child_entry_data)) {
             if (alloc && alloc->ctx) {
                 error_set(alloc->ctx, "blueprint '%s' child[%d]: out of memory",
                           attr_get_string(&blueprint->attrs, "name"), index);
@@ -322,7 +324,7 @@ static void blueprint_cleanup(Allocator *alloc, Blueprint *blp)
         str_free(alloc, &blp->children.data[child_index].blueprint_name);
         str_free(alloc, &blp->children.data[child_index].tag);
     }
-    vec_blueprint_child_free(&blp->children, alloc);
+    vec_blueprint_child_free(&blp->children);
     attr_set_free(alloc, &blp->attrs);
 }
 
@@ -331,7 +333,7 @@ void blueprint_table_free(Allocator *alloc, BlueprintTable *table)
     for (int index = 0; index < table->entries.count; index++) {
         blueprint_cleanup(alloc, &table->entries.data[index]);
     }
-    vec_blueprint_free(&table->entries, alloc);
+    vec_blueprint_free(&table->entries);
     *table = (BlueprintTable){0};
 }
 
@@ -366,6 +368,7 @@ int blueprints_load(struct EngineContext *ctx, BlueprintTable *table, void *toml
     Allocator alloc = allocator_arena(ctx, arena);
     /* Reset the table struct — arena_reset in the caller already freed the old data. */
     *table = (BlueprintTable){0};
+    table->entries.alloc = alloc;
 
     toml_array_t *blueprints = toml_array_in(toml_root, "blueprint");
     if (!blueprints) {
@@ -398,7 +401,7 @@ int blueprints_load(struct EngineContext *ctx, BlueprintTable *table, void *toml
         if (parse_single_blueprint(&alloc, &temp, entry, arena)) {
             debug_log(ctx, "bp[%d]: parsed '%s' tex='%s'", index, attr_get_string(&temp.attrs, "name"),
                       attr_get_string(&temp.attrs, "texture"));
-            (void)vec_blueprint_push(&table->entries, temp, &alloc);
+            (void)vec_blueprint_push(&table->entries, temp);
         } else {
             blueprint_cleanup(&alloc, &temp);
             toml_datum_t name = toml_string_in(entry, "name");

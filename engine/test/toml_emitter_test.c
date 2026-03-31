@@ -178,7 +178,8 @@ void test_toml_emit_round_trip(void)
 void test_toml_emit_buffer_too_small(void)
 {
     BlueprintTable blueprints = {0};
-    TEST_ASSERT_TRUE(vec_blueprint_push(&blueprints.entries, (Blueprint){0}, &test_heap_alloc));
+    blueprints.entries.alloc = test_heap_alloc;
+    TEST_ASSERT_TRUE(vec_blueprint_push(&blueprints.entries, (Blueprint){0}));
     Blueprint *entry = &blueprints.entries.data[0];
     TEST_ASSERT_TRUE(
         attr_set_string(&test_heap_alloc, &entry->attrs, (AttrStringPair){.name = "name", .value = "test"}));

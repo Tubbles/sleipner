@@ -122,7 +122,7 @@ static bool spawn_children_for(Allocator *alloc,
         if (child_def->tag.len > 0 && !str_from_strv(alloc, &child.tag, str_to_strv(child_def->tag))) {
             return false;
         }
-        if (!vec_entity_push(&level->entities, child, alloc)) {
+        if (!vec_entity_push(&level->entities, child)) {
             error_set(ctx, "spawn_children_for: out of memory");
             return false;
         }
@@ -224,7 +224,7 @@ static void parse_entity(Allocator *alloc,
     }
     entity_temp.id = level->next_entity_id++;
     parse_instance_overrides(alloc, &entity_temp, entity_table);
-    if (!vec_entity_push(&level->entities, entity_temp, alloc)) {
+    if (!vec_entity_push(&level->entities, entity_temp)) {
         debug_log(ctx, "ent[%d]: out of memory", entity_index);
         return;
     }
@@ -286,7 +286,7 @@ bool level_spawn_entity(struct EngineContext *ctx,
         (void)attr_set_bool(alloc, &entity.attrs, "solid", is_solid);
     }
     entity.id = level->next_entity_id++;
-    if (!vec_entity_push(&level->entities, entity, alloc)) {
+    if (!vec_entity_push(&level->entities, entity)) {
         error_set(ctx, "level_spawn_entity: out of memory");
         return false;
     }
@@ -306,7 +306,7 @@ void level_free(Allocator *alloc, Level *level)
         str_free(alloc, &level->entities.data[index].tag);
         attr_set_free(alloc, &level->entities.data[index].attrs);
     }
-    vec_entity_free(&level->entities, alloc);
+    vec_entity_free(&level->entities);
 }
 
 bool level_load(struct EngineContext *ctx,
@@ -320,6 +320,7 @@ bool level_load(struct EngineContext *ctx,
 {
     /* Reset the level struct — arena_reset in the caller already freed the old data. */
     memset(level, 0, sizeof(*level));
+    level->entities.alloc = *alloc;
 
     toml_array_t *levels = toml_array_in(toml_root, "level");
     if (!levels) {

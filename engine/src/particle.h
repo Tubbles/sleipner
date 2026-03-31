@@ -22,6 +22,6 @@ typedef struct {
 void particles_init(ParticlePool *pool);
 void particles_spawn(ParticlePool *pool, Allocator *alloc, Vector2 pos, Color color, int count);
 void particles_update(ParticlePool *pool, float delta_time);
-void particles_free(ParticlePool *pool, Allocator *alloc);
+void particles_free(ParticlePool *pool);
 
 #endif

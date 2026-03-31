@@ -5,8 +5,6 @@
 #include "strv.h"
 #include "vec.h"
 
-#include <string.h>
-
 VEC_IMPL(attribute, Attribute)
 
 const Attribute *attr_get(const AttrSet *set, const char *name)
@@ -21,6 +19,7 @@ const Attribute *attr_get(const AttrSet *set, const char *name)
 
 static Attribute *find_or_append(Allocator *alloc, AttrSet *set, const char *name)
 {
+    set->entries.alloc = *alloc;
     for (int index = 0; index < set->entries.count; index++) {
         if (strv_eq_cstr(str_to_strv(set->entries.data[index].name), name)) {
             Attribute *entry = &set->entries.data[index];
@@ -39,7 +38,7 @@ static Attribute *find_or_append(Allocator *alloc, AttrSet *set, const char *nam
         }
         return nullptr;
     }
-    if (!vec_attribute_push(&set->entries, new_entry, alloc)) {
+    if (!vec_attribute_push(&set->entries, new_entry)) {
         str_free(alloc, &new_entry.name);
         if (alloc && alloc->ctx) {
             error_set(alloc->ctx, "attribute push failed for '%s'", name);
@@ -57,7 +56,7 @@ void attr_set_free(Allocator *alloc, AttrSet *set)
             str_free(alloc, &set->entries.data[index].value.str);
         }
     }
-    vec_attribute_free(&set->entries, alloc);
+    vec_attribute_free(&set->entries);
     *set = (AttrSet){0};
 }
 

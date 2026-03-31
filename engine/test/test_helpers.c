@@ -14,7 +14,7 @@ void test_blueprint_table_free(BlueprintTable *table)
     for (int index = 0; index < table->entries.count; index++) {
         test_blueprint_free(&table->entries.data[index]);
     }
-    vec_blueprint_free(&table->entries, &test_heap_alloc);
+    vec_blueprint_free(&table->entries);
 }
 
 void test_blueprint_free(Blueprint *blueprint)
@@ -23,7 +23,7 @@ void test_blueprint_free(Blueprint *blueprint)
         str_free(&test_heap_alloc, &blueprint->children.data[index].blueprint_name);
         str_free(&test_heap_alloc, &blueprint->children.data[index].tag);
     }
-    vec_blueprint_child_free(&blueprint->children, &test_heap_alloc);
+    vec_blueprint_child_free(&blueprint->children);
     test_attr_set_free(&blueprint->attrs);
 }
 

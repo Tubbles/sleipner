@@ -838,11 +838,13 @@ void test_evaluate_interact_sets_flag(void)
     TEST_ASSERT_NOT_NULL(rule);
     memset(rule, 0, sizeof(*rule));
     rule->trigger.type = TRIGGER_INTERACT;
+    rule->action_tree.nodes.alloc = rule_alloc;
     ActionNode node_interact = {.type = ACTION_SET_FLAG};
     TEST_ASSERT_TRUE(str_from_cstr(&rule_alloc, &node_interact.argument, "chest_opened"));
-    TEST_ASSERT_TRUE(vec_action_node_push(&rule->action_tree.nodes, node_interact, &rule_alloc));
+    TEST_ASSERT_TRUE(vec_action_node_push(&rule->action_tree.nodes, node_interact));
 
-    TEST_ASSERT_TRUE(vec_rule_push(&blueprint.rules, *rule, &rule_alloc));
+    blueprint.rules.alloc = rule_alloc;
+    TEST_ASSERT_TRUE(vec_rule_push(&blueprint.rules, *rule));
 
     Entity entity = {0};
     entity.id = 0;
@@ -883,14 +885,17 @@ void test_evaluate_condition_blocks_action(void)
     TEST_ASSERT_NOT_NULL(rule);
     memset(rule, 0, sizeof(*rule));
     rule->trigger.type = TRIGGER_INTERACT;
+    rule->conditions.alloc = rule_alloc;
     Condition cond_blocked = {.type = COND_FLAG};
     TEST_ASSERT_TRUE(str_from_cstr(&rule_alloc, &cond_blocked.argument, "has_key"));
-    TEST_ASSERT_TRUE(vec_condition_push(&rule->conditions, cond_blocked, &rule_alloc));
+    TEST_ASSERT_TRUE(vec_condition_push(&rule->conditions, cond_blocked));
+    rule->action_tree.nodes.alloc = rule_alloc;
     ActionNode node_blocked = {.type = ACTION_SET_FLAG};
     TEST_ASSERT_TRUE(str_from_cstr(&rule_alloc, &node_blocked.argument, "chest_opened"));
-    TEST_ASSERT_TRUE(vec_action_node_push(&rule->action_tree.nodes, node_blocked, &rule_alloc));
+    TEST_ASSERT_TRUE(vec_action_node_push(&rule->action_tree.nodes, node_blocked));
 
-    TEST_ASSERT_TRUE(vec_rule_push(&blueprint.rules, *rule, &rule_alloc));
+    blueprint.rules.alloc = rule_alloc;
+    TEST_ASSERT_TRUE(vec_rule_push(&blueprint.rules, *rule));
 
     Entity entity = {0};
     entity.id = 0;
@@ -930,10 +935,12 @@ void test_evaluate_fire_event_cascading(void)
     Rule *switch_rule = arena_alloc(&ctx, &arena, (AllocRequest){.size = sizeof(Rule), .alignment = _Alignof(Rule)});
     memset(switch_rule, 0, sizeof(*switch_rule));
     switch_rule->trigger.type = TRIGGER_INTERACT;
+    switch_rule->action_tree.nodes.alloc = rule_alloc;
     ActionNode switch_node = {.type = ACTION_FIRE_EVENT};
     TEST_ASSERT_TRUE(str_from_cstr(&rule_alloc, &switch_node.argument, "switch_pulled"));
-    TEST_ASSERT_TRUE(vec_action_node_push(&switch_rule->action_tree.nodes, switch_node, &rule_alloc));
-    TEST_ASSERT_TRUE(vec_rule_push(&bp_switch.rules, *switch_rule, &rule_alloc));
+    TEST_ASSERT_TRUE(vec_action_node_push(&switch_rule->action_tree.nodes, switch_node));
+    bp_switch.rules.alloc = rule_alloc;
+    TEST_ASSERT_TRUE(vec_rule_push(&bp_switch.rules, *switch_rule));
 
     Blueprint bp_door = {0};
     TEST_ASSERT_TRUE(
@@ -943,10 +950,12 @@ void test_evaluate_fire_event_cascading(void)
     memset(door_rule, 0, sizeof(*door_rule));
     door_rule->trigger.type = TRIGGER_EVENT;
     TEST_ASSERT_TRUE(str_from_cstr(&rule_alloc, &door_rule->trigger.argument, "switch_pulled"));
+    door_rule->action_tree.nodes.alloc = rule_alloc;
     ActionNode door_node = {.type = ACTION_SET_FLAG};
     TEST_ASSERT_TRUE(str_from_cstr(&rule_alloc, &door_node.argument, "door_opened"));
-    TEST_ASSERT_TRUE(vec_action_node_push(&door_rule->action_tree.nodes, door_node, &rule_alloc));
-    TEST_ASSERT_TRUE(vec_rule_push(&bp_door.rules, *door_rule, &rule_alloc));
+    TEST_ASSERT_TRUE(vec_action_node_push(&door_rule->action_tree.nodes, door_node));
+    bp_door.rules.alloc = rule_alloc;
+    TEST_ASSERT_TRUE(vec_rule_push(&bp_door.rules, *door_rule));
 
     Entity entities[2] = {0};
     entities[0].id = 0;
