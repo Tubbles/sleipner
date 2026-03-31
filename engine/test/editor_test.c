@@ -231,28 +231,40 @@ void test_editor_place_visible_count_small_height(void)
 
 void test_editor_total_attr_count_instance_only(void)
 {
+    GameState state = {0};
     Entity entity = {0};
     TEST_ASSERT_TRUE(attr_set_int(NULL, &entity.attrs, "speed", 10));
     TEST_ASSERT_TRUE(attr_set_int(NULL, &entity.attrs, "health", 5));
 
-    TEST_ASSERT_EQUAL_INT(2, total_attr_count(&entity));
+    TEST_ASSERT_EQUAL_INT(2, total_attr_count(&state, &entity));
 
     test_attr_set_free(&entity.attrs);
 }
 
 void test_editor_total_attr_count_with_blueprint(void)
 {
-    AttrSet blueprint_attrs = {0};
-    TEST_ASSERT_TRUE(attr_set_int(NULL, &blueprint_attrs, "bp_attr", 42));
+    GameState state = {0};
+    Blueprint blueprint = {0};
+    TEST_ASSERT_TRUE(attr_set_string(NULL, &blueprint.attrs, (AttrStringPair){"name", "test_bp"}));
+    TEST_ASSERT_TRUE(attr_set_int(NULL, &blueprint.attrs, "bp_attr", 42));
+    (void)vec_blueprint_push(&state.blueprints.entries, blueprint, NULL);
 
     Entity entity = {0};
+    entity.id = 1;
+    TEST_ASSERT_TRUE(str_from_cstr(NULL, &entity.blueprint_name, "test_bp"));
     TEST_ASSERT_TRUE(attr_set_int(NULL, &entity.attrs, "inst_attr", 10));
-    entity.defaults = &blueprint_attrs;
+    Str bp_name = {0};
+    TEST_ASSERT_TRUE(str_from_cstr(NULL, &bp_name, "test_bp"));
+    (void)map_int_str_set(&state.entity_blueprints, entity.id, bp_name, NULL);
 
-    TEST_ASSERT_EQUAL_INT(2, total_attr_count(&entity));
+    TEST_ASSERT_EQUAL_INT(2 + 1, total_attr_count(&state, &entity));
 
     test_attr_set_free(&entity.attrs);
-    test_attr_set_free(&blueprint_attrs);
+    test_attr_set_free(&blueprint.attrs);
+    str_free(NULL, &entity.blueprint_name);
+    str_free(NULL, &bp_name);
+    map_int_str_free(&state.entity_blueprints, NULL);
+    vec_blueprint_free(&state.blueprints.entries, NULL);
 }
 
 /* ---- is_blueprint_attr -------------------------------------------------- */
@@ -326,10 +338,11 @@ void test_editor_find_nearest_empty_level(void)
 
 void test_editor_entity_outline_rect_with_collision(void)
 {
+    GameState state = {0};
     Entity entity = {0};
     entity.collision = (Rectangle){10.0F, 20.0F, 32.0F, 16.0F};
 
-    Rectangle rect = entity_outline_rect(&entity);
+    Rectangle rect = entity_outline_rect(&state, &entity);
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 10.0F, rect.x);
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 20.0F, rect.y);
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 32.0F, rect.width);
@@ -338,12 +351,13 @@ void test_editor_entity_outline_rect_with_collision(void)
 
 void test_editor_entity_outline_rect_without_collision(void)
 {
+    GameState state = {0};
     Entity entity = {0};
     entity.position = (Vector2){50.0F, 60.0F};
     TEST_ASSERT_TRUE(attr_set_float(NULL, &entity.attrs, "src_w", 16.0F));
     TEST_ASSERT_TRUE(attr_set_float(NULL, &entity.attrs, "src_h", 24.0F));
 
-    Rectangle rect = entity_outline_rect(&entity);
+    Rectangle rect = entity_outline_rect(&state, &entity);
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 50.0F, rect.x);
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 60.0F, rect.y);
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 16.0F, rect.width);

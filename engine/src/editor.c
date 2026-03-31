@@ -97,25 +97,36 @@ int find_nearest_entity(const Level *level, Vector2 cursor_world)
     return nearest_index;
 }
 
-static Rectangle entity_outline_rect(const Entity *entity)
+static Rectangle get_source_rect(const AttrSet *instance, const AttrSet *defaults)
+{
+    return (Rectangle){
+        attr_get_scoped_float(instance, defaults, "src_x", 0.0F),
+        attr_get_scoped_float(instance, defaults, "src_y", 0.0F),
+        attr_get_scoped_float(instance, defaults, "src_w", 0.0F),
+        attr_get_scoped_float(instance, defaults, "src_h", 0.0F),
+    };
+}
+
+static Rectangle entity_outline_rect(const GameState *state, const Entity *entity)
 {
     Rectangle col = entity->collision;
     if (col.width > 0.0F && col.height > 0.0F) {
         return col;
     }
-    Rectangle src = entity_get_source(entity);
+    const AttrSet *defaults = entity_resolve_defaults(state, entity->id);
+    Rectangle src = get_source_rect(&entity->attrs, defaults);
     return (Rectangle){entity->position.x, entity->position.y, src.width, src.height};
 }
 
 void draw_editor_highlights(const GameState *state, const EditorState *editor_state, int hover_entity_index)
 {
     if (hover_entity_index >= 0 && hover_entity_index < state->current_level.entities.count) {
-        DrawRectangleLinesEx(entity_outline_rect(&state->current_level.entities.data[hover_entity_index]), 1.0F,
+        DrawRectangleLinesEx(entity_outline_rect(state, &state->current_level.entities.data[hover_entity_index]), 1.0F,
                              YELLOW);
     }
     int sel = editor_state->selected_entity_index;
     if (sel >= 0 && sel < state->current_level.entities.count) {
-        DrawRectangleLinesEx(entity_outline_rect(&state->current_level.entities.data[sel]), 2.0F, WHITE);
+        DrawRectangleLinesEx(entity_outline_rect(state, &state->current_level.entities.data[sel]), 2.0F, WHITE);
     }
 }
 
@@ -165,11 +176,12 @@ void draw_editor_panel(const struct EngineContext *ctx, const GameState *state, 
     y_offset += EDITOR_PANEL_LINE_HEIGHT;
     int sel_attr = editor_state->selected_attr_index;
     draw_attr_section(&entity->attrs, panel_x, &y_offset, 0, sel_attr);
-    if (entity->defaults) {
+    const AttrSet *defaults = entity_resolve_defaults(state, entity->id);
+    if (defaults) {
         DrawText("--- blueprint ---", panel_x + DEBUG_MARGIN, y_offset, EDITOR_PANEL_FONT_SIZE, debug_text_color);
         y_offset += EDITOR_PANEL_LINE_HEIGHT;
         int blueprint_base = entity->attrs.entries.count;
-        draw_attr_section(entity->defaults, panel_x, &y_offset, blueprint_base, sel_attr);
+        draw_attr_section(defaults, panel_x, &y_offset, blueprint_base, sel_attr);
     }
 }
 
@@ -192,8 +204,9 @@ void draw_watch_overlay(const struct EngineContext *ctx, const GameState *state,
         DrawText(TextFormat("[%s] pos:%.0f,%.0f", entity->blueprint_name.ptr, entity->position.x, entity->position.y),
                  panel_x + DEBUG_MARGIN, y_offset, EDITOR_PANEL_FONT_SIZE, debug_text_color);
         y_offset += EDITOR_PANEL_LINE_HEIGHT;
-        const Attribute *hp_attr = entity_get_attr(entity, "hp");
-        const Attribute *hp_max_attr = entity_get_attr(entity, "hp_max");
+        const AttrSet *defaults = entity_resolve_defaults(state, entity->id);
+        const Attribute *hp_attr = attr_get_scoped(&entity->attrs, defaults, "hp");
+        const Attribute *hp_max_attr = attr_get_scoped(&entity->attrs, defaults, "hp_max");
         if (hp_attr && hp_max_attr) {
             DrawText(TextFormat("  hp: %d/%d", hp_attr->value.i, hp_max_attr->value.i), panel_x + DEBUG_MARGIN,
                      y_offset, EDITOR_PANEL_FONT_SIZE, debug_text_color);
@@ -214,10 +227,11 @@ static Blueprint *find_blueprint_by_name(GameState *state, const char *name)
     return NULL;
 }
 
-static int total_attr_count(const Entity *entity)
+static int total_attr_count(const GameState *state, const Entity *entity)
 {
     int instance_count = entity->attrs.entries.count;
-    int blueprint_count = entity->defaults ? entity->defaults->entries.count : 0;
+    const AttrSet *defaults = entity_resolve_defaults(state, entity->id);
+    int blueprint_count = defaults ? defaults->entries.count : 0;
     return instance_count + blueprint_count;
 }
 
@@ -518,7 +532,7 @@ static void handle_browse_attr_navigate(const GameState *state, EditorState *edi
         return;
     }
     const Entity *entity = &state->current_level.entities.data[sel];
-    int total = total_attr_count(entity);
+    int total = total_attr_count(state, entity);
     if (total <= 0) {
         return;
     }

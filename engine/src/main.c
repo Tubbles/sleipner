@@ -148,9 +148,20 @@ static void draw_player_entity(const Entity *player)
     DrawTexturePro(*player->texture, source, dest, (Vector2){0, 0}, 0.0F, WHITE);
 }
 
-static void draw_entity(const Entity *entity)
+static Rectangle get_source_rect(const AttrSet *instance, const AttrSet *defaults)
 {
-    DrawTextureRec(*entity->texture, entity_get_source(entity), entity->position, WHITE);
+    return (Rectangle){
+        attr_get_scoped_float(instance, defaults, "src_x", 0.0F),
+        attr_get_scoped_float(instance, defaults, "src_y", 0.0F),
+        attr_get_scoped_float(instance, defaults, "src_w", 0.0F),
+        attr_get_scoped_float(instance, defaults, "src_h", 0.0F),
+    };
+}
+
+static void draw_entity(const GameState *state, const Entity *entity)
+{
+    const AttrSet *defaults = entity_resolve_defaults(state, entity->id);
+    DrawTextureRec(*entity->texture, get_source_rect(&entity->attrs, defaults), entity->position, WHITE);
 }
 
 static void log_gamepad_changes(struct EngineContext *ctx, int *prev_gamepads, int frame)
@@ -587,7 +598,7 @@ static void draw_entities_depth_sorted(const GameState *state)
         float entity_sort_y = state->current_level.entities.data[index].collision.y +
                               state->current_level.entities.data[index].collision.height;
         if (entity_sort_y <= player_sort_y) {
-            draw_entity(&state->current_level.entities.data[index]);
+            draw_entity(state, &state->current_level.entities.data[index]);
         }
     }
 
@@ -602,7 +613,7 @@ static void draw_entities_depth_sorted(const GameState *state)
         float entity_sort_y = state->current_level.entities.data[index].collision.y +
                               state->current_level.entities.data[index].collision.height;
         if (entity_sort_y > player_sort_y) {
-            draw_entity(&state->current_level.entities.data[index]);
+            draw_entity(state, &state->current_level.entities.data[index]);
         }
     }
 
