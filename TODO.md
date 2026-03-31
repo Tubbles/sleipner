@@ -54,9 +54,6 @@
 
 ## Type safety cleanup
 
-- **Remove `(bool)` casts** — 23 occurrences across engine/src/. These are
-  unnecessary since `readability-implicit-bool-conversion` is disabled. Pure
-  noise.
 - **`resolve_target` should return vec index** — currently returns
   `Entity *`, forcing callers to do `(int)(target - context.entities)` to
   index the parallel `entity_defaults[]` array. Return the index directly;

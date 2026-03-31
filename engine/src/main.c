@@ -492,7 +492,7 @@ apply_touch_input(InputState input, TouchState *touch_state, struct EngineContex
                              (float)ctx->screen_width * TOUCH_BUTTON_SIZE_FRAC};
     touch_update(touch_state, button_rect);
     if (touch_state->debug_button_triggered) {
-        state->debug_enabled = (bool)!state->debug_enabled;
+        state->debug_enabled = !state->debug_enabled;
         debug_log(ctx, "debug %s (touch, frame %d)", (int)state->debug_enabled ? "ON" : "OFF", state->frame);
     }
     Vector2 stick = touch_get_stick(touch_state, (float)ctx->screen_width / (float)TOUCH_STICK_RADIUS_DIV);
@@ -868,18 +868,18 @@ int main(void)
 
         /* Toggle debug overlay: F3 only (Select/MIDDLE_LEFT is now used by radial picker) */
         if (IsKeyPressed(KEY_F3)) {
-            state.debug_enabled = (bool)!state.debug_enabled;
+            state.debug_enabled = !state.debug_enabled;
             debug_log(ctx, "debug %s (frame %d)", (int)state.debug_enabled ? "ON" : "OFF", state.frame);
         }
 
         /* Toggle font preview: F4 or gamepad Right Thumb */
         if (toggle_pressed((ToggleBinding){KEY_F4, GAMEPAD_BUTTON_RIGHT_THUMB})) {
-            font_preview_enabled = (bool)!font_preview_enabled;
+            font_preview_enabled = !font_preview_enabled;
         }
 
         /* Toggle editor mode: F5 or gamepad Start */
         if (toggle_pressed((ToggleBinding){KEY_F5, GAMEPAD_BUTTON_MIDDLE_RIGHT})) {
-            state.editor_mode = (bool)!state.editor_mode;
+            state.editor_mode = !state.editor_mode;
             debug_log(ctx, "editor %s (frame %d)", (int)state.editor_mode ? "ON" : "OFF", state.frame);
         }
 

@@ -19,7 +19,7 @@ static bool parse_instance_attr(Allocator *alloc, AttrSet *attrs, toml_table_t *
 {
     toml_datum_t bool_value = toml_bool_in(table, key);
     if (bool_value.ok) {
-        return attr_set_bool(alloc, attrs, key, (bool)bool_value.u.b);
+        return attr_set_bool(alloc, attrs, key, bool_value.u.b);
     }
 
     toml_datum_t int_value = toml_int_in(table, key);

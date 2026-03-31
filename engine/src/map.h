@@ -50,7 +50,7 @@ static inline uint32_t map_hash_int(int key)
 
 static inline bool map_eq_int(int first, int second)
 {
-    return (bool)(first == second);
+    return first == second;
 }
 
 /* MAP_DECL(name, key_type, value_type) — declare the map_<name> struct, entry type, and

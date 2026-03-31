@@ -24,7 +24,7 @@ void test_toml_str_content_is_copied(void)
     toml_datum_t datum = {0};
     toml_table_t *table = make_table_with_string("hello", &datum);
     TEST_ASSERT_NOT_NULL(table);
-    TEST_ASSERT_TRUE((bool)datum.ok);
+    TEST_ASSERT_TRUE(datum.ok);
     Str str = {0};
     TEST_ASSERT_TRUE(str_from_toml_datum(NULL, &str, &datum));
     TEST_ASSERT_EQUAL_STRING("hello", str.ptr);
@@ -38,7 +38,7 @@ void test_toml_str_datum_nulled_after_call(void)
     toml_datum_t datum = {0};
     toml_table_t *table = make_table_with_string("world", &datum);
     TEST_ASSERT_NOT_NULL(table);
-    TEST_ASSERT_TRUE((bool)datum.ok);
+    TEST_ASSERT_TRUE(datum.ok);
     Str str = {0};
     TEST_ASSERT_TRUE(str_from_toml_datum(NULL, &str, &datum));
     TEST_ASSERT_NULL(datum.u.s);

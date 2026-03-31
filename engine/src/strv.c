@@ -63,7 +63,7 @@ Strv strv_split(Strv *strv, char delim)
 
 bool strv_eq(Strv lhs, Strv rhs)
 {
-    return (bool)(lhs.len == rhs.len && memcmp(lhs.ptr, rhs.ptr, lhs.len) == 0);
+    return lhs.len == rhs.len && memcmp(lhs.ptr, rhs.ptr, lhs.len) == 0;
 }
 
 bool strv_eq_cstr(Strv strv, const char *cstr)
@@ -74,7 +74,7 @@ bool strv_eq_cstr(Strv strv, const char *cstr)
 bool strv_starts_with_cstr(Strv strv, const char *prefix)
 {
     size_t prefix_len = strlen(prefix);
-    return (bool)(strv.len >= prefix_len && memcmp(strv.ptr, prefix, prefix_len) == 0);
+    return strv.len >= prefix_len && memcmp(strv.ptr, prefix, prefix_len) == 0;
 }
 
 void strv_copy_to_cstr(Strv strv, char *dest, size_t dest_size)

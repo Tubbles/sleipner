@@ -692,7 +692,7 @@ bool trigger_matches(const Trigger *trigger, const TriggerEvent *event)
         return strcmp(trigger->argument.ptr, event->argument.ptr) == 0;
     }
     if (trigger->type == TRIGGER_COLLIDE && trigger->argument.len > 0) {
-        return (bool)(event->argument.ptr != NULL && strcmp(trigger->argument.ptr, event->argument.ptr) == 0);
+        return event->argument.ptr != NULL && strcmp(trigger->argument.ptr, event->argument.ptr) == 0;
     }
     return true;
 }
@@ -739,7 +739,7 @@ static bool evaluate_single_condition(const Condition *condition, ConditionConte
     case COND_FLAG:
         return flag_get(context.flags, condition->argument.ptr);
     case COND_NOT_FLAG:
-        return (bool)!flag_get(context.flags, condition->argument.ptr);
+        return !flag_get(context.flags, condition->argument.ptr);
     case COND_ATTR: {
         const AttrSet *defaults = context.entity_defaults[context.entity_index];
         const Attribute *attr = attr_get_scoped(&context.entity->attrs, defaults, condition->argument.ptr);
@@ -754,7 +754,7 @@ static bool evaluate_single_condition(const Condition *condition, ConditionConte
         if (!attr) {
             return true;
         }
-        return (bool)!attr_is_truthy(attr);
+        return !attr_is_truthy(attr);
     }
     case COND_ATTR_LT: {
         const AttrSet *defaults = context.entity_defaults[context.entity_index];
@@ -1009,7 +1009,7 @@ execute_toggle_attr_action(struct EngineContext *ctx, Allocator *alloc, const Ac
     int target_index = (int)(target - context.entities);
     const AttrSet *target_defaults = context.entity_defaults[target_index];
     bool current_val = attr_get_scoped_bool(&target->attrs, target_defaults, attr_name, false);
-    return attr_set_bool(alloc, &target->attrs, attr_name, (bool)!current_val);
+    return attr_set_bool(alloc, &target->attrs, attr_name, !current_val);
 }
 
 static bool

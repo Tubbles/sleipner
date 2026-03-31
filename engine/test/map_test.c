@@ -17,7 +17,7 @@ static uint32_t always_same_hash(int key)
 
 static bool int_eq(int first, int second)
 {
-    return (bool)(first == second);
+    return first == second;
 }
 
 MAP_DECL(probe_test, int, int)

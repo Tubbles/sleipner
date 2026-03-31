@@ -416,7 +416,7 @@ bool composite_overlap(const CollisionShape *shape_a,
                        float angle_b)
 {
     Vector2 result = resolve_composite(shape_a, pos_a, angle_a, shape_b, pos_b, angle_b);
-    return (bool)((result.x != 0.0F) || (result.y != 0.0F));
+    return (result.x != 0.0F) || (result.y != 0.0F);
 }
 
 Vector2 resolve_composite_wall(const CollisionShape *shape, Vector2 pos, float angle, Rectangle wall)
@@ -437,13 +437,13 @@ static bool is_in_corner_quadrant(int corner, float delta_x, float delta_y)
 {
     switch (corner) {
     case 0:
-        return (bool)((delta_x < 0) && (delta_y < 0));
+        return (delta_x < 0) && (delta_y < 0);
     case 1:
-        return (bool)((delta_x > 0) && (delta_y < 0));
+        return (delta_x > 0) && (delta_y < 0);
     case 2:
-        return (bool)((delta_x < 0) && (delta_y > 0));
+        return (delta_x < 0) && (delta_y > 0);
     case 3:
-        return (bool)((delta_x > 0) && (delta_y > 0));
+        return (delta_x > 0) && (delta_y > 0);
     default:
         return false;
     }

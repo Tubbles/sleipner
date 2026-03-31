@@ -122,6 +122,6 @@ bool input_exit_requested(int gamepad_id)
     if (!IsGamepadAvailable(gamepad_id)) {
         return false;
     }
-    return (bool)(IsGamepadButtonDown(gamepad_id, GAMEPAD_BUTTON_MIDDLE_LEFT) &&
-                  IsGamepadButtonDown(gamepad_id, GAMEPAD_BUTTON_MIDDLE_RIGHT));
+    return IsGamepadButtonDown(gamepad_id, GAMEPAD_BUTTON_MIDDLE_LEFT) &&
+           IsGamepadButtonDown(gamepad_id, GAMEPAD_BUTTON_MIDDLE_RIGHT);
 }

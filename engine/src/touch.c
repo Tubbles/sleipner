@@ -6,8 +6,7 @@
 
 static bool point_in_rect(Vector2 point, Rectangle rect)
 {
-    return (bool)(point.x >= rect.x && point.x < rect.x + rect.width && point.y >= rect.y &&
-                  point.y < rect.y + rect.height);
+    return point.x >= rect.x && point.x < rect.x + rect.width && point.y >= rect.y && point.y < rect.y + rect.height;
 }
 
 void touch_process(TouchState *state, int touch_count, Vector2 touch_pos, Rectangle debug_button_rect)
