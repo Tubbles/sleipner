@@ -213,11 +213,13 @@ bool trigger_matches(const Trigger *trigger, const TriggerEvent *event);
 /* --- Condition evaluation --- */
 typedef struct {
     const Entity *entity;
+    int entity_index;
     const Entity *entities;
     int entity_count;
     const FlagSet *flags;
     const AttrSet *local_vars;
     const AttrSet *global_vars;
+    const AttrSet *const *entity_defaults;
 } ConditionContext;
 
 bool conditions_evaluate(const Condition *conditions, int count, ConditionContext context);
@@ -234,10 +236,11 @@ typedef struct {
     TriggerEventQueue *event_queue;
     AttrSet *local_vars;
     AttrSet *global_vars;
-    const LocalScope *scope;           /* entity binding chain — walked by resolve_target */
-    const vec_subroutine *subroutines; /* read-only subroutine table */
-    vec_timer *timers;                 /* mutable timer list for create_timer/destroy_timer */
-    int call_depth;                    /* recursion guard for call: */
+    const LocalScope *scope;               /* entity binding chain — walked by resolve_target */
+    const vec_subroutine *subroutines;     /* read-only subroutine table */
+    vec_timer *timers;                     /* mutable timer list for create_timer/destroy_timer */
+    const AttrSet *const *entity_defaults; /* parallel to entities — blueprint defaults per entity */
+    int call_depth;                        /* recursion guard for call: */
 } ActionContext;
 
 [[nodiscard]] bool
@@ -254,6 +257,7 @@ void rules_evaluate_batch(struct EngineContext *ctx,
                           AttrSet *global_vars,
                           map_entity_ruleset *rule_table,
                           const vec_subroutine *subroutines,
-                          vec_timer *timers);
+                          vec_timer *timers,
+                          const AttrSet *const *entity_defaults);
 
 #endif

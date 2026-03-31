@@ -1054,11 +1054,13 @@ static bool expand_if_else_node(struct EngineContext *ctx,
 {
     ConditionContext cond_ctx = {
         .entity = context.entity,
+        .entity_index = context.entity_index,
         .entities = context.entities,
         .entity_count = context.entity_count,
         .flags = context.flags,
         .local_vars = context.local_vars,
         .global_vars = context.global_vars,
+        .entity_defaults = context.entity_defaults,
     };
     bool condition_met = conditions_evaluate(node->conditions.data, node->conditions.count, cond_ctx);
     const ActionNode *branch;
@@ -1192,11 +1194,13 @@ execute_for_each_node(struct EngineContext *ctx, Allocator *alloc, const ActionN
         }
         ConditionContext cond_ctx = {
             .entity = &context.entities[entity_index],
+            .entity_index = entity_index,
             .entities = context.entities,
             .entity_count = context.entity_count,
             .flags = context.flags,
             .local_vars = context.local_vars,
             .global_vars = context.global_vars,
+            .entity_defaults = context.entity_defaults,
         };
         if (!conditions_evaluate(node->conditions.data, node->conditions.count, cond_ctx)) {
             continue;
@@ -1321,7 +1325,8 @@ static void evaluate_entity_rules(struct EngineContext *ctx,
                                   TriggerEventQueue *next_events,
                                   map_entity_ruleset *rule_table,
                                   const vec_subroutine *subroutines,
-                                  vec_timer *timers)
+                                  vec_timer *timers,
+                                  const AttrSet *const *entity_defaults)
 {
     const vec_rule *ruleset = map_entity_ruleset_get(rule_table, entity->id);
     if (!ruleset) {
@@ -1335,11 +1340,13 @@ static void evaluate_entity_rules(struct EngineContext *ctx,
         AttrSet local_vars = {0};
         ConditionContext cond_ctx = {
             .entity = entity,
+            .entity_index = entity_index,
             .entities = entities,
             .entity_count = entity_count,
             .flags = flags,
             .local_vars = &local_vars,
             .global_vars = global_vars,
+            .entity_defaults = entity_defaults,
         };
         ActionContext act_ctx = {
             .entity = entity,
@@ -1352,6 +1359,7 @@ static void evaluate_entity_rules(struct EngineContext *ctx,
             .global_vars = global_vars,
             .subroutines = subroutines,
             .timers = timers,
+            .entity_defaults = entity_defaults,
         };
         debug_log(ctx, "Rule triggered for entity %d (type: %s), rule %d", entity_index, entity->blueprint_name.ptr,
                   rule_index);
@@ -1379,7 +1387,8 @@ void rules_evaluate_batch(struct EngineContext *ctx,
                           AttrSet *global_vars,
                           map_entity_ruleset *rule_table,
                           const vec_subroutine *subroutines,
-                          vec_timer *timers)
+                          vec_timer *timers,
+                          const AttrSet *const *entity_defaults)
 {
     TriggerEventQueue pending_events = {0};
     for (int event_index = 0; event_index < event_count; event_index++) {
@@ -1407,7 +1416,7 @@ void rules_evaluate_batch(struct EngineContext *ctx,
                 }
             }
             evaluate_entity_rules(ctx, alloc, entity, entity_index, entities, entity_count, flags, global_vars,
-                                  &pending_events, &next_events, rule_table, subroutines, timers);
+                                  &pending_events, &next_events, rule_table, subroutines, timers, entity_defaults);
         }
 
         pending_events = next_events;

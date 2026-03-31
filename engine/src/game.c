@@ -125,16 +125,23 @@ bool game_load_gamedata(struct EngineContext *ctx, GameState *state, GamedataPar
         {
             SCRATCH_SCOPE(&state->scratch_arena);
             Allocator scratch_alloc = allocator_arena(ctx, &state->scratch_arena);
+            int spawn_count = state->current_level.entities.count;
+            const AttrSet **spawn_defaults =
+                (const AttrSet **)arena_alloc(ctx, &state->scratch_arena,
+                                              (AllocRequest){.size = sizeof(const AttrSet *) * (size_t)spawn_count,
+                                                             .alignment = _Alignof(const AttrSet *)});
+            for (int index = 0; index < spawn_count; index++) {
+                spawn_defaults[index] = entity_resolve_defaults(state, state->current_level.entities.data[index].id);
+            }
             vec_trigger_event spawn_events = {0};
-            for (int index = 0; index < state->current_level.entities.count; index++) {
+            for (int index = 0; index < spawn_count; index++) {
                 (void)vec_trigger_event_push(
                     &spawn_events, (TriggerEvent){.type = TRIGGER_ON_SPAWN, .entity_index = index}, &scratch_alloc);
             }
             if (spawn_events.count > 0) {
-                rules_evaluate_batch(ctx, &gamedata_alloc, state->current_level.entities.data,
-                                     state->current_level.entities.count, spawn_events.data, spawn_events.count,
-                                     &state->flags, &state->vars, &state->rule_table, &state->subroutines,
-                                     &state->timers);
+                rules_evaluate_batch(ctx, &gamedata_alloc, state->current_level.entities.data, spawn_count,
+                                     spawn_events.data, spawn_events.count, &state->flags, &state->vars,
+                                     &state->rule_table, &state->subroutines, &state->timers, spawn_defaults);
             }
         }
     } else {
@@ -434,10 +441,18 @@ void game_update(struct EngineContext *ctx, GameState *state, InputState input, 
         collect_trigger_events(ctx, state, input, &trigger_events, &scratch_alloc);
 
         if (trigger_events.count > 0) {
+            int update_count = state->current_level.entities.count;
+            const AttrSet **update_defaults =
+                (const AttrSet **)arena_alloc(ctx, &state->scratch_arena,
+                                              (AllocRequest){.size = sizeof(const AttrSet *) * (size_t)update_count,
+                                                             .alignment = _Alignof(const AttrSet *)});
+            for (int index = 0; index < update_count; index++) {
+                update_defaults[index] = entity_resolve_defaults(state, state->current_level.entities.data[index].id);
+            }
             Allocator rule_alloc = allocator_arena(ctx, &state->gamedata_arena);
-            rules_evaluate_batch(ctx, &rule_alloc, state->current_level.entities.data,
-                                 state->current_level.entities.count, trigger_events.data, trigger_events.count,
-                                 &state->flags, &state->vars, &state->rule_table, &state->subroutines, &state->timers);
+            rules_evaluate_batch(ctx, &rule_alloc, state->current_level.entities.data, update_count,
+                                 trigger_events.data, trigger_events.count, &state->flags, &state->vars,
+                                 &state->rule_table, &state->subroutines, &state->timers, update_defaults);
         }
     }
 }

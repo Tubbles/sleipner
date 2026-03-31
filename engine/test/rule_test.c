@@ -835,8 +835,10 @@ void test_evaluate_interact_sets_flag(void)
     FlagSet flags = {0};
     AttrSet global_vars = {0};
     TriggerEvent event = {.type = TRIGGER_INTERACT, .entity_index = 0};
+    const AttrSet *defaults_array[] = {&blueprint.attrs};
 
-    rules_evaluate_batch(&ctx, NULL, &entity, 1, &event, 1, &flags, &global_vars, &rule_table, NULL, NULL);
+    rules_evaluate_batch(&ctx, NULL, &entity, 1, &event, 1, &flags, &global_vars, &rule_table, NULL, NULL,
+                         defaults_array);
     TEST_ASSERT_TRUE(flag_get(&flags, "chest_opened"));
 
     arena_free(&arena);
@@ -880,8 +882,10 @@ void test_evaluate_condition_blocks_action(void)
     FlagSet flags = {0};
     AttrSet global_vars = {0};
     TriggerEvent event = {.type = TRIGGER_INTERACT, .entity_index = 0};
+    const AttrSet *defaults_array[] = {&blueprint.attrs};
 
-    rules_evaluate_batch(&ctx, NULL, &entity, 1, &event, 1, &flags, &global_vars, &rule_table, NULL, NULL);
+    rules_evaluate_batch(&ctx, NULL, &entity, 1, &event, 1, &flags, &global_vars, &rule_table, NULL, NULL,
+                         defaults_array);
     TEST_ASSERT_FALSE(flag_get(&flags, "chest_opened"));
 
     arena_free(&arena);
@@ -935,8 +939,10 @@ void test_evaluate_fire_event_cascading(void)
     FlagSet flags = {0};
     AttrSet global_vars = {0};
     TriggerEvent event = {.type = TRIGGER_INTERACT, .entity_index = 0};
+    const AttrSet *defaults_array[] = {&bp_switch.attrs, &bp_door.attrs};
 
-    rules_evaluate_batch(&ctx, NULL, entities, 2, &event, 1, &flags, &global_vars, &rule_table, NULL, NULL);
+    rules_evaluate_batch(&ctx, NULL, entities, 2, &event, 1, &flags, &global_vars, &rule_table, NULL, NULL,
+                         defaults_array);
     TEST_ASSERT_TRUE(flag_get(&flags, "door_opened"));
 
     arena_free(&arena);
@@ -1625,9 +1631,14 @@ void test_integration_timer_destroy_cancels(void)
     TriggerEvent cancel = {.type = TRIGGER_EVENT, .entity_index = -1};
     Allocator heap_alloc = allocator_heap();
     (void)str_from_cstr(&heap_alloc, &cancel.argument, "cancel");
+    int cancel_count = state.current_level.entities.count;
+    const AttrSet *cancel_defaults[64];
+    for (int index = 0; index < cancel_count; index++) {
+        cancel_defaults[index] = entity_resolve_defaults(&state, state.current_level.entities.data[index].id);
+    }
     Allocator rule_alloc = allocator_arena(&ctx, &state.gamedata_arena);
-    rules_evaluate_batch(&ctx, &rule_alloc, state.current_level.entities.data, state.current_level.entities.count,
-                         &cancel, 1, &state.flags, &state.vars, &state.rule_table, &state.subroutines, &state.timers);
+    rules_evaluate_batch(&ctx, &rule_alloc, state.current_level.entities.data, cancel_count, &cancel, 1, &state.flags,
+                         &state.vars, &state.rule_table, &state.subroutines, &state.timers, cancel_defaults);
     str_free(&heap_alloc, &cancel.argument);
 
     TEST_ASSERT_EQUAL_INT(0, state.timers.count);
