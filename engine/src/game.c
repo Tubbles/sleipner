@@ -40,7 +40,7 @@ bool game_init(struct EngineContext *ctx, GameState *state, RectU32 game_bounds)
 
 const AttrSet *entity_resolve_defaults(const GameState *state, int entity_id)
 {
-    const Str *name = map_int_str_get((map_int_str *)&state->entity_blueprints, entity_id);
+    const Str *name = map_int_str_get(&state->entity_blueprints, entity_id);
     if (!name) {
         return NULL;
     }

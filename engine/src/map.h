@@ -68,10 +68,10 @@ static inline bool map_eq_int(int first, int second)
         int                 count;                                                         \
         int                 capacity;                                                      \
     } map_##name;                                                                          \
-    [[nodiscard]] bool      map_##name##_set(map_##name *map, key_type key, value_type value, Allocator *alloc); \
-    typeof(value_type)     *map_##name##_get(map_##name *map, key_type key);               \
-    bool                    map_##name##_remove(map_##name *map, key_type key);            \
-    void                    map_##name##_free(map_##name *map, Allocator *alloc);
+    [[nodiscard]] bool            map_##name##_set(map_##name *map, key_type key, value_type value, Allocator *alloc); \
+    const typeof(value_type)     *map_##name##_get(const map_##name *map, key_type key);   \
+    bool                          map_##name##_remove(map_##name *map, key_type key);      \
+    void                          map_##name##_free(map_##name *map, Allocator *alloc);
 
 /* MAP_IMPL(name, key_type, value_type, hash_fn, eq_fn) — emit the function bodies
  * declared by MAP_DECL.  Place in exactly one .c file per type.
@@ -79,15 +79,15 @@ static inline bool map_eq_int(int first, int second)
  * hash_fn: uint32_t hash_fn(key_type key)
  * eq_fn:   bool     eq_fn(key_type a, key_type b) */
 #define MAP_IMPL(name, key_type, value_type, hash_fn, eq_fn)                               \
-    static map_##name##_entry *map_##name##_find_slot(map_##name *map, key_type key) {     \
+    static int map_##name##_find_slot(const map_##name *map, key_type key) {               \
         uint32_t hash = hash_fn(key);                                                      \
         for (int probe = 0; probe < map->capacity; probe++) {                              \
-            int                 slot  = (int)((hash + (uint32_t)probe) & (uint32_t)(map->capacity - 1)); \
-            map_##name##_entry *entry = &map->entries[slot];                               \
-            if (entry->state == MAP_ENTRY_EMPTY) return NULL;                              \
-            if (entry->state == MAP_ENTRY_OCCUPIED && eq_fn(entry->key, key)) return entry; \
+            int slot = (int)((hash + (uint32_t)probe) & (uint32_t)(map->capacity - 1));    \
+            if (map->entries[slot].state == MAP_ENTRY_EMPTY) return -1;                    \
+            if (map->entries[slot].state == MAP_ENTRY_OCCUPIED &&                          \
+                eq_fn(map->entries[slot].key, key)) return slot;                           \
         }                                                                                  \
-        return NULL;                                                                       \
+        return -1;                                                                         \
     }                                                                                      \
     static bool map_##name##_rehash(map_##name *map, Allocator *alloc) {                  \
         int    new_cap   = map->capacity == 0 ? MAP_INITIAL_CAPACITY : map->capacity * 2; \
@@ -102,14 +102,13 @@ static inline bool map_eq_int(int first, int second)
         if (!new_entries) return false;                                                    \
         memset(new_entries, 0, new_bytes);                                                 \
         for (int index = 0; index < map->capacity; index++) {                             \
-            map_##name##_entry *old_entry = &map->entries[index];                         \
-            if (old_entry->state != MAP_ENTRY_OCCUPIED) continue;                         \
-            uint32_t hash = hash_fn(old_entry->key);                                      \
+            if (map->entries[index].state != MAP_ENTRY_OCCUPIED) continue;                \
+            uint32_t hash = hash_fn(map->entries[index].key);                              \
             for (int probe = 0; probe < new_cap; probe++) {                               \
                 int slot = (int)((hash + (uint32_t)probe) & (uint32_t)(new_cap - 1));     \
                 if (new_entries[slot].state == MAP_ENTRY_EMPTY) {                         \
                     new_entries[slot] = (map_##name##_entry){                             \
-                        .key = old_entry->key, .value = old_entry->value,                 \
+                        .key = map->entries[index].key, .value = map->entries[index].value, \
                         .state = MAP_ENTRY_OCCUPIED};                                     \
                     break;                                                                 \
                 }                                                                          \
@@ -126,8 +125,8 @@ static inline bool map_eq_int(int first, int second)
     }                                                                                      \
     [[nodiscard]] bool map_##name##_set(map_##name *map, key_type key, value_type value, Allocator *alloc) { \
         if (map->capacity > 0) {                                                           \
-            map_##name##_entry *existing = map_##name##_find_slot(map, key);               \
-            if (existing) { existing->value = value; return true; }                        \
+            int existing = map_##name##_find_slot(map, key);                               \
+            if (existing >= 0) { map->entries[existing].value = value; return true; }      \
         }                                                                                  \
         if (map->capacity == 0 || (map->count + 1) * 4 > map->capacity * 3) {            \
             if (!map_##name##_rehash(map, alloc)) return false;                            \
@@ -156,16 +155,14 @@ static inline bool map_eq_int(int first, int second)
         }                                                                                   \
         return false;                                                                       \
     }                                                                                      \
-    typeof(value_type) *map_##name##_get(map_##name *map, key_type key) {                 \
-        if (map->capacity == 0) return NULL;                                               \
-        map_##name##_entry *entry = map_##name##_find_slot(map, key);                      \
-        return entry ? &entry->value : NULL;                                               \
+    const typeof(value_type) *map_##name##_get(const map_##name *map, key_type key) {     \
+        int slot = map_##name##_find_slot(map, key);                                       \
+        return slot >= 0 ? &map->entries[slot].value : NULL;                               \
     }                                                                                      \
     bool map_##name##_remove(map_##name *map, key_type key) {                             \
-        if (map->capacity == 0) return false;                                              \
-        map_##name##_entry *entry = map_##name##_find_slot(map, key);                      \
-        if (!entry) return false;                                                           \
-        entry->state = MAP_ENTRY_DELETED;                                                   \
+        int slot = map_##name##_find_slot(map, key);                                       \
+        if (slot < 0) return false;                                                        \
+        map->entries[slot].state = MAP_ENTRY_DELETED;                                      \
         map->count--;                                                                       \
         return true;                                                                        \
     }                                                                                      \

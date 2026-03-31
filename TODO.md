@@ -52,6 +52,27 @@
 - **Scope: unit tests only** — integration tests remain as-is (linked against
   the full engine, real subsystem interactions).
 
+## Type safety cleanup
+
+- **Remove `(bool)` casts** — 23 occurrences across engine/src/. These are
+  unnecessary since `readability-implicit-bool-conversion` is disabled. Pure
+  noise.
+- **`resolve_target` should return vec index** — currently returns
+  `Entity *`, forcing callers to do `(int)(target - context.entities)` to
+  index the parallel `entity_defaults[]` array. Return the index directly;
+  callers derive the pointer from it.
+- **AttrSet value type rethink** — consider what AttrValue should support
+  beyond float/int/bool/string: entity handles, blueprint handles? Current
+  int↔float coercion in `attr_get_scoped_*` silently papers over type
+  mismatches — should probably be strict, with the parser deciding canonical
+  types.
+- **`resolve_player_obstacles` const cast** — casts away const on
+  `state->current_level` via `(Level *)`. Fix by taking `GameState *`
+  instead of `const GameState *`.
+- **`subroutines_parse` void pointer** — takes `void *toml_root` to avoid
+  including toml.h in the header, then casts to `toml_table_t *`. Use the
+  actual type.
+
 ## misc
 
 - remove allocator fallback of NULL -> libc heap from all our data types

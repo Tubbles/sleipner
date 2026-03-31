@@ -49,7 +49,7 @@ void test_map_set_and_get_present(void)
 {
     map_int_int map = {0};
     TEST_ASSERT_TRUE(map_int_int_set(&map, 42, 100, NULL));
-    int *result = map_int_int_get(&map, 42);
+    const int *result = map_int_int_get(&map, 42);
     TEST_ASSERT_NOT_NULL(result);
     TEST_ASSERT_EQUAL_INT(100, *result);
     map_int_int_free(&map, NULL);
@@ -76,7 +76,7 @@ void test_map_update_existing_replaces_value(void)
     map_int_int map = {0};
     TEST_ASSERT_TRUE(map_int_int_set(&map, 5, 10, NULL));
     TEST_ASSERT_TRUE(map_int_int_set(&map, 5, 20, NULL));
-    int *result = map_int_int_get(&map, 5);
+    const int *result = map_int_int_get(&map, 5);
     TEST_ASSERT_NOT_NULL(result);
     TEST_ASSERT_EQUAL_INT(20, *result);
     map_int_int_free(&map, NULL);
@@ -140,7 +140,7 @@ void test_map_growth_all_entries_retrievable(void)
     }
     TEST_ASSERT_EQUAL_INT(32, map.count);
     for (int index = 0; index < 32; index++) {
-        int *result = map_int_int_get(&map, index);
+        const int *result = map_int_int_get(&map, index);
         TEST_ASSERT_NOT_NULL(result);
         TEST_ASSERT_EQUAL_INT(index * 10, *result);
     }
@@ -169,9 +169,9 @@ void test_map_collision_probe_chain(void)
     TEST_ASSERT_TRUE(map_probe_test_set(&map, 200, 2, NULL));
     TEST_ASSERT_TRUE(map_probe_test_set(&map, 300, 3, NULL));
     TEST_ASSERT_EQUAL_INT(3, map.count);
-    int *val_a = map_probe_test_get(&map, 100);
-    int *val_b = map_probe_test_get(&map, 200);
-    int *val_c = map_probe_test_get(&map, 300);
+    const int *val_a = map_probe_test_get(&map, 100);
+    const int *val_b = map_probe_test_get(&map, 200);
+    const int *val_c = map_probe_test_get(&map, 300);
     TEST_ASSERT_NOT_NULL(val_a);
     TEST_ASSERT_NOT_NULL(val_b);
     TEST_ASSERT_NOT_NULL(val_c);
@@ -195,12 +195,12 @@ void test_map_tombstone_get_finds_later_entry(void)
     TEST_ASSERT_TRUE(map_probe_test_remove(&map, 20));
 
     /* C must still be reachable through the tombstone. */
-    int *result = map_probe_test_get(&map, 30);
+    const int *result = map_probe_test_get(&map, 30);
     TEST_ASSERT_NOT_NULL(result);
     TEST_ASSERT_EQUAL_INT(3, *result);
 
     /* A is still there too. */
-    int *result_a = map_probe_test_get(&map, 10);
+    const int *result_a = map_probe_test_get(&map, 10);
     TEST_ASSERT_NOT_NULL(result_a);
     TEST_ASSERT_EQUAL_INT(1, *result_a);
 
@@ -219,7 +219,7 @@ void test_map_tombstone_reused_on_insert(void)
     TEST_ASSERT_TRUE(map_probe_test_set(&map, 40, 4, NULL));
     TEST_ASSERT_EQUAL_INT(count_before + 1, map.count);
 
-    int *result = map_probe_test_get(&map, 40);
+    const int *result = map_probe_test_get(&map, 40);
     TEST_ASSERT_NOT_NULL(result);
     TEST_ASSERT_EQUAL_INT(4, *result);
 
@@ -244,7 +244,7 @@ void test_map_free_safe_to_reuse(void)
     TEST_ASSERT_TRUE(map_int_int_set(&map, 1, 10, NULL));
     map_int_int_free(&map, NULL);
     TEST_ASSERT_TRUE(map_int_int_set(&map, 2, 20, NULL));
-    int *result = map_int_int_get(&map, 2);
+    const int *result = map_int_int_get(&map, 2);
     TEST_ASSERT_NOT_NULL(result);
     TEST_ASSERT_EQUAL_INT(20, *result);
     map_int_int_free(&map, NULL);
@@ -263,7 +263,7 @@ void test_map_int_float_set_and_get(void)
 {
     map_int_float map = {0};
     TEST_ASSERT_TRUE(map_int_float_set(&map, 1, 3.14F, NULL));
-    float *result = map_int_float_get(&map, 1);
+    const float *result = map_int_float_get(&map, 1);
     TEST_ASSERT_NOT_NULL(result);
     TEST_ASSERT_FLOAT_WITHIN(0.001F, 3.14F, *result);
     map_int_float_free(&map, NULL);
@@ -273,7 +273,7 @@ void test_map_int_bool_set_and_get(void)
 {
     map_int_bool map = {0};
     TEST_ASSERT_TRUE(map_int_bool_set(&map, 5, true, NULL));
-    bool *result = map_int_bool_get(&map, 5);
+    const bool *result = map_int_bool_get(&map, 5);
     TEST_ASSERT_NOT_NULL(result);
     TEST_ASSERT_TRUE(*result);
     map_int_bool_free(&map, NULL);
@@ -283,7 +283,7 @@ void test_map_int_i64_set_and_get(void)
 {
     map_int_i64 map = {0};
     TEST_ASSERT_TRUE(map_int_i64_set(&map, 99, 123456789012345LL, NULL));
-    int64_t *result = map_int_i64_get(&map, 99);
+    const int64_t *result = map_int_i64_get(&map, 99);
     TEST_ASSERT_NOT_NULL(result);
     TEST_ASSERT_EQUAL_INT64(123456789012345LL, *result);
     map_int_i64_free(&map, NULL);
@@ -291,15 +291,16 @@ void test_map_int_i64_set_and_get(void)
 
 /* --- Pointer-to-value semantics --- */
 
-void test_map_get_returns_pointer_to_stored_slot(void)
+void test_map_get_returns_const_pointer_to_stored_slot(void)
 {
     map_int_int map = {0};
     TEST_ASSERT_TRUE(map_int_int_set(&map, 7, 70, NULL));
-    int *slot = map_int_int_get(&map, 7);
+    const int *slot = map_int_int_get(&map, 7);
     TEST_ASSERT_NOT_NULL(slot);
-    /* Mutate through the returned pointer. */
-    *slot = 77;
-    int *check = map_int_int_get(&map, 7);
+    TEST_ASSERT_EQUAL_INT(70, *slot);
+    /* Update via set, then verify get reflects the change. */
+    TEST_ASSERT_TRUE(map_int_int_set(&map, 7, 77, NULL));
+    const int *check = map_int_int_get(&map, 7);
     TEST_ASSERT_NOT_NULL(check);
     TEST_ASSERT_EQUAL_INT(77, *check);
     map_int_int_free(&map, NULL);
@@ -319,7 +320,7 @@ void test_map_arena_allocator(void)
     }
     TEST_ASSERT_EQUAL_INT(10, map.count);
     for (int index = 0; index < 10; index++) {
-        int *result = map_int_int_get(&map, index);
+        const int *result = map_int_int_get(&map, index);
         TEST_ASSERT_NOT_NULL(result);
         TEST_ASSERT_EQUAL_INT(index * 2, *result);
     }

@@ -33,7 +33,7 @@ void test_map_free_on_empty_is_safe(void);
 void test_map_int_float_set_and_get(void);
 void test_map_int_bool_set_and_get(void);
 void test_map_int_i64_set_and_get(void);
-void test_map_get_returns_pointer_to_stored_slot(void);
+void test_map_get_returns_const_pointer_to_stored_slot(void);
 void test_map_arena_allocator(void);
 
 /* vec_test.c */
@@ -472,7 +472,7 @@ int main(void)
     RUN_TEST(test_map_int_float_set_and_get);
     RUN_TEST(test_map_int_bool_set_and_get);
     RUN_TEST(test_map_int_i64_set_and_get);
-    RUN_TEST(test_map_get_returns_pointer_to_stored_slot);
+    RUN_TEST(test_map_get_returns_const_pointer_to_stored_slot);
     RUN_TEST(test_map_arena_allocator);
 
     RUN_TEST(test_vec_initial_state_count_is_zero);
