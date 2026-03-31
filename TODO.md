@@ -2,6 +2,12 @@
 
 ## Engineering Goals
 
+- **Entity–blueprint connection** — `Entity` currently stores
+  `const AttrSet *defaults` (cross-object pointer, violates DESIGN.md) and
+  `Str blueprint_name`. Both must be removed per the target design: external
+  `map<entity_id, Str>` in GameState for tracking, `attr_get_scoped_*` typed
+  wrappers in attribute.h for two-level lookup, `entity_get_*` removed. See
+  DESIGN.md § "Entity–blueprint connection (planned)" for full spec.
 - **No opaque cross-module forward declarations** — `struct EngineContext;` is
   the last one; eliminate it by splitting the logging/error concern into a
   lightweight header with no upward dependencies (see Coding Style in

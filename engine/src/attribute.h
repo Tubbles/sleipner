@@ -62,7 +62,12 @@ const char *attr_get_string(const AttrSet *set, const char *name);
 void attr_remove(Allocator *alloc, AttrSet *set, const char *name);
 
 /* Look up an attribute by name, falling back to a second set if not found
- * in the first. Used for instance -> blueprint scoping. */
+ * in the first. Used for instance -> blueprint scoping.
+ *
+ * This is the primitive for the planned entity-blueprint connection design:
+ * typed wrappers (attr_get_scoped_float, etc.) will be added here, and
+ * entity_get_* will be removed. See DESIGN.md § "Entity–blueprint
+ * connection". */
 const Attribute *attr_get_scoped(const AttrSet *instance, const AttrSet *blueprint, const char *name);
 
 #endif

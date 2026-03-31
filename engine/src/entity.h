@@ -22,11 +22,14 @@ typedef struct {
 } EntitySpec;
 
 typedef struct {
-    /* Pointers (8 bytes each, no padding gap) */
+    /* PLANNED REMOVAL: defaults and blueprint_name will move out of Entity.
+     * defaults is a stored cross-object pointer (violates DESIGN.md "references
+     * by ID or name" rule). blueprint_name will move to an external
+     * map<entity_id, Str> in GameState. See DESIGN.md § "Entity–blueprint
+     * connection" for the target design. */
     const AttrSet *defaults;
     Texture2D *texture;
 
-    /* Attrs + identity strings (all naturally aligned) */
     AttrSet attrs;
     Str blueprint_name;
     Str tag;
@@ -51,6 +54,11 @@ typedef struct {
     bool flip;
     bool moving;
 } Entity;
+
+/* PLANNED REMOVAL: entity_get_* will be replaced by attr_get_scoped_* typed
+ * wrappers in attribute.h. The two-level instance→defaults lookup is a generic
+ * AttrSet operation, not entity-specific. See DESIGN.md § "Entity–blueprint
+ * connection". */
 
 /* Get an attribute with instance -> defaults fallback.
  * Returns NULL if not found in either. */
