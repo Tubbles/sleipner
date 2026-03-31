@@ -741,35 +741,40 @@ static bool evaluate_single_condition(const Condition *condition, ConditionConte
     case COND_NOT_FLAG:
         return (bool)!flag_get(context.flags, condition->argument.ptr);
     case COND_ATTR: {
-        const Attribute *attr = entity_get_attr(context.entity, condition->argument.ptr);
+        const AttrSet *defaults = context.entity_defaults[context.entity_index];
+        const Attribute *attr = attr_get_scoped(&context.entity->attrs, defaults, condition->argument.ptr);
         if (!attr) {
             return false;
         }
         return attr_is_truthy(attr);
     }
     case COND_NOT_ATTR: {
-        const Attribute *attr = entity_get_attr(context.entity, condition->argument.ptr);
+        const AttrSet *defaults = context.entity_defaults[context.entity_index];
+        const Attribute *attr = attr_get_scoped(&context.entity->attrs, defaults, condition->argument.ptr);
         if (!attr) {
             return true;
         }
         return (bool)!attr_is_truthy(attr);
     }
     case COND_ATTR_LT: {
-        const Attribute *attr = entity_get_attr(context.entity, condition->argument.ptr);
+        const AttrSet *defaults = context.entity_defaults[context.entity_index];
+        const Attribute *attr = attr_get_scoped(&context.entity->attrs, defaults, condition->argument.ptr);
         if (!attr) {
             return false;
         }
         return attr_to_float(attr) < condition->compare_value;
     }
     case COND_ATTR_GT: {
-        const Attribute *attr = entity_get_attr(context.entity, condition->argument.ptr);
+        const AttrSet *defaults = context.entity_defaults[context.entity_index];
+        const Attribute *attr = attr_get_scoped(&context.entity->attrs, defaults, condition->argument.ptr);
         if (!attr) {
             return false;
         }
         return attr_to_float(attr) > condition->compare_value;
     }
     case COND_ATTR_EQ: {
-        const Attribute *attr = entity_get_attr(context.entity, condition->argument.ptr);
+        const AttrSet *defaults = context.entity_defaults[context.entity_index];
+        const Attribute *attr = attr_get_scoped(&context.entity->attrs, defaults, condition->argument.ptr);
         if (!attr) {
             return false;
         }
@@ -927,7 +932,11 @@ execute_set_attr_action(struct EngineContext *ctx, Allocator *alloc, const Actio
         debug_log(ctx, "set_attr: target not found: %s", node->argument.ptr);
         return true;
     }
-    float old_health = strcmp(attr_name, "health") == 0 ? entity_get_float(target, "health", 0.0F) : 0.0F;
+    int target_index = (int)(target - context.entities);
+    const AttrSet *target_defaults = context.entity_defaults[target_index];
+    float old_health = strcmp(attr_name, "health") == 0
+                           ? attr_get_scoped_float(&target->attrs, target_defaults, "health", 0.0F)
+                           : 0.0F;
     char resolved[MAX_ARG];
     resolve_arg(resolved, MAX_ARG, node->second_argument.ptr, context);
     float value = strtof(resolved, NULL);
@@ -944,8 +953,8 @@ execute_set_attr_action(struct EngineContext *ctx, Allocator *alloc, const Actio
     if (!attr_set_ok) {
         return false;
     }
-    if (strcmp(attr_name, "health") == 0 && old_health > 0.0F && entity_get_float(target, "health", 0.0F) <= 0.0F) {
-        int target_index = (int)(target - context.entities);
+    if (strcmp(attr_name, "health") == 0 && old_health > 0.0F &&
+        attr_get_scoped_float(&target->attrs, target_defaults, "health", 0.0F) <= 0.0F) {
         TriggerEvent defeat = {.type = TRIGGER_DEFEAT, .entity_index = target_index};
         (void)trigger_event_queue_push(context.event_queue, defeat);
     }
@@ -961,8 +970,12 @@ execute_add_attr_action(struct EngineContext *ctx, Allocator *alloc, const Actio
         debug_log(ctx, "add_attr: target not found: %s", node->argument.ptr);
         return true;
     }
-    const Attribute *existing = entity_get_attr(target, attr_name);
-    float old_health = strcmp(attr_name, "health") == 0 ? entity_get_float(target, "health", 0.0F) : 0.0F;
+    int target_index = (int)(target - context.entities);
+    const AttrSet *target_defaults = context.entity_defaults[target_index];
+    const Attribute *existing = attr_get_scoped(&target->attrs, target_defaults, attr_name);
+    float old_health = strcmp(attr_name, "health") == 0
+                           ? attr_get_scoped_float(&target->attrs, target_defaults, "health", 0.0F)
+                           : 0.0F;
     char resolved[MAX_ARG];
     resolve_arg(resolved, MAX_ARG, node->second_argument.ptr, context);
     float delta = strtof(resolved, NULL);
@@ -976,8 +989,8 @@ execute_add_attr_action(struct EngineContext *ctx, Allocator *alloc, const Actio
     if (!attr_set_ok) {
         return false;
     }
-    if (strcmp(attr_name, "health") == 0 && old_health > 0.0F && entity_get_float(target, "health", 0.0F) <= 0.0F) {
-        int target_index = (int)(target - context.entities);
+    if (strcmp(attr_name, "health") == 0 && old_health > 0.0F &&
+        attr_get_scoped_float(&target->attrs, target_defaults, "health", 0.0F) <= 0.0F) {
         TriggerEvent defeat = {.type = TRIGGER_DEFEAT, .entity_index = target_index};
         (void)trigger_event_queue_push(context.event_queue, defeat);
     }
@@ -993,7 +1006,9 @@ execute_toggle_attr_action(struct EngineContext *ctx, Allocator *alloc, const Ac
         debug_log(ctx, "toggle_attr: target not found: %s", node->argument.ptr);
         return true;
     }
-    bool current_val = entity_get_bool(target, attr_name, false);
+    int target_index = (int)(target - context.entities);
+    const AttrSet *target_defaults = context.entity_defaults[target_index];
+    bool current_val = attr_get_scoped_bool(&target->attrs, target_defaults, attr_name, false);
     return attr_set_bool(alloc, &target->attrs, attr_name, (bool)!current_val);
 }
 
@@ -1189,7 +1204,8 @@ execute_for_each_node(struct EngineContext *ctx, Allocator *alloc, const ActionN
 {
     bool has_bind = node->second_argument.len > 0;
     for (int entity_index = 0; entity_index < context.entity_count; entity_index++) {
-        if (!entity_get_bool(&context.entities[entity_index], "active", true)) {
+        if (!attr_get_scoped_bool(&context.entities[entity_index].attrs, context.entity_defaults[entity_index],
+                                  "active", true)) {
             continue;
         }
         ConditionContext cond_ctx = {
@@ -1400,7 +1416,7 @@ void rules_evaluate_batch(struct EngineContext *ctx,
 
         for (int entity_index = 0; entity_index < entity_count; entity_index++) {
             Entity *entity = &entities[entity_index];
-            if (!entity_get_bool(entity, "active", true)) {
+            if (!attr_get_scoped_bool(&entity->attrs, entity_defaults[entity_index], "active", true)) {
                 /* Inactive entities skip rule evaluation unless they have a pending
                  * on_destroy event — those rules must still fire. */
                 bool has_on_destroy = false;

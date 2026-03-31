@@ -337,7 +337,8 @@ void test_condition_flag_true(void)
     TEST_ASSERT_TRUE(str_from_cstr(NULL, &condition.argument, "test_flag"));
 
     Entity entity = {0};
-    ConditionContext context = {.entity = &entity, .flags = &flags};
+    const AttrSet *entity_defs[] = {NULL};
+    ConditionContext context = {.entity = &entity, .flags = &flags, .entity_defaults = entity_defs};
     TEST_ASSERT_TRUE(conditions_evaluate(&condition, 1, context));
     str_free(NULL, &condition.argument);
     test_flag_set_free(&flags);
@@ -351,7 +352,8 @@ void test_condition_flag_false(void)
     TEST_ASSERT_TRUE(str_from_cstr(NULL, &condition.argument, "test_flag"));
 
     Entity entity = {0};
-    ConditionContext context = {.entity = &entity, .flags = &flags};
+    const AttrSet *entity_defs[] = {NULL};
+    ConditionContext context = {.entity = &entity, .flags = &flags, .entity_defaults = entity_defs};
     TEST_ASSERT_FALSE(conditions_evaluate(&condition, 1, context));
     str_free(NULL, &condition.argument);
     test_flag_set_free(&flags);
@@ -365,7 +367,8 @@ void test_condition_not_flag(void)
     TEST_ASSERT_TRUE(str_from_cstr(NULL, &condition.argument, "test_flag"));
 
     Entity entity = {0};
-    ConditionContext context = {.entity = &entity, .flags = &flags};
+    const AttrSet *entity_defs[] = {NULL};
+    ConditionContext context = {.entity = &entity, .flags = &flags, .entity_defaults = entity_defs};
     TEST_ASSERT_TRUE(conditions_evaluate(&condition, 1, context));
     str_free(NULL, &condition.argument);
     test_flag_set_free(&flags);
@@ -380,7 +383,8 @@ void test_condition_attr_truthy(void)
     TEST_ASSERT_TRUE(str_from_cstr(NULL, &condition.argument, "is_locked"));
 
     FlagSet flags = {0};
-    ConditionContext context = {.entity = &entity, .flags = &flags};
+    const AttrSet *entity_defs[] = {NULL};
+    ConditionContext context = {.entity = &entity, .flags = &flags, .entity_defaults = entity_defs};
     TEST_ASSERT_TRUE(conditions_evaluate(&condition, 1, context));
     str_free(NULL, &condition.argument);
     attr_set_free(NULL, &entity.attrs);
@@ -396,7 +400,8 @@ void test_condition_attr_falsy(void)
     TEST_ASSERT_TRUE(str_from_cstr(NULL, &condition.argument, "is_locked"));
 
     FlagSet flags = {0};
-    ConditionContext context = {.entity = &entity, .flags = &flags};
+    const AttrSet *entity_defs[] = {NULL};
+    ConditionContext context = {.entity = &entity, .flags = &flags, .entity_defaults = entity_defs};
     TEST_ASSERT_FALSE(conditions_evaluate(&condition, 1, context));
     str_free(NULL, &condition.argument);
     attr_set_free(NULL, &entity.attrs);
@@ -411,7 +416,8 @@ void test_condition_attr_missing(void)
     TEST_ASSERT_TRUE(str_from_cstr(NULL, &condition.argument, "nonexistent"));
 
     FlagSet flags = {0};
-    ConditionContext context = {.entity = &entity, .flags = &flags};
+    const AttrSet *entity_defs[] = {NULL};
+    ConditionContext context = {.entity = &entity, .flags = &flags, .entity_defaults = entity_defs};
     TEST_ASSERT_FALSE(conditions_evaluate(&condition, 1, context));
     str_free(NULL, &condition.argument);
     test_flag_set_free(&flags);
@@ -426,7 +432,8 @@ void test_condition_attr_less_than(void)
     TEST_ASSERT_TRUE(str_from_cstr(NULL, &condition.argument, "health"));
 
     FlagSet flags = {0};
-    ConditionContext context = {.entity = &entity, .flags = &flags};
+    const AttrSet *entity_defs[] = {NULL};
+    ConditionContext context = {.entity = &entity, .flags = &flags, .entity_defaults = entity_defs};
     TEST_ASSERT_TRUE(conditions_evaluate(&condition, 1, context));
     str_free(NULL, &condition.argument);
     attr_set_free(NULL, &entity.attrs);
@@ -442,7 +449,8 @@ void test_condition_attr_greater_than(void)
     TEST_ASSERT_TRUE(str_from_cstr(NULL, &condition.argument, "speed"));
 
     FlagSet flags = {0};
-    ConditionContext context = {.entity = &entity, .flags = &flags};
+    const AttrSet *entity_defs[] = {NULL};
+    ConditionContext context = {.entity = &entity, .flags = &flags, .entity_defaults = entity_defs};
     TEST_ASSERT_TRUE(conditions_evaluate(&condition, 1, context));
     str_free(NULL, &condition.argument);
     attr_set_free(NULL, &entity.attrs);
@@ -463,7 +471,8 @@ void test_condition_and_logic_all_pass(void)
     TEST_ASSERT_TRUE(str_from_cstr(NULL, &conditions[1].argument, "flag_b"));
 
     Entity entity = {0};
-    ConditionContext context = {.entity = &entity, .flags = &flags};
+    const AttrSet *entity_defs[] = {NULL};
+    ConditionContext context = {.entity = &entity, .flags = &flags, .entity_defaults = entity_defs};
     TEST_ASSERT_TRUE(conditions_evaluate(conditions, 2, context));
     str_free(NULL, &conditions[0].argument);
     str_free(NULL, &conditions[1].argument);
@@ -483,7 +492,8 @@ void test_condition_and_logic_one_fails(void)
     TEST_ASSERT_TRUE(str_from_cstr(NULL, &conditions[1].argument, "flag_b"));
 
     Entity entity = {0};
-    ConditionContext context = {.entity = &entity, .flags = &flags};
+    const AttrSet *entity_defs[] = {NULL};
+    ConditionContext context = {.entity = &entity, .flags = &flags, .entity_defaults = entity_defs};
     TEST_ASSERT_FALSE(conditions_evaluate(conditions, 2, context));
     str_free(NULL, &conditions[0].argument);
     str_free(NULL, &conditions[1].argument);
@@ -505,6 +515,7 @@ void test_action_set_flag_executes(void)
         .entity = &entity,
         .flags = &flags,
         .event_queue = &queue,
+        .entity_defaults = (const AttrSet *[]){NULL},
     };
     TEST_ASSERT_TRUE(action_node_execute(&ctx, NULL, &action, context));
     TEST_ASSERT_TRUE(flag_get(&flags, "chest_opened"));
@@ -526,6 +537,7 @@ void test_action_clear_flag_executes(void)
         .entity = &entity,
         .flags = &flags,
         .event_queue = &queue,
+        .entity_defaults = (const AttrSet *[]){NULL},
     };
     TEST_ASSERT_TRUE(action_node_execute(&ctx, NULL, &action, context));
     TEST_ASSERT_FALSE(flag_get(&flags, "door_locked"));
@@ -550,6 +562,7 @@ void test_action_set_attr_bool(void)
         .entity_count = 1,
         .flags = &flags,
         .event_queue = &queue,
+        .entity_defaults = (const AttrSet *[]){NULL},
     };
     TEST_ASSERT_TRUE(action_node_execute(&ctx, NULL, &action, context));
 
@@ -579,6 +592,7 @@ void test_action_set_attr_int(void)
         .entity_count = 1,
         .flags = &flags,
         .event_queue = &queue,
+        .entity_defaults = (const AttrSet *[]){NULL},
     };
     TEST_ASSERT_TRUE(action_node_execute(&ctx, NULL, &action, context));
     TEST_ASSERT_EQUAL_INT(42, entity_get_int(&entity, "health", 0));
@@ -605,6 +619,7 @@ void test_action_add_attr(void)
         .entity_count = 1,
         .flags = &flags,
         .event_queue = &queue,
+        .entity_defaults = (const AttrSet *[]){NULL},
     };
     TEST_ASSERT_TRUE(action_node_execute(&ctx, NULL, &action, context));
     TEST_ASSERT_EQUAL_INT(7, entity_get_int(&entity, "health", 0));
@@ -630,6 +645,7 @@ void test_action_toggle_attr(void)
         .entity_count = 1,
         .flags = &flags,
         .event_queue = &queue,
+        .entity_defaults = (const AttrSet *[]){NULL},
     };
     TEST_ASSERT_TRUE(action_node_execute(&ctx, NULL, &action, context));
     TEST_ASSERT_FALSE(entity_get_bool(&entity, "visible", true));
@@ -650,6 +666,7 @@ void test_action_destroy(void)
         .entity = &entity,
         .flags = &flags,
         .event_queue = &queue,
+        .entity_defaults = (const AttrSet *[]){NULL},
     };
     TEST_ASSERT_TRUE(action_node_execute(&ctx, NULL, &action, context));
     TEST_ASSERT_FALSE(entity_get_bool(&entity, "active", true));
@@ -670,6 +687,7 @@ void test_action_fire_event_queues(void)
         .entity = &entity,
         .flags = &flags,
         .event_queue = &queue,
+        .entity_defaults = (const AttrSet *[]){NULL},
     };
     TEST_ASSERT_TRUE(action_node_execute(&ctx, NULL, &action, context));
     TEST_ASSERT_EQUAL_INT(1, queue.count);
@@ -696,6 +714,7 @@ void test_action_execution_order(void)
         .entity = &entity,
         .flags = &flags,
         .event_queue = &queue,
+        .entity_defaults = (const AttrSet *[]){NULL},
     };
     (void)action_node_execute(&ctx, NULL, &actions[0], context);
     (void)action_node_execute(&ctx, NULL, &actions[1], context);
@@ -977,6 +996,7 @@ void test_var_set_local(void)
         .event_queue = &queue,
         .local_vars = &local_vars,
         .global_vars = &global_vars,
+        .entity_defaults = (const AttrSet *[]){NULL},
     };
     TEST_ASSERT_TRUE(action_node_execute(&ctx, NULL, &action, context));
     TEST_ASSERT_EQUAL_INT(42, attr_get_int(&local_vars, "damage", 0));
@@ -1008,6 +1028,7 @@ void test_var_set_global(void)
         .event_queue = &queue,
         .local_vars = &local_vars,
         .global_vars = &global_vars,
+        .entity_defaults = (const AttrSet *[]){NULL},
     };
     TEST_ASSERT_TRUE(action_node_execute(&ctx, NULL, &action, context));
     TEST_ASSERT_EQUAL_INT(100, attr_get_int(&global_vars, "score", 0));
@@ -1030,6 +1051,7 @@ void test_var_condition_truthy(void)
     Condition cond = {.type = COND_VAR};
     TEST_ASSERT_TRUE(str_from_cstr(NULL, &cond.argument, "active"));
 
+    const AttrSet *var_defs[] = {NULL};
     ConditionContext context = {
         .entity = &entity,
         .entities = &entity,
@@ -1037,6 +1059,7 @@ void test_var_condition_truthy(void)
         .flags = &flags,
         .local_vars = &local_vars,
         .global_vars = &global_vars,
+        .entity_defaults = var_defs,
     };
     TEST_ASSERT_TRUE(conditions_evaluate(&cond, 1, context));
     str_free(NULL, &cond.argument);
@@ -1055,6 +1078,7 @@ void test_var_condition_falsy_when_unset(void)
     Condition cond = {.type = COND_VAR};
     TEST_ASSERT_TRUE(str_from_cstr(NULL, &cond.argument, "missing"));
 
+    const AttrSet *var_defs2[] = {NULL};
     ConditionContext context = {
         .entity = &entity,
         .entities = &entity,
@@ -1062,6 +1086,7 @@ void test_var_condition_falsy_when_unset(void)
         .flags = &flags,
         .local_vars = &local_vars,
         .global_vars = &global_vars,
+        .entity_defaults = var_defs2,
     };
     TEST_ASSERT_FALSE(conditions_evaluate(&cond, 1, context));
     str_free(NULL, &cond.argument);
@@ -1090,6 +1115,7 @@ void test_var_substitution_in_set_attr(void)
         .event_queue = &queue,
         .local_vars = &local_vars,
         .global_vars = &global_vars,
+        .entity_defaults = (const AttrSet *[]){NULL},
     };
     TEST_ASSERT_TRUE(action_node_execute(&ctx, NULL, &action, context));
     TEST_ASSERT_EQUAL_INT(5, entity_get_int(&entity, "health", 0));
