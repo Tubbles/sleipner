@@ -65,9 +65,4 @@ void attr_remove(Allocator *alloc, AttrSet *set, const char *name);
  * in the first. Used for instance -> blueprint scoping. */
 const Attribute *attr_get_scoped(const AttrSet *instance, const AttrSet *blueprint, const char *name);
 
-/* Copy all attributes from src into dest. Existing entries with matching
- * names are overwritten; new entries are appended. String values are
- * deep-copied. Returns false if any allocation fails. */
-[[nodiscard]] bool attr_set_copy(Allocator *alloc, AttrSet *dest, const AttrSet *src);
-
 #endif

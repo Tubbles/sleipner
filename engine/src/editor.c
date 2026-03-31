@@ -165,12 +165,11 @@ void draw_editor_panel(const struct EngineContext *ctx, const GameState *state, 
     y_offset += EDITOR_PANEL_LINE_HEIGHT;
     int sel_attr = editor_state->selected_attr_index;
     draw_attr_section(&entity->attrs, panel_x, &y_offset, 0, sel_attr);
-    const Blueprint *panel_blueprint = blueprint_find(&state->blueprints, entity->blueprint_name.ptr);
-    if (panel_blueprint) {
+    if (entity->defaults) {
         DrawText("--- blueprint ---", panel_x + DEBUG_MARGIN, y_offset, EDITOR_PANEL_FONT_SIZE, debug_text_color);
         y_offset += EDITOR_PANEL_LINE_HEIGHT;
         int blueprint_base = entity->attrs.entries.count;
-        draw_attr_section(&panel_blueprint->attrs, panel_x, &y_offset, blueprint_base, sel_attr);
+        draw_attr_section(entity->defaults, panel_x, &y_offset, blueprint_base, sel_attr);
     }
 }
 
@@ -215,14 +214,10 @@ static Blueprint *find_blueprint_by_name(GameState *state, const char *name)
     return NULL;
 }
 
-static int total_attr_count(const Entity *entity, const BlueprintTable *blueprints)
+static int total_attr_count(const Entity *entity)
 {
     int instance_count = entity->attrs.entries.count;
-    if (!entity->blueprint_name.ptr) {
-        return instance_count;
-    }
-    const Blueprint *blueprint = blueprint_find(blueprints, entity->blueprint_name.ptr);
-    int blueprint_count = blueprint ? blueprint->attrs.entries.count : 0;
+    int blueprint_count = entity->defaults ? entity->defaults->entries.count : 0;
     return instance_count + blueprint_count;
 }
 
@@ -523,7 +518,7 @@ static void handle_browse_attr_navigate(const GameState *state, EditorState *edi
         return;
     }
     const Entity *entity = &state->current_level.entities.data[sel];
-    int total = total_attr_count(entity, &state->blueprints);
+    int total = total_attr_count(entity);
     if (total <= 0) {
         return;
     }

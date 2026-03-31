@@ -167,30 +167,3 @@ const Attribute *attr_get_scoped(const AttrSet *instance, const AttrSet *bluepri
     }
     return attr_get(blueprint, name);
 }
-
-bool attr_set_copy(Allocator *alloc, AttrSet *dest, const AttrSet *src)
-{
-    for (int index = 0; index < src->entries.count; index++) {
-        const Attribute *src_attr = &src->entries.data[index];
-        Attribute entry = {.type = src_attr->type};
-        if (!str_from_cstr(alloc, &entry.name, src_attr->name.ptr)) {
-            return false;
-        }
-        if (src_attr->type == ATTR_STRING) {
-            if (!str_from_cstr(alloc, &entry.value.str, src_attr->value.str.ptr)) {
-                str_free(alloc, &entry.name);
-                return false;
-            }
-        } else {
-            entry.value = src_attr->value;
-        }
-        if (!vec_attribute_push(&dest->entries, entry, alloc)) {
-            str_free(alloc, &entry.name);
-            if (entry.type == ATTR_STRING) {
-                str_free(alloc, &entry.value.str);
-            }
-            return false;
-        }
-    }
-    return true;
-}

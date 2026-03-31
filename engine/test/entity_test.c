@@ -60,6 +60,7 @@ void test_entity_init_from_blueprint(void)
     TEST_ASSERT_TRUE(entity_init(&entity, spec, (Vector2){100, 200}, NULL));
 
     TEST_ASSERT_EQUAL_STRING("chest", entity.blueprint_name.ptr);
+    TEST_ASSERT_TRUE(entity.defaults == &blueprint.attrs);
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 100.0F, entity.position.x);
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 200.0F, entity.position.y);
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 102.0F, entity.collision.x);

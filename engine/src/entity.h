@@ -22,7 +22,8 @@ typedef struct {
 } EntitySpec;
 
 typedef struct {
-    /* Pointers (8 bytes each) */
+    /* Pointers (8 bytes each, no padding gap) */
+    const AttrSet *defaults;
     Texture2D *texture;
 
     /* Attrs + identity strings (all naturally aligned) */
@@ -51,9 +52,8 @@ typedef struct {
     bool moving;
 } Entity;
 
-/* Get an attribute from the entity's instance attrs.
- * Blueprint defaults are copied into instance attrs at init time.
- * Returns NULL if not found. */
+/* Get an attribute with instance -> defaults fallback.
+ * Returns NULL if not found in either. */
 const Attribute *entity_get_attr(const Entity *entity, const char *name);
 
 /* Typed getters with instance -> defaults fallback. */
@@ -65,8 +65,8 @@ const char *entity_get_string(const Entity *entity, const char *name);
 /* Source rectangle from src_x/y/w/h attrs (instance -> defaults fallback). */
 Rectangle entity_get_source(const Entity *entity);
 
-/* Initialize an entity from a spec. Copies blueprint_name and all default
- * attrs into the instance. Returns false on allocation failure. */
+/* Initialize an entity from a spec. Copies blueprint_name; borrows defaults
+ * pointer. Returns false on allocation failure. */
 [[nodiscard]] bool entity_init(Entity *entity, EntitySpec spec, Vector2 position, Allocator *alloc);
 
 /* Recompute collision rect from position + entity's stored collision_offset.

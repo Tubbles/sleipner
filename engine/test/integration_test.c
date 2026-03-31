@@ -264,7 +264,8 @@ void test_integration_player_entity_spawns(void)
     TEST_ASSERT_NOT_NULL(behavior);
     TEST_ASSERT_EQUAL_STRING("player", behavior);
 
-    /* Player must have valid texture */
+    /* Player must have valid defaults and texture */
+    TEST_ASSERT_NOT_NULL(player->defaults);
     TEST_ASSERT_NOT_NULL(player->texture);
     TEST_ASSERT_EQUAL_STRING("player", player->blueprint_name.ptr);
 

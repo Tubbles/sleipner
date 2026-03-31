@@ -13,6 +13,9 @@ VEC_IMPL(entity, Entity)
 
 const Attribute *entity_get_attr(const Entity *entity, const char *name)
 {
+    if (entity->defaults) {
+        return attr_get_scoped(&entity->attrs, entity->defaults, name);
+    }
     return attr_get(&entity->attrs, name);
 }
 
@@ -71,13 +74,7 @@ bool entity_init(Entity *entity, EntitySpec spec, Vector2 position, Allocator *a
     if (!str_from_strv(alloc, &entity->blueprint_name, spec.blueprint_name)) {
         return false;
     }
-
-    if (spec.defaults) {
-        if (!attr_set_copy(alloc, &entity->attrs, spec.defaults)) {
-            str_free(alloc, &entity->blueprint_name);
-            return false;
-        }
-    }
+    entity->defaults = spec.defaults;
 
     entity->position = position;
     entity->texture = spec.texture;
@@ -91,11 +88,10 @@ bool entity_init(Entity *entity, EntitySpec spec, Vector2 position, Allocator *a
     };
 
     /* Only auto-derive solid from collision size if the blueprint does not explicitly set it */
-    if (!attr_get(&entity->attrs, "solid")) {
+    if (!spec.defaults || !attr_get(spec.defaults, "solid")) {
         bool is_solid = (bool)((spec.collision_size.x > 0.0F) || (spec.collision_size.y > 0.0F));
         if (!attr_set_bool(alloc, &entity->attrs, "solid", is_solid)) {
             str_free(alloc, &entity->blueprint_name);
-            attr_set_free(alloc, &entity->attrs);
             return false;
         }
     }
