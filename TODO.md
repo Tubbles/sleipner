@@ -82,7 +82,6 @@
 
 ## misc
 
-- remove allocator fallback of NULL -> libc heap from all our data types
 - change all NULL -> nullptr since this is C23
 - change it so vec and friends store their allocators, makes realloc and free
   very easy and their signatures gets simpler. requires the allocator type to be

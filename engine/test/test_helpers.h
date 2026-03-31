@@ -1,11 +1,18 @@
 #ifndef TEST_HELPERS_H
 #define TEST_HELPERS_H
 
+#include "alloc.h"
 #include "blueprint.h"
 #include "level.h"
 #include "rule.h"
 
 struct EngineContext;
+
+/* Call once before running tests to initialise the heap allocator. */
+void test_helpers_init(void);
+
+/* Heap allocator for test code — initialised by test_helpers_init(). */
+extern Allocator test_heap_alloc;
 
 /* Cleanup helpers for test data structures */
 void test_blueprint_table_free(BlueprintTable *table);

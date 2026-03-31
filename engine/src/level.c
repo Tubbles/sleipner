@@ -43,7 +43,7 @@ static bool parse_instance_attr(Allocator *alloc, AttrSet *attrs, toml_table_t *
 
 static void parse_instance_overrides(Allocator *alloc, Entity *entity, toml_table_t *entity_table)
 {
-    struct EngineContext *ctx = alloc ? alloc->ctx : NULL;
+    struct EngineContext *ctx = alloc->ctx;
     int total_keys = toml_table_nkval(entity_table) + toml_table_narr(entity_table) + toml_table_ntab(entity_table);
     for (int key_index = 0; key_index < total_keys; key_index++) {
         const char *key = toml_key_in(entity_table, key_index);
@@ -77,7 +77,7 @@ static bool spawn_children_for(Allocator *alloc,
                                TextureLookupFn texture_lookup,
                                void *texture_user_data)
 {
-    struct EngineContext *ctx = alloc ? alloc->ctx : NULL;
+    struct EngineContext *ctx = alloc->ctx;
     /* Look up the parent blueprint by name (saved before any push that could
      * reallocate the entities vec and invalidate pointers). */
     const Blueprint *parent_blueprint =
@@ -141,7 +141,7 @@ static bool instantiate_children(Allocator *alloc,
                                  TextureLookupFn texture_lookup,
                                  void *texture_user_data)
 {
-    struct EngineContext *ctx = alloc ? alloc->ctx : NULL;
+    struct EngineContext *ctx = alloc->ctx;
     int scan_index = start_index;
     while (scan_index < level->entities.count) {
         const Blueprint *scan_blueprint =
@@ -169,7 +169,7 @@ static void parse_entity(Allocator *alloc,
                          TextureLookupFn texture_lookup,
                          void *texture_user_data)
 {
-    struct EngineContext *ctx = alloc ? alloc->ctx : NULL;
+    struct EngineContext *ctx = alloc->ctx;
     toml_datum_t bp_name = toml_string_in(entity_table, "blueprint");
     if (!bp_name.ok) {
         debug_log(ctx, "ent[%d]: no 'blueprint' key", entity_index);

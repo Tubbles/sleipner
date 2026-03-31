@@ -1,5 +1,6 @@
 #include "unity.h"
 #include "engine_context.h"
+#include "test_helpers.h"
 
 static struct EngineContext ctx;
 
@@ -445,6 +446,7 @@ void test_editor_word_builder_nav_page_down(void);
 
 int main(void)
 {
+    test_helpers_init();
     UNITY_BEGIN();
 
     RUN_TEST(test_stub_passes);

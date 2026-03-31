@@ -93,7 +93,7 @@ void test_toml_emit_level_with_entities(void)
     toml_table_t *root = parse_toml(fixture_gamedata);
     TEST_ASSERT_NOT_NULL(root);
     blueprints_load(&ctx, &blueprints, root, &arena);
-    TEST_ASSERT_TRUE(level_load(&ctx, &level, root, NULL, &blueprints, dummy_lookup, NULL, NULL));
+    TEST_ASSERT_TRUE(level_load(&ctx, &level, root, NULL, &blueprints, dummy_lookup, NULL, &test_heap_alloc));
     toml_free(root);
 
     char output[4096];
@@ -125,7 +125,7 @@ void test_toml_emit_round_trip(void)
     toml_table_t *root = parse_toml(fixture_gamedata);
     TEST_ASSERT_NOT_NULL(root);
     blueprints_load(&ctx, &blueprints, root, &arena);
-    TEST_ASSERT_TRUE(level_load(&ctx, &level, root, NULL, &blueprints, dummy_lookup, NULL, NULL));
+    TEST_ASSERT_TRUE(level_load(&ctx, &level, root, NULL, &blueprints, dummy_lookup, NULL, &test_heap_alloc));
     toml_free(root);
 
     /* Emit */
@@ -142,7 +142,7 @@ void test_toml_emit_round_trip(void)
     toml_table_t *root2 = parse_toml(output);
     TEST_ASSERT_NOT_NULL(root2);
     blueprints_load(&ctx, &blueprints2, root2, &arena2);
-    TEST_ASSERT_TRUE(level_load(&ctx, &level2, root2, NULL, &blueprints2, dummy_lookup, NULL, NULL));
+    TEST_ASSERT_TRUE(level_load(&ctx, &level2, root2, NULL, &blueprints2, dummy_lookup, NULL, &test_heap_alloc));
     toml_free(root2);
 
     /* Verify round-trip preserves data */
@@ -178,10 +178,12 @@ void test_toml_emit_round_trip(void)
 void test_toml_emit_buffer_too_small(void)
 {
     BlueprintTable blueprints = {0};
-    TEST_ASSERT_TRUE(vec_blueprint_push(&blueprints.entries, (Blueprint){0}, NULL));
+    TEST_ASSERT_TRUE(vec_blueprint_push(&blueprints.entries, (Blueprint){0}, &test_heap_alloc));
     Blueprint *entry = &blueprints.entries.data[0];
-    TEST_ASSERT_TRUE(attr_set_string(NULL, &entry->attrs, (AttrStringPair){.name = "name", .value = "test"}));
-    TEST_ASSERT_TRUE(attr_set_string(NULL, &entry->attrs, (AttrStringPair){.name = "texture", .value = "test.png"}));
+    TEST_ASSERT_TRUE(
+        attr_set_string(&test_heap_alloc, &entry->attrs, (AttrStringPair){.name = "name", .value = "test"}));
+    TEST_ASSERT_TRUE(
+        attr_set_string(&test_heap_alloc, &entry->attrs, (AttrStringPair){.name = "texture", .value = "test.png"}));
 
     char tiny[10];
     int written = toml_emit_gamedata(&ctx, tiny, (int)sizeof(tiny), &blueprints, NULL, 0);
@@ -249,7 +251,7 @@ void test_toml_emit_skips_child_entities(void)
     toml_table_t *root = parse_toml(child_fixture);
     TEST_ASSERT_NOT_NULL(root);
     blueprints_load(&ctx, &blueprints, root, &arena);
-    TEST_ASSERT_TRUE(level_load(&ctx, &level, root, "test", &blueprints, dummy_lookup, NULL, NULL));
+    TEST_ASSERT_TRUE(level_load(&ctx, &level, root, "test", &blueprints, dummy_lookup, NULL, &test_heap_alloc));
     toml_free(root);
 
     /* Level has 2 entities (wagon + lantern child) */
@@ -278,7 +280,7 @@ void test_toml_emit_skips_child_entities(void)
 void test_toml_emit_no_music(void)
 {
     Level level = {0};
-    TEST_ASSERT_TRUE(str_from_cstr(NULL, &level.name, "silent"));
+    TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &level.name, "silent"));
     level.width = 100;
     level.height = 100;
 

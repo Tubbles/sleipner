@@ -6,7 +6,7 @@
 void test_attr_set_and_get_float(void)
 {
     AttrSet set = {0};
-    TEST_ASSERT_TRUE(attr_set_float(NULL, &set, "speed", 80.0F));
+    TEST_ASSERT_TRUE(attr_set_float(&test_heap_alloc, &set, "speed", 80.0F));
     TEST_ASSERT_EQUAL_INT(1, set.entries.count);
 
     const Attribute *entry = attr_get(&set, "speed");
@@ -19,7 +19,7 @@ void test_attr_set_and_get_float(void)
 void test_attr_set_and_get_int(void)
 {
     AttrSet set = {0};
-    TEST_ASSERT_TRUE(attr_set_int(NULL, &set, "health", 10));
+    TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, &set, "health", 10));
 
     TEST_ASSERT_EQUAL_INT(10, attr_get_int(&set, "health", 0));
     test_attr_set_free(&set);
@@ -28,7 +28,7 @@ void test_attr_set_and_get_int(void)
 void test_attr_set_and_get_bool(void)
 {
     AttrSet set = {0};
-    TEST_ASSERT_TRUE(attr_set_bool(NULL, &set, "is_locked", true));
+    TEST_ASSERT_TRUE(attr_set_bool(&test_heap_alloc, &set, "is_locked", true));
 
     TEST_ASSERT_TRUE(attr_get_bool(&set, "is_locked", false));
     test_attr_set_free(&set);
@@ -37,7 +37,8 @@ void test_attr_set_and_get_bool(void)
 void test_attr_set_and_get_string(void)
 {
     AttrSet set = {0};
-    TEST_ASSERT_TRUE(attr_set_string(NULL, &set, (AttrStringPair){.name = "loot_table", .value = "common"}));
+    TEST_ASSERT_TRUE(
+        attr_set_string(&test_heap_alloc, &set, (AttrStringPair){.name = "loot_table", .value = "common"}));
 
     TEST_ASSERT_EQUAL_STRING("common", attr_get_string(&set, "loot_table"));
     test_attr_set_free(&set);
@@ -46,8 +47,8 @@ void test_attr_set_and_get_string(void)
 void test_attr_overwrite_existing(void)
 {
     AttrSet set = {0};
-    TEST_ASSERT_TRUE(attr_set_int(NULL, &set, "health", 10));
-    TEST_ASSERT_TRUE(attr_set_int(NULL, &set, "health", 5));
+    TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, &set, "health", 10));
+    TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, &set, "health", 5));
 
     TEST_ASSERT_EQUAL_INT(1, set.entries.count);
     TEST_ASSERT_EQUAL_INT(5, attr_get_int(&set, "health", 0));
@@ -72,7 +73,7 @@ void test_attr_push_many_entries(void)
 
     for (int index = 0; index < 64; index++) {
         snprintf(name, sizeof(name), "attr_%d", index);
-        TEST_ASSERT_TRUE(attr_set_int(NULL, &set, name, index));
+        TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, &set, name, index));
     }
 
     TEST_ASSERT_EQUAL_INT(64, set.entries.count);
@@ -86,8 +87,8 @@ void test_attr_push_many_entries(void)
 void test_attr_type_change(void)
 {
     AttrSet set = {0};
-    TEST_ASSERT_TRUE(attr_set_int(NULL, &set, "value", 42));
-    TEST_ASSERT_TRUE(attr_set_float(NULL, &set, "value", 3.14F));
+    TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, &set, "value", 42));
+    TEST_ASSERT_TRUE(attr_set_float(&test_heap_alloc, &set, "value", 3.14F));
 
     TEST_ASSERT_EQUAL_INT(1, set.entries.count);
     const Attribute *entry = attr_get(&set, "value");
@@ -99,11 +100,12 @@ void test_attr_type_change(void)
 void test_attr_scoped_instance_overrides_blueprint(void)
 {
     AttrSet blueprint = {0};
-    TEST_ASSERT_TRUE(attr_set_bool(NULL, &blueprint, "is_locked", true));
-    TEST_ASSERT_TRUE(attr_set_string(NULL, &blueprint, (AttrStringPair){.name = "loot_table", .value = "common"}));
+    TEST_ASSERT_TRUE(attr_set_bool(&test_heap_alloc, &blueprint, "is_locked", true));
+    TEST_ASSERT_TRUE(
+        attr_set_string(&test_heap_alloc, &blueprint, (AttrStringPair){.name = "loot_table", .value = "common"}));
 
     AttrSet instance = {0};
-    TEST_ASSERT_TRUE(attr_set_bool(NULL, &instance, "is_locked", false));
+    TEST_ASSERT_TRUE(attr_set_bool(&test_heap_alloc, &instance, "is_locked", false));
 
     /* Instance overrides blueprint */
     const Attribute *locked = attr_get_scoped(&instance, &blueprint, "is_locked");
@@ -125,10 +127,10 @@ void test_attr_scoped_instance_overrides_blueprint(void)
 void test_attr_multiple_types(void)
 {
     AttrSet set = {0};
-    TEST_ASSERT_TRUE(attr_set_float(NULL, &set, "speed", 80.0F));
-    TEST_ASSERT_TRUE(attr_set_int(NULL, &set, "health", 10));
-    TEST_ASSERT_TRUE(attr_set_bool(NULL, &set, "visible", true));
-    TEST_ASSERT_TRUE(attr_set_string(NULL, &set, (AttrStringPair){.name = "name", .value = "chest"}));
+    TEST_ASSERT_TRUE(attr_set_float(&test_heap_alloc, &set, "speed", 80.0F));
+    TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, &set, "health", 10));
+    TEST_ASSERT_TRUE(attr_set_bool(&test_heap_alloc, &set, "visible", true));
+    TEST_ASSERT_TRUE(attr_set_string(&test_heap_alloc, &set, (AttrStringPair){.name = "name", .value = "chest"}));
 
     TEST_ASSERT_EQUAL_INT(4, set.entries.count);
     TEST_ASSERT_FLOAT_WITHIN(0.01F, 80.0F, attr_get_float(&set, "speed", 0));
@@ -141,11 +143,11 @@ void test_attr_multiple_types(void)
 void test_attr_get_scoped_float(void)
 {
     AttrSet blueprint = {0};
-    TEST_ASSERT_TRUE(attr_set_float(NULL, &blueprint, "speed", 80.0F));
-    TEST_ASSERT_TRUE(attr_set_int(NULL, &blueprint, "damage", 5));
+    TEST_ASSERT_TRUE(attr_set_float(&test_heap_alloc, &blueprint, "speed", 80.0F));
+    TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, &blueprint, "damage", 5));
 
     AttrSet instance = {0};
-    TEST_ASSERT_TRUE(attr_set_float(NULL, &instance, "speed", 120.0F));
+    TEST_ASSERT_TRUE(attr_set_float(&test_heap_alloc, &instance, "speed", 120.0F));
 
     /* Instance overrides blueprint */
     TEST_ASSERT_FLOAT_WITHIN(0.01F, 120.0F, attr_get_scoped_float(&instance, &blueprint, "speed", 0.0F));
@@ -166,11 +168,11 @@ void test_attr_get_scoped_float(void)
 void test_attr_get_scoped_int(void)
 {
     AttrSet blueprint = {0};
-    TEST_ASSERT_TRUE(attr_set_int(NULL, &blueprint, "health", 100));
-    TEST_ASSERT_TRUE(attr_set_float(NULL, &blueprint, "level", 3.0F));
+    TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, &blueprint, "health", 100));
+    TEST_ASSERT_TRUE(attr_set_float(&test_heap_alloc, &blueprint, "level", 3.0F));
 
     AttrSet instance = {0};
-    TEST_ASSERT_TRUE(attr_set_int(NULL, &instance, "health", 50));
+    TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, &instance, "health", 50));
 
     /* Instance overrides */
     TEST_ASSERT_EQUAL_INT(50, attr_get_scoped_int(&instance, &blueprint, "health", 0));
@@ -188,11 +190,11 @@ void test_attr_get_scoped_int(void)
 void test_attr_get_scoped_bool(void)
 {
     AttrSet blueprint = {0};
-    TEST_ASSERT_TRUE(attr_set_bool(NULL, &blueprint, "visible", false));
-    TEST_ASSERT_TRUE(attr_set_bool(NULL, &blueprint, "solid", true));
+    TEST_ASSERT_TRUE(attr_set_bool(&test_heap_alloc, &blueprint, "visible", false));
+    TEST_ASSERT_TRUE(attr_set_bool(&test_heap_alloc, &blueprint, "solid", true));
 
     AttrSet instance = {0};
-    TEST_ASSERT_TRUE(attr_set_bool(NULL, &instance, "visible", true));
+    TEST_ASSERT_TRUE(attr_set_bool(&test_heap_alloc, &instance, "visible", true));
 
     /* Instance overrides */
     TEST_ASSERT_TRUE(attr_get_scoped_bool(&instance, &blueprint, "visible", false));
@@ -210,11 +212,14 @@ void test_attr_get_scoped_bool(void)
 void test_attr_get_scoped_string(void)
 {
     AttrSet blueprint = {0};
-    TEST_ASSERT_TRUE(attr_set_string(NULL, &blueprint, (AttrStringPair){.name = "behavior", .value = "npc"}));
-    TEST_ASSERT_TRUE(attr_set_string(NULL, &blueprint, (AttrStringPair){.name = "loot", .value = "common"}));
+    TEST_ASSERT_TRUE(
+        attr_set_string(&test_heap_alloc, &blueprint, (AttrStringPair){.name = "behavior", .value = "npc"}));
+    TEST_ASSERT_TRUE(
+        attr_set_string(&test_heap_alloc, &blueprint, (AttrStringPair){.name = "loot", .value = "common"}));
 
     AttrSet instance = {0};
-    TEST_ASSERT_TRUE(attr_set_string(NULL, &instance, (AttrStringPair){.name = "behavior", .value = "player"}));
+    TEST_ASSERT_TRUE(
+        attr_set_string(&test_heap_alloc, &instance, (AttrStringPair){.name = "behavior", .value = "player"}));
 
     /* Instance overrides */
     TEST_ASSERT_EQUAL_STRING("player", attr_get_scoped_string(&instance, &blueprint, "behavior"));
@@ -232,7 +237,7 @@ void test_attr_get_scoped_string(void)
 void test_attr_get_scoped_null_blueprint(void)
 {
     AttrSet instance = {0};
-    TEST_ASSERT_TRUE(attr_set_float(NULL, &instance, "speed", 50.0F));
+    TEST_ASSERT_TRUE(attr_set_float(&test_heap_alloc, &instance, "speed", 50.0F));
 
     /* NULL blueprint — instance-only lookup */
     TEST_ASSERT_FLOAT_WITHIN(0.01F, 50.0F, attr_get_scoped_float(&instance, NULL, "speed", 0.0F));

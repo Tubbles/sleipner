@@ -31,7 +31,7 @@ FAKE_VALUE_FUNC(bool, IsGamepadButtonDown_mock, int, int);
 static Blueprint make_named_blueprint(const char *name)
 {
     Blueprint blueprint = {0};
-    TEST_ASSERT_TRUE(attr_set_string(NULL, &blueprint.attrs, (AttrStringPair){"name", name}));
+    TEST_ASSERT_TRUE(attr_set_string(&test_heap_alloc, &blueprint.attrs, (AttrStringPair){"name", name}));
     return blueprint;
 }
 
@@ -173,7 +173,7 @@ void test_editor_word_builder_total_count_with_blueprints(void)
     int base = word_builder_total_count(&state);
 
     Blueprint blueprint = make_named_blueprint("player");
-    TEST_ASSERT_TRUE(vec_blueprint_push(&state.blueprints.entries, blueprint, NULL));
+    TEST_ASSERT_TRUE(vec_blueprint_push(&state.blueprints.entries, blueprint, &test_heap_alloc));
 
     TEST_ASSERT_EQUAL_INT(base + 1, word_builder_total_count(&state));
 
@@ -198,7 +198,7 @@ void test_editor_word_builder_item_blueprint_name(void)
 {
     GameState state = {0};
     Blueprint blueprint = make_named_blueprint("player");
-    TEST_ASSERT_TRUE(vec_blueprint_push(&state.blueprints.entries, blueprint, NULL));
+    TEST_ASSERT_TRUE(vec_blueprint_push(&state.blueprints.entries, blueprint, &test_heap_alloc));
 
     int blueprint_index = 1 + WORD_BUILDER_BUILTIN_COUNT;
     TEST_ASSERT_EQUAL_STRING("player", word_builder_item(&state, blueprint_index));
@@ -233,8 +233,8 @@ void test_editor_total_attr_count_instance_only(void)
 {
     GameState state = {0};
     Entity entity = {0};
-    TEST_ASSERT_TRUE(attr_set_int(NULL, &entity.attrs, "speed", 10));
-    TEST_ASSERT_TRUE(attr_set_int(NULL, &entity.attrs, "health", 5));
+    TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, &entity.attrs, "speed", 10));
+    TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, &entity.attrs, "health", 5));
 
     TEST_ASSERT_EQUAL_INT(2, total_attr_count(&state, &entity));
 
@@ -245,26 +245,26 @@ void test_editor_total_attr_count_with_blueprint(void)
 {
     GameState state = {0};
     Blueprint blueprint = {0};
-    TEST_ASSERT_TRUE(attr_set_string(NULL, &blueprint.attrs, (AttrStringPair){"name", "test_bp"}));
-    TEST_ASSERT_TRUE(attr_set_int(NULL, &blueprint.attrs, "bp_attr", 42));
-    (void)vec_blueprint_push(&state.blueprints.entries, blueprint, NULL);
+    TEST_ASSERT_TRUE(attr_set_string(&test_heap_alloc, &blueprint.attrs, (AttrStringPair){"name", "test_bp"}));
+    TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, &blueprint.attrs, "bp_attr", 42));
+    (void)vec_blueprint_push(&state.blueprints.entries, blueprint, &test_heap_alloc);
 
     Entity entity = {0};
     entity.id = 1;
-    TEST_ASSERT_TRUE(str_from_cstr(NULL, &entity.blueprint_name, "test_bp"));
-    TEST_ASSERT_TRUE(attr_set_int(NULL, &entity.attrs, "inst_attr", 10));
+    TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &entity.blueprint_name, "test_bp"));
+    TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, &entity.attrs, "inst_attr", 10));
     Str bp_name = {0};
-    TEST_ASSERT_TRUE(str_from_cstr(NULL, &bp_name, "test_bp"));
-    (void)map_int_str_set(&state.entity_blueprints, entity.id, bp_name, NULL);
+    TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &bp_name, "test_bp"));
+    (void)map_int_str_set(&state.entity_blueprints, entity.id, bp_name, &test_heap_alloc);
 
     TEST_ASSERT_EQUAL_INT(2 + 1, total_attr_count(&state, &entity));
 
     test_attr_set_free(&entity.attrs);
     test_attr_set_free(&blueprint.attrs);
-    str_free(NULL, &entity.blueprint_name);
-    str_free(NULL, &bp_name);
-    map_int_str_free(&state.entity_blueprints, NULL);
-    vec_blueprint_free(&state.blueprints.entries, NULL);
+    str_free(&test_heap_alloc, &entity.blueprint_name);
+    str_free(&test_heap_alloc, &bp_name);
+    map_int_str_free(&state.entity_blueprints, &test_heap_alloc);
+    vec_blueprint_free(&state.blueprints.entries, &test_heap_alloc);
 }
 
 /* ---- is_blueprint_attr -------------------------------------------------- */
@@ -272,7 +272,7 @@ void test_editor_total_attr_count_with_blueprint(void)
 void test_editor_is_blueprint_attr_false_for_instance(void)
 {
     Entity entity = {0};
-    TEST_ASSERT_TRUE(attr_set_int(NULL, &entity.attrs, "speed", 10));
+    TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, &entity.attrs, "speed", 10));
 
     TEST_ASSERT_FALSE(is_blueprint_attr(&entity, 0));
 
@@ -282,7 +282,7 @@ void test_editor_is_blueprint_attr_false_for_instance(void)
 void test_editor_is_blueprint_attr_true_for_blueprint(void)
 {
     Entity entity = {0};
-    TEST_ASSERT_TRUE(attr_set_int(NULL, &entity.attrs, "speed", 10));
+    TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, &entity.attrs, "speed", 10));
 
     TEST_ASSERT_TRUE(is_blueprint_attr(&entity, 1));
 
@@ -295,11 +295,11 @@ void test_editor_find_nearest_single_entity(void)
 {
     Level level = {0};
     Entity entity = {.parent_index = -1, .position = {10.0F, 10.0F}};
-    TEST_ASSERT_TRUE(vec_entity_push(&level.entities, entity, NULL));
+    TEST_ASSERT_TRUE(vec_entity_push(&level.entities, entity, &test_heap_alloc));
 
     TEST_ASSERT_EQUAL_INT(0, find_nearest_entity(&level, (Vector2){15.0F, 15.0F}));
 
-    vec_entity_free(&level.entities, NULL);
+    vec_entity_free(&level.entities, &test_heap_alloc);
 }
 
 void test_editor_find_nearest_closer_wins(void)
@@ -307,12 +307,12 @@ void test_editor_find_nearest_closer_wins(void)
     Level level = {0};
     Entity far_entity = {.parent_index = -1, .position = {100.0F, 100.0F}};
     Entity near_entity = {.parent_index = -1, .position = {10.0F, 10.0F}};
-    TEST_ASSERT_TRUE(vec_entity_push(&level.entities, far_entity, NULL));
-    TEST_ASSERT_TRUE(vec_entity_push(&level.entities, near_entity, NULL));
+    TEST_ASSERT_TRUE(vec_entity_push(&level.entities, far_entity, &test_heap_alloc));
+    TEST_ASSERT_TRUE(vec_entity_push(&level.entities, near_entity, &test_heap_alloc));
 
     TEST_ASSERT_EQUAL_INT(1, find_nearest_entity(&level, (Vector2){12.0F, 12.0F}));
 
-    vec_entity_free(&level.entities, NULL);
+    vec_entity_free(&level.entities, &test_heap_alloc);
 }
 
 void test_editor_find_nearest_skips_children(void)
@@ -320,12 +320,12 @@ void test_editor_find_nearest_skips_children(void)
     Level level = {0};
     Entity child = {.parent_index = 0, .position = {5.0F, 5.0F}};
     Entity root = {.parent_index = -1, .position = {100.0F, 100.0F}};
-    TEST_ASSERT_TRUE(vec_entity_push(&level.entities, child, NULL));
-    TEST_ASSERT_TRUE(vec_entity_push(&level.entities, root, NULL));
+    TEST_ASSERT_TRUE(vec_entity_push(&level.entities, child, &test_heap_alloc));
+    TEST_ASSERT_TRUE(vec_entity_push(&level.entities, root, &test_heap_alloc));
 
     TEST_ASSERT_EQUAL_INT(1, find_nearest_entity(&level, (Vector2){0.0F, 0.0F}));
 
-    vec_entity_free(&level.entities, NULL);
+    vec_entity_free(&level.entities, &test_heap_alloc);
 }
 
 void test_editor_find_nearest_empty_level(void)
@@ -354,8 +354,8 @@ void test_editor_entity_outline_rect_without_collision(void)
     GameState state = {0};
     Entity entity = {0};
     entity.position = (Vector2){50.0F, 60.0F};
-    TEST_ASSERT_TRUE(attr_set_float(NULL, &entity.attrs, "src_w", 16.0F));
-    TEST_ASSERT_TRUE(attr_set_float(NULL, &entity.attrs, "src_h", 24.0F));
+    TEST_ASSERT_TRUE(attr_set_float(&test_heap_alloc, &entity.attrs, "src_w", 16.0F));
+    TEST_ASSERT_TRUE(attr_set_float(&test_heap_alloc, &entity.attrs, "src_h", 24.0F));
 
     Rectangle rect = entity_outline_rect(&state, &entity);
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 50.0F, rect.x);
@@ -372,7 +372,7 @@ void test_editor_find_blueprint_by_name_found(void)
 {
     GameState state = {0};
     Blueprint blueprint = make_named_blueprint("chest");
-    TEST_ASSERT_TRUE(vec_blueprint_push(&state.blueprints.entries, blueprint, NULL));
+    TEST_ASSERT_TRUE(vec_blueprint_push(&state.blueprints.entries, blueprint, &test_heap_alloc));
 
     Blueprint *result = find_blueprint_by_name(&state, "chest");
     TEST_ASSERT_NOT_NULL(result);
@@ -385,7 +385,7 @@ void test_editor_find_blueprint_by_name_not_found(void)
 {
     GameState state = {0};
     Blueprint blueprint = make_named_blueprint("chest");
-    TEST_ASSERT_TRUE(vec_blueprint_push(&state.blueprints.entries, blueprint, NULL));
+    TEST_ASSERT_TRUE(vec_blueprint_push(&state.blueprints.entries, blueprint, &test_heap_alloc));
 
     TEST_ASSERT_NULL(find_blueprint_by_name(&state, "nonexistent"));
 
@@ -406,9 +406,9 @@ void test_editor_mark_deleted_root_marks_child(void)
     Entity root = {.parent_index = -1};
     Entity child = {.parent_index = 0};
     Entity other = {.parent_index = -1};
-    TEST_ASSERT_TRUE(vec_entity_push(&level.entities, root, NULL));
-    TEST_ASSERT_TRUE(vec_entity_push(&level.entities, child, NULL));
-    TEST_ASSERT_TRUE(vec_entity_push(&level.entities, other, NULL));
+    TEST_ASSERT_TRUE(vec_entity_push(&level.entities, root, &test_heap_alloc));
+    TEST_ASSERT_TRUE(vec_entity_push(&level.entities, child, &test_heap_alloc));
+    TEST_ASSERT_TRUE(vec_entity_push(&level.entities, other, &test_heap_alloc));
 
     bool is_deleted[] = {true, false, false};
     mark_deleted_descendants(&level, is_deleted, 3);
@@ -417,7 +417,7 @@ void test_editor_mark_deleted_root_marks_child(void)
     TEST_ASSERT_TRUE(is_deleted[1]);
     TEST_ASSERT_FALSE(is_deleted[2]);
 
-    vec_entity_free(&level.entities, NULL);
+    vec_entity_free(&level.entities, &test_heap_alloc);
 }
 
 void test_editor_mark_deleted_chain(void)
@@ -426,9 +426,9 @@ void test_editor_mark_deleted_chain(void)
     Entity grandparent = {.parent_index = -1};
     Entity parent_entity = {.parent_index = 0};
     Entity grandchild = {.parent_index = 1};
-    TEST_ASSERT_TRUE(vec_entity_push(&level.entities, grandparent, NULL));
-    TEST_ASSERT_TRUE(vec_entity_push(&level.entities, parent_entity, NULL));
-    TEST_ASSERT_TRUE(vec_entity_push(&level.entities, grandchild, NULL));
+    TEST_ASSERT_TRUE(vec_entity_push(&level.entities, grandparent, &test_heap_alloc));
+    TEST_ASSERT_TRUE(vec_entity_push(&level.entities, parent_entity, &test_heap_alloc));
+    TEST_ASSERT_TRUE(vec_entity_push(&level.entities, grandchild, &test_heap_alloc));
 
     bool is_deleted[] = {true, false, false};
     mark_deleted_descendants(&level, is_deleted, 3);
@@ -437,7 +437,7 @@ void test_editor_mark_deleted_chain(void)
     TEST_ASSERT_TRUE(is_deleted[1]);
     TEST_ASSERT_TRUE(is_deleted[2]);
 
-    vec_entity_free(&level.entities, NULL);
+    vec_entity_free(&level.entities, &test_heap_alloc);
 }
 
 void test_editor_mark_deleted_sibling_untouched(void)
@@ -447,10 +447,10 @@ void test_editor_mark_deleted_sibling_untouched(void)
     Entity child_a = {.parent_index = 0};
     Entity root_b = {.parent_index = -1};
     Entity child_b = {.parent_index = 2};
-    TEST_ASSERT_TRUE(vec_entity_push(&level.entities, root_a, NULL));
-    TEST_ASSERT_TRUE(vec_entity_push(&level.entities, child_a, NULL));
-    TEST_ASSERT_TRUE(vec_entity_push(&level.entities, root_b, NULL));
-    TEST_ASSERT_TRUE(vec_entity_push(&level.entities, child_b, NULL));
+    TEST_ASSERT_TRUE(vec_entity_push(&level.entities, root_a, &test_heap_alloc));
+    TEST_ASSERT_TRUE(vec_entity_push(&level.entities, child_a, &test_heap_alloc));
+    TEST_ASSERT_TRUE(vec_entity_push(&level.entities, root_b, &test_heap_alloc));
+    TEST_ASSERT_TRUE(vec_entity_push(&level.entities, child_b, &test_heap_alloc));
 
     bool is_deleted[] = {true, false, false, false};
     mark_deleted_descendants(&level, is_deleted, 4);
@@ -460,7 +460,7 @@ void test_editor_mark_deleted_sibling_untouched(void)
     TEST_ASSERT_FALSE(is_deleted[2]);
     TEST_ASSERT_FALSE(is_deleted[3]);
 
-    vec_entity_free(&level.entities, NULL);
+    vec_entity_free(&level.entities, &test_heap_alloc);
 }
 
 /* ---- apply_attr_delta --------------------------------------------------- */
@@ -469,8 +469,8 @@ void test_editor_apply_attr_delta_int(void)
 {
     GameState state = {0};
     Entity entity = {.parent_index = -1};
-    TEST_ASSERT_TRUE(attr_set_int(NULL, &entity.attrs, "speed", 10));
-    TEST_ASSERT_TRUE(vec_entity_push(&state.current_level.entities, entity, NULL));
+    TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, &entity.attrs, "speed", 10));
+    TEST_ASSERT_TRUE(vec_entity_push(&state.current_level.entities, entity, &test_heap_alloc));
 
     EditorState editor_state = {.selected_entity_index = 0, .selected_attr_index = 0};
     apply_attr_delta(&state, &editor_state, 5);
@@ -479,15 +479,15 @@ void test_editor_apply_attr_delta_int(void)
     TEST_ASSERT_EQUAL_INT(15, attr->value.i);
 
     test_attr_set_free(&state.current_level.entities.data[0].attrs);
-    vec_entity_free(&state.current_level.entities, NULL);
+    vec_entity_free(&state.current_level.entities, &test_heap_alloc);
 }
 
 void test_editor_apply_attr_delta_float(void)
 {
     GameState state = {0};
     Entity entity = {.parent_index = -1};
-    TEST_ASSERT_TRUE(attr_set_float(NULL, &entity.attrs, "speed", 10.0F));
-    TEST_ASSERT_TRUE(vec_entity_push(&state.current_level.entities, entity, NULL));
+    TEST_ASSERT_TRUE(attr_set_float(&test_heap_alloc, &entity.attrs, "speed", 10.0F));
+    TEST_ASSERT_TRUE(vec_entity_push(&state.current_level.entities, entity, &test_heap_alloc));
 
     EditorState editor_state = {.selected_entity_index = 0, .selected_attr_index = 0};
     apply_attr_delta(&state, &editor_state, 3);
@@ -496,19 +496,19 @@ void test_editor_apply_attr_delta_float(void)
     TEST_ASSERT_FLOAT_WITHIN(0.01F, 13.0F, attr->value.f);
 
     test_attr_set_free(&state.current_level.entities.data[0].attrs);
-    vec_entity_free(&state.current_level.entities, NULL);
+    vec_entity_free(&state.current_level.entities, &test_heap_alloc);
 }
 
 void test_editor_apply_attr_delta_null_attr_no_crash(void)
 {
     GameState state = {0};
     Entity entity = {.parent_index = -1};
-    TEST_ASSERT_TRUE(vec_entity_push(&state.current_level.entities, entity, NULL));
+    TEST_ASSERT_TRUE(vec_entity_push(&state.current_level.entities, entity, &test_heap_alloc));
 
     EditorState editor_state = {.selected_entity_index = 0, .selected_attr_index = 99};
     apply_attr_delta(&state, &editor_state, 1);
 
-    vec_entity_free(&state.current_level.entities, NULL);
+    vec_entity_free(&state.current_level.entities, &test_heap_alloc);
 }
 
 /* ---- attr_at_display_index ---------------------------------------------- */
@@ -517,7 +517,7 @@ void test_editor_attr_at_display_index_instance(void)
 {
     GameState state = {0};
     Entity entity = {.parent_index = -1};
-    TEST_ASSERT_TRUE(attr_set_int(NULL, &entity.attrs, "speed", 42));
+    TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, &entity.attrs, "speed", 42));
 
     Attribute *attr = attr_at_display_index(&state, &entity, 0);
     TEST_ASSERT_NOT_NULL(attr);
@@ -530,21 +530,21 @@ void test_editor_attr_at_display_index_blueprint(void)
 {
     GameState state = {0};
 
-    TEST_ASSERT_TRUE(vec_blueprint_push(&state.blueprints.entries, (Blueprint){0}, NULL));
+    TEST_ASSERT_TRUE(vec_blueprint_push(&state.blueprints.entries, (Blueprint){0}, &test_heap_alloc));
     Blueprint *blueprint = &state.blueprints.entries.data[0];
-    TEST_ASSERT_TRUE(attr_set_string(NULL, &blueprint->attrs, (AttrStringPair){"name", "test_bp"}));
-    TEST_ASSERT_TRUE(attr_set_int(NULL, &blueprint->attrs, "bp_val", 99));
+    TEST_ASSERT_TRUE(attr_set_string(&test_heap_alloc, &blueprint->attrs, (AttrStringPair){"name", "test_bp"}));
+    TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, &blueprint->attrs, "bp_val", 99));
 
     Entity entity = {.parent_index = -1};
-    TEST_ASSERT_TRUE(str_from_cstr(NULL, &entity.blueprint_name, "test_bp"));
-    TEST_ASSERT_TRUE(attr_set_int(NULL, &entity.attrs, "inst_val", 10));
+    TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &entity.blueprint_name, "test_bp"));
+    TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, &entity.attrs, "inst_val", 10));
 
     int blueprint_attr_index = entity.attrs.entries.count + 1;
     Attribute *attr = attr_at_display_index(&state, &entity, blueprint_attr_index);
     TEST_ASSERT_NOT_NULL(attr);
     TEST_ASSERT_EQUAL_INT(99, attr->value.i);
 
-    str_free(NULL, &entity.blueprint_name);
+    str_free(&test_heap_alloc, &entity.blueprint_name);
     test_attr_set_free(&entity.attrs);
     test_blueprint_table_free(&state.blueprints);
 }
@@ -553,7 +553,7 @@ void test_editor_attr_at_display_index_out_of_range(void)
 {
     GameState state = {0};
     Entity entity = {.parent_index = -1};
-    TEST_ASSERT_TRUE(attr_set_int(NULL, &entity.attrs, "speed", 10));
+    TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, &entity.attrs, "speed", 10));
 
     Attribute *attr = attr_at_display_index(&state, &entity, 99);
     TEST_ASSERT_NULL(attr);

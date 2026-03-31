@@ -55,13 +55,13 @@ void flag_set(Allocator *alloc, FlagSet *flags, const char *name)
     }
     FlagName entry = {0};
     if (!str_from_cstr(alloc, &entry.name, name)) {
-        struct EngineContext *ctx = alloc ? alloc->ctx : NULL;
+        struct EngineContext *ctx = alloc->ctx;
         debug_log(ctx, "flag_set: allocation failed for '%s'", name);
         return;
     }
     if (!vec_flag_name_push(&flags->names, entry, alloc)) {
         str_free(alloc, &entry.name);
-        struct EngineContext *ctx = alloc ? alloc->ctx : NULL;
+        struct EngineContext *ctx = alloc->ctx;
         debug_log(ctx, "flag_set: vec push failed for '%s'", name);
     }
 }

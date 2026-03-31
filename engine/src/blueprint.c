@@ -306,7 +306,7 @@ static bool parse_single_blueprint(Allocator *alloc, Blueprint *blueprint, toml_
     if (!parse_children(alloc, blueprint, entry)) {
         return false;
     }
-    struct EngineContext *ctx = alloc ? alloc->ctx : NULL;
+    struct EngineContext *ctx = alloc->ctx;
     if (!rules_parse(ctx, alloc, &blueprint->rules, entry, arena)) {
         if (ctx) {
             error_wrap(ctx, "blueprint '%s'", attr_get_string(&blueprint->attrs, "name"));

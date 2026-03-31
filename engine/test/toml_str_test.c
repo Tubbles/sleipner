@@ -1,6 +1,7 @@
 #include "unity.h"
 
 #include "str.h"
+#include "test_helpers.h"
 #include "toml.h"
 #include "toml_str.h"
 
@@ -26,10 +27,10 @@ void test_toml_str_content_is_copied(void)
     TEST_ASSERT_NOT_NULL(table);
     TEST_ASSERT_TRUE(datum.ok);
     Str str = {0};
-    TEST_ASSERT_TRUE(str_from_toml_datum(NULL, &str, &datum));
+    TEST_ASSERT_TRUE(str_from_toml_datum(&test_heap_alloc, &str, &datum));
     TEST_ASSERT_EQUAL_STRING("hello", str.ptr);
     TEST_ASSERT_EQUAL_size_t(5, str.len);
-    str_free(NULL, &str);
+    str_free(&test_heap_alloc, &str);
     toml_free(table);
 }
 
@@ -40,8 +41,8 @@ void test_toml_str_datum_nulled_after_call(void)
     TEST_ASSERT_NOT_NULL(table);
     TEST_ASSERT_TRUE(datum.ok);
     Str str = {0};
-    TEST_ASSERT_TRUE(str_from_toml_datum(NULL, &str, &datum));
+    TEST_ASSERT_TRUE(str_from_toml_datum(&test_heap_alloc, &str, &datum));
     TEST_ASSERT_NULL(datum.u.s);
-    str_free(NULL, &str);
+    str_free(&test_heap_alloc, &str);
     toml_free(table);
 }

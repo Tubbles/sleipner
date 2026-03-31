@@ -18,8 +18,7 @@
  * Rehashes (doubles capacity) when (count + 1) * 4 > capacity * 3  (75% load factor).
  * Deleted entries use tombstone state MAP_ENTRY_DELETED so probe chains stay intact.
  *
- * Pass an Allocator * to set/free to use arena or custom allocation.
- * Pass NULL to use libc malloc/free (heap fallback). */
+ * Pass an Allocator * to set/free — NULL is not permitted. */
 
 #include "alloc.h"
 #include "str.h"
@@ -27,7 +26,6 @@
 #include <stdbool.h>
 #include <stddef.h> // IWYU pragma: export
 #include <stdint.h> // IWYU pragma: export
-#include <stdlib.h>
 #include <string.h>
 
 struct EngineContext; // IWYU pragma: export
@@ -92,13 +90,8 @@ static inline bool map_eq_int(int first, int second)
     static bool map_##name##_rehash(map_##name *map, Allocator *alloc) {                  \
         int    new_cap   = map->capacity == 0 ? MAP_INITIAL_CAPACITY : map->capacity * 2; \
         size_t new_bytes = (size_t)new_cap * sizeof(map_##name##_entry);                  \
-        map_##name##_entry *new_entries;                                                   \
-        if (alloc) {                                                                       \
-            new_entries = alloc->malloc_fn(alloc->ctx, alloc->arena,                      \
-                (AllocRequest){.size = new_bytes, .alignment = _Alignof(map_##name##_entry)}); \
-        } else {                                                                           \
-            new_entries = malloc(new_bytes);                                               \
-        }                                                                                  \
+        map_##name##_entry *new_entries = alloc->malloc_fn(alloc->ctx, alloc->arena,       \
+            (AllocRequest){.size = new_bytes, .alignment = _Alignof(map_##name##_entry)});                                                                                  \
         if (!new_entries) return false;                                                    \
         memset(new_entries, 0, new_bytes);                                                 \
         for (int index = 0; index < map->capacity; index++) {                             \
@@ -114,11 +107,7 @@ static inline bool map_eq_int(int first, int second)
                 }                                                                          \
             }                                                                              \
         }                                                                                  \
-        if (alloc) {                                                                       \
-            alloc->free_fn(alloc->ctx, alloc->arena, map->entries);                       \
-        } else {                                                                           \
-            free(map->entries);                                                            \
-        }                                                                                  \
+        alloc->free_fn(alloc->ctx, alloc->arena, map->entries);                             \
         map->entries  = new_entries;                                                       \
         map->capacity = new_cap;                                                           \
         return true;                                                                       \
@@ -167,11 +156,7 @@ static inline bool map_eq_int(int first, int second)
         return true;                                                                        \
     }                                                                                      \
     void map_##name##_free(map_##name *map, Allocator *alloc) {                           \
-        if (alloc) {                                                                        \
-            alloc->free_fn(alloc->ctx, alloc->arena, map->entries);                        \
-        } else {                                                                            \
-            free(map->entries);                                                             \
-        }                                                                                  \
+        alloc->free_fn(alloc->ctx, alloc->arena, map->entries);                             \
         *map = (map_##name){0};                                                            \
     }
 // clang-format on

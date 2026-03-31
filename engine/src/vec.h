@@ -17,15 +17,13 @@
  * First push allocates VEC_INITIAL_CAPACITY elements.
  * Access elements directly via vec.data[index] — it is a typed pointer.
  *
- * Pass an Allocator * to push/free to use arena or custom allocation.
- * Pass NULL to use libc malloc/realloc/free (heap fallback). */
+ * Pass an Allocator * to push/free — NULL is not permitted. */
 
 #include "alloc.h"
 
 #include <stdbool.h>
 #include <stddef.h> // IWYU pragma: export
 #include <stdint.h> // IWYU pragma: export
-#include <stdlib.h>
 
 struct EngineContext; // IWYU pragma: export
 
@@ -55,14 +53,9 @@ struct EngineContext; // IWYU pragma: export
                                              : vec->capacity * VEC_GROWTH_FACTOR;     \
             size_t old_bytes = (size_t)vec->capacity * sizeof(type);                 \
             size_t new_bytes = (size_t)new_cap * sizeof(type);                       \
-            typeof(type) *new_data;                                                   \
-            if (alloc) {                                                              \
-                new_data = alloc->realloc_fn(alloc->ctx, alloc->arena, vec->data,    \
-                    old_bytes, (AllocRequest){.size = new_bytes,                     \
-                                             .alignment = _Alignof(type)});          \
-            } else {                                                                  \
-                new_data = realloc(vec->data, new_bytes);                            \
-            }                                                                         \
+            typeof(type) *new_data = alloc->realloc_fn(alloc->ctx, alloc->arena,      \
+                vec->data, old_bytes, (AllocRequest){.size = new_bytes,              \
+                                                     .alignment = _Alignof(type)});                                                                         \
             if (!new_data) {                                                          \
                 return false;                                                         \
             }                                                                         \
@@ -75,11 +68,7 @@ struct EngineContext; // IWYU pragma: export
     }                                                                                 \
     void vec_##name##_clear(vec_##name *vec) { vec->count = 0; }                     \
     void vec_##name##_free(vec_##name *vec, Allocator *alloc) {                      \
-        if (alloc) {                                                                  \
-            alloc->free_fn(alloc->ctx, alloc->arena, vec->data);                     \
-        } else {                                                                      \
-            free(vec->data);                                                          \
-        }                                                                             \
+        alloc->free_fn(alloc->ctx, alloc->arena, vec->data);                          \
         *vec = (vec_##name){0};                                                       \
     }
 // clang-format on
