@@ -3,13 +3,14 @@
 ## Engineering Goals
 
 - **No opaque cross-module forward declarations** — `struct EngineContext;` in
-  `debug.h` (and transitively in files that include it) is the last one;
-  eliminate it by splitting the logging/error concern into a lightweight header
-  with no upward dependencies (see Coding Style in CLAUDE.md). The former
-  `struct EngineContext;` in `attribute.h` was removed as part of the
-  entity–blueprint connection work. Also investigate cppcheck for a built-in
-  check; if none exists, write a small cppcheck Python plugin (lives in this
-  repo) to enforce it automatically.
+  `debug.h` (and transitively in `alloc.h` and files that include them) is
+  the last one. Eliminate by decomposing EngineContext into what each
+  lower-level module actually needs: `alloc.h` uses EngineContext only for
+  error reporting in arena operations — extract that into a lightweight
+  struct (or remove the dependency entirely) so alloc.h no longer needs the
+  forward declaration. Same approach for `debug.h`. Also investigate
+  cppcheck for a built-in check; if none exists, write a small cppcheck
+  Python plugin (lives in this repo) to enforce it automatically.
 - **Vec types for all linear data** — `ActionNode.children` /
   `ActionNode.else_children` still use raw pointers (blocked, see below)
 
@@ -54,17 +55,24 @@
 
 ## Type safety cleanup
 
-- **Replace pre-resolved `entity_defaults[]` array with callback-based
-  resolver** — rule.c currently receives a parallel `const AttrSet *const
-  *entity_defaults` array (indexed by vec position) that game.c pre-builds
-  before each rule evaluation. This couples rule contexts to vec indices and
-  forces `resolve_target` callers to do pointer subtraction. Replace with a
-  `DefaultsResolver` struct (function pointer + `void *` state), same
-  pattern as C callback APIs. game.c provides the implementation that chains
-  `entity_id → map → blueprint → &bp->attrs`; rule.c calls through the
-  function pointer without knowing about GameState or blueprints. This also
-  eliminates `entity_find_by_tag_mut` (exists only to cast away const for
-  pointer returns) and the `resolve_target` return-type question entirely.
+- **Replace pre-resolved `entity_defaults[]` parallel array** — rule.c
+  currently receives a `const AttrSet *const *entity_defaults` array
+  (indexed by vec position) that game.c pre-builds before each rule
+  evaluation. This couples rule contexts to vec indices and forces
+  `resolve_target` callers to do pointer subtraction. Two approaches,
+  no preference between them — pick whichever fits each case:
+  **(a) Decompose at the boundary (option 4):** game.c builds an enriched
+  view struct (e.g. `EntityView { Entity *entity; const AttrSet *defaults; }`)
+  and passes an array of those to rule.c. Resolution happens once at the
+  call boundary, rule.c just reads plain data.
+  **(b) Callback / ops struct (option 1):** pass a resolver struct
+  (function pointer + `void *` state) that rule.c calls through without
+  knowing about GameState or blueprints. Better when resolution must happen
+  lazily or the set of entities isn't known up front.
+  Note: handles (option 3 — storing a lookup key on the object) only make
+  sense when the association is intrinsic to the type. Entity→blueprint is
+  not guaranteed (dynamic entities may have no blueprint), so a null handle
+  would be a code smell. Prefer options 1 or 4 here.
 - **AttrSet value type rethink** — consider what AttrValue should support
   beyond float/int/bool/string: entity handles, blueprint handles? Current
   int↔float coercion in `attr_get_scoped_*` silently papers over type
