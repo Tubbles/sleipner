@@ -940,6 +940,11 @@ runtime overrides vs copies of defaults).
    built on `scratch_arena` at both `rules_evaluate_batch` call sites. Rule code receives
    pure AttrSet pointers — no blueprint dependency, no circular includes.
 
+   **Planned replacement:** The parallel array couples rule contexts to vec indices and
+   forces pointer subtraction to map between entities and their defaults. Replace with one
+   of the cross-module dependency patterns described below (decompose at boundary or
+   callback resolver) — see "Cross-Module Dependencies" under Memory Architecture.
+
 5. **Hot-reload.** The map stores names (strings). After gamedata reload, names resolve
    against the fresh `BlueprintTable`. Instance attrs are untouched. New blueprint defaults
    apply automatically because the next `attr_get_scoped` call resolves against the
@@ -952,6 +957,40 @@ debug display and editor — future work: move to the external map), `Texture2D 
 **Solid auto-derive.** Moved from `entity_init` to `level.c` (the 3 entity creation sites).
 If the blueprint does not explicitly set "solid", it is derived from collision size. Tests
 that need "solid" set it explicitly via `attr_set_bool`.
+
+### Cross-Module Dependencies
+
+Lower-level modules (rule.c, entity.c) sometimes need data or behavior that lives in
+higher-level modules (game.c, blueprint.c). Including the higher-level header would create a
+circular dependency. Three patterns for breaking these cycles, chosen per-case:
+
+**Decompose at the boundary.** The higher-level module unpacks its state into a plain struct
+that the lower-level module can accept without knowing the source. game.c builds an enriched
+view (e.g. `EntityView { Entity *entity; const AttrSet *defaults; }`) and passes an array of
+those down. Resolution happens once at the call boundary; the lower module just reads flat
+data. This is the preferred approach when the set of data is known up front.
+
+**Callback / ops struct.** A struct containing a function pointer and `void *` state, defined
+at the lower level and implemented by the higher level. The lower module calls through the
+function pointer without knowing the concrete state type. Same pattern as `struct
+file_operations` in the Linux kernel, and similar to the existing `Allocator` in this
+codebase. Use when resolution must happen lazily or the set of inputs isn't known up front.
+
+```c
+typedef struct {
+    const AttrSet *(*resolve)(void *state, int entity_id);
+    void *state;
+} DefaultsResolver;
+```
+
+**Handle / lookup key.** The object stores an ID or name that a lookup function translates
+into a pointer. Already used for entity→blueprint (`blueprint_name` string) and
+entity→parent (`parent_index` integer). Only appropriate when the association is intrinsic to
+the type — every instance has one. If some instances would carry a null/empty handle, prefer
+decompose-at-boundary or callback instead.
+
+**What we never do:** Forward-declare the higher-level struct (`struct GameState;`) in the
+lower-level header. This hides the cycle rather than fixing it.
 
 ### Key Rules
 
