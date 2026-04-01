@@ -167,7 +167,7 @@ typedef struct {
 } FlagSet;
 
 bool flag_get(const FlagSet *flags, const char *name);
-void flag_set(Allocator *alloc, FlagSet *flags, const char *name);
+void flag_set(struct EngineContext *ctx, Allocator *alloc, FlagSet *flags, const char *name);
 void flag_clear(Allocator *alloc, FlagSet *flags, const char *name);
 void flag_set_free(Allocator *alloc, FlagSet *flags);
 

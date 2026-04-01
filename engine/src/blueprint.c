@@ -225,9 +225,6 @@ static bool parse_single_child(Allocator *alloc, BlueprintChild *child, toml_tab
 
     toml_datum_t blueprint_name = toml_string_in(entry, "blueprint");
     if (!blueprint_name.ok) {
-        if (alloc && alloc->ctx) {
-            error_set(alloc->ctx, "child missing required 'blueprint' key");
-        }
         return false;
     }
     if (!str_from_toml_datum(alloc, &child->blueprint_name, &blueprint_name)) {
@@ -265,16 +262,9 @@ static bool parse_children(Allocator *alloc, Blueprint *blueprint, toml_table_t 
         }
         BlueprintChild child_entry_data = {0};
         if (!parse_single_child(alloc, &child_entry_data, child_entry)) {
-            if (alloc && alloc->ctx) {
-                error_wrap(alloc->ctx, "blueprint '%s' child[%d]", attr_get_string(&blueprint->attrs, "name"), index);
-            }
             return false;
         }
         if (!vec_blueprint_child_push(&blueprint->children, child_entry_data)) {
-            if (alloc && alloc->ctx) {
-                error_set(alloc->ctx, "blueprint '%s' child[%d]: out of memory",
-                          attr_get_string(&blueprint->attrs, "name"), index);
-            }
             return false;
         }
     }
@@ -282,7 +272,8 @@ static bool parse_children(Allocator *alloc, Blueprint *blueprint, toml_table_t 
     return true;
 }
 
-static bool parse_single_blueprint(Allocator *alloc, Blueprint *blueprint, toml_table_t *entry, Arena *arena)
+static bool parse_single_blueprint(
+    struct EngineContext *ctx, Allocator *alloc, Blueprint *blueprint, toml_table_t *entry, Arena *arena)
 {
     memset(blueprint, 0, sizeof(*blueprint));
 
@@ -308,11 +299,8 @@ static bool parse_single_blueprint(Allocator *alloc, Blueprint *blueprint, toml_
     if (!parse_children(alloc, blueprint, entry)) {
         return false;
     }
-    struct EngineContext *ctx = alloc->ctx;
     if (!rules_parse(ctx, alloc, &blueprint->rules, entry, arena)) {
-        if (ctx) {
-            error_wrap(ctx, "blueprint '%s'", attr_get_string(&blueprint->attrs, "name"));
-        }
+        error_wrap(ctx, "blueprint '%s'", attr_get_string(&blueprint->attrs, "name"));
         return false;
     }
     return true;
@@ -398,7 +386,7 @@ int blueprints_load(struct EngineContext *ctx, BlueprintTable *table, void *toml
         }
 
         Blueprint temp = {0};
-        if (parse_single_blueprint(&alloc, &temp, entry, arena)) {
+        if (parse_single_blueprint(ctx, &alloc, &temp, entry, arena)) {
             debug_log(ctx, "bp[%d]: parsed '%s' tex='%s'", index, attr_get_string(&temp.attrs, "name"),
                       attr_get_string(&temp.attrs, "texture"));
             (void)vec_blueprint_push(&table->entries, temp);

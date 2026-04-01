@@ -22,7 +22,7 @@ void test_flag_set_and_get(void)
     FlagSet flags = {0};
     TEST_ASSERT_FALSE(flag_get(&flags, "chest_opened"));
 
-    flag_set(&test_heap_alloc, &flags, "chest_opened");
+    flag_set(&ctx, &test_heap_alloc, &flags, "chest_opened");
     TEST_ASSERT_TRUE(flag_get(&flags, "chest_opened"));
     test_flag_set_free(&flags);
 }
@@ -30,7 +30,7 @@ void test_flag_set_and_get(void)
 void test_flag_clear(void)
 {
     FlagSet flags = {0};
-    flag_set(&test_heap_alloc, &flags, "door_locked");
+    flag_set(&ctx, &test_heap_alloc, &flags, "door_locked");
     TEST_ASSERT_TRUE(flag_get(&flags, "door_locked"));
 
     flag_clear(&test_heap_alloc, &flags, "door_locked");
@@ -48,8 +48,8 @@ void test_flag_unset_returns_false(void)
 void test_flag_set_idempotent(void)
 {
     FlagSet flags = {0};
-    flag_set(&test_heap_alloc, &flags, "test_flag");
-    flag_set(&test_heap_alloc, &flags, "test_flag");
+    flag_set(&ctx, &test_heap_alloc, &flags, "test_flag");
+    flag_set(&ctx, &test_heap_alloc, &flags, "test_flag");
     TEST_ASSERT_EQUAL_INT(1, flags.names.count);
     test_flag_set_free(&flags);
 }
@@ -331,7 +331,7 @@ void test_trigger_no_match_event_wrong_argument(void)
 void test_condition_flag_true(void)
 {
     FlagSet flags = {0};
-    flag_set(&test_heap_alloc, &flags, "test_flag");
+    flag_set(&ctx, &test_heap_alloc, &flags, "test_flag");
 
     Condition condition = {.type = COND_FLAG};
     TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &condition.argument, "test_flag"));
@@ -460,8 +460,8 @@ void test_condition_attr_greater_than(void)
 void test_condition_and_logic_all_pass(void)
 {
     FlagSet flags = {0};
-    flag_set(&test_heap_alloc, &flags, "flag_a");
-    flag_set(&test_heap_alloc, &flags, "flag_b");
+    flag_set(&ctx, &test_heap_alloc, &flags, "flag_a");
+    flag_set(&ctx, &test_heap_alloc, &flags, "flag_b");
 
     Condition conditions[2] = {
         {.type = COND_FLAG},
@@ -482,7 +482,7 @@ void test_condition_and_logic_all_pass(void)
 void test_condition_and_logic_one_fails(void)
 {
     FlagSet flags = {0};
-    flag_set(&test_heap_alloc, &flags, "flag_a");
+    flag_set(&ctx, &test_heap_alloc, &flags, "flag_a");
 
     Condition conditions[2] = {
         {.type = COND_FLAG},
@@ -526,7 +526,7 @@ void test_action_set_flag_executes(void)
 void test_action_clear_flag_executes(void)
 {
     FlagSet flags = {0};
-    flag_set(&test_heap_alloc, &flags, "door_locked");
+    flag_set(&ctx, &test_heap_alloc, &flags, "door_locked");
     TriggerEventQueue queue = {0};
     Entity entity = {0};
 
@@ -1289,7 +1289,7 @@ void test_integration_condition_blocks_interact(void)
     game_update(&ctx, &state, input, 1.0F / 60.0F);
 
     Allocator arena_alloc = allocator_arena(&ctx, &state.gamedata_arena);
-    flag_set(&arena_alloc, &state.flags, "has_key");
+    flag_set(&ctx, &arena_alloc, &state.flags, "has_key");
     input.buttons[0] = true;
     game_update(&ctx, &state, input, 1.0F / 60.0F);
 

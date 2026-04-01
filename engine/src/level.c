@@ -41,9 +41,9 @@ static bool parse_instance_attr(Allocator *alloc, AttrSet *attrs, toml_table_t *
     return true;
 }
 
-static void parse_instance_overrides(Allocator *alloc, Entity *entity, toml_table_t *entity_table)
+static void
+parse_instance_overrides(struct EngineContext *ctx, Allocator *alloc, Entity *entity, toml_table_t *entity_table)
 {
-    struct EngineContext *ctx = alloc->ctx;
     int total_keys = toml_table_nkval(entity_table) + toml_table_narr(entity_table) + toml_table_ntab(entity_table);
     for (int key_index = 0; key_index < total_keys; key_index++) {
         const char *key = toml_key_in(entity_table, key_index);
@@ -70,14 +70,14 @@ static int entity_depth(const Entity *entities, int entity_index)
     return depth;
 }
 
-static bool spawn_children_for(Allocator *alloc,
+static bool spawn_children_for(struct EngineContext *ctx,
+                               Allocator *alloc,
                                Level *level,
                                int parent_index,
                                const BlueprintTable *blueprints,
                                TextureLookupFn texture_lookup,
                                void *texture_user_data)
 {
-    struct EngineContext *ctx = alloc->ctx;
     /* Look up the parent blueprint by name (saved before any push that could
      * reallocate the entities vec and invalidate pointers). */
     const Blueprint *parent_blueprint =
@@ -134,14 +134,14 @@ static bool spawn_children_for(Allocator *alloc,
 /* Instantiate children for the entity at start_index and all descendants.
  * Iterative: scans forward through newly appended children, which may
  * themselves have children. Parents always appear before children. */
-static bool instantiate_children(Allocator *alloc,
+static bool instantiate_children(struct EngineContext *ctx,
+                                 Allocator *alloc,
                                  Level *level,
                                  int start_index,
                                  const BlueprintTable *blueprints,
                                  TextureLookupFn texture_lookup,
                                  void *texture_user_data)
 {
-    struct EngineContext *ctx = alloc->ctx;
     int scan_index = start_index;
     while (scan_index < level->entities.count) {
         const Blueprint *scan_blueprint =
@@ -152,7 +152,7 @@ static bool instantiate_children(Allocator *alloc,
                 error_set(ctx, "child nesting exceeds max depth %d", MAX_CHILD_DEPTH);
                 return false;
             }
-            if (!spawn_children_for(alloc, level, scan_index, blueprints, texture_lookup, texture_user_data)) {
+            if (!spawn_children_for(ctx, alloc, level, scan_index, blueprints, texture_lookup, texture_user_data)) {
                 return false;
             }
         }
@@ -161,7 +161,8 @@ static bool instantiate_children(Allocator *alloc,
     return true;
 }
 
-static void parse_entity(Allocator *alloc,
+static void parse_entity(struct EngineContext *ctx,
+                         Allocator *alloc,
                          Level *level,
                          int entity_index,
                          toml_table_t *entity_table,
@@ -169,7 +170,6 @@ static void parse_entity(Allocator *alloc,
                          TextureLookupFn texture_lookup,
                          void *texture_user_data)
 {
-    struct EngineContext *ctx = alloc->ctx;
     toml_datum_t bp_name = toml_string_in(entity_table, "blueprint");
     if (!bp_name.ok) {
         debug_log(ctx, "ent[%d]: no 'blueprint' key", entity_index);
@@ -223,13 +223,13 @@ static void parse_entity(Allocator *alloc,
         (void)attr_set_bool(alloc, &entity_temp.attrs, "solid", is_solid);
     }
     entity_temp.id = level->next_entity_id++;
-    parse_instance_overrides(alloc, &entity_temp, entity_table);
+    parse_instance_overrides(ctx, alloc, &entity_temp, entity_table);
     if (!vec_entity_push(&level->entities, entity_temp)) {
         debug_log(ctx, "ent[%d]: out of memory", entity_index);
         return;
     }
 
-    if (!instantiate_children(alloc, level, parent_index, blueprints, texture_lookup, texture_user_data)) {
+    if (!instantiate_children(ctx, alloc, level, parent_index, blueprints, texture_lookup, texture_user_data)) {
         debug_log(ctx, "ent[%d]: failed to instantiate children: %s", entity_index, error_get(ctx));
     }
 }
@@ -290,7 +290,7 @@ bool level_spawn_entity(struct EngineContext *ctx,
         error_set(ctx, "level_spawn_entity: out of memory");
         return false;
     }
-    if (!instantiate_children(alloc, level, entity_index, blueprints, texture_lookup, texture_user_data)) {
+    if (!instantiate_children(ctx, alloc, level, entity_index, blueprints, texture_lookup, texture_user_data)) {
         error_wrap(ctx, "level_spawn_entity");
         return false;
     }
@@ -370,7 +370,7 @@ bool level_load(struct EngineContext *ctx,
     for (int index = 0; index < entity_count; index++) {
         toml_table_t *entity_table = toml_table_at(entities, index);
         if (entity_table) {
-            parse_entity(alloc, level, index, entity_table, blueprints, texture_lookup, texture_user_data);
+            parse_entity(ctx, alloc, level, index, entity_table, blueprints, texture_lookup, texture_user_data);
         } else {
             debug_log(ctx, "ent[%d]: toml_table_at returned nullptr", index);
         }

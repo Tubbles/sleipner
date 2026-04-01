@@ -48,7 +48,7 @@ bool flag_get(const FlagSet *flags, const char *name)
     return flag_find(flags, name) >= 0;
 }
 
-void flag_set(Allocator *alloc, FlagSet *flags, const char *name)
+void flag_set(struct EngineContext *ctx, Allocator *alloc, FlagSet *flags, const char *name)
 {
     if (flag_find(flags, name) >= 0) {
         return;
@@ -56,13 +56,11 @@ void flag_set(Allocator *alloc, FlagSet *flags, const char *name)
     flags->names.alloc = *alloc;
     FlagName entry = {0};
     if (!str_from_cstr(alloc, &entry.name, name)) {
-        struct EngineContext *ctx = alloc->ctx;
         debug_log(ctx, "flag_set: allocation failed for '%s'", name);
         return;
     }
     if (!vec_flag_name_push(&flags->names, entry)) {
         str_free(alloc, &entry.name);
-        struct EngineContext *ctx = alloc->ctx;
         debug_log(ctx, "flag_set: vec push failed for '%s'", name);
     }
 }
@@ -1163,7 +1161,7 @@ dispatch_simple_action(struct EngineContext *ctx, Allocator *alloc, const Action
 {
     switch (node->type) {
     case ACTION_SET_FLAG:
-        flag_set(alloc, context.flags, node->argument.ptr);
+        flag_set(ctx, alloc, context.flags, node->argument.ptr);
         return true;
     case ACTION_CLEAR_FLAG:
         flag_clear(alloc, context.flags, node->argument.ptr);

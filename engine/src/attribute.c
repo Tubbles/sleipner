@@ -1,6 +1,5 @@
 #include "attribute.h"
 #include "alloc.h"
-#include "error.h"
 #include "str.h"
 #include "strv.h"
 #include "vec.h"
@@ -33,16 +32,10 @@ static Attribute *find_or_append(Allocator *alloc, AttrSet *set, const char *nam
     }
     Attribute new_entry = {0};
     if (!str_from_cstr(alloc, &new_entry.name, name)) {
-        if (alloc && alloc->ctx) {
-            error_set(alloc->ctx, "attribute name alloc failed for '%s'", name);
-        }
         return nullptr;
     }
     if (!vec_attribute_push(&set->entries, new_entry)) {
         str_free(alloc, &new_entry.name);
-        if (alloc && alloc->ctx) {
-            error_set(alloc->ctx, "attribute push failed for '%s'", name);
-        }
         return nullptr;
     }
     return &set->entries.data[set->entries.count - 1];

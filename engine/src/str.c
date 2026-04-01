@@ -2,7 +2,6 @@
 
 #include "alloc.h"
 #include "arena.h"
-#include "error.h"
 #include "strv.h"
 
 #include <string.h>
@@ -23,9 +22,6 @@ static bool str_ensure_cap(Allocator *alloc, Str *str, size_t needed)
     char *new_ptr = alloc->realloc_fn(alloc->ctx, alloc->arena, str->ptr, str->cap > 0 ? str->cap + 1 : 0,
                                       (AllocRequest){.size = new_cap + 1, .alignment = 1});
     if (!new_ptr) {
-        if (alloc && alloc->ctx) {
-            error_set(alloc->ctx, "str: allocation failed");
-        }
         return false;
     }
     str->ptr = new_ptr;
