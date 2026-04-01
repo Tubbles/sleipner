@@ -834,7 +834,7 @@ void test_evaluate_interact_sets_flag(void)
     TEST_ASSERT_TRUE(arena_init(&ctx, &arena));
     Allocator rule_alloc = allocator_arena(&ctx, &arena);
 
-    Rule *rule = arena_alloc(&ctx, &arena, (AllocRequest){.size = sizeof(Rule), .alignment = _Alignof(Rule)});
+    Rule *rule = arena_alloc(&arena, sizeof(Rule));
     TEST_ASSERT_NOT_NULL(rule);
     memset(rule, 0, sizeof(*rule));
     rule->trigger.type = TRIGGER_INTERACT;
@@ -881,7 +881,7 @@ void test_evaluate_condition_blocks_action(void)
     TEST_ASSERT_TRUE(arena_init(&ctx, &arena));
     Allocator rule_alloc = allocator_arena(&ctx, &arena);
 
-    Rule *rule = arena_alloc(&ctx, &arena, (AllocRequest){.size = sizeof(Rule), .alignment = _Alignof(Rule)});
+    Rule *rule = arena_alloc(&arena, sizeof(Rule));
     TEST_ASSERT_NOT_NULL(rule);
     memset(rule, 0, sizeof(*rule));
     rule->trigger.type = TRIGGER_INTERACT;
@@ -932,7 +932,7 @@ void test_evaluate_fire_event_cascading(void)
     TEST_ASSERT_TRUE(
         attr_set_string(&test_heap_alloc, &bp_switch.attrs, (AttrStringPair){.name = "name", .value = "switch"}));
 
-    Rule *switch_rule = arena_alloc(&ctx, &arena, (AllocRequest){.size = sizeof(Rule), .alignment = _Alignof(Rule)});
+    Rule *switch_rule = arena_alloc(&arena, sizeof(Rule));
     memset(switch_rule, 0, sizeof(*switch_rule));
     switch_rule->trigger.type = TRIGGER_INTERACT;
     switch_rule->action_tree.nodes.alloc = rule_alloc;
@@ -946,7 +946,7 @@ void test_evaluate_fire_event_cascading(void)
     TEST_ASSERT_TRUE(
         attr_set_string(&test_heap_alloc, &bp_door.attrs, (AttrStringPair){.name = "name", .value = "door"}));
 
-    Rule *door_rule = arena_alloc(&ctx, &arena, (AllocRequest){.size = sizeof(Rule), .alignment = _Alignof(Rule)});
+    Rule *door_rule = arena_alloc(&arena, sizeof(Rule));
     memset(door_rule, 0, sizeof(*door_rule));
     door_rule->trigger.type = TRIGGER_EVENT;
     TEST_ASSERT_TRUE(str_from_cstr(&rule_alloc, &door_rule->trigger.argument, "switch_pulled"));

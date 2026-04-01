@@ -30,13 +30,18 @@ static void heap_free_fn(struct EngineContext *ctx, struct Arena *arena, void *p
 
 static void *arena_malloc_fn(struct EngineContext *ctx, struct Arena *arena, AllocRequest request)
 {
-    return arena_alloc(ctx, arena, request);
+    (void)ctx;
+    (void)request.alignment;
+    return arena_alloc(arena, request.size);
 }
 
 static void *
 arena_realloc_fn(struct EngineContext *ctx, struct Arena *arena, void *ptr, size_t old_size, AllocRequest request)
 {
-    return arena_realloc(ctx, arena, ptr, old_size, request);
+    (void)ctx;
+    (void)old_size;
+    (void)request.alignment;
+    return arena_realloc(arena, ptr, request.size);
 }
 
 static void arena_free_fn(struct EngineContext *ctx, struct Arena *arena, void *ptr)

@@ -64,7 +64,7 @@ static int find_player_entity(const GameState *state)
 bool game_load_gamedata(struct EngineContext *ctx, GameState *state, GamedataParams params)
 {
     size_t length = strlen(params.toml_string);
-    char *buffer = arena_alloc(ctx, &state->gamedata_arena, (AllocRequest){.size = length + 1, .alignment = 1});
+    char *buffer = arena_alloc(&state->gamedata_arena, length + 1);
     if (!buffer) {
         error_wrap(ctx, "game_load_gamedata");
         return false;
@@ -128,9 +128,7 @@ bool game_load_gamedata(struct EngineContext *ctx, GameState *state, GamedataPar
             Allocator scratch_alloc = allocator_arena(ctx, &state->scratch_arena);
             int spawn_count = state->current_level.entities.count;
             const AttrSet **spawn_defaults =
-                (const AttrSet **)arena_alloc(ctx, &state->scratch_arena,
-                                              (AllocRequest){.size = sizeof(const AttrSet *) * (size_t)spawn_count,
-                                                             .alignment = _Alignof(const AttrSet *)});
+                (const AttrSet **)arena_alloc(&state->scratch_arena, sizeof(const AttrSet *) * (size_t)spawn_count);
             for (int index = 0; index < spawn_count; index++) {
                 spawn_defaults[index] = entity_resolve_defaults(state, state->current_level.entities.data[index].id);
             }
@@ -450,9 +448,7 @@ void game_update(struct EngineContext *ctx, GameState *state, InputState input, 
         if (trigger_events.count > 0) {
             int update_count = state->current_level.entities.count;
             const AttrSet **update_defaults =
-                (const AttrSet **)arena_alloc(ctx, &state->scratch_arena,
-                                              (AllocRequest){.size = sizeof(const AttrSet *) * (size_t)update_count,
-                                                             .alignment = _Alignof(const AttrSet *)});
+                (const AttrSet **)arena_alloc(&state->scratch_arena, sizeof(const AttrSet *) * (size_t)update_count);
             for (int index = 0; index < update_count; index++) {
                 update_defaults[index] = entity_resolve_defaults(state, state->current_level.entities.data[index].id);
             }

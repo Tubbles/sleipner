@@ -388,8 +388,7 @@ static bool parse_branch_array_into(struct EngineContext *ctx,
     if (count <= 0) {
         return true;
     }
-    ActionNode *nodes = arena_alloc(
-        ctx, arena, (AllocRequest){.size = (size_t)count * sizeof(ActionNode), .alignment = _Alignof(ActionNode)});
+    ActionNode *nodes = arena_alloc(arena, (size_t)count * sizeof(ActionNode));
     if (!nodes) {
         error_wrap(ctx, "parse_branch_array_into: arena_alloc");
         return false;

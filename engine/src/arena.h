@@ -13,6 +13,7 @@ struct EngineContext;
 typedef struct Arena {
     uint8_t *buffer;
     size_t offset;
+    uint8_t *last_alloc;
 } Arena;
 
 typedef struct {
@@ -50,8 +51,10 @@ static inline void arena_scope_pop(ArenaScope *scope)
 /* Reserve virtual address space for an arena. Returns false on mmap failure. */
 [[nodiscard]] bool arena_init(struct EngineContext *ctx, Arena *arena);
 
-/* Allocate from the arena per the given request. Never returns nullptr. */
-[[nodiscard]] void *arena_alloc(struct EngineContext *ctx, Arena *arena, AllocRequest request);
+/* Allocate from the arena. Data is aligned to _Alignof(max_align_t).
+ * A size_t header is stored before the returned pointer for arena_realloc.
+ * Never returns nullptr. */
+[[nodiscard]] __attribute__((alloc_size(2))) void *arena_alloc(Arena *arena, size_t size);
 
 /* Reset the arena — all previous allocations become invalid.
  * Releases physical pages back to the OS via MADV_DONTNEED. */
@@ -64,21 +67,11 @@ void arena_free(Arena *arena);
 size_t arena_used(const Arena *arena);
 
 /* Reallocate an existing arena allocation.
- * If old_ptr is nullptr, behaves like arena_alloc.
- * If request.size <= old_size, returns old_ptr unchanged.
- * If old_ptr is at the top of the arena, extends in-place.
+ * If ptr is nullptr, behaves like arena_alloc.
+ * If new_size <= old size (read from header), returns ptr unchanged.
+ * If ptr is the most recent allocation, extends in-place.
  * Otherwise, allocates new space, copies, and returns new pointer (old space leaked).
  * Never returns nullptr. */
-[[nodiscard]] void *
-arena_realloc(struct EngineContext *ctx, Arena *arena, void *old_ptr, size_t old_size, AllocRequest request);
-
-/* Convenience wrapper: allocate `size` bytes with alignment 1.
- * The alloc_size attribute lets the compiler and static analyzer know the returned
- * region is `size` bytes, enabling bounds-checking diagnostics. */
-[[nodiscard]] __attribute__((alloc_size(3))) static inline void *
-arena_alloc_n(struct EngineContext *ctx, Arena *arena, size_t size)
-{
-    return arena_alloc(ctx, arena, (AllocRequest){.size = size, .alignment = 1});
-}
+[[nodiscard]] void *arena_realloc(Arena *arena, void *ptr, size_t new_size);
 
 #endif

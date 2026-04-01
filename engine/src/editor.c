@@ -429,8 +429,8 @@ delete_selected_entity(struct EngineContext *ctx, GameState *state, EditorState 
     }
     int count = state->current_level.entities.count;
     SCRATCH_SCOPE(&state->scratch_arena);
-    bool *is_deleted = arena_alloc_n(ctx, &state->scratch_arena, (size_t)count * sizeof(bool));
-    int *new_index_map = arena_alloc_n(ctx, &state->scratch_arena, (size_t)count * sizeof(int));
+    bool *is_deleted = arena_alloc(&state->scratch_arena, (size_t)count * sizeof(bool));
+    int *new_index_map = arena_alloc(&state->scratch_arena, (size_t)count * sizeof(int));
     memset(is_deleted, 0, (size_t)count * sizeof(bool));
     is_deleted[sel] = true;
     mark_deleted_descendants(&state->current_level, is_deleted, count);

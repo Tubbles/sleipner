@@ -455,7 +455,7 @@ static char *read_file_text(struct EngineContext *ctx, const char *path, Arena *
     }
 
     ArenaCheckpoint read_cp = arena_save(arena);
-    char *buffer = arena_alloc_n(ctx, arena, MAX_GAMEDATA_SIZE + 1);
+    char *buffer = arena_alloc(arena, MAX_GAMEDATA_SIZE + 1);
     if (!buffer) {
         (void)fclose(file);
         return nullptr;

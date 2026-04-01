@@ -13,25 +13,30 @@ bool arena_init(struct EngineContext *ctx, Arena *arena)
         error_set(ctx, "mmap(%zu) failed", (size_t)ARENA_VIRTUAL_SIZE);
         arena->buffer = nullptr;
         arena->offset = 0;
+        arena->last_alloc = nullptr;
         return false;
     }
     arena->offset = 0;
+    arena->last_alloc = nullptr;
     return true;
 }
 
-void *arena_alloc(struct EngineContext *ctx, Arena *arena, AllocRequest request)
+void *arena_alloc(Arena *arena, size_t size)
 {
-    (void)ctx;
-    size_t aligned_offset = (arena->offset + request.alignment - 1) & ~(request.alignment - 1);
-    void *pointer = arena->buffer + aligned_offset;
-    arena->offset = aligned_offset + request.size;
-    return pointer;
+    size_t align = _Alignof(max_align_t);
+    size_t data_offset = (arena->offset + sizeof(size_t) + align - 1) & ~(align - 1);
+    *((size_t *)(arena->buffer + data_offset - sizeof(size_t))) = size;
+    uint8_t *data = arena->buffer + data_offset;
+    arena->offset = data_offset + size;
+    arena->last_alloc = data;
+    return data;
 }
 
 void arena_reset(Arena *arena)
 {
     (void)madvise(arena->buffer, arena->offset, MADV_DONTNEED);
     arena->offset = 0;
+    arena->last_alloc = nullptr;
 }
 
 void arena_free(Arena *arena)
@@ -39,6 +44,7 @@ void arena_free(Arena *arena)
     (void)munmap(arena->buffer, ARENA_VIRTUAL_SIZE);
     arena->buffer = nullptr;
     arena->offset = 0;
+    arena->last_alloc = nullptr;
 }
 
 size_t arena_used(const Arena *arena)
@@ -54,24 +60,26 @@ ArenaCheckpoint arena_save(const Arena *arena)
 void arena_restore(Arena *arena, ArenaCheckpoint checkpoint)
 {
     arena->offset = checkpoint;
+    arena->last_alloc = nullptr;
 }
 
-void *arena_realloc(struct EngineContext *ctx, Arena *arena, void *old_ptr, size_t old_size, AllocRequest request)
+void *arena_realloc(Arena *arena, void *ptr, size_t new_size)
 {
-    if (!old_ptr) {
-        return arena_alloc(ctx, arena, request);
+    if (!ptr) {
+        return arena_alloc(arena, new_size);
     }
-    if (request.size <= old_size) {
-        return old_ptr;
+    size_t old_size = *((size_t *)ptr - 1);
+    if (new_size <= old_size) {
+        return ptr;
     }
-    /* Extend in-place if this allocation is at the top of the arena */
-    if ((uint8_t *)old_ptr + old_size == arena->buffer + arena->offset) {
-        size_t additional = request.size - old_size;
-        arena->offset += additional;
-        return old_ptr;
+    /* Extend in-place if this is the most recent allocation */
+    if ((uint8_t *)ptr == arena->last_alloc) {
+        *((size_t *)ptr - 1) = new_size;
+        arena->offset = (size_t)((uint8_t *)ptr - arena->buffer) + new_size;
+        return ptr;
     }
-    /* Not at top — allocate new space and copy */
-    void *new_ptr = arena_alloc(ctx, arena, request);
-    memcpy(new_ptr, old_ptr, old_size);
+    /* Not the most recent — allocate new space and copy */
+    void *new_ptr = arena_alloc(arena, new_size);
+    memcpy(new_ptr, ptr, old_size);
     return new_ptr;
 }

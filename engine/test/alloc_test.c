@@ -40,7 +40,7 @@ void test_alloc_arena_malloc(void)
     Allocator alloc = allocator_arena(&ctx, &arena);
     void *ptr = alloc.malloc_fn(alloc.ctx, alloc.arena, (AllocRequest){.size = 64, .alignment = 1});
     TEST_ASSERT_NOT_NULL(ptr);
-    TEST_ASSERT_EQUAL_size_t(64, arena_used(&arena));
+    TEST_ASSERT_EQUAL_size_t(80, arena_used(&arena));
 
     arena_free(&arena);
 }

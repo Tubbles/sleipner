@@ -23,13 +23,13 @@ void test_arena_alloc_basic(void)
     Arena arena;
     TEST_ASSERT_TRUE(arena_init(&ctx, &arena));
 
-    void *first = arena_alloc(&ctx, &arena, (AllocRequest){.size = 32, .alignment = 1});
+    void *first = arena_alloc(&arena, 32);
     TEST_ASSERT_NOT_NULL(first);
-    TEST_ASSERT_EQUAL_size_t(32, arena_used(&arena));
+    TEST_ASSERT_EQUAL_size_t(48, arena_used(&arena));
 
-    void *second = arena_alloc(&ctx, &arena, (AllocRequest){.size = 64, .alignment = 1});
+    void *second = arena_alloc(&arena, 64);
     TEST_ASSERT_NOT_NULL(second);
-    TEST_ASSERT_EQUAL_size_t(96, arena_used(&arena));
+    TEST_ASSERT_EQUAL_size_t(128, arena_used(&arena));
 
     /* Allocations should not overlap */
     TEST_ASSERT_TRUE((char *)second >= (char *)first + 32);
@@ -42,13 +42,13 @@ void test_arena_alloc_alignment(void)
     Arena arena;
     TEST_ASSERT_TRUE(arena_init(&ctx, &arena));
 
-    /* Allocate 1 byte to misalign */
-    (void)arena_alloc(&ctx, &arena, (AllocRequest){.size = 1, .alignment = 1});
+    /* Allocate 1 byte to misalign the raw offset */
+    (void)arena_alloc(&arena, 1);
 
-    /* Next allocation with 8-byte alignment */
-    void *aligned = arena_alloc(&ctx, &arena, (AllocRequest){.size = 16, .alignment = 8});
+    /* Next allocation should still be max_align_t aligned */
+    void *aligned = arena_alloc(&arena, 16);
     TEST_ASSERT_NOT_NULL(aligned);
-    TEST_ASSERT_EQUAL_UINT64(0, (uintptr_t)aligned % 8);
+    TEST_ASSERT_EQUAL_UINT64(0, (uintptr_t)aligned % _Alignof(max_align_t));
 
     arena_free(&arena);
 }
@@ -58,14 +58,14 @@ void test_arena_reset(void)
     Arena arena;
     TEST_ASSERT_TRUE(arena_init(&ctx, &arena));
 
-    (void)arena_alloc(&ctx, &arena, (AllocRequest){.size = 100, .alignment = 1});
-    TEST_ASSERT_EQUAL_size_t(100, arena_used(&arena));
+    (void)arena_alloc(&arena, 100);
+    TEST_ASSERT_EQUAL_size_t(116, arena_used(&arena));
 
     arena_reset(&arena);
     TEST_ASSERT_EQUAL_size_t(0, arena_used(&arena));
 
     /* Can allocate again after reset */
-    void *pointer = arena_alloc(&ctx, &arena, (AllocRequest){.size = 128, .alignment = 1});
+    void *pointer = arena_alloc(&arena, 128);
     TEST_ASSERT_NOT_NULL(pointer);
 
     arena_free(&arena);
@@ -77,7 +77,7 @@ void test_arena_snapshot_restore(void)
     TEST_ASSERT_TRUE(arena_init(&ctx, &arena));
 
     /* Write some data */
-    int *values = arena_alloc(&ctx, &arena, (AllocRequest){.size = 4 * sizeof(int), .alignment = _Alignof(int)});
+    int *values = arena_alloc(&arena, 4 * sizeof(int));
     values[0] = 10;
     values[1] = 20;
     values[2] = 30;
@@ -93,7 +93,7 @@ void test_arena_snapshot_restore(void)
     values[2] = 888;
 
     /* Allocate more stuff */
-    (void)arena_alloc(&ctx, &arena, (AllocRequest){.size = 64, .alignment = 1});
+    (void)arena_alloc(&arena, 64);
 
     /* Restore snapshot */
     memcpy(arena.buffer, snapshot, snapshot_offset);
@@ -114,15 +114,15 @@ void test_arena_save_restore_basic(void)
     Arena arena;
     TEST_ASSERT_TRUE(arena_init(&ctx, &arena));
 
-    (void)arena_alloc(&ctx, &arena, (AllocRequest){.size = 32, .alignment = 1});
+    (void)arena_alloc(&arena, 32);
     ArenaCheckpoint checkpoint = arena_save(&arena);
-    TEST_ASSERT_EQUAL_size_t(32, checkpoint);
+    TEST_ASSERT_EQUAL_size_t(48, checkpoint);
 
-    (void)arena_alloc(&ctx, &arena, (AllocRequest){.size = 64, .alignment = 1});
-    TEST_ASSERT_EQUAL_size_t(96, arena_used(&arena));
+    (void)arena_alloc(&arena, 64);
+    TEST_ASSERT_EQUAL_size_t(128, arena_used(&arena));
 
     arena_restore(&arena, checkpoint);
-    TEST_ASSERT_EQUAL_size_t(32, arena_used(&arena));
+    TEST_ASSERT_EQUAL_size_t(48, arena_used(&arena));
 
     arena_free(&arena);
 }
@@ -132,20 +132,20 @@ void test_arena_save_restore_nested(void)
     Arena arena;
     TEST_ASSERT_TRUE(arena_init(&ctx, &arena));
 
-    (void)arena_alloc(&ctx, &arena, (AllocRequest){.size = 16, .alignment = 1});
+    (void)arena_alloc(&arena, 16);
     ArenaCheckpoint outer = arena_save(&arena);
 
-    (void)arena_alloc(&ctx, &arena, (AllocRequest){.size = 32, .alignment = 1});
+    (void)arena_alloc(&arena, 32);
     ArenaCheckpoint inner = arena_save(&arena);
 
-    (void)arena_alloc(&ctx, &arena, (AllocRequest){.size = 64, .alignment = 1});
-    TEST_ASSERT_EQUAL_size_t(112, arena_used(&arena));
+    (void)arena_alloc(&arena, 64);
+    TEST_ASSERT_EQUAL_size_t(160, arena_used(&arena));
 
     arena_restore(&arena, inner);
-    TEST_ASSERT_EQUAL_size_t(48, arena_used(&arena));
+    TEST_ASSERT_EQUAL_size_t(80, arena_used(&arena));
 
     arena_restore(&arena, outer);
-    TEST_ASSERT_EQUAL_size_t(16, arena_used(&arena));
+    TEST_ASSERT_EQUAL_size_t(32, arena_used(&arena));
 
     arena_free(&arena);
 }
@@ -158,7 +158,7 @@ void test_arena_save_at_zero(void)
     ArenaCheckpoint checkpoint = arena_save(&arena);
     TEST_ASSERT_EQUAL_size_t(0, checkpoint);
 
-    (void)arena_alloc(&ctx, &arena, (AllocRequest){.size = 64, .alignment = 1});
+    (void)arena_alloc(&arena, 64);
     arena_restore(&arena, checkpoint);
     TEST_ASSERT_EQUAL_size_t(0, arena_used(&arena));
 
@@ -170,9 +170,9 @@ void test_arena_realloc_null_ptr_acts_as_alloc(void)
     Arena arena;
     TEST_ASSERT_TRUE(arena_init(&ctx, &arena));
 
-    void *ptr = arena_realloc(&ctx, &arena, nullptr, 0, (AllocRequest){.size = 32, .alignment = 1});
+    void *ptr = arena_realloc(&arena, nullptr, 32);
     TEST_ASSERT_NOT_NULL(ptr);
-    TEST_ASSERT_EQUAL_size_t(32, arena_used(&arena));
+    TEST_ASSERT_EQUAL_size_t(48, arena_used(&arena));
 
     arena_free(&arena);
 }
@@ -182,10 +182,10 @@ void test_arena_realloc_shrink_returns_same_ptr(void)
     Arena arena;
     TEST_ASSERT_TRUE(arena_init(&ctx, &arena));
 
-    void *ptr = arena_alloc(&ctx, &arena, (AllocRequest){.size = 64, .alignment = 1});
+    void *ptr = arena_alloc(&arena, 64);
     size_t used_before = arena_used(&arena);
 
-    void *shrunk = arena_realloc(&ctx, &arena, ptr, 64, (AllocRequest){.size = 32, .alignment = 1});
+    void *shrunk = arena_realloc(&arena, ptr, 32);
     TEST_ASSERT_EQUAL_PTR(ptr, shrunk);
     TEST_ASSERT_EQUAL_size_t(used_before, arena_used(&arena));
 
@@ -197,16 +197,15 @@ void test_arena_realloc_in_place_when_at_top(void)
     Arena arena;
     TEST_ASSERT_TRUE(arena_init(&ctx, &arena));
 
-    int *values = arena_alloc(&ctx, &arena, (AllocRequest){.size = 2 * sizeof(int), .alignment = _Alignof(int)});
+    int *values = arena_alloc(&arena, 2 * sizeof(int));
     values[0] = 10;
     values[1] = 20;
 
-    int *grown = arena_realloc(&ctx, &arena, values, 2 * sizeof(int),
-                               (AllocRequest){.size = 4 * sizeof(int), .alignment = _Alignof(int)});
+    int *grown = arena_realloc(&arena, values, 4 * sizeof(int));
     TEST_ASSERT_EQUAL_PTR(values, grown);
     TEST_ASSERT_EQUAL_INT(10, grown[0]);
     TEST_ASSERT_EQUAL_INT(20, grown[1]);
-    TEST_ASSERT_EQUAL_size_t(4 * sizeof(int), arena_used(&arena));
+    TEST_ASSERT_EQUAL_size_t(32, arena_used(&arena));
 
     arena_free(&arena);
 }
@@ -216,15 +215,14 @@ void test_arena_realloc_copies_when_not_at_top(void)
     Arena arena;
     TEST_ASSERT_TRUE(arena_init(&ctx, &arena));
 
-    int *first = arena_alloc(&ctx, &arena, (AllocRequest){.size = 2 * sizeof(int), .alignment = _Alignof(int)});
+    int *first = arena_alloc(&arena, 2 * sizeof(int));
     first[0] = 42;
     first[1] = 99;
 
     /* Allocate something else to push first off the top */
-    (void)arena_alloc(&ctx, &arena, (AllocRequest){.size = 16, .alignment = 1});
+    (void)arena_alloc(&arena, 16);
 
-    int *moved = arena_realloc(&ctx, &arena, first, 2 * sizeof(int),
-                               (AllocRequest){.size = 4 * sizeof(int), .alignment = _Alignof(int)});
+    int *moved = arena_realloc(&arena, first, 4 * sizeof(int));
     TEST_ASSERT_NOT_NULL(moved);
     TEST_ASSERT_NOT_EQUAL(first, moved);
     TEST_ASSERT_EQUAL_INT(42, moved[0]);
@@ -236,7 +234,7 @@ void test_arena_realloc_copies_when_not_at_top(void)
 static size_t scratch_scope_helper(Arena *arena)
 {
     SCRATCH_SCOPE(arena);
-    (void)arena_alloc(&ctx, arena, (AllocRequest){.size = 64, .alignment = 1});
+    (void)arena_alloc(arena, 64);
     return arena_used(arena);
 }
 
@@ -245,13 +243,13 @@ void test_arena_scratch_scope_auto_pop(void)
     Arena arena;
     TEST_ASSERT_TRUE(arena_init(&ctx, &arena));
 
-    (void)arena_alloc(&ctx, &arena, (AllocRequest){.size = 32, .alignment = 1});
-    TEST_ASSERT_EQUAL_size_t(32, arena_used(&arena));
+    (void)arena_alloc(&arena, 32);
+    TEST_ASSERT_EQUAL_size_t(48, arena_used(&arena));
 
-    /* SCRATCH_SCOPE inside helper: should restore to 32 on return */
+    /* SCRATCH_SCOPE inside helper: should restore to 48 on return */
     size_t used_inside = scratch_scope_helper(&arena);
-    TEST_ASSERT_EQUAL_size_t(96, used_inside);
-    TEST_ASSERT_EQUAL_size_t(32, arena_used(&arena));
+    TEST_ASSERT_EQUAL_size_t(128, used_inside);
+    TEST_ASSERT_EQUAL_size_t(48, arena_used(&arena));
 
     arena_free(&arena);
 }
@@ -263,16 +261,16 @@ void test_arena_scratch_scope_nested(void)
 
     {
         SCRATCH_SCOPE(&arena);
-        (void)arena_alloc(&ctx, &arena, (AllocRequest){.size = 16, .alignment = 1});
-        TEST_ASSERT_EQUAL_size_t(16, arena_used(&arena));
+        (void)arena_alloc(&arena, 16);
+        TEST_ASSERT_EQUAL_size_t(32, arena_used(&arena));
 
         {
             SCRATCH_SCOPE(&arena);
-            (void)arena_alloc(&ctx, &arena, (AllocRequest){.size = 32, .alignment = 1});
-            TEST_ASSERT_EQUAL_size_t(48, arena_used(&arena));
+            (void)arena_alloc(&arena, 32);
+            TEST_ASSERT_EQUAL_size_t(80, arena_used(&arena));
         }
         /* Inner scope popped */
-        TEST_ASSERT_EQUAL_size_t(16, arena_used(&arena));
+        TEST_ASSERT_EQUAL_size_t(32, arena_used(&arena));
     }
     /* Outer scope popped */
     TEST_ASSERT_EQUAL_size_t(0, arena_used(&arena));
