@@ -353,7 +353,7 @@ Vector2 blueprint_get_collision_size(const Blueprint *blp)
 
 int blueprints_load(struct EngineContext *ctx, BlueprintTable *table, void *toml_root, Arena *arena)
 {
-    Allocator alloc = allocator_arena(ctx, arena);
+    Allocator alloc = allocator_arena(arena);
     /* Reset the table struct — arena_reset in the caller already freed the old data. */
     *table = (BlueprintTable){0};
     table->entries.alloc = alloc;

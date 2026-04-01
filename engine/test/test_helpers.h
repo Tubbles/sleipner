@@ -6,7 +6,8 @@
 #include "level.h"
 #include "rule.h"
 
-struct EngineContext;
+/* Construct a heap-backed allocator (malloc/realloc/free). Test-only. */
+Allocator allocator_heap(void);
 
 /* Call once before running tests to initialise the heap allocator. */
 void test_helpers_init(void);

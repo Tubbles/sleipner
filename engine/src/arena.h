@@ -1,6 +1,8 @@
 #ifndef ARENA_H
 #define ARENA_H
 
+#include "alloc.h"
+
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -15,11 +17,6 @@ typedef struct Arena {
     size_t offset;
     uint8_t *last_alloc;
 } Arena;
-
-typedef struct {
-    size_t size;
-    size_t alignment;
-} AllocRequest;
 
 /* Opaque checkpoint — stores an arena offset for later restore. */
 typedef size_t ArenaCheckpoint;
@@ -73,5 +70,8 @@ size_t arena_used(const Arena *arena);
  * Otherwise, allocates new space, copies, and returns new pointer (old space leaked).
  * Never returns nullptr. */
 [[nodiscard]] void *arena_realloc(Arena *arena, void *ptr, size_t new_size);
+
+/* Construct an arena-backed allocator. free_fn is a no-op; the arena owns all memory. */
+Allocator allocator_arena(Arena *arena);
 
 #endif

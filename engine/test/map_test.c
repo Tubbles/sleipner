@@ -313,7 +313,7 @@ void test_map_arena_allocator(void)
 {
     Arena arena;
     TEST_ASSERT_TRUE(arena_init(&ctx, &arena));
-    Allocator alloc = allocator_arena(&ctx, &arena);
+    Allocator alloc = allocator_arena(&arena);
 
     map_int_int map = {0};
     for (int index = 0; index < 10; index++) {

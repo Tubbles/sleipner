@@ -28,8 +28,6 @@
 #include <stdint.h> // IWYU pragma: export
 #include <string.h>
 
-struct EngineContext; // IWYU pragma: export
-
 #define MAP_INITIAL_CAPACITY 16
 #define MAP_ENTRY_EMPTY 0
 #define MAP_ENTRY_OCCUPIED 1
@@ -90,8 +88,7 @@ static inline bool map_eq_int(int first, int second)
     static bool map_##name##_rehash(map_##name *map, Allocator *alloc) {                  \
         int    new_cap   = map->capacity == 0 ? MAP_INITIAL_CAPACITY : map->capacity * 2; \
         size_t new_bytes = (size_t)new_cap * sizeof(map_##name##_entry);                  \
-        map_##name##_entry *new_entries = alloc->malloc_fn(alloc->ctx, alloc->arena,       \
-            (AllocRequest){.size = new_bytes, .alignment = _Alignof(map_##name##_entry)});                                                                                  \
+        map_##name##_entry *new_entries = alloc->malloc_fn(alloc->ctx, new_bytes);                                                                                  \
         if (!new_entries) return false;                                                    \
         memset(new_entries, 0, new_bytes);                                                 \
         for (int index = 0; index < map->capacity; index++) {                             \
@@ -107,7 +104,7 @@ static inline bool map_eq_int(int first, int second)
                 }                                                                          \
             }                                                                              \
         }                                                                                  \
-        alloc->free_fn(alloc->ctx, alloc->arena, map->entries);                             \
+        alloc->free_fn(alloc->ctx, map->entries);                                           \
         map->entries  = new_entries;                                                       \
         map->capacity = new_cap;                                                           \
         return true;                                                                       \
@@ -156,7 +153,7 @@ static inline bool map_eq_int(int first, int second)
         return true;                                                                        \
     }                                                                                      \
     void map_##name##_free(map_##name *map, Allocator *alloc) {                           \
-        alloc->free_fn(alloc->ctx, alloc->arena, map->entries);                             \
+        alloc->free_fn(alloc->ctx, map->entries);                                           \
         *map = (map_##name){0};                                                            \
     }
 // clang-format on

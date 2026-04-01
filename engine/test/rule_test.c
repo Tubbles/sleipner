@@ -746,7 +746,7 @@ void test_rules_parse_from_toml(void)
 
     Arena arena;
     TEST_ASSERT_TRUE(arena_init(&ctx, &arena));
-    Allocator alloc = allocator_arena(&ctx, &arena);
+    Allocator alloc = allocator_arena(&arena);
 
     vec_rule rules = {0};
     TEST_ASSERT_TRUE(rules_parse(&ctx, &alloc, &rules, root, &arena));
@@ -778,7 +778,7 @@ void test_rules_parse_no_rules(void)
 
     Arena arena;
     TEST_ASSERT_TRUE(arena_init(&ctx, &arena));
-    Allocator alloc = allocator_arena(&ctx, &arena);
+    Allocator alloc = allocator_arena(&arena);
 
     vec_rule rules = {0};
     TEST_ASSERT_TRUE(rules_parse(&ctx, &alloc, &rules, root, &arena));
@@ -808,7 +808,7 @@ void test_rules_parse_multiple_rules(void)
 
     Arena arena;
     TEST_ASSERT_TRUE(arena_init(&ctx, &arena));
-    Allocator alloc = allocator_arena(&ctx, &arena);
+    Allocator alloc = allocator_arena(&arena);
 
     vec_rule rules = {0};
     TEST_ASSERT_TRUE(rules_parse(&ctx, &alloc, &rules, root, &arena));
@@ -832,7 +832,7 @@ void test_evaluate_interact_sets_flag(void)
 
     Arena arena;
     TEST_ASSERT_TRUE(arena_init(&ctx, &arena));
-    Allocator rule_alloc = allocator_arena(&ctx, &arena);
+    Allocator rule_alloc = allocator_arena(&arena);
 
     Rule *rule = arena_alloc(&arena, sizeof(Rule));
     TEST_ASSERT_NOT_NULL(rule);
@@ -879,7 +879,7 @@ void test_evaluate_condition_blocks_action(void)
 
     Arena arena;
     TEST_ASSERT_TRUE(arena_init(&ctx, &arena));
-    Allocator rule_alloc = allocator_arena(&ctx, &arena);
+    Allocator rule_alloc = allocator_arena(&arena);
 
     Rule *rule = arena_alloc(&arena, sizeof(Rule));
     TEST_ASSERT_NOT_NULL(rule);
@@ -926,7 +926,7 @@ void test_evaluate_fire_event_cascading(void)
 {
     Arena arena;
     TEST_ASSERT_TRUE(arena_init(&ctx, &arena));
-    Allocator rule_alloc = allocator_arena(&ctx, &arena);
+    Allocator rule_alloc = allocator_arena(&arena);
 
     Blueprint bp_switch = {0};
     TEST_ASSERT_TRUE(
@@ -1288,7 +1288,7 @@ void test_integration_condition_blocks_interact(void)
     input.buttons[0] = false;
     game_update(&ctx, &state, input, 1.0F / 60.0F);
 
-    Allocator arena_alloc = allocator_arena(&ctx, &state.gamedata_arena);
+    Allocator arena_alloc = allocator_arena(&state.gamedata_arena);
     flag_set(&ctx, &arena_alloc, &state.flags, "has_key");
     input.buttons[0] = true;
     game_update(&ctx, &state, input, 1.0F / 60.0F);
@@ -1675,7 +1675,7 @@ void test_integration_timer_destroy_cancels(void)
     for (int index = 0; index < cancel_count; index++) {
         cancel_defaults[index] = entity_resolve_defaults(&state, state.current_level.entities.data[index].id);
     }
-    Allocator rule_alloc = allocator_arena(&ctx, &state.gamedata_arena);
+    Allocator rule_alloc = allocator_arena(&state.gamedata_arena);
     rules_evaluate_batch(&ctx, &rule_alloc, state.current_level.entities.data, cancel_count, &cancel, 1, &state.flags,
                          &state.vars, &state.rule_table, &state.subroutines, &state.timers, cancel_defaults);
     str_free(&heap_alloc, &cancel.argument);

@@ -82,7 +82,7 @@ bool game_load_gamedata(struct EngineContext *ctx, GameState *state, GamedataPar
         return false;
     }
 
-    Allocator gamedata_alloc = allocator_arena(ctx, &state->gamedata_arena);
+    Allocator gamedata_alloc = allocator_arena(&state->gamedata_arena);
     state->subroutines = vec_subroutine_new(gamedata_alloc);
     state->timers = vec_timer_new(gamedata_alloc);
     state->prev_player_overlaps = vec_bool_new(gamedata_alloc);
@@ -125,7 +125,7 @@ bool game_load_gamedata(struct EngineContext *ctx, GameState *state, GamedataPar
         /* Fire on_spawn for every entity now that the rule table is ready */
         {
             SCRATCH_SCOPE(&state->scratch_arena);
-            Allocator scratch_alloc = allocator_arena(ctx, &state->scratch_arena);
+            Allocator scratch_alloc = allocator_arena(&state->scratch_arena);
             int spawn_count = state->current_level.entities.count;
             const AttrSet **spawn_defaults =
                 (const AttrSet **)arena_alloc(&state->scratch_arena, sizeof(const AttrSet *) * (size_t)spawn_count);
@@ -415,7 +415,7 @@ void game_update(struct EngineContext *ctx, GameState *state, InputState input, 
 
     if (!state->editor_mode) {
         SCRATCH_SCOPE(&state->scratch_arena);
-        Allocator scratch_alloc = allocator_arena(ctx, &state->scratch_arena);
+        Allocator scratch_alloc = allocator_arena(&state->scratch_arena);
         vec_trigger_event trigger_events = vec_trigger_event_new(scratch_alloc);
 
         /* Detect new solid-entity overlaps and fire collide events on both parties */
@@ -452,7 +452,7 @@ void game_update(struct EngineContext *ctx, GameState *state, InputState input, 
             for (int index = 0; index < update_count; index++) {
                 update_defaults[index] = entity_resolve_defaults(state, state->current_level.entities.data[index].id);
             }
-            Allocator rule_alloc = allocator_arena(ctx, &state->gamedata_arena);
+            Allocator rule_alloc = allocator_arena(&state->gamedata_arena);
             rules_evaluate_batch(ctx, &rule_alloc, state->current_level.entities.data, update_count,
                                  trigger_events.data, trigger_events.count, &state->flags, &state->vars,
                                  &state->rule_table, &state->subroutines, &state->timers, update_defaults);

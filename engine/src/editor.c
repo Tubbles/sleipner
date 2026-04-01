@@ -417,8 +417,7 @@ static void mark_deleted_descendants(const Level *level, bool *is_deleted, int c
     }
 }
 
-static void
-delete_selected_entity(struct EngineContext *ctx, GameState *state, EditorState *editor_state, WatchList *watches)
+static void delete_selected_entity(GameState *state, EditorState *editor_state, WatchList *watches)
 {
     int sel = editor_state->selected_entity_index;
     if (sel < 0) {
@@ -544,8 +543,7 @@ static void handle_browse_attr_navigate(const GameState *state, EditorState *edi
     }
 }
 
-static void
-dispatch_radial_confirm(struct EngineContext *ctx, GameState *state, EditorState *editor_state, WatchList *watches)
+static void dispatch_radial_confirm(GameState *state, EditorState *editor_state, WatchList *watches)
 {
     int confirmed = editor_state->radial_confirmed;
     editor_state->radial_confirmed = -1;
@@ -564,13 +562,12 @@ dispatch_radial_confirm(struct EngineContext *ctx, GameState *state, EditorState
             editor_state->saved_col_size = state->current_level.entities.data[sel].collision_size;
             editor_state->sub_mode = EDITOR_SUB_HANDLES;
         } else if (confirmed == 3) { /* Delete */
-            delete_selected_entity(ctx, state, editor_state, watches);
+            delete_selected_entity(state, editor_state, watches);
         }
     }
 }
 
-void handle_browse_input(struct EngineContext *ctx,
-                         GameState *state,
+void handle_browse_input(GameState *state,
                          Camera2D *camera,
                          EditorState *editor_state,
                          WatchList *watches,
@@ -578,7 +575,7 @@ void handle_browse_input(struct EngineContext *ctx,
                          float delta_time)
 {
     if (editor_state->radial_confirmed >= 0) {
-        dispatch_radial_confirm(ctx, state, editor_state, watches);
+        dispatch_radial_confirm(state, editor_state, watches);
         return;
     }
     if (toggle_pressed((ToggleBinding){KEY_TAB, GAMEPAD_BUTTON_MIDDLE_LEFT})) {
@@ -620,7 +617,7 @@ void handle_browse_input(struct EngineContext *ctx,
         }
     }
     if (toggle_pressed((ToggleBinding){KEY_DELETE, GAMEPAD_BUTTON_RIGHT_FACE_LEFT})) {
-        delete_selected_entity(ctx, state, editor_state, watches);
+        delete_selected_entity(state, editor_state, watches);
     }
     if (toggle_pressed((ToggleBinding){KEY_P, GAMEPAD_BUTTON_RIGHT_TRIGGER_1})) {
         if (state->blueprints.entries.count > 0) {
@@ -674,8 +671,7 @@ void handle_drag_input(GameState *state, EditorState *editor_state, InputState i
     entity_update_collision(entity);
 }
 
-void handle_handle_input(
-    struct EngineContext *ctx, GameState *state, EditorState *editor_state, InputState input, float delta_time)
+void handle_handle_input(GameState *state, EditorState *editor_state, InputState input, float delta_time)
 {
     int sel = editor_state->selected_entity_index;
     if (sel < 0 || sel >= state->current_level.entities.count) {
@@ -685,7 +681,7 @@ void handle_handle_input(
     if (toggle_pressed((ToggleBinding){KEY_ENTER, GAMEPAD_BUTTON_RIGHT_FACE_DOWN})) {
         Blueprint *blueprint = find_blueprint_by_name(state, entity->blueprint_name.ptr);
         if (blueprint != nullptr) {
-            Allocator alloc = allocator_arena(ctx, &state->gamedata_arena);
+            Allocator alloc = allocator_arena(&state->gamedata_arena);
             /* Attrs already exist on this blueprint; attr_set_float updates in-place, no arena growth. */
             (void)attr_set_float(&alloc, &blueprint->attrs, "collision_offset_x", entity->collision_offset.x);
             (void)attr_set_float(&alloc, &blueprint->attrs, "collision_offset_y", entity->collision_offset.y);
@@ -996,7 +992,7 @@ static void word_builder_confirm(struct EngineContext *ctx, GameState *state, Ed
             target = &blueprint->attrs;
         }
     }
-    Allocator alloc = allocator_arena(ctx, &state->gamedata_arena);
+    Allocator alloc = allocator_arena(&state->gamedata_arena);
     AttrStringPair pair = {attr->name.ptr, editor_state->word_builder_buf};
     if (!attr_set_string(&alloc, target, pair)) {
         debug_log(ctx, "word builder: attr_set_string failed: %s", error_get(ctx));

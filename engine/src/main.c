@@ -282,7 +282,7 @@ static void draw_debug_info(struct EngineContext *ctx, const GameState *state, R
 
 static void load_persistent_assets(struct EngineContext *ctx, GameState *state)
 {
-    Allocator gamedata_alloc = allocator_arena(ctx, &state->gamedata_arena);
+    Allocator gamedata_alloc = allocator_arena(&state->gamedata_arena);
     texture_registry_add(ctx, "player.png", load_embedded_texture(ASSET(player_png)), &gamedata_alloc);
     texture_registry_add(ctx, "grass.png", load_embedded_texture(ASSET(grass_png)), &gamedata_alloc);
     texture_registry_add(ctx, "tree.png", load_embedded_texture(ASSET(tree_png)), &gamedata_alloc);
@@ -657,7 +657,7 @@ static void handle_place_input(struct EngineContext *ctx,
     if (toggle_pressed((ToggleBinding){KEY_ENTER, GAMEPAD_BUTTON_RIGHT_FACE_DOWN})) {
         int bp_index = editor_state->place_blueprint_index;
         const Blueprint *blueprint = &state->blueprints.entries.data[bp_index];
-        Allocator alloc = allocator_arena(ctx, &state->gamedata_arena);
+        Allocator alloc = allocator_arena(&state->gamedata_arena);
         if (!level_spawn_entity(ctx, &state->current_level, blueprint, camera->target, &state->blueprints,
                                 texture_registry_lookup, ctx, &alloc)) {
             debug_log(ctx, "error: %s", error_get(ctx));
@@ -700,7 +700,7 @@ static void handle_editor_input(struct EngineContext *ctx,
     if (editor_state->sub_mode == EDITOR_SUB_DRAG) {
         handle_drag_input(state, editor_state, input, delta_time);
     } else if (editor_state->sub_mode == EDITOR_SUB_HANDLES) {
-        handle_handle_input(ctx, state, editor_state, input, delta_time);
+        handle_handle_input(state, editor_state, input, delta_time);
     } else if (editor_state->sub_mode == EDITOR_SUB_PLACE) {
         handle_place_input(ctx, state, camera, editor_state, input, delta_time);
     } else if (editor_state->sub_mode == EDITOR_SUB_ATTR_EDIT) {
@@ -710,7 +710,7 @@ static void handle_editor_input(struct EngineContext *ctx,
     } else if (editor_state->sub_mode == EDITOR_SUB_WORD_BUILDER) {
         handle_word_builder_input(ctx, state, editor_state);
     } else {
-        handle_browse_input(ctx, state, camera, editor_state, watches, input, delta_time);
+        handle_browse_input(state, camera, editor_state, watches, input, delta_time);
     }
 }
 
@@ -831,7 +831,7 @@ int main(void)
     {
         SCRATCH_SCOPE(&state.scratch_arena);
         EmbeddedAsset gamepad_asset = ASSET(gamecontrollerdb_txt);
-        Allocator gamepad_alloc = allocator_arena(ctx, &state.scratch_arena);
+        Allocator gamepad_alloc = allocator_arena(&state.scratch_arena);
         input_load_mappings(ctx, &gamepad_alloc, (const char *)gamepad_asset.data, gamepad_asset.size);
     }
 #endif

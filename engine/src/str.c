@@ -1,7 +1,6 @@
 #include "str.h"
 
 #include "alloc.h"
-#include "arena.h"
 #include "strv.h"
 
 #include <string.h>
@@ -19,8 +18,7 @@ static bool str_ensure_cap(Allocator *alloc, Str *str, size_t needed)
     while (new_cap < needed) {
         new_cap *= 2;
     }
-    char *new_ptr = alloc->realloc_fn(alloc->ctx, alloc->arena, str->ptr, str->cap > 0 ? str->cap + 1 : 0,
-                                      (AllocRequest){.size = new_cap + 1, .alignment = 1});
+    char *new_ptr = alloc->realloc_fn(alloc->ctx, str->ptr, new_cap + 1);
     if (!new_ptr) {
         return false;
     }
@@ -50,7 +48,7 @@ bool str_from_cstr(Allocator *alloc, Str *out, const char *cstr)
 
 void str_free(Allocator *alloc, Str *str)
 {
-    alloc->free_fn(alloc->ctx, alloc->arena, str->ptr);
+    alloc->free_fn(alloc->ctx, str->ptr);
     *str = (Str){0};
 }
 

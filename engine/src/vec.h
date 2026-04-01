@@ -23,8 +23,6 @@
 #include <stddef.h> // IWYU pragma: export
 #include <stdint.h> // IWYU pragma: export
 
-struct EngineContext; // IWYU pragma: export
-
 #define VEC_INITIAL_CAPACITY 8
 #define VEC_GROWTH_FACTOR 2
 
@@ -51,13 +49,11 @@ struct EngineContext; // IWYU pragma: export
 #define VEC_IMPL(name, type)                                                          \
     [[nodiscard]] bool vec_##name##_push(vec_##name *vec, type element) {             \
         if (vec->count >= vec->capacity) {                                            \
-            int new_cap = vec->capacity == 0 ? VEC_INITIAL_CAPACITY                   \
-                                             : vec->capacity * VEC_GROWTH_FACTOR;     \
-            size_t old_bytes = (size_t)vec->capacity * sizeof(type);                 \
+            int    new_cap   = vec->capacity == 0 ? VEC_INITIAL_CAPACITY              \
+                                                  : vec->capacity * VEC_GROWTH_FACTOR;\
             size_t new_bytes = (size_t)new_cap * sizeof(type);                       \
-            typeof(type) *new_data = vec->alloc.realloc_fn(vec->alloc.ctx,             \
-                vec->alloc.arena, vec->data, old_bytes,                               \
-                (AllocRequest){.size = new_bytes, .alignment = _Alignof(type)});      \
+            typeof(type) *new_data = vec->alloc.realloc_fn(                           \
+                vec->alloc.ctx, vec->data, new_bytes);                                \
             if (!new_data) {                                                          \
                 return false;                                                         \
             }                                                                         \
@@ -71,7 +67,7 @@ struct EngineContext; // IWYU pragma: export
     void vec_##name##_clear(vec_##name *vec) { vec->count = 0; }                     \
     void vec_##name##_free(vec_##name *vec) {                                        \
         if (vec->alloc.free_fn) {                                                      \
-            vec->alloc.free_fn(vec->alloc.ctx, vec->alloc.arena, vec->data);           \
+            vec->alloc.free_fn(vec->alloc.ctx, vec->data);                             \
         }                                                                             \
         vec->data     = nullptr;                                                      \
         vec->count    = 0;                                                            \

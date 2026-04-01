@@ -101,8 +101,7 @@ void draw_editor_highlights(const GameState *state, const EditorState *editor_st
 void draw_editor_panel(const struct EngineContext *ctx, const GameState *state, const EditorState *editor_state);
 void draw_watch_overlay(const struct EngineContext *ctx, const GameState *state, const WatchList *watches);
 void draw_collision_handles(const GameState *state, const EditorState *editor_state);
-void handle_browse_input(struct EngineContext *ctx,
-                         GameState *state,
+void handle_browse_input(GameState *state,
                          Camera2D *camera,
                          EditorState *editor_state,
                          WatchList *watches,
@@ -112,8 +111,7 @@ void draw_place_panel(const struct EngineContext *ctx, const GameState *state, c
 void draw_place_preview(const GameState *state, const EditorState *editor_state, Camera2D camera);
 void handle_mode_transitions(const GameState *state, EditorState *editor_state);
 void handle_drag_input(GameState *state, EditorState *editor_state, InputState input, float delta_time);
-void handle_handle_input(
-    struct EngineContext *ctx, GameState *state, EditorState *editor_state, InputState input, float delta_time);
+void handle_handle_input(GameState *state, EditorState *editor_state, InputState input, float delta_time);
 void handle_attr_edit_input(GameState *state, EditorState *editor_state, float delta_time);
 void draw_radial_picker(const struct EngineContext *ctx, const EditorState *editor_state);
 void handle_radial_input(EditorState *editor_state, InputState input);

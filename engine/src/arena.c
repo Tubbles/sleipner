@@ -1,6 +1,8 @@
 #include "arena.h"
+#include "alloc.h"
 #include "error.h"
 
+#include <stddef.h>
 #include <stdint.h>
 #include <string.h>
 #include <sys/mman.h>
@@ -82,4 +84,33 @@ void *arena_realloc(Arena *arena, void *ptr, size_t new_size)
     void *new_ptr = arena_alloc(arena, new_size);
     memcpy(new_ptr, ptr, old_size);
     return new_ptr;
+}
+
+/* --- Allocator interface wrappers --- */
+
+static void *arena_malloc_fn(void *ctx, size_t size)
+{
+    return arena_alloc((Arena *)ctx, size);
+}
+
+static void *arena_realloc_fn(void *ctx, void *ptr, size_t new_size)
+{
+    return arena_realloc((Arena *)ctx, ptr, new_size);
+}
+
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters) — signature dictated by Allocator typedef
+static void arena_free_fn(void *ctx, void *ptr)
+{
+    (void)ctx;
+    (void)ptr;
+}
+
+Allocator allocator_arena(Arena *arena)
+{
+    return (Allocator){
+        .ctx = arena,
+        .malloc_fn = arena_malloc_fn,
+        .realloc_fn = arena_realloc_fn,
+        .free_fn = arena_free_fn,
+    };
 }
