@@ -3,9 +3,9 @@
 ## Engineering Goals
 
 - **No opaque cross-module forward declarations** — `struct EngineContext;`
-  appears in 13 headers: alloc.h, arena.h, audio.h, blueprint.h,
-  collision.h, debug.h, error.h, game.h, input.h, level.h, rule.h, vec.h,
-  map.h. Eliminate by decomposing EngineContext into what each lower-level
+  appears in 10 headers: arena.h, audio.h, blueprint.h, collision.h,
+  debug.h, error.h, game.h, input.h, level.h, rule.h. Eliminate by
+  decomposing EngineContext into what each lower-level
   module actually needs (error context, log sink, arena pointers) as
   lightweight structs at the foundation level. See DESIGN.md "Module
   Dependencies" for the full dependency graph. Also investigate cppcheck for
@@ -80,18 +80,3 @@
 ## misc
 
 - do the same stored-allocator change for map and Str types (parallels vec work)
-- **Type-erase Allocator and fix dependency inversion** — `alloc.h` currently
-  includes `arena.h` and forward-declares `EngineContext`, so `vec.h → alloc.h
-  → arena.h` — foundation types depend on application concepts. Fix:
-  - Make Allocator type-erased: `void *ctx` + plain function pointers
-    (`malloc_fn(void *ctx, size_t size)`, `realloc_fn(void *ctx, void *ptr,
-    size_t new_size)`, `free_fn(void *ctx, void *ptr)`). `alloc.h` depends
-    only on `stddef.h`.
-  - Remove `old_size` from realloc — arena stores per-allocation size headers
-    internally so it can handle realloc without caller help.
-  - Remove `AllocRequest` from the generic interface — arena aligns to
-    `_Alignof(max_align_t)` internally. `AllocRequest` stays in `arena.h` as
-    an internal detail (or disappears).
-  - Remove `EngineContext *` from arena allocator — `arena_alloc` already
-    `(void)`-casts it. `void *ctx` is just the `Arena *` directly.
-  - Result: `vec.h → alloc.h → (nothing)`. Dependency tree no longer inverted.

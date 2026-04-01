@@ -93,7 +93,7 @@ Saves the arena offset on entry and restores it on any block exit (return, break
 
 ### Passing allocators
 
-**Always pass `allocator_arena(ctx, arena)`.** `Str`, `vec`, and `map` all accept an `Allocator *`. Passing `NULL` is only allowed in test code that manages its own lifetime via `test_*_free` helpers — never in engine code. If you are about to pass `NULL` or call `allocator_heap()` in non-test code, stop and fix the architecture instead.
+**Always pass `allocator_arena(arena)`.** `Str`, `vec`, and `map` all accept an `Allocator *`. Passing `NULL` is only allowed in test code that manages its own lifetime via `test_*_free` helpers — never in engine code. If you are about to pass `NULL` or call `allocator_heap()` in non-test code, stop and fix the architecture instead.
 
 ### Vec growth and pointer stability
 
