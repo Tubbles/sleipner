@@ -1,13 +1,19 @@
+#include "fff.h"
 #include "unity.h"
-#include "error.h"
+
+#include "../src/error.c" // NOLINT(bugprone-suspicious-include)
+#include "../src/arena.c" // NOLINT(bugprone-suspicious-include)
+
+DEFINE_FFF_GLOBALS;
+
+#include "test_heap_alloc.h"
+
+#include <string.h>
 
 static ErrorState test_err;
 
-#include "alloc.h"
-#include "arena.h"
-#include "test_helpers.h"
-
-#include <string.h>
+void setUp(void) {}
+void tearDown(void) {}
 
 void test_alloc_heap_malloc_and_free(void)
 {
@@ -78,4 +84,16 @@ void test_alloc_arena_realloc_in_place(void)
     TEST_ASSERT_EQUAL_INT(8, grown[1]);
 
     arena_free(&arena);
+}
+
+int main(void)
+{
+    test_helpers_init();
+    UNITY_BEGIN();
+    RUN_TEST(test_alloc_heap_malloc_and_free);
+    RUN_TEST(test_alloc_heap_realloc);
+    RUN_TEST(test_alloc_arena_malloc);
+    RUN_TEST(test_alloc_arena_free_is_noop);
+    RUN_TEST(test_alloc_arena_realloc_in_place);
+    return UNITY_END();
 }

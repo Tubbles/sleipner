@@ -1,12 +1,18 @@
+#include "fff.h"
 #include "unity.h"
-#include "error.h"
+
+#include "../src/error.c" // NOLINT(bugprone-suspicious-include)
+#include "../src/arena.c" // NOLINT(bugprone-suspicious-include)
+
+DEFINE_FFF_GLOBALS;
+
+#include <stdint.h>
+#include <string.h>
 
 static ErrorState test_err;
 
-#include "arena.h"
-
-#include <string.h>
-#include <stdint.h>
+void setUp(void) {}
+void tearDown(void) {}
 
 void test_arena_init_and_free(void)
 {
@@ -276,4 +282,24 @@ void test_arena_scratch_scope_nested(void)
     TEST_ASSERT_EQUAL_size_t(0, arena_used(&arena));
 
     arena_free(&arena);
+}
+
+int main(void)
+{
+    UNITY_BEGIN();
+    RUN_TEST(test_arena_init_and_free);
+    RUN_TEST(test_arena_alloc_basic);
+    RUN_TEST(test_arena_alloc_alignment);
+    RUN_TEST(test_arena_reset);
+    RUN_TEST(test_arena_snapshot_restore);
+    RUN_TEST(test_arena_save_restore_basic);
+    RUN_TEST(test_arena_save_restore_nested);
+    RUN_TEST(test_arena_save_at_zero);
+    RUN_TEST(test_arena_realloc_null_ptr_acts_as_alloc);
+    RUN_TEST(test_arena_realloc_shrink_returns_same_ptr);
+    RUN_TEST(test_arena_realloc_in_place_when_at_top);
+    RUN_TEST(test_arena_realloc_copies_when_not_at_top);
+    RUN_TEST(test_arena_scratch_scope_auto_pop);
+    RUN_TEST(test_arena_scratch_scope_nested);
+    return UNITY_END();
 }

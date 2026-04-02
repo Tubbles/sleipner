@@ -1,12 +1,17 @@
+#include "fff.h"
 #include "unity.h"
-#include "error.h"
-#include "test_helpers.h"
+
+#include "../src/strv.c"  // NOLINT(bugprone-suspicious-include)
+#include "../src/str.c"   // NOLINT(bugprone-suspicious-include)
+#include "../src/error.c" // NOLINT(bugprone-suspicious-include)
+#include "../src/arena.c" // NOLINT(bugprone-suspicious-include)
+#include "../src/map.c"   // NOLINT(bugprone-suspicious-include)
+
+DEFINE_FFF_GLOBALS;
+
+#include "test_heap_alloc.h"
 
 static ErrorState test_err;
-
-#include "alloc.h"
-#include "arena.h"
-#include "map.h"
 
 /* Custom hash that always maps to the same bucket — used to force probe chains
  * and tombstone scenarios without relying on hash distribution. */
@@ -23,6 +28,9 @@ static bool int_eq(int first, int second)
 
 MAP_DECL(probe_test, int, int)
 MAP_IMPL(probe_test, int, int, always_same_hash, int_eq)
+
+void setUp(void) {}
+void tearDown(void) {}
 
 /* --- Initial state --- */
 
@@ -328,4 +336,36 @@ void test_map_arena_allocator(void)
     map_int_int_free(&map, &alloc);
     TEST_ASSERT_EQUAL_INT(0, map.count);
     arena_free(&arena);
+}
+
+int main(void)
+{
+    test_helpers_init();
+    UNITY_BEGIN();
+    RUN_TEST(test_map_initial_state_count_is_zero);
+    RUN_TEST(test_map_initial_state_capacity_is_zero);
+    RUN_TEST(test_map_initial_state_entries_is_null);
+    RUN_TEST(test_map_set_and_get_present);
+    RUN_TEST(test_map_get_absent_returns_null);
+    RUN_TEST(test_map_get_on_empty_returns_null);
+    RUN_TEST(test_map_update_existing_replaces_value);
+    RUN_TEST(test_map_update_count_unchanged);
+    RUN_TEST(test_map_remove_present);
+    RUN_TEST(test_map_remove_decrements_count);
+    RUN_TEST(test_map_remove_absent_returns_false);
+    RUN_TEST(test_map_remove_already_removed_returns_false);
+    RUN_TEST(test_map_growth_all_entries_retrievable);
+    RUN_TEST(test_map_growth_capacity_is_power_of_two);
+    RUN_TEST(test_map_collision_probe_chain);
+    RUN_TEST(test_map_tombstone_get_finds_later_entry);
+    RUN_TEST(test_map_tombstone_reused_on_insert);
+    RUN_TEST(test_map_free_resets_to_zero);
+    RUN_TEST(test_map_free_safe_to_reuse);
+    RUN_TEST(test_map_free_on_empty_is_safe);
+    RUN_TEST(test_map_int_float_set_and_get);
+    RUN_TEST(test_map_int_bool_set_and_get);
+    RUN_TEST(test_map_int_i64_set_and_get);
+    RUN_TEST(test_map_get_returns_const_pointer_to_stored_slot);
+    RUN_TEST(test_map_arena_allocator);
+    return UNITY_END();
 }

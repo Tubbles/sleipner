@@ -17,20 +17,20 @@ add_unit_test(touch_test)
 add_unit_test(str_test)
 add_unit_test(vec_test)
 add_unit_test(particle_test)
+add_unit_test(alloc_test)
+add_unit_test(arena_test)
+add_unit_test(map_test)
+add_unit_test(collision_test)
 
 add_executable(engine_tests
     main_test.c
     test_helpers.c
-    map_test.c
-    arena_test.c
-    alloc_test.c
     attribute_test.c
     blueprint_test.c
     entity_test.c
     game_test.c
     integration_test.c
     level_test.c
-    collision_test.c
     editor_test.c
     toml_emitter_test.c
     rule_test.c

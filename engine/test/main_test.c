@@ -4,33 +4,6 @@
 void setUp(void) {}
 void tearDown(void) {}
 
-/* map_test.c */
-void test_map_initial_state_count_is_zero(void);
-void test_map_initial_state_capacity_is_zero(void);
-void test_map_initial_state_entries_is_null(void);
-void test_map_set_and_get_present(void);
-void test_map_get_absent_returns_null(void);
-void test_map_get_on_empty_returns_null(void);
-void test_map_update_existing_replaces_value(void);
-void test_map_update_count_unchanged(void);
-void test_map_remove_present(void);
-void test_map_remove_decrements_count(void);
-void test_map_remove_absent_returns_false(void);
-void test_map_remove_already_removed_returns_false(void);
-void test_map_growth_all_entries_retrievable(void);
-void test_map_growth_capacity_is_power_of_two(void);
-void test_map_collision_probe_chain(void);
-void test_map_tombstone_get_finds_later_entry(void);
-void test_map_tombstone_reused_on_insert(void);
-void test_map_free_resets_to_zero(void);
-void test_map_free_safe_to_reuse(void);
-void test_map_free_on_empty_is_safe(void);
-void test_map_int_float_set_and_get(void);
-void test_map_int_bool_set_and_get(void);
-void test_map_int_i64_set_and_get(void);
-void test_map_get_returns_const_pointer_to_stored_slot(void);
-void test_map_arena_allocator(void);
-
 /* attribute_test.c */
 void test_attr_set_and_get_float(void);
 void test_attr_set_and_get_int(void);
@@ -47,29 +20,6 @@ void test_attr_get_scoped_int(void);
 void test_attr_get_scoped_bool(void);
 void test_attr_get_scoped_string(void);
 void test_attr_get_scoped_null_blueprint(void);
-
-/* arena_test.c */
-void test_arena_init_and_free(void);
-void test_arena_alloc_basic(void);
-void test_arena_alloc_alignment(void);
-void test_arena_reset(void);
-void test_arena_snapshot_restore(void);
-void test_arena_save_restore_basic(void);
-void test_arena_save_restore_nested(void);
-void test_arena_save_at_zero(void);
-void test_arena_realloc_null_ptr_acts_as_alloc(void);
-void test_arena_realloc_shrink_returns_same_ptr(void);
-void test_arena_realloc_in_place_when_at_top(void);
-void test_arena_realloc_copies_when_not_at_top(void);
-void test_arena_scratch_scope_auto_pop(void);
-void test_arena_scratch_scope_nested(void);
-
-/* alloc_test.c */
-void test_alloc_heap_malloc_and_free(void);
-void test_alloc_heap_realloc(void);
-void test_alloc_arena_malloc(void);
-void test_alloc_arena_free_is_noop(void);
-void test_alloc_arena_realloc_in_place(void);
 
 /* blueprint_test.c */
 void test_blueprint_load_single(void);
@@ -235,23 +185,6 @@ void test_var_condition_falsy_when_unset(void);
 void test_var_substitution_in_set_attr(void);
 void test_local_var_scoped_per_rule(void);
 
-/* collision_test.c */
-void test_rect_rect_overlap(void);
-void test_rect_rect_no_overlap(void);
-void test_rect_rect_rotated(void);
-void test_circle_circle_overlap(void);
-void test_circle_circle_no_overlap(void);
-void test_rect_circle_overlap(void);
-void test_rect_circle_no_overlap(void);
-void test_circle_rect_is_negated(void);
-void test_composite_single_rect_matches_rect_rect(void);
-void test_composite_overlap_bool(void);
-void test_composite_wall(void);
-void test_tri_tri_overlap(void);
-void test_tri_tri_no_overlap(void);
-void test_tri_circle_overlap(void);
-void test_tri_rect_overlap(void);
-
 /* editor_test.c */
 void test_editor_radial_dead_zone_returns_negative_one(void);
 void test_editor_radial_stick_up_four_items(void);
@@ -321,32 +254,6 @@ int main(void)
     test_helpers_init();
     UNITY_BEGIN();
 
-    RUN_TEST(test_map_initial_state_count_is_zero);
-    RUN_TEST(test_map_initial_state_capacity_is_zero);
-    RUN_TEST(test_map_initial_state_entries_is_null);
-    RUN_TEST(test_map_set_and_get_present);
-    RUN_TEST(test_map_get_absent_returns_null);
-    RUN_TEST(test_map_get_on_empty_returns_null);
-    RUN_TEST(test_map_update_existing_replaces_value);
-    RUN_TEST(test_map_update_count_unchanged);
-    RUN_TEST(test_map_remove_present);
-    RUN_TEST(test_map_remove_decrements_count);
-    RUN_TEST(test_map_remove_absent_returns_false);
-    RUN_TEST(test_map_remove_already_removed_returns_false);
-    RUN_TEST(test_map_growth_all_entries_retrievable);
-    RUN_TEST(test_map_growth_capacity_is_power_of_two);
-    RUN_TEST(test_map_collision_probe_chain);
-    RUN_TEST(test_map_tombstone_get_finds_later_entry);
-    RUN_TEST(test_map_tombstone_reused_on_insert);
-    RUN_TEST(test_map_free_resets_to_zero);
-    RUN_TEST(test_map_free_safe_to_reuse);
-    RUN_TEST(test_map_free_on_empty_is_safe);
-    RUN_TEST(test_map_int_float_set_and_get);
-    RUN_TEST(test_map_int_bool_set_and_get);
-    RUN_TEST(test_map_int_i64_set_and_get);
-    RUN_TEST(test_map_get_returns_const_pointer_to_stored_slot);
-    RUN_TEST(test_map_arena_allocator);
-
     RUN_TEST(test_attr_set_and_get_float);
     RUN_TEST(test_attr_set_and_get_int);
     RUN_TEST(test_attr_set_and_get_bool);
@@ -362,27 +269,6 @@ int main(void)
     RUN_TEST(test_attr_get_scoped_bool);
     RUN_TEST(test_attr_get_scoped_string);
     RUN_TEST(test_attr_get_scoped_null_blueprint);
-
-    RUN_TEST(test_arena_init_and_free);
-    RUN_TEST(test_arena_alloc_basic);
-    RUN_TEST(test_arena_alloc_alignment);
-    RUN_TEST(test_arena_reset);
-    RUN_TEST(test_arena_snapshot_restore);
-    RUN_TEST(test_arena_save_restore_basic);
-    RUN_TEST(test_arena_save_restore_nested);
-    RUN_TEST(test_arena_save_at_zero);
-    RUN_TEST(test_arena_realloc_null_ptr_acts_as_alloc);
-    RUN_TEST(test_arena_realloc_shrink_returns_same_ptr);
-    RUN_TEST(test_arena_realloc_in_place_when_at_top);
-    RUN_TEST(test_arena_realloc_copies_when_not_at_top);
-    RUN_TEST(test_arena_scratch_scope_auto_pop);
-    RUN_TEST(test_arena_scratch_scope_nested);
-
-    RUN_TEST(test_alloc_heap_malloc_and_free);
-    RUN_TEST(test_alloc_heap_realloc);
-    RUN_TEST(test_alloc_arena_malloc);
-    RUN_TEST(test_alloc_arena_free_is_noop);
-    RUN_TEST(test_alloc_arena_realloc_in_place);
 
     RUN_TEST(test_blueprint_load_single);
     RUN_TEST(test_blueprint_load_multiple);
@@ -525,22 +411,6 @@ int main(void)
     RUN_TEST(test_var_condition_falsy_when_unset);
     RUN_TEST(test_var_substitution_in_set_attr);
     RUN_TEST(test_local_var_scoped_per_rule);
-
-    RUN_TEST(test_rect_rect_overlap);
-    RUN_TEST(test_rect_rect_no_overlap);
-    RUN_TEST(test_rect_rect_rotated);
-    RUN_TEST(test_circle_circle_overlap);
-    RUN_TEST(test_circle_circle_no_overlap);
-    RUN_TEST(test_rect_circle_overlap);
-    RUN_TEST(test_rect_circle_no_overlap);
-    RUN_TEST(test_circle_rect_is_negated);
-    RUN_TEST(test_composite_single_rect_matches_rect_rect);
-    RUN_TEST(test_composite_overlap_bool);
-    RUN_TEST(test_composite_wall);
-    RUN_TEST(test_tri_tri_overlap);
-    RUN_TEST(test_tri_tri_no_overlap);
-    RUN_TEST(test_tri_circle_overlap);
-    RUN_TEST(test_tri_rect_overlap);
 
     RUN_TEST(test_toml_str_content_is_copied);
     RUN_TEST(test_toml_str_datum_nulled_after_call);

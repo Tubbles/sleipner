@@ -1,9 +1,16 @@
+#include "fff.h"
 #include "unity.h"
-#include "test_helpers.h"
 
-#include "collision.h"
+#include "../src/collision.c" // NOLINT(bugprone-suspicious-include)
+
+DEFINE_FFF_GLOBALS;
+
+#include "test_heap_alloc.h"
 
 #include <math.h>
+
+void setUp(void) {}
+void tearDown(void) {}
 
 /* --- Pairwise resolver tests --- */
 
@@ -148,4 +155,26 @@ void test_tri_rect_overlap(void)
     Vector2 push = resolve_tri_rect((Vector2){0, 0}, verts, (Vector2){15, 0}, 0, 10, 10);
     float mag = sqrtf(push.x * push.x + push.y * push.y);
     TEST_ASSERT_TRUE(mag > 0.1f);
+}
+
+int main(void)
+{
+    test_helpers_init();
+    UNITY_BEGIN();
+    RUN_TEST(test_rect_rect_overlap);
+    RUN_TEST(test_rect_rect_no_overlap);
+    RUN_TEST(test_rect_rect_rotated);
+    RUN_TEST(test_circle_circle_overlap);
+    RUN_TEST(test_circle_circle_no_overlap);
+    RUN_TEST(test_rect_circle_overlap);
+    RUN_TEST(test_rect_circle_no_overlap);
+    RUN_TEST(test_circle_rect_is_negated);
+    RUN_TEST(test_composite_single_rect_matches_rect_rect);
+    RUN_TEST(test_composite_overlap_bool);
+    RUN_TEST(test_composite_wall);
+    RUN_TEST(test_tri_tri_overlap);
+    RUN_TEST(test_tri_tri_no_overlap);
+    RUN_TEST(test_tri_circle_overlap);
+    RUN_TEST(test_tri_rect_overlap);
+    return UNITY_END();
 }
