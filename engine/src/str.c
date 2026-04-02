@@ -1,6 +1,7 @@
 #include "str.h"
 
 #include "alloc.h"
+#include "check.h"
 #include "strv.h"
 
 #include <string.h>
@@ -48,6 +49,7 @@ bool str_from_cstr(Allocator *alloc, Str *out, const char *cstr)
 
 void str_free(Allocator *alloc, Str *str)
 {
+    CHECK(str);
     alloc->free_fn(alloc->ctx, str->ptr);
     *str = (Str){0};
 }

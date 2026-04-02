@@ -76,6 +76,7 @@ static inline bool map_eq_int(int first, int second)
  * eq_fn:   bool     eq_fn(key_type a, key_type b) */
 #define MAP_IMPL(name, key_type, value_type, hash_fn, eq_fn)                               \
     static int map_##name##_find_slot(const map_##name *map, key_type key) {               \
+        if (!map->entries) return -1;                                                       \
         uint32_t hash = hash_fn(key);                                                      \
         for (int probe = 0; probe < map->capacity; probe++) {                              \
             int slot = (int)((hash + (uint32_t)probe) & (uint32_t)(map->capacity - 1));    \

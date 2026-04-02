@@ -26,12 +26,22 @@ InheritParentConfig: true
 # cert-err33-c                   — snprintf/printf return values in test setup
 #                                  are intentionally ignored; test failure is
 #                                  caught by the assertion that follows.
+# readability-inconsistent-declaration-parameter-name
+#                                — fff.h FAKE_*_FUNC macros generate parameter
+#                                  names (arg0, arg1, ...) that don't match the
+#                                  original declarations in raylib.h etc. Cannot
+#                                  be fixed in code.
+# readability-else-after-return  — fff.h macro expansions use else-after-return
+#                                  internally; not fixable without patching the
+#                                  vendor header.
 Checks: >
   -cert-err33-c,
   -cppcoreguidelines-avoid-non-const-global-variables,
   -misc-include-cleaner,
   -misc-use-internal-linkage,
+  -readability-else-after-return,
   -readability-function-cognitive-complexity,
+  -readability-inconsistent-declaration-parameter-name,
   -readability-magic-numbers,
   -readability-math-missing-parentheses,
   -readability-uppercase-literal-suffix,
