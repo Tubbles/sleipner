@@ -1,8 +1,8 @@
 #include "unity.h"
-#include "engine_context.h"
+#include "error.h"
 #include "test_helpers.h"
 
-static struct EngineContext ctx;
+static ErrorState test_err;
 
 #include "alloc.h"
 #include "arena.h"
@@ -312,7 +312,7 @@ void test_map_get_returns_const_pointer_to_stored_slot(void)
 void test_map_arena_allocator(void)
 {
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx.error, &arena));
+    TEST_ASSERT_TRUE(arena_init(&test_err, &arena));
     Allocator alloc = allocator_arena(&arena);
 
     map_int_int map = {0};

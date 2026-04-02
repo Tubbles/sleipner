@@ -1,8 +1,5 @@
 #include "unity.h"
-#include "engine_context.h"
 #include "test_helpers.h"
-
-static struct EngineContext ctx;
 
 #include "collision.h"
 

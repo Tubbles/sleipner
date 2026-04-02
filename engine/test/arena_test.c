@@ -1,7 +1,7 @@
 #include "unity.h"
-#include "engine_context.h"
+#include "error.h"
 
-static struct EngineContext ctx;
+static ErrorState test_err;
 
 #include "arena.h"
 
@@ -11,7 +11,7 @@ static struct EngineContext ctx;
 void test_arena_init_and_free(void)
 {
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx.error, &arena));
+    TEST_ASSERT_TRUE(arena_init(&test_err, &arena));
     TEST_ASSERT_NOT_NULL(arena.buffer);
     TEST_ASSERT_EQUAL_size_t(0, arena.offset);
     arena_free(&arena);
@@ -21,7 +21,7 @@ void test_arena_init_and_free(void)
 void test_arena_alloc_basic(void)
 {
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx.error, &arena));
+    TEST_ASSERT_TRUE(arena_init(&test_err, &arena));
 
     void *first = arena_alloc(&arena, 32);
     TEST_ASSERT_NOT_NULL(first);
@@ -40,7 +40,7 @@ void test_arena_alloc_basic(void)
 void test_arena_alloc_alignment(void)
 {
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx.error, &arena));
+    TEST_ASSERT_TRUE(arena_init(&test_err, &arena));
 
     /* Allocate 1 byte to misalign the raw offset */
     (void)arena_alloc(&arena, 1);
@@ -56,7 +56,7 @@ void test_arena_alloc_alignment(void)
 void test_arena_reset(void)
 {
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx.error, &arena));
+    TEST_ASSERT_TRUE(arena_init(&test_err, &arena));
 
     (void)arena_alloc(&arena, 100);
     TEST_ASSERT_EQUAL_size_t(116, arena_used(&arena));
@@ -74,7 +74,7 @@ void test_arena_reset(void)
 void test_arena_snapshot_restore(void)
 {
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx.error, &arena));
+    TEST_ASSERT_TRUE(arena_init(&test_err, &arena));
 
     /* Write some data */
     int *values = arena_alloc(&arena, 4 * sizeof(int));
@@ -112,7 +112,7 @@ void test_arena_snapshot_restore(void)
 void test_arena_save_restore_basic(void)
 {
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx.error, &arena));
+    TEST_ASSERT_TRUE(arena_init(&test_err, &arena));
 
     (void)arena_alloc(&arena, 32);
     ArenaCheckpoint checkpoint = arena_save(&arena);
@@ -130,7 +130,7 @@ void test_arena_save_restore_basic(void)
 void test_arena_save_restore_nested(void)
 {
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx.error, &arena));
+    TEST_ASSERT_TRUE(arena_init(&test_err, &arena));
 
     (void)arena_alloc(&arena, 16);
     ArenaCheckpoint outer = arena_save(&arena);
@@ -153,7 +153,7 @@ void test_arena_save_restore_nested(void)
 void test_arena_save_at_zero(void)
 {
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx.error, &arena));
+    TEST_ASSERT_TRUE(arena_init(&test_err, &arena));
 
     ArenaCheckpoint checkpoint = arena_save(&arena);
     TEST_ASSERT_EQUAL_size_t(0, checkpoint);
@@ -168,7 +168,7 @@ void test_arena_save_at_zero(void)
 void test_arena_realloc_null_ptr_acts_as_alloc(void)
 {
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx.error, &arena));
+    TEST_ASSERT_TRUE(arena_init(&test_err, &arena));
 
     void *ptr = arena_realloc(&arena, nullptr, 32);
     TEST_ASSERT_NOT_NULL(ptr);
@@ -180,7 +180,7 @@ void test_arena_realloc_null_ptr_acts_as_alloc(void)
 void test_arena_realloc_shrink_returns_same_ptr(void)
 {
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx.error, &arena));
+    TEST_ASSERT_TRUE(arena_init(&test_err, &arena));
 
     void *ptr = arena_alloc(&arena, 64);
     size_t used_before = arena_used(&arena);
@@ -195,7 +195,7 @@ void test_arena_realloc_shrink_returns_same_ptr(void)
 void test_arena_realloc_in_place_when_at_top(void)
 {
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx.error, &arena));
+    TEST_ASSERT_TRUE(arena_init(&test_err, &arena));
 
     int *values = arena_alloc(&arena, 2 * sizeof(int));
     values[0] = 10;
@@ -213,7 +213,7 @@ void test_arena_realloc_in_place_when_at_top(void)
 void test_arena_realloc_copies_when_not_at_top(void)
 {
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx.error, &arena));
+    TEST_ASSERT_TRUE(arena_init(&test_err, &arena));
 
     int *first = arena_alloc(&arena, 2 * sizeof(int));
     first[0] = 42;
@@ -241,7 +241,7 @@ static size_t scratch_scope_helper(Arena *arena)
 void test_arena_scratch_scope_auto_pop(void)
 {
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx.error, &arena));
+    TEST_ASSERT_TRUE(arena_init(&test_err, &arena));
 
     (void)arena_alloc(&arena, 32);
     TEST_ASSERT_EQUAL_size_t(48, arena_used(&arena));
@@ -257,7 +257,7 @@ void test_arena_scratch_scope_auto_pop(void)
 void test_arena_scratch_scope_nested(void)
 {
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx.error, &arena));
+    TEST_ASSERT_TRUE(arena_init(&test_err, &arena));
 
     {
         SCRATCH_SCOPE(&arena);

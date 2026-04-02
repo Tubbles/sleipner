@@ -2,16 +2,23 @@
 #define GAME_H
 
 #include "arena.h"
+#include "audio.h"
 #include "blueprint.h"
 #include "debug.h"
 #include "error.h"
 #include "input.h"
 #include "level.h"
+#include "raylib.h"
 #include "rect.h"
 #include "rule.h"
 #include "vec.h"
 
 #include <stdbool.h>
+
+#define MAX_TEXTURE_FILENAME 64
+#define FONT_NAME_LEN 64
+#define SCREEN_WIDTH_DEFAULT 800
+#define SCREEN_HEIGHT_DEFAULT 600
 
 #define DEFAULT_PLAYER_SPEED 80.0F
 #define FRAME_SIZE 32
@@ -25,6 +32,26 @@ enum {
     ANIM_WALK_SIDE = 4,
     ANIM_WALK_UP = 5,
 };
+
+typedef struct {
+    char filename[MAX_TEXTURE_FILENAME];
+    Texture2D texture;
+} TextureEntry;
+
+VEC_DECL(texture_entry, TextureEntry)
+
+typedef struct {
+    char name[FONT_NAME_LEN];
+    Font font;
+    bool valid;
+} FontPreviewEntry;
+
+VEC_DECL(font_preview, FontPreviewEntry)
+
+typedef struct {
+    vec_texture_entry textures;
+    vec_font_preview font_previews;
+} AssetRegistry;
 
 typedef struct {
     int player_index;
@@ -48,6 +75,13 @@ typedef struct {
     bool editor_mode;
     bool debug_enabled;
     bool prev_interact;
+    ErrorState error;
+    DebugState debug;
+    AudioState audio;
+    AssetRegistry assets;
+    long gamedata_mtime;
+    int screen_width;
+    int screen_height;
 } GameState;
 
 typedef struct {

@@ -1,7 +1,9 @@
 #include "unity.h"
-#include "engine_context.h"
+#include "debug.h"
+#include "error.h"
 
-static struct EngineContext ctx;
+static ErrorState test_err;
+static DebugState test_dbg;
 
 #include "arena.h"
 #include "blueprint.h"
@@ -92,16 +94,16 @@ static toml_table_t *parse_toml(const char *input)
 void test_level_load_first(void)
 {
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx.error, &arena));
+    TEST_ASSERT_TRUE(arena_init(&test_err, &arena));
     BlueprintTable blueprints;
     Level level = {0};
 
     toml_table_t *root = parse_toml(test_gamedata);
     TEST_ASSERT_NOT_NULL(root);
 
-    blueprints_load(&ctx.error, &ctx.debug, &blueprints, root, &arena);
+    blueprints_load(&test_err, &test_dbg, &blueprints, root, &arena);
 
-    bool loaded = level_load(&ctx.error, &ctx.debug, &level, root, nullptr, &blueprints, test_texture_lookup, nullptr,
+    bool loaded = level_load(&test_err, &test_dbg, &level, root, nullptr, &blueprints, test_texture_lookup, nullptr,
                              &test_heap_alloc);
     TEST_ASSERT_TRUE(loaded);
     TEST_ASSERT_EQUAL_STRING("overworld", level.name.ptr);
@@ -119,16 +121,16 @@ void test_level_load_first(void)
 void test_level_load_by_name(void)
 {
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx.error, &arena));
+    TEST_ASSERT_TRUE(arena_init(&test_err, &arena));
     BlueprintTable blueprints;
     Level level = {0};
 
     toml_table_t *root = parse_toml(test_gamedata);
     TEST_ASSERT_NOT_NULL(root);
 
-    blueprints_load(&ctx.error, &ctx.debug, &blueprints, root, &arena);
+    blueprints_load(&test_err, &test_dbg, &blueprints, root, &arena);
 
-    bool loaded = level_load(&ctx.error, &ctx.debug, &level, root, "dungeon", &blueprints, test_texture_lookup, nullptr,
+    bool loaded = level_load(&test_err, &test_dbg, &level, root, "dungeon", &blueprints, test_texture_lookup, nullptr,
                              &test_heap_alloc);
     TEST_ASSERT_TRUE(loaded);
     TEST_ASSERT_EQUAL_STRING("dungeon", level.name.ptr);
@@ -145,16 +147,16 @@ void test_level_load_by_name(void)
 void test_level_load_nonexistent(void)
 {
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx.error, &arena));
+    TEST_ASSERT_TRUE(arena_init(&test_err, &arena));
     BlueprintTable blueprints;
     Level level = {0};
 
     toml_table_t *root = parse_toml(test_gamedata);
     TEST_ASSERT_NOT_NULL(root);
 
-    blueprints_load(&ctx.error, &ctx.debug, &blueprints, root, &arena);
+    blueprints_load(&test_err, &test_dbg, &blueprints, root, &arena);
 
-    bool loaded = level_load(&ctx.error, &ctx.debug, &level, root, "nonexistent", &blueprints, test_texture_lookup,
+    bool loaded = level_load(&test_err, &test_dbg, &level, root, "nonexistent", &blueprints, test_texture_lookup,
                              nullptr, &test_heap_alloc);
     TEST_ASSERT_FALSE(loaded);
 
@@ -167,15 +169,15 @@ void test_level_load_nonexistent(void)
 void test_level_entity_positions(void)
 {
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx.error, &arena));
+    TEST_ASSERT_TRUE(arena_init(&test_err, &arena));
     BlueprintTable blueprints;
     Level level = {0};
 
     toml_table_t *root = parse_toml(test_gamedata);
     TEST_ASSERT_NOT_NULL(root);
 
-    blueprints_load(&ctx.error, &ctx.debug, &blueprints, root, &arena);
-    TEST_ASSERT_TRUE(level_load(&ctx.error, &ctx.debug, &level, root, "overworld", &blueprints, test_texture_lookup,
+    blueprints_load(&test_err, &test_dbg, &blueprints, root, &arena);
+    TEST_ASSERT_TRUE(level_load(&test_err, &test_dbg, &level, root, "overworld", &blueprints, test_texture_lookup,
                                 nullptr, &test_heap_alloc));
 
     /* Tree at (200, 60) with collision_offset (20, 60) and collision_size (24, 16) */
@@ -203,15 +205,15 @@ void test_level_entity_positions(void)
 void test_level_entity_source_rects(void)
 {
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx.error, &arena));
+    TEST_ASSERT_TRUE(arena_init(&test_err, &arena));
     BlueprintTable blueprints;
     Level level = {0};
 
     toml_table_t *root = parse_toml(test_gamedata);
     TEST_ASSERT_NOT_NULL(root);
 
-    blueprints_load(&ctx.error, &ctx.debug, &blueprints, root, &arena);
-    TEST_ASSERT_TRUE(level_load(&ctx.error, &ctx.debug, &level, root, "overworld", &blueprints, test_texture_lookup,
+    blueprints_load(&test_err, &test_dbg, &blueprints, root, &arena);
+    TEST_ASSERT_TRUE(level_load(&test_err, &test_dbg, &level, root, "overworld", &blueprints, test_texture_lookup,
                                 nullptr, &test_heap_alloc));
 
     /* Tree source rect from blueprint */
@@ -272,15 +274,15 @@ static const char *child_gamedata = "[[blueprint]]\n"
 void test_level_child_entities_instantiated(void)
 {
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx.error, &arena));
+    TEST_ASSERT_TRUE(arena_init(&test_err, &arena));
     BlueprintTable blueprints;
     Level level = {0};
 
     toml_table_t *root = parse_toml(child_gamedata);
     TEST_ASSERT_NOT_NULL(root);
 
-    blueprints_load(&ctx.error, &ctx.debug, &blueprints, root, &arena);
-    TEST_ASSERT_TRUE(level_load(&ctx.error, &ctx.debug, &level, root, "test", &blueprints, test_texture_lookup, nullptr,
+    blueprints_load(&test_err, &test_dbg, &blueprints, root, &arena);
+    TEST_ASSERT_TRUE(level_load(&test_err, &test_dbg, &level, root, "test", &blueprints, test_texture_lookup, nullptr,
                                 &test_heap_alloc));
 
     /* 1 parent (wagon) + 2 children (lantern, wheel) */
@@ -302,15 +304,15 @@ void test_level_child_entities_instantiated(void)
 void test_level_child_entity_positions(void)
 {
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx.error, &arena));
+    TEST_ASSERT_TRUE(arena_init(&test_err, &arena));
     BlueprintTable blueprints;
     Level level = {0};
 
     toml_table_t *root = parse_toml(child_gamedata);
     TEST_ASSERT_NOT_NULL(root);
 
-    blueprints_load(&ctx.error, &ctx.debug, &blueprints, root, &arena);
-    TEST_ASSERT_TRUE(level_load(&ctx.error, &ctx.debug, &level, root, "test", &blueprints, test_texture_lookup, nullptr,
+    blueprints_load(&test_err, &test_dbg, &blueprints, root, &arena);
+    TEST_ASSERT_TRUE(level_load(&test_err, &test_dbg, &level, root, "test", &blueprints, test_texture_lookup, nullptr,
                                 &test_heap_alloc));
 
     /* Lantern at wagon(100,50) + offset(56,-8) = (156, 42) */
@@ -330,15 +332,15 @@ void test_level_child_entity_positions(void)
 void test_level_child_entity_tags(void)
 {
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx.error, &arena));
+    TEST_ASSERT_TRUE(arena_init(&test_err, &arena));
     BlueprintTable blueprints;
     Level level = {0};
 
     toml_table_t *root = parse_toml(child_gamedata);
     TEST_ASSERT_NOT_NULL(root);
 
-    blueprints_load(&ctx.error, &ctx.debug, &blueprints, root, &arena);
-    TEST_ASSERT_TRUE(level_load(&ctx.error, &ctx.debug, &level, root, "test", &blueprints, test_texture_lookup, nullptr,
+    blueprints_load(&test_err, &test_dbg, &blueprints, root, &arena);
+    TEST_ASSERT_TRUE(level_load(&test_err, &test_dbg, &level, root, "test", &blueprints, test_texture_lookup, nullptr,
                                 &test_heap_alloc));
 
     TEST_ASSERT_EQUAL_STRING("light", level.entities.data[1].tag.ptr);
@@ -353,7 +355,7 @@ void test_level_child_entity_tags(void)
 void test_level_nested_children(void)
 {
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx.error, &arena));
+    TEST_ASSERT_TRUE(arena_init(&test_err, &arena));
     BlueprintTable blueprints;
     Level level = {0};
 
@@ -393,8 +395,8 @@ void test_level_nested_children(void)
     toml_table_t *root = parse_toml(nested_data);
     TEST_ASSERT_NOT_NULL(root);
 
-    blueprints_load(&ctx.error, &ctx.debug, &blueprints, root, &arena);
-    TEST_ASSERT_TRUE(level_load(&ctx.error, &ctx.debug, &level, root, "test", &blueprints, test_texture_lookup, nullptr,
+    blueprints_load(&test_err, &test_dbg, &blueprints, root, &arena);
+    TEST_ASSERT_TRUE(level_load(&test_err, &test_dbg, &level, root, "test", &blueprints, test_texture_lookup, nullptr,
                                 &test_heap_alloc));
 
     /* outer(0) -> mid(1) -> part(2) */

@@ -24,7 +24,8 @@
 bool game_init(ErrorState *err, DebugState *dbg, GameState *state, RectU32 game_bounds)
 {
     (void)dbg;
-    memset(state, 0, sizeof(*state));
+    /* Callers must zero-initialize state before calling game_init.
+     * We only set fields that need non-zero defaults. */
     state->game_bounds = game_bounds;
     state->player_index = -1;
     state->debug_enabled = true;
