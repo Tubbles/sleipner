@@ -99,7 +99,7 @@ void test_level_load_first(void)
     toml_table_t *root = parse_toml(test_gamedata);
     TEST_ASSERT_NOT_NULL(root);
 
-    blueprints_load(&ctx, &blueprints, root, &arena);
+    blueprints_load(&ctx.error, &ctx.debug, &blueprints, root, &arena);
 
     bool loaded = level_load(&ctx, &level, root, nullptr, &blueprints, test_texture_lookup, nullptr, &test_heap_alloc);
     TEST_ASSERT_TRUE(loaded);
@@ -125,7 +125,7 @@ void test_level_load_by_name(void)
     toml_table_t *root = parse_toml(test_gamedata);
     TEST_ASSERT_NOT_NULL(root);
 
-    blueprints_load(&ctx, &blueprints, root, &arena);
+    blueprints_load(&ctx.error, &ctx.debug, &blueprints, root, &arena);
 
     bool loaded =
         level_load(&ctx, &level, root, "dungeon", &blueprints, test_texture_lookup, nullptr, &test_heap_alloc);
@@ -151,7 +151,7 @@ void test_level_load_nonexistent(void)
     toml_table_t *root = parse_toml(test_gamedata);
     TEST_ASSERT_NOT_NULL(root);
 
-    blueprints_load(&ctx, &blueprints, root, &arena);
+    blueprints_load(&ctx.error, &ctx.debug, &blueprints, root, &arena);
 
     bool loaded =
         level_load(&ctx, &level, root, "nonexistent", &blueprints, test_texture_lookup, nullptr, &test_heap_alloc);
@@ -173,7 +173,7 @@ void test_level_entity_positions(void)
     toml_table_t *root = parse_toml(test_gamedata);
     TEST_ASSERT_NOT_NULL(root);
 
-    blueprints_load(&ctx, &blueprints, root, &arena);
+    blueprints_load(&ctx.error, &ctx.debug, &blueprints, root, &arena);
     TEST_ASSERT_TRUE(
         level_load(&ctx, &level, root, "overworld", &blueprints, test_texture_lookup, nullptr, &test_heap_alloc));
 
@@ -209,7 +209,7 @@ void test_level_entity_source_rects(void)
     toml_table_t *root = parse_toml(test_gamedata);
     TEST_ASSERT_NOT_NULL(root);
 
-    blueprints_load(&ctx, &blueprints, root, &arena);
+    blueprints_load(&ctx.error, &ctx.debug, &blueprints, root, &arena);
     TEST_ASSERT_TRUE(
         level_load(&ctx, &level, root, "overworld", &blueprints, test_texture_lookup, nullptr, &test_heap_alloc));
 
@@ -278,7 +278,7 @@ void test_level_child_entities_instantiated(void)
     toml_table_t *root = parse_toml(child_gamedata);
     TEST_ASSERT_NOT_NULL(root);
 
-    blueprints_load(&ctx, &blueprints, root, &arena);
+    blueprints_load(&ctx.error, &ctx.debug, &blueprints, root, &arena);
     TEST_ASSERT_TRUE(
         level_load(&ctx, &level, root, "test", &blueprints, test_texture_lookup, nullptr, &test_heap_alloc));
 
@@ -308,7 +308,7 @@ void test_level_child_entity_positions(void)
     toml_table_t *root = parse_toml(child_gamedata);
     TEST_ASSERT_NOT_NULL(root);
 
-    blueprints_load(&ctx, &blueprints, root, &arena);
+    blueprints_load(&ctx.error, &ctx.debug, &blueprints, root, &arena);
     TEST_ASSERT_TRUE(
         level_load(&ctx, &level, root, "test", &blueprints, test_texture_lookup, nullptr, &test_heap_alloc));
 
@@ -336,7 +336,7 @@ void test_level_child_entity_tags(void)
     toml_table_t *root = parse_toml(child_gamedata);
     TEST_ASSERT_NOT_NULL(root);
 
-    blueprints_load(&ctx, &blueprints, root, &arena);
+    blueprints_load(&ctx.error, &ctx.debug, &blueprints, root, &arena);
     TEST_ASSERT_TRUE(
         level_load(&ctx, &level, root, "test", &blueprints, test_texture_lookup, nullptr, &test_heap_alloc));
 
@@ -392,7 +392,7 @@ void test_level_nested_children(void)
     toml_table_t *root = parse_toml(nested_data);
     TEST_ASSERT_NOT_NULL(root);
 
-    blueprints_load(&ctx, &blueprints, root, &arena);
+    blueprints_load(&ctx.error, &ctx.debug, &blueprints, root, &arena);
     TEST_ASSERT_TRUE(
         level_load(&ctx, &level, root, "test", &blueprints, test_texture_lookup, nullptr, &test_heap_alloc));
 
