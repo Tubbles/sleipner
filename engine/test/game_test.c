@@ -63,7 +63,7 @@ void test_game_init_defaults(void)
 {
     GameState state;
     RectU32 bounds = {320, 240};
-    TEST_ASSERT_TRUE(game_init(&ctx, &state, bounds));
+    TEST_ASSERT_TRUE(game_init(&ctx.error, &ctx.debug, &state, bounds));
 
     TEST_ASSERT_EQUAL_INT(320, state.game_bounds.width);
     TEST_ASSERT_EQUAL_INT(240, state.game_bounds.height);
@@ -72,44 +72,45 @@ void test_game_init_defaults(void)
     TEST_ASSERT_FALSE(state.gamedata_loaded);
     TEST_ASSERT_TRUE(state.debug_enabled);
 
-    game_free(&ctx, &state);
+    game_free(&ctx.error, &ctx.debug, &state);
 }
 
 void test_game_update_increments_frame(void)
 {
     GameState state;
-    TEST_ASSERT_TRUE(game_init(&ctx, &state, (RectU32){320, 240}));
+    TEST_ASSERT_TRUE(game_init(&ctx.error, &ctx.debug, &state, (RectU32){320, 240}));
 
     InputState input = {0};
-    game_update(&ctx, &state, input, 1.0F / 60.0F);
+    game_update(&ctx.error, &ctx.debug, &state, input, 1.0F / 60.0F);
     TEST_ASSERT_EQUAL_INT(1, state.frame);
 
-    game_update(&ctx, &state, input, 1.0F / 60.0F);
+    game_update(&ctx.error, &ctx.debug, &state, input, 1.0F / 60.0F);
     TEST_ASSERT_EQUAL_INT(2, state.frame);
 
-    game_free(&ctx, &state);
+    game_free(&ctx.error, &ctx.debug, &state);
 }
 
 void test_game_update_accumulates_elapsed(void)
 {
     GameState state;
-    TEST_ASSERT_TRUE(game_init(&ctx, &state, (RectU32){320, 240}));
+    TEST_ASSERT_TRUE(game_init(&ctx.error, &ctx.debug, &state, (RectU32){320, 240}));
 
     InputState input = {0};
-    game_update(&ctx, &state, input, 0.5F);
-    game_update(&ctx, &state, input, 0.25F);
+    game_update(&ctx.error, &ctx.debug, &state, input, 0.5F);
+    game_update(&ctx.error, &ctx.debug, &state, input, 0.25F);
 
     TEST_ASSERT_FLOAT_WITHIN(0.001F, 0.75F, state.elapsed);
 
-    game_free(&ctx, &state);
+    game_free(&ctx.error, &ctx.debug, &state);
 }
 
 void test_game_update_player_moves_right(void)
 {
     GameState state;
-    TEST_ASSERT_TRUE(game_init(&ctx, &state, (RectU32){320, 240}));
-    TEST_ASSERT_TRUE(game_load_gamedata(
-        &ctx, &state, (GamedataParams){.toml_string = game_test_gamedata, .texture_lookup = dummy_lookup}));
+    TEST_ASSERT_TRUE(game_init(&ctx.error, &ctx.debug, &state, (RectU32){320, 240}));
+    TEST_ASSERT_TRUE(
+        game_load_gamedata(&ctx.error, &ctx.debug, &state,
+                           (GamedataParams){.toml_string = game_test_gamedata, .texture_lookup = dummy_lookup}));
 
     const Entity *player = game_get_player_const(&state);
     TEST_ASSERT_NOT_NULL(player);
@@ -118,7 +119,7 @@ void test_game_update_player_moves_right(void)
     InputState input = {0};
     input.left_stick.x = 1.0F;
 
-    game_update(&ctx, &state, input, 1.0F / 60.0F);
+    game_update(&ctx.error, &ctx.debug, &state, input, 1.0F / 60.0F);
 
     player = game_get_player_const(&state);
     TEST_ASSERT_TRUE(player->position.x > start_x);
@@ -126,20 +127,21 @@ void test_game_update_player_moves_right(void)
     TEST_ASSERT_EQUAL_INT(ANIM_WALK_SIDE, player->anim_row);
     TEST_ASSERT_FALSE(player->flip);
 
-    game_free(&ctx, &state);
+    game_free(&ctx.error, &ctx.debug, &state);
 }
 
 void test_game_update_player_moves_left(void)
 {
     GameState state;
-    TEST_ASSERT_TRUE(game_init(&ctx, &state, (RectU32){320, 240}));
-    TEST_ASSERT_TRUE(game_load_gamedata(
-        &ctx, &state, (GamedataParams){.toml_string = game_test_gamedata, .texture_lookup = dummy_lookup}));
+    TEST_ASSERT_TRUE(game_init(&ctx.error, &ctx.debug, &state, (RectU32){320, 240}));
+    TEST_ASSERT_TRUE(
+        game_load_gamedata(&ctx.error, &ctx.debug, &state,
+                           (GamedataParams){.toml_string = game_test_gamedata, .texture_lookup = dummy_lookup}));
 
     InputState input = {0};
     input.left_stick.x = -1.0F;
 
-    game_update(&ctx, &state, input, 1.0F / 60.0F);
+    game_update(&ctx.error, &ctx.debug, &state, input, 1.0F / 60.0F);
 
     const Entity *player = game_get_player_const(&state);
     TEST_ASSERT_NOT_NULL(player);
@@ -147,15 +149,16 @@ void test_game_update_player_moves_left(void)
     TEST_ASSERT_EQUAL_INT(ANIM_WALK_SIDE, player->anim_row);
     TEST_ASSERT_TRUE(player->flip);
 
-    game_free(&ctx, &state);
+    game_free(&ctx.error, &ctx.debug, &state);
 }
 
 void test_game_update_no_input_no_movement(void)
 {
     GameState state;
-    TEST_ASSERT_TRUE(game_init(&ctx, &state, (RectU32){320, 240}));
-    TEST_ASSERT_TRUE(game_load_gamedata(
-        &ctx, &state, (GamedataParams){.toml_string = game_test_gamedata, .texture_lookup = dummy_lookup}));
+    TEST_ASSERT_TRUE(game_init(&ctx.error, &ctx.debug, &state, (RectU32){320, 240}));
+    TEST_ASSERT_TRUE(
+        game_load_gamedata(&ctx.error, &ctx.debug, &state,
+                           (GamedataParams){.toml_string = game_test_gamedata, .texture_lookup = dummy_lookup}));
 
     const Entity *player = game_get_player_const(&state);
     TEST_ASSERT_NOT_NULL(player);
@@ -163,43 +166,45 @@ void test_game_update_no_input_no_movement(void)
     float start_y = player->position.y;
 
     InputState input = {0};
-    game_update(&ctx, &state, input, 1.0F / 60.0F);
+    game_update(&ctx.error, &ctx.debug, &state, input, 1.0F / 60.0F);
 
     player = game_get_player_const(&state);
     TEST_ASSERT_FLOAT_WITHIN(0.01F, start_x, player->position.x);
     TEST_ASSERT_FLOAT_WITHIN(0.01F, start_y, player->position.y);
     TEST_ASSERT_FALSE(player->moving);
 
-    game_free(&ctx, &state);
+    game_free(&ctx.error, &ctx.debug, &state);
 }
 
 void test_game_player_clamps_to_bounds(void)
 {
     GameState state;
-    TEST_ASSERT_TRUE(game_init(&ctx, &state, (RectU32){320, 240}));
-    TEST_ASSERT_TRUE(game_load_gamedata(
-        &ctx, &state, (GamedataParams){.toml_string = game_test_gamedata, .texture_lookup = dummy_lookup}));
+    TEST_ASSERT_TRUE(game_init(&ctx.error, &ctx.debug, &state, (RectU32){320, 240}));
+    TEST_ASSERT_TRUE(
+        game_load_gamedata(&ctx.error, &ctx.debug, &state,
+                           (GamedataParams){.toml_string = game_test_gamedata, .texture_lookup = dummy_lookup}));
 
     InputState input = {0};
     input.left_stick.x = -1.0F;
 
     for (int iteration = 0; iteration < 1000; iteration++) {
-        game_update(&ctx, &state, input, 1.0F / 60.0F);
+        game_update(&ctx.error, &ctx.debug, &state, input, 1.0F / 60.0F);
     }
 
     const Entity *player = game_get_player_const(&state);
     float half = FRAME_SIZE / 2.0F;
     TEST_ASSERT_FLOAT_WITHIN(0.1F, half, player->position.x);
 
-    game_free(&ctx, &state);
+    game_free(&ctx.error, &ctx.debug, &state);
 }
 
 void test_game_player_collision_from_blueprint(void)
 {
     GameState state;
-    TEST_ASSERT_TRUE(game_init(&ctx, &state, (RectU32){320, 240}));
-    TEST_ASSERT_TRUE(game_load_gamedata(
-        &ctx, &state, (GamedataParams){.toml_string = game_test_gamedata, .texture_lookup = dummy_lookup}));
+    TEST_ASSERT_TRUE(game_init(&ctx.error, &ctx.debug, &state, (RectU32){320, 240}));
+    TEST_ASSERT_TRUE(
+        game_load_gamedata(&ctx.error, &ctx.debug, &state,
+                           (GamedataParams){.toml_string = game_test_gamedata, .texture_lookup = dummy_lookup}));
 
     const Entity *player = game_get_player_const(&state);
     TEST_ASSERT_NOT_NULL(player);
@@ -210,15 +215,15 @@ void test_game_player_collision_from_blueprint(void)
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 10.0F, player->collision.width);
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 10.0F, player->collision.height);
 
-    game_free(&ctx, &state);
+    game_free(&ctx.error, &ctx.debug, &state);
 }
 
 void test_game_update_resolves_obstacle_collision(void)
 {
     GameState state;
-    TEST_ASSERT_TRUE(game_init(&ctx, &state, (RectU32){320, 240}));
+    TEST_ASSERT_TRUE(game_init(&ctx.error, &ctx.debug, &state, (RectU32){320, 240}));
     TEST_ASSERT_TRUE(game_load_gamedata(
-        &ctx, &state,
+        &ctx.error, &ctx.debug, &state,
         (GamedataParams){.toml_string = game_test_gamedata_with_obstacle, .texture_lookup = dummy_lookup}));
 
     /* Push player into the obstacle */
@@ -226,12 +231,12 @@ void test_game_update_resolves_obstacle_collision(void)
     input.left_stick.x = 1.0F;
 
     for (int iteration = 0; iteration < 200; iteration++) {
-        game_update(&ctx, &state, input, 1.0F / 60.0F);
+        game_update(&ctx.error, &ctx.debug, &state, input, 1.0F / 60.0F);
     }
 
     /* Player collision should not overlap the obstacle */
     const Entity *player = game_get_player_const(&state);
     TEST_ASSERT_TRUE(player->collision.x + player->collision.width <= 170.0F + 0.1F);
 
-    game_free(&ctx, &state);
+    game_free(&ctx.error, &ctx.debug, &state);
 }

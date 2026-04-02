@@ -1,6 +1,5 @@
 #include "game.h"
 
-#include "engine_context.h"
 #include "alloc.h"
 #include "arena.h"
 #include "attribute.h"
@@ -22,19 +21,20 @@
 
 #define TOML_ERRBUF_SIZE 200
 
-bool game_init(struct EngineContext *ctx, GameState *state, RectU32 game_bounds)
+bool game_init(ErrorState *err, DebugState *dbg, GameState *state, RectU32 game_bounds)
 {
+    (void)dbg;
     memset(state, 0, sizeof(*state));
     state->game_bounds = game_bounds;
     state->player_index = -1;
     state->debug_enabled = true;
-    if (!arena_init(&ctx->error, &state->gamedata_arena)) {
-        error_wrap(&ctx->error, "game_init");
+    if (!arena_init(err, &state->gamedata_arena)) {
+        error_wrap(err, "game_init");
         return false;
     }
-    if (!arena_init(&ctx->error, &state->scratch_arena)) {
+    if (!arena_init(err, &state->scratch_arena)) {
         arena_free(&state->gamedata_arena);
-        error_wrap(&ctx->error, "game_init");
+        error_wrap(err, "game_init");
         return false;
     }
     return true;
@@ -63,12 +63,12 @@ static int find_player_entity(const GameState *state)
     return -1;
 }
 
-bool game_load_gamedata(struct EngineContext *ctx, GameState *state, GamedataParams params)
+bool game_load_gamedata(ErrorState *err, DebugState *dbg, GameState *state, GamedataParams params)
 {
     size_t length = strlen(params.toml_string);
     char *buffer = arena_alloc(&state->gamedata_arena, length + 1);
     if (!buffer) {
-        error_wrap(&ctx->error, "game_load_gamedata");
+        error_wrap(err, "game_load_gamedata");
         return false;
     }
     memcpy(buffer, params.toml_string, length + 1);
@@ -79,8 +79,8 @@ bool game_load_gamedata(struct EngineContext *ctx, GameState *state, GamedataPar
     state->rule_table = (map_entity_ruleset){0};
     state->entity_blueprints = (map_int_str){0};
     if (!root) {
-        error_set(&ctx->error, "toml_parse: %s", errbuf);
-        error_wrap(&ctx->error, "game_load_gamedata");
+        error_set(err, "toml_parse: %s", errbuf);
+        error_wrap(err, "game_load_gamedata");
         return false;
     }
 
@@ -89,13 +89,12 @@ bool game_load_gamedata(struct EngineContext *ctx, GameState *state, GamedataPar
     state->timers = vec_timer_new(gamedata_alloc);
     state->prev_player_overlaps = vec_bool_new(gamedata_alloc);
     state->prev_solid_collisions = vec_bool_new(gamedata_alloc);
-    blueprints_load(&ctx->error, &ctx->debug, &state->blueprints, root, &state->gamedata_arena);
-    bool subs_ok =
-        subroutines_parse(&ctx->error, &ctx->debug, &gamedata_alloc, &state->subroutines, root, &state->gamedata_arena);
+    blueprints_load(err, dbg, &state->blueprints, root, &state->gamedata_arena);
+    bool subs_ok = subroutines_parse(err, dbg, &gamedata_alloc, &state->subroutines, root, &state->gamedata_arena);
     bool level_ok = false;
     if (subs_ok) {
-        level_ok = level_load(&ctx->error, &ctx->debug, &state->current_level, root, params.level_name,
-                              &state->blueprints, params.texture_lookup, params.texture_user_data, &gamedata_alloc);
+        level_ok = level_load(err, dbg, &state->current_level, root, params.level_name, &state->blueprints,
+                              params.texture_lookup, params.texture_user_data, &gamedata_alloc);
     }
 
     toml_free(root);
@@ -141,13 +140,13 @@ bool game_load_gamedata(struct EngineContext *ctx, GameState *state, GamedataPar
                                              (TriggerEvent){.type = TRIGGER_ON_SPAWN, .entity_index = index});
             }
             if (spawn_events.count > 0) {
-                rules_evaluate_batch(&ctx->error, &ctx->debug, &gamedata_alloc, state->current_level.entities.data,
-                                     spawn_count, spawn_events.data, spawn_events.count, &state->flags, &state->vars,
+                rules_evaluate_batch(err, dbg, &gamedata_alloc, state->current_level.entities.data, spawn_count,
+                                     spawn_events.data, spawn_events.count, &state->flags, &state->vars,
                                      &state->rule_table, &state->subroutines, &state->timers, spawn_defaults);
             }
         }
     } else {
-        error_wrap(&ctx->error, "game_load_gamedata");
+        error_wrap(err, "game_load_gamedata");
     }
 
     return level_ok;
@@ -286,7 +285,7 @@ static void update_child_positions(Level *level)
     }
 }
 
-static void detect_interact_targets(struct EngineContext *ctx,
+static void detect_interact_targets(DebugState *dbg,
                                     const GameState *state,
                                     const Entity *player,
                                     int player_index,
@@ -303,7 +302,7 @@ static void detect_interact_targets(struct EngineContext *ctx,
         float delta_y = entities[index].position.y - player->position.y;
         float distance_sq = (delta_x * delta_x) + (delta_y * delta_y);
         if (distance_sq <= INTERACT_RANGE * INTERACT_RANGE) {
-            debug_log(&ctx->debug, "Player within interact range of entity %d (type: %s)", index,
+            debug_log(dbg, "Player within interact range of entity %d (type: %s)", index,
                       entities[index].blueprint_name.ptr);
             (void)vec_trigger_event_push(out_events, (TriggerEvent){.type = TRIGGER_INTERACT, .entity_index = index});
         }
@@ -367,25 +366,24 @@ detect_solid_collisions(const GameState *state, Level *level, vec_bool *prev_col
     }
 }
 
-static void
-collect_trigger_events(struct EngineContext *ctx, GameState *state, InputState input, vec_trigger_event *out_events)
+static void collect_trigger_events(DebugState *dbg, GameState *state, InputState input, vec_trigger_event *out_events)
 {
     bool interact_pressed = input.buttons[0];
     bool interact_edge = false;
     if (interact_pressed) {
         if (!state->prev_interact) {
             interact_edge = true;
-            debug_log(&ctx->debug, "Interact button pressed");
+            debug_log(dbg, "Interact button pressed");
         }
     }
     state->prev_interact = interact_pressed;
 
     if (interact_edge) {
-        debug_log(&ctx->debug, "Processing interact edge");
+        debug_log(dbg, "Processing interact edge");
         if (state->player_index >= 0) {
             const Entity *player = game_get_player_const(state);
             if (player) {
-                detect_interact_targets(ctx, state, player, state->player_index, state->current_level.entities.data,
+                detect_interact_targets(dbg, state, player, state->player_index, state->current_level.entities.data,
                                         state->current_level.entities.count, out_events);
             }
         }
@@ -400,7 +398,7 @@ collect_trigger_events(struct EngineContext *ctx, GameState *state, InputState i
     }
 }
 
-void game_update(struct EngineContext *ctx, GameState *state, InputState input, float delta_time)
+void game_update(ErrorState *err, DebugState *dbg, GameState *state, InputState input, float delta_time)
 {
     state->frame++;
     state->elapsed += delta_time;
@@ -446,7 +444,7 @@ void game_update(struct EngineContext *ctx, GameState *state, InputState input, 
             }
         }
 
-        collect_trigger_events(ctx, state, input, &trigger_events);
+        collect_trigger_events(dbg, state, input, &trigger_events);
 
         if (trigger_events.count > 0) {
             int update_count = state->current_level.entities.count;
@@ -456,16 +454,17 @@ void game_update(struct EngineContext *ctx, GameState *state, InputState input, 
                 update_defaults[index] = entity_resolve_defaults(state, state->current_level.entities.data[index].id);
             }
             Allocator rule_alloc = allocator_arena(&state->gamedata_arena);
-            rules_evaluate_batch(&ctx->error, &ctx->debug, &rule_alloc, state->current_level.entities.data,
-                                 update_count, trigger_events.data, trigger_events.count, &state->flags, &state->vars,
+            rules_evaluate_batch(err, dbg, &rule_alloc, state->current_level.entities.data, update_count,
+                                 trigger_events.data, trigger_events.count, &state->flags, &state->vars,
                                  &state->rule_table, &state->subroutines, &state->timers, update_defaults);
         }
     }
 }
 
-void game_free(struct EngineContext *ctx, GameState *state)
+void game_free(ErrorState *err, DebugState *dbg, GameState *state)
 {
-    (void)ctx;
+    (void)err;
+    (void)dbg;
     arena_free(&state->gamedata_arena);
     arena_free(&state->scratch_arena);
     *state = (GameState){0};

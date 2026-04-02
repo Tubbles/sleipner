@@ -3,6 +3,8 @@
 
 #include "arena.h"
 #include "blueprint.h"
+#include "debug.h"
+#include "error.h"
 #include "input.h"
 #include "level.h"
 #include "rect.h"
@@ -10,9 +12,6 @@
 #include "vec.h"
 
 #include <stdbool.h>
-
-// cppcheck-suppress noForwardDecl-noForwardDecl
-struct EngineContext;
 
 #define DEFAULT_PLAYER_SPEED 80.0F
 #define FRAME_SIZE 32
@@ -58,12 +57,12 @@ typedef struct {
     void *texture_user_data;
 } GamedataParams;
 
-[[nodiscard]] bool game_init(struct EngineContext *ctx, GameState *state, RectU32 game_bounds);
-[[nodiscard]] bool game_load_gamedata(struct EngineContext *ctx, GameState *state, GamedataParams params);
-void game_update(struct EngineContext *ctx, GameState *state, InputState input, float delta_time);
+[[nodiscard]] bool game_init(ErrorState *err, DebugState *dbg, GameState *state, RectU32 game_bounds);
+[[nodiscard]] bool game_load_gamedata(ErrorState *err, DebugState *dbg, GameState *state, GamedataParams params);
+void game_update(ErrorState *err, DebugState *dbg, GameState *state, InputState input, float delta_time);
 Entity *game_get_player(GameState *state);
 const Entity *game_get_player_const(const GameState *state);
-void game_free(struct EngineContext *ctx, GameState *state);
+void game_free(ErrorState *err, DebugState *dbg, GameState *state);
 
 /* Resolve an entity's blueprint defaults via the entity→blueprint map.
  * Returns nullptr if entity has no blueprint mapping or blueprint not found. */

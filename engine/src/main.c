@@ -528,7 +528,7 @@ static void load_gamedata(struct EngineContext *ctx, GameState *state)
     debug_log(&ctx->debug, "gamedata: hex[0..%d]: %s", hex_count - 1, hexbuf);
 
     bool loaded = game_load_gamedata(
-        ctx, state,
+        &ctx->error, &ctx->debug, state,
         (GamedataParams){.toml_string = content, .texture_lookup = texture_registry_lookup, .texture_user_data = ctx});
 
     if (loaded) {
@@ -815,7 +815,7 @@ int main(void)
     RenderTexture2D target = LoadRenderTexture((int)game_bounds.width, (int)game_bounds.height);
 
     GameState state;
-    if (!game_init(ctx, &state, game_bounds)) {
+    if (!game_init(&ctx->error, &ctx->debug, &state, game_bounds)) {
         debug_log(&ctx->debug, "error: %s", error_get(&ctx->error));
         error_clear(&ctx->error);
         return 1;
@@ -900,7 +900,7 @@ int main(void)
         }
 
         /* Update (pure logic — no rendering) */
-        game_update(ctx, &state, input, delta_time);
+        game_update(&ctx->error, &ctx->debug, &state, input, delta_time);
 
         render_frame(ctx, &state,
                      (RenderParams){
@@ -920,7 +920,7 @@ quit:
     UnloadRenderTexture(target);
     unload_textures(ctx);
     font_preview_cleanup(ctx);
-    game_free(ctx, &state);
+    game_free(&ctx->error, &ctx->debug, &state);
     audio_shutdown(&ctx->audio);
     debug_shutdown(&ctx->debug);
     CloseWindow();

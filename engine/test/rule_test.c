@@ -1218,9 +1218,10 @@ static const char *rule_test_gamedata = "[[blueprint]]\n"
 void test_integration_interact_rule(void)
 {
     GameState state;
-    TEST_ASSERT_TRUE(game_init(&ctx, &state, (RectU32){320, 240}));
+    TEST_ASSERT_TRUE(game_init(&ctx.error, &ctx.debug, &state, (RectU32){320, 240}));
     TEST_ASSERT_TRUE(game_load_gamedata(
-        &ctx, &state, (GamedataParams){.toml_string = rule_test_gamedata, .texture_lookup = rule_test_dummy_lookup}));
+        &ctx.error, &ctx.debug, &state,
+        (GamedataParams){.toml_string = rule_test_gamedata, .texture_lookup = rule_test_dummy_lookup}));
 
     TEST_ASSERT_TRUE(state.gamedata_loaded);
     TEST_ASSERT_EQUAL_INT(2, state.current_level.entities.count);
@@ -1234,11 +1235,11 @@ void test_integration_interact_rule(void)
 
     InputState input = {0};
     input.buttons[0] = true;
-    game_update(&ctx, &state, input, 1.0F / 60.0F);
+    game_update(&ctx.error, &ctx.debug, &state, input, 1.0F / 60.0F);
 
     TEST_ASSERT_TRUE(flag_get(&state.flags, "chest_opened"));
 
-    game_free(&ctx, &state);
+    game_free(&ctx.error, &ctx.debug, &state);
 }
 
 void test_integration_condition_blocks_interact(void)
@@ -1275,27 +1276,28 @@ void test_integration_condition_blocks_interact(void)
                                   "pos = [165, 120]\n";
 
     GameState state;
-    TEST_ASSERT_TRUE(game_init(&ctx, &state, (RectU32){320, 240}));
-    TEST_ASSERT_TRUE(game_load_gamedata(
-        &ctx, &state, (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));
+    TEST_ASSERT_TRUE(game_init(&ctx.error, &ctx.debug, &state, (RectU32){320, 240}));
+    TEST_ASSERT_TRUE(
+        game_load_gamedata(&ctx.error, &ctx.debug, &state,
+                           (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));
 
     InputState input = {0};
     input.buttons[0] = true;
-    game_update(&ctx, &state, input, 1.0F / 60.0F);
+    game_update(&ctx.error, &ctx.debug, &state, input, 1.0F / 60.0F);
 
     TEST_ASSERT_FALSE(flag_get(&state.flags, "chest_opened"));
 
     input.buttons[0] = false;
-    game_update(&ctx, &state, input, 1.0F / 60.0F);
+    game_update(&ctx.error, &ctx.debug, &state, input, 1.0F / 60.0F);
 
     Allocator arena_alloc = allocator_arena(&state.gamedata_arena);
     flag_set(&ctx.error, &ctx.debug, &arena_alloc, &state.flags, "has_key");
     input.buttons[0] = true;
-    game_update(&ctx, &state, input, 1.0F / 60.0F);
+    game_update(&ctx.error, &ctx.debug, &state, input, 1.0F / 60.0F);
 
     TEST_ASSERT_TRUE(flag_get(&state.flags, "chest_opened"));
 
-    game_free(&ctx, &state);
+    game_free(&ctx.error, &ctx.debug, &state);
 }
 
 /* ---- Integration: for_each control flow ---- */
@@ -1338,9 +1340,10 @@ void test_integration_for_each_no_bind_iterates_all_entities(void)
                                   "pos = [90, 10]\n";
 
     GameState state;
-    TEST_ASSERT_TRUE(game_init(&ctx, &state, (RectU32){320, 240}));
-    TEST_ASSERT_TRUE(game_load_gamedata(
-        &ctx, &state, (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));
+    TEST_ASSERT_TRUE(game_init(&ctx.error, &ctx.debug, &state, (RectU32){320, 240}));
+    TEST_ASSERT_TRUE(
+        game_load_gamedata(&ctx.error, &ctx.debug, &state,
+                           (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));
 
     /* All three entities must have count = 1 */
     for (int entity_index = 0; entity_index < state.current_level.entities.count; entity_index++) {
@@ -1348,7 +1351,7 @@ void test_integration_for_each_no_bind_iterates_all_entities(void)
         TEST_ASSERT_EQUAL_INT(1, (int)attr_get_scoped_float(&entity->attrs, nullptr, "count", 0.0F));
     }
 
-    game_free(&ctx, &state);
+    game_free(&ctx.error, &ctx.debug, &state);
 }
 
 void test_integration_for_each_condition_filter(void)
@@ -1396,9 +1399,10 @@ void test_integration_for_each_condition_filter(void)
                                   "pos = [90, 10]\n";
 
     GameState state;
-    TEST_ASSERT_TRUE(game_init(&ctx, &state, (RectU32){320, 240}));
-    TEST_ASSERT_TRUE(game_load_gamedata(
-        &ctx, &state, (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));
+    TEST_ASSERT_TRUE(game_init(&ctx.error, &ctx.debug, &state, (RectU32){320, 240}));
+    TEST_ASSERT_TRUE(
+        game_load_gamedata(&ctx.error, &ctx.debug, &state,
+                           (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));
 
     TEST_ASSERT_EQUAL_INT(3, state.current_level.entities.count);
     /* entity 1 = enemy, entity 2 = bystander */
@@ -1407,7 +1411,7 @@ void test_integration_for_each_condition_filter(void)
     TEST_ASSERT_EQUAL_INT(1, (int)attr_get_scoped_float(&enemy->attrs, nullptr, "hit_count", 0.0F));
     TEST_ASSERT_EQUAL_INT(0, (int)attr_get_scoped_float(&bystander->attrs, nullptr, "hit_count", 0.0F));
 
-    game_free(&ctx, &state);
+    game_free(&ctx.error, &ctx.debug, &state);
 }
 
 void test_integration_for_each_bind_mode(void)
@@ -1449,9 +1453,10 @@ void test_integration_for_each_bind_mode(void)
         "pos = [90, 10]\n";
 
     GameState state;
-    TEST_ASSERT_TRUE(game_init(&ctx, &state, (RectU32){320, 240}));
-    TEST_ASSERT_TRUE(game_load_gamedata(
-        &ctx, &state, (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));
+    TEST_ASSERT_TRUE(game_init(&ctx.error, &ctx.debug, &state, (RectU32){320, 240}));
+    TEST_ASSERT_TRUE(
+        game_load_gamedata(&ctx.error, &ctx.debug, &state,
+                           (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));
 
     /* All three entities must have tagged = 1 (bind mode still includes self) */
     for (int entity_index = 0; entity_index < state.current_level.entities.count; entity_index++) {
@@ -1459,7 +1464,7 @@ void test_integration_for_each_bind_mode(void)
         TEST_ASSERT_EQUAL_INT(1, (int)attr_get_scoped_float(&entity->attrs, nullptr, "tagged", 0.0F));
     }
 
-    game_free(&ctx, &state);
+    game_free(&ctx.error, &ctx.debug, &state);
 }
 
 /* ---- Integration: subroutines ---- */
@@ -1490,13 +1495,14 @@ void test_integration_subroutine_call(void)
                                   "pos = [10, 10]\n";
 
     GameState state;
-    TEST_ASSERT_TRUE(game_init(&ctx, &state, (RectU32){320, 240}));
-    TEST_ASSERT_TRUE(game_load_gamedata(
-        &ctx, &state, (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));
+    TEST_ASSERT_TRUE(game_init(&ctx.error, &ctx.debug, &state, (RectU32){320, 240}));
+    TEST_ASSERT_TRUE(
+        game_load_gamedata(&ctx.error, &ctx.debug, &state,
+                           (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));
 
     TEST_ASSERT_TRUE(flag_get(&state.flags, "visited"));
 
-    game_free(&ctx, &state);
+    game_free(&ctx.error, &ctx.debug, &state);
 }
 
 void test_integration_subroutine_inherits_self(void)
@@ -1525,15 +1531,16 @@ void test_integration_subroutine_inherits_self(void)
                                   "pos = [10, 10]\n";
 
     GameState state;
-    TEST_ASSERT_TRUE(game_init(&ctx, &state, (RectU32){320, 240}));
-    TEST_ASSERT_TRUE(game_load_gamedata(
-        &ctx, &state, (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));
+    TEST_ASSERT_TRUE(game_init(&ctx.error, &ctx.debug, &state, (RectU32){320, 240}));
+    TEST_ASSERT_TRUE(
+        game_load_gamedata(&ctx.error, &ctx.debug, &state,
+                           (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));
 
     /* Called twice — count must be 2 */
     const Entity *counter = &state.current_level.entities.data[0];
     TEST_ASSERT_EQUAL_INT(2, (int)attr_get_scoped_float(&counter->attrs, nullptr, "count", 0.0F));
 
-    game_free(&ctx, &state);
+    game_free(&ctx.error, &ctx.debug, &state);
 }
 
 /* ---- Integration: timers ---- */
@@ -1565,9 +1572,10 @@ void test_integration_timer_oneshot_fires_once(void)
                                   "fired_count = 0\n";
 
     GameState state;
-    TEST_ASSERT_TRUE(game_init(&ctx, &state, (RectU32){320, 240}));
-    TEST_ASSERT_TRUE(game_load_gamedata(
-        &ctx, &state, (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));
+    TEST_ASSERT_TRUE(game_init(&ctx.error, &ctx.debug, &state, (RectU32){320, 240}));
+    TEST_ASSERT_TRUE(
+        game_load_gamedata(&ctx.error, &ctx.debug, &state,
+                           (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));
 
     /* 1 timer created, none fired yet */
     TEST_ASSERT_EQUAL_INT(1, state.timers.count);
@@ -1575,15 +1583,15 @@ void test_integration_timer_oneshot_fires_once(void)
     TEST_ASSERT_EQUAL_INT(0, (int)attr_get_scoped_float(&thing->attrs, nullptr, "fired_count", 0.0F));
 
     /* Advance past duration — timer fires once */
-    game_update(&ctx, &state, (InputState){0}, 0.6F);
+    game_update(&ctx.error, &ctx.debug, &state, (InputState){0}, 0.6F);
     TEST_ASSERT_EQUAL_INT(0, state.timers.count);
     TEST_ASSERT_EQUAL_INT(1, (int)attr_get_scoped_float(&thing->attrs, nullptr, "fired_count", 0.0F));
 
     /* Second tick — no timer left, count stays at 1 */
-    game_update(&ctx, &state, (InputState){0}, 0.6F);
+    game_update(&ctx.error, &ctx.debug, &state, (InputState){0}, 0.6F);
     TEST_ASSERT_EQUAL_INT(1, (int)attr_get_scoped_float(&thing->attrs, nullptr, "fired_count", 0.0F));
 
-    game_free(&ctx, &state);
+    game_free(&ctx.error, &ctx.debug, &state);
 }
 
 void test_integration_timer_periodic_fires_repeatedly(void)
@@ -1612,21 +1620,22 @@ void test_integration_timer_periodic_fires_repeatedly(void)
                                   "pulse_count = 0\n";
 
     GameState state;
-    TEST_ASSERT_TRUE(game_init(&ctx, &state, (RectU32){320, 240}));
-    TEST_ASSERT_TRUE(game_load_gamedata(
-        &ctx, &state, (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));
+    TEST_ASSERT_TRUE(game_init(&ctx.error, &ctx.debug, &state, (RectU32){320, 240}));
+    TEST_ASSERT_TRUE(
+        game_load_gamedata(&ctx.error, &ctx.debug, &state,
+                           (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));
 
     /* Advance 0.6 s — one fire */
-    game_update(&ctx, &state, (InputState){0}, 0.6F);
+    game_update(&ctx.error, &ctx.debug, &state, (InputState){0}, 0.6F);
     const Entity *thing = &state.current_level.entities.data[0];
     TEST_ASSERT_EQUAL_INT(1, (int)attr_get_scoped_float(&thing->attrs, nullptr, "pulse_count", 0.0F));
 
     /* Advance another 0.6 s — second fire; timer still alive */
-    game_update(&ctx, &state, (InputState){0}, 0.6F);
+    game_update(&ctx.error, &ctx.debug, &state, (InputState){0}, 0.6F);
     TEST_ASSERT_EQUAL_INT(2, (int)attr_get_scoped_float(&thing->attrs, nullptr, "pulse_count", 0.0F));
     TEST_ASSERT_EQUAL_INT(1, state.timers.count);
 
-    game_free(&ctx, &state);
+    game_free(&ctx.error, &ctx.debug, &state);
 }
 
 void test_integration_timer_destroy_cancels(void)
@@ -1660,9 +1669,10 @@ void test_integration_timer_destroy_cancels(void)
                                   "fired_count = 0\n";
 
     GameState state;
-    TEST_ASSERT_TRUE(game_init(&ctx, &state, (RectU32){320, 240}));
-    TEST_ASSERT_TRUE(game_load_gamedata(
-        &ctx, &state, (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));
+    TEST_ASSERT_TRUE(game_init(&ctx.error, &ctx.debug, &state, (RectU32){320, 240}));
+    TEST_ASSERT_TRUE(
+        game_load_gamedata(&ctx.error, &ctx.debug, &state,
+                           (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));
 
     TEST_ASSERT_EQUAL_INT(1, state.timers.count);
 
@@ -1684,11 +1694,11 @@ void test_integration_timer_destroy_cancels(void)
     TEST_ASSERT_EQUAL_INT(0, state.timers.count);
 
     /* Advance past duration — no fire */
-    game_update(&ctx, &state, (InputState){0}, 0.6F);
+    game_update(&ctx.error, &ctx.debug, &state, (InputState){0}, 0.6F);
     const Entity *thing = &state.current_level.entities.data[0];
     TEST_ASSERT_EQUAL_INT(0, (int)attr_get_scoped_float(&thing->attrs, nullptr, "fired_count", 0.0F));
 
-    game_free(&ctx, &state);
+    game_free(&ctx.error, &ctx.debug, &state);
 }
 
 /* ---- Integration: on_destroy trigger ---- */
@@ -1718,16 +1728,17 @@ void test_integration_on_destroy_fires(void)
                                   "pos = [10, 10]\n";
 
     GameState state;
-    TEST_ASSERT_TRUE(game_init(&ctx, &state, (RectU32){320, 240}));
-    TEST_ASSERT_TRUE(game_load_gamedata(
-        &ctx, &state, (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));
+    TEST_ASSERT_TRUE(game_init(&ctx.error, &ctx.debug, &state, (RectU32){320, 240}));
+    TEST_ASSERT_TRUE(
+        game_load_gamedata(&ctx.error, &ctx.debug, &state,
+                           (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));
 
     /* Entity must be inactive and the on_destroy flag must be set */
     const Entity *thing = &state.current_level.entities.data[0];
     TEST_ASSERT_FALSE(attr_get_bool(&thing->attrs, "active", true));
     TEST_ASSERT_TRUE(flag_get(&state.flags, "thing_destroyed"));
 
-    game_free(&ctx, &state);
+    game_free(&ctx.error, &ctx.debug, &state);
 }
 
 /* ---- Integration: defeat trigger ---- */
@@ -1759,13 +1770,14 @@ void test_integration_defeat_fires_when_health_drops_to_zero(void)
                                   "pos = [10, 10]\n";
 
     GameState state;
-    TEST_ASSERT_TRUE(game_init(&ctx, &state, (RectU32){320, 240}));
-    TEST_ASSERT_TRUE(game_load_gamedata(
-        &ctx, &state, (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));
+    TEST_ASSERT_TRUE(game_init(&ctx.error, &ctx.debug, &state, (RectU32){320, 240}));
+    TEST_ASSERT_TRUE(
+        game_load_gamedata(&ctx.error, &ctx.debug, &state,
+                           (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));
 
     TEST_ASSERT_TRUE(flag_get(&state.flags, "enemy_defeated"));
 
-    game_free(&ctx, &state);
+    game_free(&ctx.error, &ctx.debug, &state);
 }
 
 /* ---- Integration: collide trigger ---- */
@@ -1804,18 +1816,19 @@ void test_integration_collide_fires_on_overlap(void)
                                   "pos = [10, 10]\n";
 
     GameState state;
-    TEST_ASSERT_TRUE(game_init(&ctx, &state, (RectU32){320, 240}));
-    TEST_ASSERT_TRUE(game_load_gamedata(
-        &ctx, &state, (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));
+    TEST_ASSERT_TRUE(game_init(&ctx.error, &ctx.debug, &state, (RectU32){320, 240}));
+    TEST_ASSERT_TRUE(
+        game_load_gamedata(&ctx.error, &ctx.debug, &state,
+                           (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));
 
     /* No collide event yet — prev_solid_collisions initialised to false */
     TEST_ASSERT_FALSE(flag_get(&state.flags, "rock_hit"));
 
     /* First update — overlap detected for the first time → fire */
-    game_update(&ctx, &state, (InputState){0}, 0.016F);
+    game_update(&ctx.error, &ctx.debug, &state, (InputState){0}, 0.016F);
     TEST_ASSERT_TRUE(flag_get(&state.flags, "rock_hit"));
 
-    game_free(&ctx, &state);
+    game_free(&ctx.error, &ctx.debug, &state);
 }
 
 void test_integration_subroutine_missing_is_soft_fail(void)
@@ -1840,13 +1853,14 @@ void test_integration_subroutine_missing_is_soft_fail(void)
                                   "pos = [10, 10]\n";
 
     GameState state;
-    TEST_ASSERT_TRUE(game_init(&ctx, &state, (RectU32){320, 240}));
-    TEST_ASSERT_TRUE(game_load_gamedata(
-        &ctx, &state, (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));
+    TEST_ASSERT_TRUE(game_init(&ctx.error, &ctx.debug, &state, (RectU32){320, 240}));
+    TEST_ASSERT_TRUE(
+        game_load_gamedata(&ctx.error, &ctx.debug, &state,
+                           (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));
 
     /* count must be 1 — add_attr ran after the failed call: */
     const Entity *thing = &state.current_level.entities.data[0];
     TEST_ASSERT_EQUAL_INT(1, (int)attr_get_scoped_float(&thing->attrs, nullptr, "count", 0.0F));
 
-    game_free(&ctx, &state);
+    game_free(&ctx.error, &ctx.debug, &state);
 }
