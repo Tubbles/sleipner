@@ -402,13 +402,17 @@ static char *read_file(const char *path)
     (void)fseek(file, 0, SEEK_END);
     long length = ftell(file);
     (void)fseek(file, 0, SEEK_SET);
-    char *buffer = malloc((size_t)length + 1);
+    if (length <= 0) {
+        (void)fclose(file);
+        return nullptr;
+    }
+    size_t size = (size_t)length;
+    char *buffer = calloc(size + 1, 1);
     if (!buffer) {
         (void)fclose(file);
         return nullptr;
     }
-    size_t read = fread(buffer, 1, (size_t)length, file);
-    buffer[read] = '\0';
+    (void)fread(buffer, 1, size, file);
     (void)fclose(file);
     return buffer;
 }
