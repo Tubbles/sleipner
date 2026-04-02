@@ -5,6 +5,7 @@
 #include "attribute.h"
 #include "blueprint.h"
 #include "debug.h"
+#include "diag.h"
 #include "editor.h"
 #include "error.h"
 #include "entity.h"
@@ -46,10 +47,10 @@ void draw_editor_crosshair(RectU32 game_bounds)
     DrawLine(center_x, center_y - EDITOR_CROSSHAIR_HALF, center_x, center_y + EDITOR_CROSSHAIR_HALF, WHITE);
 }
 
-void draw_hints_bar(bool editor_mode, const EditorState *editor_state, int screen_width, int screen_height)
+void draw_hints_bar(bool editor_mode, const EditorState *editor_state, ScreenSize screen)
 {
-    int bar_y = screen_height - HINTS_BAR_HEIGHT;
-    DrawRectangle(0, bar_y, screen_width, HINTS_BAR_HEIGHT, debug_bg_color);
+    int bar_y = screen.height - HINTS_BAR_HEIGHT;
+    DrawRectangle(0, bar_y, screen.width, HINTS_BAR_HEIGHT, debug_bg_color);
     const char *hints;
     if (editor_mode) {
         if (editor_state->sub_mode == EDITOR_SUB_DRAG) {
@@ -155,16 +156,16 @@ static void draw_attr_section(const AttrSet *set, int panel_x, int *y_offset, in
     }
 }
 
-void draw_editor_panel(int screen_width, int screen_height, const GameState *state, const EditorState *editor_state)
+void draw_editor_panel(ScreenSize screen, const GameState *state, const EditorState *editor_state)
 {
     int sel = editor_state->selected_entity_index;
     if (sel < 0 || sel >= state->current_level.entities.count) {
         return;
     }
     const Entity *entity = &state->current_level.entities.data[sel];
-    int panel_x = screen_width - EDITOR_PANEL_WIDTH;
+    int panel_x = screen.width - EDITOR_PANEL_WIDTH;
     int y_offset = 0;
-    DrawRectangle(panel_x, 0, EDITOR_PANEL_WIDTH, screen_height, debug_bg_color);
+    DrawRectangle(panel_x, 0, EDITOR_PANEL_WIDTH, screen.height, debug_bg_color);
     DrawText(TextFormat("[ %s ]  id: %d  parent: %d", entity->blueprint_name.ptr, entity->id, entity->parent_index),
              panel_x + DEBUG_MARGIN, y_offset, EDITOR_PANEL_FONT_SIZE, debug_text_color);
     y_offset += EDITOR_PANEL_LINE_HEIGHT;
@@ -184,13 +185,12 @@ void draw_editor_panel(int screen_width, int screen_height, const GameState *sta
     }
 }
 
-void draw_watch_overlay(int screen_width, int screen_height, const GameState *state, const WatchList *watches)
+void draw_watch_overlay(ScreenSize screen, const GameState *state, const WatchList *watches)
 {
-    (void)screen_height;
     if (watches->count <= 0) {
         return;
     }
-    int panel_x = screen_width - EDITOR_PANEL_WIDTH;
+    int panel_x = screen.width - EDITOR_PANEL_WIDTH;
     int panel_height = (watches->count * 2 * EDITOR_PANEL_LINE_HEIGHT) + DEBUG_MARGIN;
     DrawRectangle(panel_x, 0, EDITOR_PANEL_WIDTH, panel_height, debug_bg_color);
     int y_offset = 0;
@@ -342,7 +342,7 @@ static int place_visible_count(int screen_height)
     return (screen_height - HINTS_BAR_HEIGHT - EDITOR_PANEL_LINE_HEIGHT) / EDITOR_PANEL_LINE_HEIGHT;
 }
 
-void draw_place_panel(int screen_width, int screen_height, const GameState *state, const EditorState *editor_state)
+void draw_place_panel(ScreenSize screen, const GameState *state, const EditorState *editor_state)
 {
     if (editor_state->sub_mode != EDITOR_SUB_PLACE) {
         return;
@@ -352,13 +352,13 @@ void draw_place_panel(int screen_width, int screen_height, const GameState *stat
         return;
     }
     int bp_index = editor_state->place_blueprint_index;
-    int panel_x = screen_width - EDITOR_PANEL_WIDTH;
-    DrawRectangle(panel_x, 0, EDITOR_PANEL_WIDTH, screen_height, debug_bg_color);
+    int panel_x = screen.width - EDITOR_PANEL_WIDTH;
+    DrawRectangle(panel_x, 0, EDITOR_PANEL_WIDTH, screen.height, debug_bg_color);
     int y_offset = 0;
     DrawText("[ Place Mode ]", panel_x + DEBUG_MARGIN, y_offset, EDITOR_PANEL_FONT_SIZE, debug_text_color);
     y_offset += EDITOR_PANEL_LINE_HEIGHT;
 
-    int visible = place_visible_count(screen_height);
+    int visible = place_visible_count(screen.height);
     int scroll = bp_index - (visible / 2);
     if (scroll < 0) {
         scroll = 0;
@@ -820,13 +820,13 @@ static const char *radial_label(const EditorState *editor_state, int index)
     return "";
 }
 
-void draw_radial_picker(int screen_width, int screen_height, const EditorState *editor_state)
+void draw_radial_picker(ScreenSize screen, const EditorState *editor_state)
 {
     if (editor_state->sub_mode != EDITOR_SUB_RADIAL) {
         return;
     }
-    int center_x = screen_width / 2;
-    int center_y = screen_height / 2;
+    int center_x = screen.width / 2;
+    int center_y = screen.height / 2;
     DrawCircle(center_x, center_y, RADIAL_OUTER_RADIUS + RADIAL_BG_PADDING, debug_bg_color);
     int item_count = editor_state->radial_item_count;
     float sector_deg = RADIAL_FULL_CIRCLE_DEG / (float)item_count;
@@ -931,16 +931,13 @@ static void word_builder_pop(EditorState *editor_state)
     editor_state->word_builder_len = 0;
 }
 
-void draw_word_builder_panel(int screen_width,
-                             int screen_height,
-                             const GameState *state,
-                             const EditorState *editor_state)
+void draw_word_builder_panel(ScreenSize screen, const GameState *state, const EditorState *editor_state)
 {
     if (editor_state->sub_mode != EDITOR_SUB_WORD_BUILDER) {
         return;
     }
-    int panel_x = screen_width - EDITOR_PANEL_WIDTH;
-    DrawRectangle(panel_x, 0, EDITOR_PANEL_WIDTH, screen_height, debug_bg_color);
+    int panel_x = screen.width - EDITOR_PANEL_WIDTH;
+    DrawRectangle(panel_x, 0, EDITOR_PANEL_WIDTH, screen.height, debug_bg_color);
     int y_offset = 0;
     DrawText("[ Word Builder ]", panel_x + DEBUG_MARGIN, y_offset, EDITOR_PANEL_FONT_SIZE, debug_text_color);
     y_offset += EDITOR_PANEL_LINE_HEIGHT;
@@ -950,7 +947,7 @@ void draw_word_builder_panel(int screen_width,
 
     int total = word_builder_total_count(state);
     int scroll = editor_state->word_builder_scroll;
-    int visible = place_visible_count(screen_height);
+    int visible = place_visible_count(screen.height);
     int scroll_offset = scroll - (visible / 2);
     if (scroll_offset < 0) {
         scroll_offset = 0;

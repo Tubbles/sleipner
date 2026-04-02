@@ -1,4 +1,5 @@
-#pragma once
+#ifndef CHECK_H
+#define CHECK_H
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -12,3 +13,5 @@
             abort();                                                                                                   \
         }                                                                                                              \
     } while (0)
+
+#endif

@@ -147,6 +147,7 @@ static inline bool map_eq_int(int first, int second)
         return slot >= 0 ? &map->entries[slot].value : nullptr;                               \
     }                                                                                      \
     bool map_##name##_remove(map_##name *map, key_type key) {                             \
+        if (!map->entries) return false;                                                    \
         int slot = map_##name##_find_slot(map, key);                                       \
         if (slot < 0) return false;                                                        \
         map->entries[slot].state = MAP_ENTRY_DELETED;                                      \

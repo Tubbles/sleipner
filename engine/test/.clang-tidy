@@ -34,7 +34,12 @@ InheritParentConfig: true
 # readability-else-after-return  — fff.h macro expansions use else-after-return
 #                                  internally; not fixable without patching the
 #                                  vendor header.
+# bugprone-sizeof-expression     — fff.h FAKE_VALUE_FUNC for pointer return
+#                                  types uses sizeof(ptr_type) internally;
+#                                  cannot be fixed without patching the vendor
+#                                  header.
 Checks: >
+  -bugprone-sizeof-expression,
   -cert-err33-c,
   -cppcoreguidelines-avoid-non-const-global-variables,
   -misc-include-cleaner,

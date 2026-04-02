@@ -746,18 +746,19 @@ static void render_frame(GameState *state, RenderParams params)
     if (params.font_preview_enabled) {
         draw_font_preview(state);
     }
+    ScreenSize screen = {state->screen_width, state->screen_height};
     if (state->editor_mode) {
         if (params.editor_state.sub_mode == EDITOR_SUB_PLACE) {
-            draw_place_panel(state->screen_width, state->screen_height, state, &params.editor_state);
+            draw_place_panel(screen, state, &params.editor_state);
         } else if (params.editor_state.sub_mode == EDITOR_SUB_WORD_BUILDER) {
-            draw_word_builder_panel(state->screen_width, state->screen_height, state, &params.editor_state);
+            draw_word_builder_panel(screen, state, &params.editor_state);
         } else {
-            draw_editor_panel(state->screen_width, state->screen_height, state, &params.editor_state);
+            draw_editor_panel(screen, state, &params.editor_state);
         }
     }
-    draw_watch_overlay(state->screen_width, state->screen_height, state, params.watches);
-    draw_radial_picker(state->screen_width, state->screen_height, &params.editor_state);
-    draw_hints_bar(state->editor_mode, &params.editor_state, state->screen_width, state->screen_height);
+    draw_watch_overlay(screen, state, params.watches);
+    draw_radial_picker(screen, &params.editor_state);
+    draw_hints_bar(state->editor_mode, &params.editor_state, screen);
     EndDrawing();
 }
 
