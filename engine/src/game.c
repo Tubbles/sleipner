@@ -94,8 +94,8 @@ bool game_load_gamedata(struct EngineContext *ctx, GameState *state, GamedataPar
         subroutines_parse(&ctx->error, &ctx->debug, &gamedata_alloc, &state->subroutines, root, &state->gamedata_arena);
     bool level_ok = false;
     if (subs_ok) {
-        level_ok = level_load(ctx, &state->current_level, root, params.level_name, &state->blueprints,
-                              params.texture_lookup, params.texture_user_data, &gamedata_alloc);
+        level_ok = level_load(&ctx->error, &ctx->debug, &state->current_level, root, params.level_name,
+                              &state->blueprints, params.texture_lookup, params.texture_user_data, &gamedata_alloc);
     }
 
     toml_free(root);

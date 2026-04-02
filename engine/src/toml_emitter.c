@@ -1,6 +1,5 @@
 #include "toml_emitter.h"
 
-#include "engine_context.h"
 #include "attribute.h"
 #include "blueprint.h"
 #include "entity.h"
@@ -417,12 +416,8 @@ static int emit_levels(char *buffer, int capacity, int offset, const Level *leve
     return offset;
 }
 
-int toml_emit_gamedata(struct EngineContext *ctx,
-                       char *buffer,
-                       int capacity,
-                       const BlueprintTable *blueprints,
-                       const Level *levels,
-                       int level_count)
+int toml_emit_gamedata(
+    ErrorState *err, char *buffer, int capacity, const BlueprintTable *blueprints, const Level *levels, int level_count)
 {
     int offset = 0;
 
@@ -430,7 +425,7 @@ int toml_emit_gamedata(struct EngineContext *ctx,
     offset = emit_levels(buffer, capacity, offset, levels, level_count);
 
     if (offset < 0) {
-        error_set(&ctx->error, "buffer too small (capacity %d)", capacity);
+        error_set(err, "buffer too small (capacity %d)", capacity);
     }
     return offset;
 }

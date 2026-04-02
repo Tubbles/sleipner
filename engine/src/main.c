@@ -409,7 +409,8 @@ static bool save_gamedata(struct EngineContext *ctx, const GameState *state)
     }
 
     char buffer[MAX_GAMEDATA_SIZE];
-    int written = toml_emit_gamedata(ctx, buffer, (int)sizeof(buffer), &state->blueprints, &state->current_level, 1);
+    int written =
+        toml_emit_gamedata(&ctx->error, buffer, (int)sizeof(buffer), &state->blueprints, &state->current_level, 1);
     if (written < 0) {
         error_wrap(&ctx->error, "save_gamedata");
         return false;
@@ -657,8 +658,8 @@ static void handle_place_input(struct EngineContext *ctx,
         int bp_index = editor_state->place_blueprint_index;
         const Blueprint *blueprint = &state->blueprints.entries.data[bp_index];
         Allocator alloc = allocator_arena(&state->gamedata_arena);
-        if (!level_spawn_entity(ctx, &state->current_level, blueprint, camera->target, &state->blueprints,
-                                texture_registry_lookup, ctx, &alloc)) {
+        if (!level_spawn_entity(&ctx->error, &ctx->debug, &state->current_level, blueprint, camera->target,
+                                &state->blueprints, texture_registry_lookup, ctx, &alloc)) {
             debug_log(&ctx->debug, "error: %s", error_get(&ctx->error));
             error_clear(&ctx->error);
         }

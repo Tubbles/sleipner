@@ -69,7 +69,7 @@ void test_toml_emit_blueprints(void)
 
     char output[4096];
     Level empty_level = {0};
-    int written = toml_emit_gamedata(&ctx, output, (int)sizeof(output), &blueprints, &empty_level, 0);
+    int written = toml_emit_gamedata(&ctx.error, output, (int)sizeof(output), &blueprints, &empty_level, 0);
     TEST_ASSERT_TRUE(written > 0);
 
     /* Verify the output contains the blueprint data */
@@ -93,11 +93,12 @@ void test_toml_emit_level_with_entities(void)
     toml_table_t *root = parse_toml(fixture_gamedata);
     TEST_ASSERT_NOT_NULL(root);
     blueprints_load(&ctx.error, &ctx.debug, &blueprints, root, &arena);
-    TEST_ASSERT_TRUE(level_load(&ctx, &level, root, nullptr, &blueprints, dummy_lookup, nullptr, &test_heap_alloc));
+    TEST_ASSERT_TRUE(level_load(&ctx.error, &ctx.debug, &level, root, nullptr, &blueprints, dummy_lookup, nullptr,
+                                &test_heap_alloc));
     toml_free(root);
 
     char output[4096];
-    int written = toml_emit_gamedata(&ctx, output, (int)sizeof(output), &blueprints, &level, 1);
+    int written = toml_emit_gamedata(&ctx.error, output, (int)sizeof(output), &blueprints, &level, 1);
     TEST_ASSERT_TRUE(written > 0);
 
     TEST_ASSERT_NOT_NULL(strstr(output, "[[level]]"));
@@ -125,12 +126,13 @@ void test_toml_emit_round_trip(void)
     toml_table_t *root = parse_toml(fixture_gamedata);
     TEST_ASSERT_NOT_NULL(root);
     blueprints_load(&ctx.error, &ctx.debug, &blueprints, root, &arena);
-    TEST_ASSERT_TRUE(level_load(&ctx, &level, root, nullptr, &blueprints, dummy_lookup, nullptr, &test_heap_alloc));
+    TEST_ASSERT_TRUE(level_load(&ctx.error, &ctx.debug, &level, root, nullptr, &blueprints, dummy_lookup, nullptr,
+                                &test_heap_alloc));
     toml_free(root);
 
     /* Emit */
     char output[8192];
-    int written = toml_emit_gamedata(&ctx, output, (int)sizeof(output), &blueprints, &level, 1);
+    int written = toml_emit_gamedata(&ctx.error, output, (int)sizeof(output), &blueprints, &level, 1);
     TEST_ASSERT_TRUE(written > 0);
 
     /* Re-parse the emitted output */
@@ -142,7 +144,8 @@ void test_toml_emit_round_trip(void)
     toml_table_t *root2 = parse_toml(output);
     TEST_ASSERT_NOT_NULL(root2);
     blueprints_load(&ctx.error, &ctx.debug, &blueprints2, root2, &arena2);
-    TEST_ASSERT_TRUE(level_load(&ctx, &level2, root2, nullptr, &blueprints2, dummy_lookup, nullptr, &test_heap_alloc));
+    TEST_ASSERT_TRUE(level_load(&ctx.error, &ctx.debug, &level2, root2, nullptr, &blueprints2, dummy_lookup, nullptr,
+                                &test_heap_alloc));
     toml_free(root2);
 
     /* Verify round-trip preserves data */
@@ -187,7 +190,7 @@ void test_toml_emit_buffer_too_small(void)
         attr_set_string(&test_heap_alloc, &entry->attrs, (AttrStringPair){.name = "texture", .value = "test.png"}));
 
     char tiny[10];
-    int written = toml_emit_gamedata(&ctx, tiny, (int)sizeof(tiny), &blueprints, nullptr, 0);
+    int written = toml_emit_gamedata(&ctx.error, tiny, (int)sizeof(tiny), &blueprints, nullptr, 0);
     TEST_ASSERT_EQUAL_INT(-1, written);
     test_blueprint_table_free(&blueprints);
 }
@@ -232,7 +235,7 @@ void test_toml_emit_blueprint_children(void)
 
     char output[4096];
     Level empty_level = {0};
-    int written = toml_emit_gamedata(&ctx, output, (int)sizeof(output), &blueprints, &empty_level, 0);
+    int written = toml_emit_gamedata(&ctx.error, output, (int)sizeof(output), &blueprints, &empty_level, 0);
     TEST_ASSERT_TRUE(written > 0);
 
     TEST_ASSERT_NOT_NULL(strstr(output, "[[blueprint.child]]"));
@@ -252,14 +255,15 @@ void test_toml_emit_skips_child_entities(void)
     toml_table_t *root = parse_toml(child_fixture);
     TEST_ASSERT_NOT_NULL(root);
     blueprints_load(&ctx.error, &ctx.debug, &blueprints, root, &arena);
-    TEST_ASSERT_TRUE(level_load(&ctx, &level, root, "test", &blueprints, dummy_lookup, nullptr, &test_heap_alloc));
+    TEST_ASSERT_TRUE(
+        level_load(&ctx.error, &ctx.debug, &level, root, "test", &blueprints, dummy_lookup, nullptr, &test_heap_alloc));
     toml_free(root);
 
     /* Level has 2 entities (wagon + lantern child) */
     TEST_ASSERT_EQUAL_INT(2, level.entities.count);
 
     char output[4096];
-    int written = toml_emit_gamedata(&ctx, output, (int)sizeof(output), &blueprints, &level, 1);
+    int written = toml_emit_gamedata(&ctx.error, output, (int)sizeof(output), &blueprints, &level, 1);
     TEST_ASSERT_TRUE(written > 0);
 
     /* Only the parent wagon should appear as a level.entity */
@@ -287,7 +291,7 @@ void test_toml_emit_no_music(void)
 
     BlueprintTable empty = {0};
     char output[1024];
-    int written = toml_emit_gamedata(&ctx, output, (int)sizeof(output), &empty, &level, 1);
+    int written = toml_emit_gamedata(&ctx.error, output, (int)sizeof(output), &empty, &level, 1);
     TEST_ASSERT_TRUE(written > 0);
 
     /* Should not contain music line */
@@ -322,7 +326,7 @@ void test_toml_emit_custom_attrs(void)
 
     char output[4096];
     Level empty_level = {0};
-    int written = toml_emit_gamedata(&ctx, output, (int)sizeof(output), &blueprints, &empty_level, 0);
+    int written = toml_emit_gamedata(&ctx.error, output, (int)sizeof(output), &blueprints, &empty_level, 0);
     TEST_ASSERT_TRUE(written > 0);
 
     TEST_ASSERT_NOT_NULL(strstr(output, "behavior = \"static\""));
@@ -372,7 +376,7 @@ void test_toml_emit_health(void)
 
     char output[4096];
     Level empty_level = {0};
-    int written = toml_emit_gamedata(&ctx, output, (int)sizeof(output), &blueprints, &empty_level, 0);
+    int written = toml_emit_gamedata(&ctx.error, output, (int)sizeof(output), &blueprints, &empty_level, 0);
     TEST_ASSERT_TRUE(written > 0);
 
     TEST_ASSERT_NOT_NULL(strstr(output, "health = [10, 50]"));
@@ -425,7 +429,7 @@ void test_toml_emit_rules(void)
 
     char output[8192];
     Level empty_level = {0};
-    int written = toml_emit_gamedata(&ctx, output, (int)sizeof(output), &blueprints, &empty_level, 0);
+    int written = toml_emit_gamedata(&ctx.error, output, (int)sizeof(output), &blueprints, &empty_level, 0);
     TEST_ASSERT_TRUE(written > 0);
 
     TEST_ASSERT_NOT_NULL(strstr(output, "[[blueprint.rule]]"));
