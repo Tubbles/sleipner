@@ -1,10 +1,14 @@
+#include "fff.h"
 #include "unity.h"
 
-#include "error.h"
+#include "../src/error.c" // NOLINT(bugprone-suspicious-include)
+
+DEFINE_FFF_GLOBALS;
 
 static ErrorState ctx;
 
-#include <string.h>
+void setUp(void) {}
+void tearDown(void) {}
 
 void test_error_initially_null(void)
 {
@@ -56,4 +60,17 @@ void test_error_set_overwrites_previous(void)
     error_set(&ctx, "first error");
     error_set(&ctx, "second error");
     TEST_ASSERT_EQUAL_STRING("second error", error_get(&ctx));
+}
+
+int main(void)
+{
+    UNITY_BEGIN();
+    RUN_TEST(test_error_initially_null);
+    RUN_TEST(test_error_set_and_get);
+    RUN_TEST(test_error_set_with_format);
+    RUN_TEST(test_error_wrap_prepends_context);
+    RUN_TEST(test_error_wrap_on_empty_is_noop);
+    RUN_TEST(test_error_clear_resets);
+    RUN_TEST(test_error_set_overwrites_previous);
+    return UNITY_END();
 }

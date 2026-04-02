@@ -3,12 +3,17 @@ function(add_unit_test NAME)
     target_compile_definitions(${NAME} PRIVATE _GNU_SOURCE)
     target_include_directories(${NAME} PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/../src
-        ${CMAKE_CURRENT_SOURCE_DIR}/../vendor/fff)
+        ${CMAKE_CURRENT_SOURCE_DIR}/../vendor/fff
+        $<TARGET_PROPERTY:raylib,INTERFACE_INCLUDE_DIRECTORIES>)
     target_link_libraries(${NAME} PRIVATE unity m)
     add_test(NAME ${NAME} COMMAND ${NAME})
 endfunction()
 
 add_unit_test(stub_test)
+add_unit_test(strv_test)
+add_unit_test(error_test)
+add_unit_test(shape_test)
+add_unit_test(touch_test)
 
 add_executable(engine_tests
     main_test.c
@@ -20,19 +25,15 @@ add_executable(engine_tests
     attribute_test.c
     blueprint_test.c
     entity_test.c
-    error_test.c
     game_test.c
     integration_test.c
     level_test.c
-    shape_test.c
     particle_test.c
     collision_test.c
     editor_test.c
     toml_emitter_test.c
     rule_test.c
     str_test.c
-    touch_test.c
-    strv_test.c
     toml_str_test.c
 )
 target_compile_definitions(engine_tests PRIVATE _GNU_SOURCE)

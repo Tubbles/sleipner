@@ -1,5 +1,16 @@
-#include "touch.h"
+#include "fff.h"
 #include "unity.h"
+
+#include "../src/touch.c" // NOLINT(bugprone-suspicious-include)
+
+DEFINE_FFF_GLOBALS;
+
+/* touch_update() calls these raylib functions — provide fff definitions */
+FAKE_VALUE_FUNC(int, GetTouchPointCount);
+FAKE_VALUE_FUNC(Vector2, GetTouchPosition, int);
+
+void setUp(void) {}
+void tearDown(void) {}
 
 static Rectangle make_button_rect(void)
 {
@@ -110,4 +121,23 @@ void test_touch_not_triggered_outside_button(void)
     TouchState state = {0};
     touch_process(&state, 1, (Vector2){100.0F, 400.0F}, make_button_rect());
     TEST_ASSERT_FALSE(state.debug_button_triggered);
+}
+
+int main(void)
+{
+    UNITY_BEGIN();
+    RUN_TEST(test_touch_initial_state_is_none);
+    RUN_TEST(test_touch_first_touch_outside_button_sets_stick_mode);
+    RUN_TEST(test_touch_first_touch_sets_origin);
+    RUN_TEST(test_touch_continue_updates_current);
+    RUN_TEST(test_touch_continue_preserves_origin);
+    RUN_TEST(test_touch_release_resets_mode);
+    RUN_TEST(test_touch_button_area_sets_button_mode);
+    RUN_TEST(test_touch_button_triggers_on_press);
+    RUN_TEST(test_touch_button_not_triggered_on_hold);
+    RUN_TEST(test_touch_get_stick_no_touch_returns_zero);
+    RUN_TEST(test_touch_get_stick_right_returns_positive_x);
+    RUN_TEST(test_touch_get_stick_clamps_to_one);
+    RUN_TEST(test_touch_not_triggered_outside_button);
+    return UNITY_END();
 }

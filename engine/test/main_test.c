@@ -117,15 +117,6 @@ void test_blueprint_multiple_children(void);
 void test_blueprint_child_no_tag(void);
 void test_blueprint_child_default_offset(void);
 
-/* error_test.c */
-void test_error_initially_null(void);
-void test_error_set_and_get(void);
-void test_error_set_with_format(void);
-void test_error_wrap_prepends_context(void);
-void test_error_wrap_on_empty_is_noop(void);
-void test_error_clear_resets(void);
-void test_error_set_overwrites_previous(void);
-
 /* entity_test.c */
 void test_entity_init_from_blueprint(void);
 void test_entity_get_attr_from_blueprint(void);
@@ -179,12 +170,6 @@ void test_integration_on_spawn_trigger_fires_on_load(void);
 void test_integration_enter_trigger_fires_on_overlap(void);
 void test_integration_enter_trigger_fires_only_once(void);
 
-/* shape_test.c */
-void test_circle_bounds_centered(void);
-void test_square_bounds_same_as_circle(void);
-void test_bounds_scale_affects_size(void);
-void test_star_bounds_at_origin(void);
-
 /* particle_test.c */
 void test_particle_init(void);
 void test_particle_spawn_increases_count(void);
@@ -215,36 +200,6 @@ void test_str_clear_keeps_allocation(void);
 void test_str_clear_null_terminates(void);
 void test_str_free_zeros_struct(void);
 void test_str_free_on_zero_is_safe(void);
-
-/* strv_test.c */
-void test_strv_from_cstr(void);
-void test_strv_shrink_left(void);
-void test_strv_shrink_left_clamp(void);
-void test_strv_shrink_right(void);
-void test_strv_shrink_right_clamp(void);
-void test_strv_trim_left(void);
-void test_strv_trim_right(void);
-void test_strv_trim(void);
-void test_strv_trim_all_whitespace(void);
-void test_strv_split_found(void);
-void test_strv_split_not_found(void);
-void test_strv_split_delim_first(void);
-void test_strv_split_delim_last(void);
-void test_strv_split_multi(void);
-void test_strv_eq_equal(void);
-void test_strv_eq_different_content(void);
-void test_strv_eq_different_length(void);
-void test_strv_eq_subview(void);
-void test_strv_eq_cstr_match(void);
-void test_strv_eq_cstr_no_match(void);
-void test_strv_eq_cstr_subview(void);
-void test_strv_starts_with_cstr_match(void);
-void test_strv_starts_with_cstr_no_match(void);
-void test_strv_starts_with_cstr_exact(void);
-void test_strv_starts_with_cstr_longer_prefix(void);
-void test_strv_copy_to_cstr(void);
-void test_strv_copy_to_cstr_truncates(void);
-void test_strv_copy_to_cstr_subview(void);
 
 /* toml_str_test.c */
 void test_toml_str_content_is_copied(void);
@@ -341,21 +296,6 @@ void test_var_condition_truthy(void);
 void test_var_condition_falsy_when_unset(void);
 void test_var_substitution_in_set_attr(void);
 void test_local_var_scoped_per_rule(void);
-
-/* touch_test.c */
-void test_touch_initial_state_is_none(void);
-void test_touch_first_touch_outside_button_sets_stick_mode(void);
-void test_touch_first_touch_sets_origin(void);
-void test_touch_continue_updates_current(void);
-void test_touch_continue_preserves_origin(void);
-void test_touch_release_resets_mode(void);
-void test_touch_button_area_sets_button_mode(void);
-void test_touch_button_triggers_on_press(void);
-void test_touch_button_not_triggered_on_hold(void);
-void test_touch_get_stick_no_touch_returns_zero(void);
-void test_touch_get_stick_right_returns_positive_x(void);
-void test_touch_get_stick_clamps_to_one(void);
-void test_touch_not_triggered_outside_button(void);
 
 /* collision_test.c */
 void test_rect_rect_overlap(void);
@@ -550,14 +490,6 @@ int main(void)
     RUN_TEST(test_blueprint_child_no_tag);
     RUN_TEST(test_blueprint_child_default_offset);
 
-    RUN_TEST(test_error_initially_null);
-    RUN_TEST(test_error_set_and_get);
-    RUN_TEST(test_error_set_with_format);
-    RUN_TEST(test_error_wrap_prepends_context);
-    RUN_TEST(test_error_wrap_on_empty_is_noop);
-    RUN_TEST(test_error_clear_resets);
-    RUN_TEST(test_error_set_overwrites_previous);
-
     RUN_TEST(test_entity_init_from_blueprint);
     RUN_TEST(test_entity_get_attr_from_blueprint);
     RUN_TEST(test_entity_instance_overrides_blueprint);
@@ -606,11 +538,6 @@ int main(void)
     RUN_TEST(test_level_child_entity_positions);
     RUN_TEST(test_level_child_entity_tags);
     RUN_TEST(test_level_nested_children);
-
-    RUN_TEST(test_circle_bounds_centered);
-    RUN_TEST(test_square_bounds_same_as_circle);
-    RUN_TEST(test_bounds_scale_affects_size);
-    RUN_TEST(test_star_bounds_at_origin);
 
     RUN_TEST(test_particle_init);
     RUN_TEST(test_particle_spawn_increases_count);
@@ -698,20 +625,6 @@ int main(void)
     RUN_TEST(test_var_substitution_in_set_attr);
     RUN_TEST(test_local_var_scoped_per_rule);
 
-    RUN_TEST(test_touch_initial_state_is_none);
-    RUN_TEST(test_touch_first_touch_outside_button_sets_stick_mode);
-    RUN_TEST(test_touch_first_touch_sets_origin);
-    RUN_TEST(test_touch_continue_updates_current);
-    RUN_TEST(test_touch_continue_preserves_origin);
-    RUN_TEST(test_touch_release_resets_mode);
-    RUN_TEST(test_touch_button_area_sets_button_mode);
-    RUN_TEST(test_touch_button_triggers_on_press);
-    RUN_TEST(test_touch_button_not_triggered_on_hold);
-    RUN_TEST(test_touch_get_stick_no_touch_returns_zero);
-    RUN_TEST(test_touch_get_stick_right_returns_positive_x);
-    RUN_TEST(test_touch_get_stick_clamps_to_one);
-    RUN_TEST(test_touch_not_triggered_outside_button);
-
     RUN_TEST(test_rect_rect_overlap);
     RUN_TEST(test_rect_rect_no_overlap);
     RUN_TEST(test_rect_rect_rotated);
@@ -749,35 +662,6 @@ int main(void)
     RUN_TEST(test_str_clear_null_terminates);
     RUN_TEST(test_str_free_zeros_struct);
     RUN_TEST(test_str_free_on_zero_is_safe);
-
-    RUN_TEST(test_strv_from_cstr);
-    RUN_TEST(test_strv_shrink_left);
-    RUN_TEST(test_strv_shrink_left_clamp);
-    RUN_TEST(test_strv_shrink_right);
-    RUN_TEST(test_strv_shrink_right_clamp);
-    RUN_TEST(test_strv_trim_left);
-    RUN_TEST(test_strv_trim_right);
-    RUN_TEST(test_strv_trim);
-    RUN_TEST(test_strv_trim_all_whitespace);
-    RUN_TEST(test_strv_split_found);
-    RUN_TEST(test_strv_split_not_found);
-    RUN_TEST(test_strv_split_delim_first);
-    RUN_TEST(test_strv_split_delim_last);
-    RUN_TEST(test_strv_split_multi);
-    RUN_TEST(test_strv_eq_equal);
-    RUN_TEST(test_strv_eq_different_content);
-    RUN_TEST(test_strv_eq_different_length);
-    RUN_TEST(test_strv_eq_subview);
-    RUN_TEST(test_strv_eq_cstr_match);
-    RUN_TEST(test_strv_eq_cstr_no_match);
-    RUN_TEST(test_strv_eq_cstr_subview);
-    RUN_TEST(test_strv_starts_with_cstr_match);
-    RUN_TEST(test_strv_starts_with_cstr_no_match);
-    RUN_TEST(test_strv_starts_with_cstr_exact);
-    RUN_TEST(test_strv_starts_with_cstr_longer_prefix);
-    RUN_TEST(test_strv_copy_to_cstr);
-    RUN_TEST(test_strv_copy_to_cstr_truncates);
-    RUN_TEST(test_strv_copy_to_cstr_subview);
 
     RUN_TEST(test_toml_str_content_is_copied);
     RUN_TEST(test_toml_str_datum_nulled_after_call);

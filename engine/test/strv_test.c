@@ -1,8 +1,12 @@
+#include "fff.h"
 #include "unity.h"
 
-#include "strv.h"
+#include "../src/strv.c" // NOLINT(bugprone-suspicious-include)
 
-#include <stddef.h>
+DEFINE_FFF_GLOBALS;
+
+void setUp(void) {}
+void tearDown(void) {}
 
 void test_strv_from_cstr(void)
 {
@@ -226,4 +230,38 @@ void test_strv_copy_to_cstr_subview(void)
     char buf[8] = {0};
     strv_copy_to_cstr(head, buf, sizeof(buf));
     TEST_ASSERT_EQUAL_STRING("foo", buf);
+}
+
+int main(void)
+{
+    UNITY_BEGIN();
+    RUN_TEST(test_strv_from_cstr);
+    RUN_TEST(test_strv_shrink_left);
+    RUN_TEST(test_strv_shrink_left_clamp);
+    RUN_TEST(test_strv_shrink_right);
+    RUN_TEST(test_strv_shrink_right_clamp);
+    RUN_TEST(test_strv_trim_left);
+    RUN_TEST(test_strv_trim_right);
+    RUN_TEST(test_strv_trim);
+    RUN_TEST(test_strv_trim_all_whitespace);
+    RUN_TEST(test_strv_split_found);
+    RUN_TEST(test_strv_split_not_found);
+    RUN_TEST(test_strv_split_delim_first);
+    RUN_TEST(test_strv_split_delim_last);
+    RUN_TEST(test_strv_split_multi);
+    RUN_TEST(test_strv_eq_equal);
+    RUN_TEST(test_strv_eq_different_content);
+    RUN_TEST(test_strv_eq_different_length);
+    RUN_TEST(test_strv_eq_subview);
+    RUN_TEST(test_strv_eq_cstr_match);
+    RUN_TEST(test_strv_eq_cstr_no_match);
+    RUN_TEST(test_strv_eq_cstr_subview);
+    RUN_TEST(test_strv_starts_with_cstr_match);
+    RUN_TEST(test_strv_starts_with_cstr_no_match);
+    RUN_TEST(test_strv_starts_with_cstr_exact);
+    RUN_TEST(test_strv_starts_with_cstr_longer_prefix);
+    RUN_TEST(test_strv_copy_to_cstr);
+    RUN_TEST(test_strv_copy_to_cstr_truncates);
+    RUN_TEST(test_strv_copy_to_cstr_subview);
+    return UNITY_END();
 }

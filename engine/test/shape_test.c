@@ -1,5 +1,12 @@
+#include "fff.h"
 #include "unity.h"
-#include "shape.h"
+
+#include "../src/shape.c" // NOLINT(bugprone-suspicious-include)
+
+DEFINE_FFF_GLOBALS;
+
+void setUp(void) {}
+void tearDown(void) {}
 
 void test_circle_bounds_centered(void)
 {
@@ -35,4 +42,14 @@ void test_star_bounds_at_origin(void)
     TEST_ASSERT_FLOAT_WITHIN(0.01f, -40.0f, bounds.y);
     TEST_ASSERT_FLOAT_WITHIN(0.01f, 80.0f, bounds.width);
     TEST_ASSERT_FLOAT_WITHIN(0.01f, 80.0f, bounds.height);
+}
+
+int main(void)
+{
+    UNITY_BEGIN();
+    RUN_TEST(test_circle_bounds_centered);
+    RUN_TEST(test_square_bounds_same_as_circle);
+    RUN_TEST(test_bounds_scale_affects_size);
+    RUN_TEST(test_star_bounds_at_origin);
+    return UNITY_END();
 }
