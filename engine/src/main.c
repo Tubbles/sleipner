@@ -831,7 +831,7 @@ int main(void)
         SCRATCH_SCOPE(&state.scratch_arena);
         EmbeddedAsset gamepad_asset = ASSET(gamecontrollerdb_txt);
         Allocator gamepad_alloc = allocator_arena(&state.scratch_arena);
-        input_load_mappings(ctx, &gamepad_alloc, (const char *)gamepad_asset.data, gamepad_asset.size);
+        input_load_mappings(&ctx->debug, &gamepad_alloc, (const char *)gamepad_asset.data, gamepad_asset.size);
     }
 #endif
 

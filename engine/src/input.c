@@ -1,5 +1,5 @@
 #include "input.h"
-#include "engine_context.h"
+
 #include "alloc.h"
 #include "debug.h"
 #include "raylib.h"
@@ -19,18 +19,18 @@ static Vector2 apply_deadzone(Vector2 stick, float deadzone)
     return (Vector2){stick.x * scale, stick.y * scale};
 }
 
-void input_load_mappings(struct EngineContext *ctx, Allocator *alloc, const char *data, int size)
+void input_load_mappings(DebugState *dbg, Allocator *alloc, const char *data, int size)
 {
     char *mappings = alloc->malloc_fn(alloc->ctx, (size_t)size + 1);
     if (!mappings) {
-        debug_log(&ctx->debug, "WARNING: could not allocate gamepad mappings buffer");
+        debug_log(dbg, "WARNING: could not allocate gamepad mappings buffer");
         return;
     }
     memcpy(mappings, data, (size_t)size);
     mappings[size] = '\0';
 
     int result = SetGamepadMappings(mappings);
-    debug_log(&ctx->debug, "loaded gamepad mappings (%d bytes, result=%d)", size, result);
+    debug_log(dbg, "loaded gamepad mappings (%d bytes, result=%d)", size, result);
 }
 
 InputState input_read(int gamepad_id)
