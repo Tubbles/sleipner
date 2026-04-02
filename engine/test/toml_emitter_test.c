@@ -1,9 +1,11 @@
 #include "unity.h"
 #include "debug.h"
+#include "diag.h"
 #include "error.h"
 
 static ErrorState test_err;
 static DebugState test_dbg;
+static Diag test_diag = {&test_err, &test_dbg};
 
 #include "toml_emitter.h"
 #include "test_helpers.h"
@@ -66,7 +68,7 @@ void test_toml_emit_blueprints(void)
 
     toml_table_t *root = parse_toml(fixture_gamedata);
     TEST_ASSERT_NOT_NULL(root);
-    blueprints_load(&test_err, &test_dbg, &blueprints, root, &arena);
+    blueprints_load(&test_diag, &blueprints, root, &arena);
     toml_free(root);
 
     char output[4096];
@@ -94,9 +96,9 @@ void test_toml_emit_level_with_entities(void)
 
     toml_table_t *root = parse_toml(fixture_gamedata);
     TEST_ASSERT_NOT_NULL(root);
-    blueprints_load(&test_err, &test_dbg, &blueprints, root, &arena);
+    blueprints_load(&test_diag, &blueprints, root, &arena);
     TEST_ASSERT_TRUE(
-        level_load(&test_err, &test_dbg, &level, root, nullptr, &blueprints, dummy_lookup, nullptr, &test_heap_alloc));
+        level_load(&test_diag, &level, root, nullptr, &blueprints, dummy_lookup, nullptr, &test_heap_alloc));
     toml_free(root);
 
     char output[4096];
@@ -127,9 +129,9 @@ void test_toml_emit_round_trip(void)
     /* Parse original */
     toml_table_t *root = parse_toml(fixture_gamedata);
     TEST_ASSERT_NOT_NULL(root);
-    blueprints_load(&test_err, &test_dbg, &blueprints, root, &arena);
+    blueprints_load(&test_diag, &blueprints, root, &arena);
     TEST_ASSERT_TRUE(
-        level_load(&test_err, &test_dbg, &level, root, nullptr, &blueprints, dummy_lookup, nullptr, &test_heap_alloc));
+        level_load(&test_diag, &level, root, nullptr, &blueprints, dummy_lookup, nullptr, &test_heap_alloc));
     toml_free(root);
 
     /* Emit */
@@ -145,9 +147,9 @@ void test_toml_emit_round_trip(void)
 
     toml_table_t *root2 = parse_toml(output);
     TEST_ASSERT_NOT_NULL(root2);
-    blueprints_load(&test_err, &test_dbg, &blueprints2, root2, &arena2);
-    TEST_ASSERT_TRUE(level_load(&test_err, &test_dbg, &level2, root2, nullptr, &blueprints2, dummy_lookup, nullptr,
-                                &test_heap_alloc));
+    blueprints_load(&test_diag, &blueprints2, root2, &arena2);
+    TEST_ASSERT_TRUE(
+        level_load(&test_diag, &level2, root2, nullptr, &blueprints2, dummy_lookup, nullptr, &test_heap_alloc));
     toml_free(root2);
 
     /* Verify round-trip preserves data */
@@ -232,7 +234,7 @@ void test_toml_emit_blueprint_children(void)
 
     toml_table_t *root = parse_toml(child_fixture);
     TEST_ASSERT_NOT_NULL(root);
-    blueprints_load(&test_err, &test_dbg, &blueprints, root, &arena);
+    blueprints_load(&test_diag, &blueprints, root, &arena);
     toml_free(root);
 
     char output[4096];
@@ -256,9 +258,9 @@ void test_toml_emit_skips_child_entities(void)
 
     toml_table_t *root = parse_toml(child_fixture);
     TEST_ASSERT_NOT_NULL(root);
-    blueprints_load(&test_err, &test_dbg, &blueprints, root, &arena);
+    blueprints_load(&test_diag, &blueprints, root, &arena);
     TEST_ASSERT_TRUE(
-        level_load(&test_err, &test_dbg, &level, root, "test", &blueprints, dummy_lookup, nullptr, &test_heap_alloc));
+        level_load(&test_diag, &level, root, "test", &blueprints, dummy_lookup, nullptr, &test_heap_alloc));
     toml_free(root);
 
     /* Level has 2 entities (wagon + lantern child) */
@@ -323,7 +325,7 @@ void test_toml_emit_custom_attrs(void)
 
     toml_table_t *root = parse_toml(custom_attr_fixture);
     TEST_ASSERT_NOT_NULL(root);
-    blueprints_load(&test_err, &test_dbg, &blueprints, root, &arena);
+    blueprints_load(&test_diag, &blueprints, root, &arena);
     toml_free(root);
 
     char output[4096];
@@ -341,7 +343,7 @@ void test_toml_emit_custom_attrs(void)
 
     toml_table_t *root2 = parse_toml(output);
     TEST_ASSERT_NOT_NULL(root2);
-    blueprints_load(&test_err, &test_dbg, &blueprints2, root2, &arena2);
+    blueprints_load(&test_diag, &blueprints2, root2, &arena2);
     toml_free(root2);
 
     TEST_ASSERT_EQUAL_INT(1, blueprints2.entries.count);
@@ -373,7 +375,7 @@ void test_toml_emit_health(void)
 
     toml_table_t *root = parse_toml(health_fixture);
     TEST_ASSERT_NOT_NULL(root);
-    blueprints_load(&test_err, &test_dbg, &blueprints, root, &arena);
+    blueprints_load(&test_diag, &blueprints, root, &arena);
     toml_free(root);
 
     char output[4096];
@@ -390,7 +392,7 @@ void test_toml_emit_health(void)
 
     toml_table_t *root2 = parse_toml(output);
     TEST_ASSERT_NOT_NULL(root2);
-    blueprints_load(&test_err, &test_dbg, &blueprints2, root2, &arena2);
+    blueprints_load(&test_diag, &blueprints2, root2, &arena2);
     toml_free(root2);
 
     TEST_ASSERT_EQUAL_INT(1, blueprints2.entries.count);
@@ -426,7 +428,7 @@ void test_toml_emit_rules(void)
 
     toml_table_t *root = parse_toml(rule_fixture);
     TEST_ASSERT_NOT_NULL(root);
-    blueprints_load(&test_err, &test_dbg, &blueprints, root, &arena);
+    blueprints_load(&test_diag, &blueprints, root, &arena);
     toml_free(root);
 
     char output[8192];
@@ -447,7 +449,7 @@ void test_toml_emit_rules(void)
 
     toml_table_t *root2 = parse_toml(output);
     TEST_ASSERT_NOT_NULL(root2);
-    blueprints_load(&test_err, &test_dbg, &blueprints2, root2, &arena2);
+    blueprints_load(&test_diag, &blueprints2, root2, &arena2);
     toml_free(root2);
 
     TEST_ASSERT_EQUAL_INT(1, blueprints2.entries.count);
