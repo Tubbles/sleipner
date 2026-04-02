@@ -98,7 +98,8 @@ static bool spawn_children_for(ErrorState *err,
             return false;
         }
 
-        Texture2D *texture = texture_lookup(attr_get_string(&child_blueprint->attrs, "texture"), texture_user_data);
+        const char *child_texture_name = attr_get_string(&child_blueprint->attrs, "texture");
+        Texture2D *texture = child_texture_name ? texture_lookup(child_texture_name, texture_user_data) : nullptr;
         Vector2 child_position = {parent_position.x + child_def->offset.x, parent_position.y + child_def->offset.y};
         EntitySpec child_spec = {
             .blueprint_name = strv_from_cstr(attr_get_string(&child_blueprint->attrs, "name")),
@@ -201,11 +202,7 @@ static void parse_entity(Diag *diag,
     }
 
     const char *texture_name = attr_get_string(&blueprint->attrs, "texture");
-    Texture2D *texture = texture_lookup(texture_name, texture_user_data);
-    if (!texture) {
-        debug_log(diag->debug, "ent[%d]: texture '%s' not found", entity_index, texture_name);
-        return;
-    }
+    Texture2D *texture = texture_name ? texture_lookup(texture_name, texture_user_data) : nullptr;
 
     EntitySpec spec = {
         .blueprint_name = strv_from_cstr(attr_get_string(&blueprint->attrs, "name")),
@@ -265,11 +262,7 @@ bool level_spawn_entity(Diag *diag,
                         Allocator *alloc)
 {
     const char *texture_name = attr_get_string(&blueprint->attrs, "texture");
-    Texture2D *texture = texture_lookup(texture_name, texture_user_data);
-    if (!texture) {
-        error_set(diag->error, "level_spawn_entity: texture '%s' not found", texture_name ? texture_name : "(null)");
-        return false;
-    }
+    Texture2D *texture = texture_name ? texture_lookup(texture_name, texture_user_data) : nullptr;
     EntitySpec spec = {
         .blueprint_name = strv_from_cstr(attr_get_string(&blueprint->attrs, "name")),
         .collision_offset = blueprint_get_collision_offset(blueprint),

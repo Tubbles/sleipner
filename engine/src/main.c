@@ -64,7 +64,7 @@ static void texture_registry_add(GameState *state, const char *filename, Texture
 static Texture2D *texture_registry_lookup(const char *filename, void *user_data)
 {
     GameState *state = (GameState *)user_data;
-    if (!state) {
+    if (!state || !filename) {
         return nullptr;
     }
     for (int index = 0; index < state->assets.textures.count; index++) {
@@ -160,6 +160,9 @@ static Rectangle get_source_rect(const AttrSet *instance, const AttrSet *default
 
 static void draw_entity(const GameState *state, const Entity *entity)
 {
+    if (!entity->texture) {
+        return;
+    }
     const AttrSet *defaults = entity_resolve_defaults(state, entity->id);
     DrawTextureRec(*entity->texture, get_source_rect(&entity->attrs, defaults), entity->position, WHITE);
 }
