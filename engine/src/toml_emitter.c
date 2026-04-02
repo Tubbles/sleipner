@@ -1,4 +1,6 @@
 #include "toml_emitter.h"
+
+#include "engine_context.h"
 #include "attribute.h"
 #include "blueprint.h"
 #include "entity.h"
@@ -428,7 +430,7 @@ int toml_emit_gamedata(struct EngineContext *ctx,
     offset = emit_levels(buffer, capacity, offset, levels, level_count);
 
     if (offset < 0) {
-        error_set(ctx, "buffer too small (capacity %d)", capacity);
+        error_set(&ctx->error, "buffer too small (capacity %d)", capacity);
     }
     return offset;
 }

@@ -1,4 +1,6 @@
 #include "blueprint.h"
+
+#include "engine_context.h"
 #include "alloc.h"
 #include "arena.h"
 #include "attribute.h"
@@ -300,7 +302,7 @@ static bool parse_single_blueprint(
         return false;
     }
     if (!rules_parse(ctx, alloc, &blueprint->rules, entry, arena)) {
-        error_wrap(ctx, "blueprint '%s'", attr_get_string(&blueprint->attrs, "name"));
+        error_wrap(&ctx->error, "blueprint '%s'", attr_get_string(&blueprint->attrs, "name"));
         return false;
     }
     return true;

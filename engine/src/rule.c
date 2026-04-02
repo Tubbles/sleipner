@@ -1,4 +1,6 @@
 #include "rule.h"
+
+#include "engine_context.h"
 #include "alloc.h"
 #include "vec.h"
 #include "arena.h"
@@ -111,7 +113,7 @@ bool trigger_parse(struct EngineContext *ctx, Allocator *alloc, Trigger *trigger
         Strv rest = strv;
         (void)strv_split(&rest, ':');
         if (!str_from_strv(alloc, &trigger->argument, rest)) {
-            error_set(ctx, "trigger_parse: allocation failed");
+            error_set(&ctx->error, "trigger_parse: allocation failed");
             return false;
         }
         return true;
@@ -121,7 +123,7 @@ bool trigger_parse(struct EngineContext *ctx, Allocator *alloc, Trigger *trigger
         Strv rest = strv;
         (void)strv_split(&rest, ':');
         if (!str_from_strv(alloc, &trigger->argument, rest)) {
-            error_set(ctx, "trigger_parse: allocation failed");
+            error_set(&ctx->error, "trigger_parse: allocation failed");
             return false;
         }
         return true;
@@ -131,7 +133,7 @@ bool trigger_parse(struct EngineContext *ctx, Allocator *alloc, Trigger *trigger
         Strv rest = strv;
         (void)strv_split(&rest, ':');
         if (!str_from_strv(alloc, &trigger->argument, rest)) {
-            error_set(ctx, "trigger_parse: allocation failed");
+            error_set(&ctx->error, "trigger_parse: allocation failed");
             return false;
         }
         return true;
@@ -141,7 +143,7 @@ bool trigger_parse(struct EngineContext *ctx, Allocator *alloc, Trigger *trigger
         Strv rest = strv;
         (void)strv_split(&rest, ':');
         if (!str_from_strv(alloc, &trigger->argument, rest)) {
-            error_set(ctx, "trigger_parse: allocation failed");
+            error_set(&ctx->error, "trigger_parse: allocation failed");
             return false;
         }
         return true;
@@ -159,7 +161,7 @@ bool trigger_parse(struct EngineContext *ctx, Allocator *alloc, Trigger *trigger
         Strv rest = strv;
         (void)strv_split(&rest, ':');
         if (!str_from_strv(alloc, &trigger->argument, rest)) {
-            error_set(ctx, "trigger_parse: allocation failed");
+            error_set(&ctx->error, "trigger_parse: allocation failed");
             return false;
         }
         return true;
@@ -169,7 +171,7 @@ bool trigger_parse(struct EngineContext *ctx, Allocator *alloc, Trigger *trigger
         return true;
     }
 
-    error_set(ctx, "unknown trigger type: '%s'", string);
+    error_set(&ctx->error, "unknown trigger type: '%s'", string);
     return false;
 }
 
@@ -221,7 +223,7 @@ bool condition_parse(struct EngineContext *ctx, Allocator *alloc, Condition *con
         Strv rest = strv;
         (void)strv_split(&rest, ':');
         if (!str_from_strv(alloc, &condition->argument, rest)) {
-            error_set(ctx, "condition_parse: allocation failed");
+            error_set(&ctx->error, "condition_parse: allocation failed");
             return false;
         }
         return true;
@@ -231,7 +233,7 @@ bool condition_parse(struct EngineContext *ctx, Allocator *alloc, Condition *con
         Strv rest = strv;
         (void)strv_split(&rest, ':');
         if (!str_from_strv(alloc, &condition->argument, rest)) {
-            error_set(ctx, "condition_parse: allocation failed");
+            error_set(&ctx->error, "condition_parse: allocation failed");
             return false;
         }
         return true;
@@ -241,7 +243,7 @@ bool condition_parse(struct EngineContext *ctx, Allocator *alloc, Condition *con
         Strv rest = strv;
         (void)strv_split(&rest, ':');
         if (!str_from_strv(alloc, &condition->argument, rest)) {
-            error_set(ctx, "condition_parse: allocation failed");
+            error_set(&ctx->error, "condition_parse: allocation failed");
             return false;
         }
         return true;
@@ -251,7 +253,7 @@ bool condition_parse(struct EngineContext *ctx, Allocator *alloc, Condition *con
         Strv rest = strv;
         (void)strv_split(&rest, ':');
         if (!str_from_strv(alloc, &condition->argument, rest)) {
-            error_set(ctx, "condition_parse: allocation failed");
+            error_set(&ctx->error, "condition_parse: allocation failed");
             return false;
         }
         return true;
@@ -261,7 +263,7 @@ bool condition_parse(struct EngineContext *ctx, Allocator *alloc, Condition *con
         Strv rest = strv;
         (void)strv_split(&rest, ':');
         if (!str_from_strv(alloc, &condition->argument, rest)) {
-            error_set(ctx, "condition_parse: allocation failed");
+            error_set(&ctx->error, "condition_parse: allocation failed");
             return false;
         }
         return true;
@@ -273,7 +275,7 @@ bool condition_parse(struct EngineContext *ctx, Allocator *alloc, Condition *con
         strv_copy_to_cstr(rest, attr_arg, MAX_ARG);
         int cmp = parse_condition_attr_comparison(alloc, condition, attr_arg);
         if (cmp < 0) {
-            error_set(ctx, "condition_parse: allocation failed");
+            error_set(&ctx->error, "condition_parse: allocation failed");
             return false;
         }
         if (cmp > 0) {
@@ -281,13 +283,13 @@ bool condition_parse(struct EngineContext *ctx, Allocator *alloc, Condition *con
         }
         condition->type = COND_ATTR;
         if (!str_from_strv(alloc, &condition->argument, rest)) {
-            error_set(ctx, "condition_parse: allocation failed");
+            error_set(&ctx->error, "condition_parse: allocation failed");
             return false;
         }
         return true;
     }
 
-    error_set(ctx, "unknown condition: '%s'", string);
+    error_set(&ctx->error, "unknown condition: '%s'", string);
     return false;
 }
 
@@ -360,7 +362,7 @@ static bool parse_simple_action(struct EngineContext *ctx, Allocator *alloc, Act
         }
     }
 
-    error_set(ctx, "unknown action: '%s'", string);
+    error_set(&ctx->error, "unknown action: '%s'", string);
     return false;
 }
 
@@ -388,14 +390,14 @@ static bool parse_branch_array_into(struct EngineContext *ctx,
     }
     ActionNode *nodes = arena_alloc(arena, (size_t)count * sizeof(ActionNode));
     if (!nodes) {
-        error_wrap(ctx, "parse_branch_array_into: arena_alloc");
+        error_wrap(&ctx->error, "parse_branch_array_into: arena_alloc");
         return false;
     }
     for (int child_index = 0; child_index < count; child_index++) {
         toml_datum_t value = toml_string_at(array, child_index);
         if (value.ok) {
             if (!action_node_parse(ctx, alloc, &nodes[child_index], value)) {
-                error_wrap(ctx, "%s[%d]", branch_name, child_index);
+                error_wrap(&ctx->error, "%s[%d]", branch_name, child_index);
                 free(value.u.s);
                 return false;
             }
@@ -403,11 +405,11 @@ static bool parse_branch_array_into(struct EngineContext *ctx,
         } else {
             toml_table_t *table = toml_table_at(array, child_index);
             if (!table) {
-                error_set(ctx, "%s[%d] is not a string or table", branch_name, child_index);
+                error_set(&ctx->error, "%s[%d] is not a string or table", branch_name, child_index);
                 return false;
             }
             if (*task_top >= MAX_PARSE_CF_STACK) {
-                error_set(ctx, "parse_branch_array_into: task stack overflow");
+                error_set(&ctx->error, "parse_branch_array_into: task stack overflow");
                 return false;
             }
             memset(&nodes[child_index], 0, sizeof(ActionNode));
@@ -427,25 +429,25 @@ static bool parse_conditions_into(
     }
     int count = toml_array_nelem(array);
     if (count > MAX_CONDITIONS) {
-        error_set(ctx, "%s: too many conditions (%d, max %d)", context_name, count, MAX_CONDITIONS);
+        error_set(&ctx->error, "%s: too many conditions (%d, max %d)", context_name, count, MAX_CONDITIONS);
         return false;
     }
     out->alloc = *alloc;
     for (int index = 0; index < count; index++) {
         toml_datum_t value = toml_string_at(array, index);
         if (!value.ok) {
-            error_set(ctx, "%s: condition[%d] is not a string", context_name, index);
+            error_set(&ctx->error, "%s: condition[%d] is not a string", context_name, index);
             return false;
         }
         Condition cond = {0};
         if (!condition_parse(ctx, alloc, &cond, value.u.s)) {
             free(value.u.s);
-            error_wrap(ctx, "%s: condition[%d]", context_name, index);
+            error_wrap(&ctx->error, "%s: condition[%d]", context_name, index);
             return false;
         }
         free(value.u.s);
         if (!vec_condition_push(out, cond)) {
-            error_set(ctx, "%s: condition[%d]: out of memory", context_name, index);
+            error_set(&ctx->error, "%s: condition[%d]: out of memory", context_name, index);
             return false;
         }
     }
@@ -482,7 +484,7 @@ static bool parse_one_cf_node(struct EngineContext *ctx,
         bool alloc_ok = str_from_cstr(alloc, &node->argument, repeat_str.u.s);
         free(repeat_str.u.s);
         if (!alloc_ok) {
-            error_set(ctx, "parse_one_cf_node: allocation failed");
+            error_set(&ctx->error, "parse_one_cf_node: allocation failed");
             return false;
         }
         return parse_branch_array_into(ctx, alloc, &node->children, &node->child_count, toml_array_in(table, "do"),
@@ -495,11 +497,11 @@ static bool parse_one_cf_node(struct EngineContext *ctx,
         bool alloc_ok = str_from_cstr(alloc, &node->argument, for_each_str.u.s);
         free(for_each_str.u.s);
         if (!alloc_ok) {
-            error_set(ctx, "parse_one_cf_node: allocation failed for for_each");
+            error_set(&ctx->error, "parse_one_cf_node: allocation failed for for_each");
             return false;
         }
         if (strcmp(node->argument.ptr, "entities") != 0) {
-            error_set(ctx, "for_each: unknown collection '%s' (supported: 'entities')", node->argument.ptr);
+            error_set(&ctx->error, "for_each: unknown collection '%s' (supported: 'entities')", node->argument.ptr);
             return false;
         }
         toml_datum_t bind_str = toml_string_in(table, "bind");
@@ -507,7 +509,7 @@ static bool parse_one_cf_node(struct EngineContext *ctx,
             bool bind_ok = str_from_cstr(alloc, &node->second_argument, bind_str.u.s);
             free(bind_str.u.s);
             if (!bind_ok) {
-                error_set(ctx, "parse_one_cf_node: allocation failed for bind");
+                error_set(&ctx->error, "parse_one_cf_node: allocation failed for bind");
                 return false;
             }
         }
@@ -518,7 +520,7 @@ static bool parse_one_cf_node(struct EngineContext *ctx,
                                        arena, "do", task_stack, task_top);
     }
 
-    error_set(ctx, "unknown control flow structure");
+    error_set(&ctx->error, "unknown control flow structure");
     return false;
 }
 
@@ -543,7 +545,7 @@ static bool parse_control_flow_node(
 bool action_node_parse(struct EngineContext *ctx, Allocator *alloc, ActionNode *node, toml_datum_t value)
 {
     if (!value.ok || !value.u.s) {
-        error_set(ctx, "action_node_parse: expected string value");
+        error_set(&ctx->error, "action_node_parse: expected string value");
         return false;
     }
     return parse_simple_action(ctx, alloc, node, value.u.s);
@@ -564,7 +566,7 @@ static bool parse_action_nodes_into(
     }
     int count = toml_array_nelem(actions);
     if (count > MAX_ACTIONS) {
-        error_set(ctx, "too many actions (%d, max %d)", count, MAX_ACTIONS);
+        error_set(&ctx->error, "too many actions (%d, max %d)", count, MAX_ACTIONS);
         return false;
     }
     nodes->alloc = *alloc;
@@ -574,7 +576,7 @@ static bool parse_action_nodes_into(
         toml_datum_t value = toml_string_at(actions, index);
         if (value.ok) {
             if (!action_node_parse(ctx, alloc, &node, value)) {
-                error_wrap(ctx, "action[%d]", index);
+                error_wrap(&ctx->error, "action[%d]", index);
                 free(value.u.s);
                 return false;
             }
@@ -583,16 +585,16 @@ static bool parse_action_nodes_into(
             toml_table_t *table_value = toml_table_at(actions, index);
             if (table_value) {
                 if (!parse_control_flow_node(ctx, alloc, &node, table_value, arena)) {
-                    error_wrap(ctx, "action[%d]", index);
+                    error_wrap(&ctx->error, "action[%d]", index);
                     return false;
                 }
             } else {
-                error_set(ctx, "action[%d] is not a string or table", index);
+                error_set(&ctx->error, "action[%d] is not a string or table", index);
                 return false;
             }
         }
         if (!vec_action_node_push(nodes, node)) {
-            error_set(ctx, "action[%d]: out of memory", index);
+            error_set(&ctx->error, "action[%d]: out of memory", index);
             return false;
         }
     }
@@ -612,11 +614,11 @@ parse_single_rule(struct EngineContext *ctx, Allocator *alloc, Rule *rule, toml_
 
     toml_datum_t trigger_str = toml_string_in(entry, "trigger");
     if (!trigger_str.ok) {
-        error_set(ctx, "rule missing 'trigger' key");
+        error_set(&ctx->error, "rule missing 'trigger' key");
         return false;
     }
     if (!trigger_parse(ctx, alloc, &rule->trigger, trigger_str.u.s)) {
-        error_wrap(ctx, "rule trigger");
+        error_wrap(&ctx->error, "rule trigger");
         free(trigger_str.u.s);
         return false;
     }
@@ -624,14 +626,14 @@ parse_single_rule(struct EngineContext *ctx, Allocator *alloc, Rule *rule, toml_
 
     toml_array_t *conditions = toml_array_in(entry, "conditions");
     if (!parse_conditions_array(ctx, alloc, rule, conditions)) {
-        error_wrap(ctx, "rule conditions");
+        error_wrap(&ctx->error, "rule conditions");
         return false;
     }
 
     toml_array_t *actions = toml_array_in(entry, "actions");
     if (!parse_actions_array(ctx, alloc, rule, actions, arena)) {
         vec_condition_free(&rule->conditions);
-        error_wrap(ctx, "rule actions");
+        error_wrap(&ctx->error, "rule actions");
         return false;
     }
 
@@ -654,27 +656,27 @@ bool rules_parse(
         return true;
     }
     if (count > MAX_RULES) {
-        error_set(ctx, "too many rules (%d, max %d)", count, MAX_RULES);
+        error_set(&ctx->error, "too many rules (%d, max %d)", count, MAX_RULES);
         return false;
     }
 
     for (int index = 0; index < count; index++) {
         toml_table_t *entry = toml_table_at(rule_array, index);
         if (!entry) {
-            error_set(ctx, "rule[%d]: toml_table_at returned nullptr", index);
+            error_set(&ctx->error, "rule[%d]: toml_table_at returned nullptr", index);
             return false;
         }
         Rule rule = {0};
         if (!parse_single_rule(ctx, alloc, &rule, entry, arena)) {
             vec_condition_free(&rule.conditions);
             vec_action_node_free(&rule.action_tree.nodes);
-            error_wrap(ctx, "rule[%d]", index);
+            error_wrap(&ctx->error, "rule[%d]", index);
             return false;
         }
         if (!vec_rule_push(rules, rule)) {
             vec_condition_free(&rule.conditions);
             vec_action_node_free(&rule.action_tree.nodes);
-            error_set(ctx, "rule[%d]: out of memory", index);
+            error_set(&ctx->error, "rule[%d]: out of memory", index);
             return false;
         }
     }
@@ -1055,7 +1057,7 @@ static bool push_branch_nodes(
 {
     for (int push_index = count - 1; push_index >= 0; push_index--) {
         if (*stack_top >= MAX_EXEC_STACK) {
-            error_set(ctx, "action execution stack overflow");
+            error_set(&ctx->error, "action execution stack overflow");
             return false;
         }
         exec_stack[(*stack_top)++] = &nodes[push_index];
@@ -1133,7 +1135,7 @@ execute_create_timer_action(struct EngineContext *ctx, const ActionNode *node, A
         .periodic = periodic,
     };
     if (!vec_timer_push(context.timers, new_timer)) {
-        error_set(ctx, "create_timer: allocation failed");
+        error_set(&ctx->error, "create_timer: allocation failed");
         return false;
     }
     return true;
@@ -1252,7 +1254,7 @@ static bool
 execute_call_node(struct EngineContext *ctx, Allocator *alloc, const ActionNode *node, ActionContext context)
 {
     if (context.call_depth >= MAX_CALL_DEPTH) {
-        error_set(ctx, "call: max depth %d exceeded", MAX_CALL_DEPTH);
+        error_set(&ctx->error, "call: max depth %d exceeded", MAX_CALL_DEPTH);
         return false;
     }
     if (!context.subroutines) {
@@ -1278,7 +1280,7 @@ static bool execute_action_nodes(
     int stack_top = 0;
     for (int index = count - 1; index >= 0; index--) {
         if (stack_top >= MAX_EXEC_STACK) {
-            error_set(ctx, "action execution stack overflow");
+            error_set(&ctx->error, "action execution stack overflow");
             return false;
         }
         exec_stack[stack_top++] = &nodes[index];
@@ -1454,12 +1456,12 @@ bool subroutines_parse(
     for (int index = 0; index < count; index++) {
         toml_table_t *sub_table = toml_table_at(sub_array, index);
         if (!sub_table) {
-            error_set(ctx, "subroutine[%d]: expected table", index);
+            error_set(&ctx->error, "subroutine[%d]: expected table", index);
             return false;
         }
         toml_datum_t name_datum = toml_string_in(sub_table, "name");
         if (!name_datum.ok) {
-            error_set(ctx, "subroutine[%d]: missing 'name'", index);
+            error_set(&ctx->error, "subroutine[%d]: missing 'name'", index);
             return false;
         }
         /* Push a name-only stub first so the action_tree lives inside the vec element
@@ -1469,17 +1471,17 @@ bool subroutines_parse(
         bool alloc_ok = str_from_cstr(alloc, &stub.name, name_datum.u.s);
         free(name_datum.u.s);
         if (!alloc_ok) {
-            error_set(ctx, "subroutine[%d]: allocation failed for name", index);
+            error_set(&ctx->error, "subroutine[%d]: allocation failed for name", index);
             return false;
         }
         if (!vec_subroutine_push(subroutines, stub)) {
-            error_set(ctx, "subroutine[%d]: push failed", index);
+            error_set(&ctx->error, "subroutine[%d]: push failed", index);
             return false;
         }
         Subroutine *pushed = &subroutines->data[subroutines->count - 1];
         if (!parse_action_nodes_into(ctx, alloc, &pushed->action_tree.nodes, toml_array_in(sub_table, "actions"),
                                      arena)) {
-            error_wrap(ctx, "subroutine '%s'", pushed->name.ptr);
+            error_wrap(&ctx->error, "subroutine '%s'", pushed->name.ptr);
             return false;
         }
         debug_log(ctx, "subroutine: parsed '%s' (%d actions)", pushed->name.ptr, pushed->action_tree.nodes.count);

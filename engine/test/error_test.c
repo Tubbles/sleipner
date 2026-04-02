@@ -1,9 +1,8 @@
 #include "unity.h"
-#include "engine_context.h"
-
-static struct EngineContext ctx;
 
 #include "error.h"
+
+static ErrorState ctx;
 
 #include <string.h>
 

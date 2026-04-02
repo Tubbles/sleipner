@@ -1,22 +1,21 @@
 #include "error.h"
-#include "engine_context.h"
 
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
 
-void error_set(struct EngineContext *ctx, const char *format, ...)
+void error_set(ErrorState *err, const char *format, ...)
 {
     va_list args;
     va_start(args, format);
     // NOLINTNEXTLINE(clang-analyzer-security.VAList) false positive, LLVM #40656
-    (void)vsnprintf(ctx->error.error_buffer, ERROR_MSG_LEN, format, args);
+    (void)vsnprintf(err->error_buffer, ERROR_MSG_LEN, format, args);
     va_end(args);
 }
 
-void error_wrap(struct EngineContext *ctx, const char *format, ...)
+void error_wrap(ErrorState *err, const char *format, ...)
 {
-    if (ctx->error.error_buffer[0] == '\0') {
+    if (err->error_buffer[0] == '\0') {
         return;
     }
 
@@ -28,19 +27,19 @@ void error_wrap(struct EngineContext *ctx, const char *format, ...)
     va_end(args);
 
     char combined[ERROR_MSG_LEN];
-    (void)snprintf(combined, ERROR_MSG_LEN, "%s: %s", context, ctx->error.error_buffer);
-    memcpy(ctx->error.error_buffer, combined, ERROR_MSG_LEN);
+    (void)snprintf(combined, ERROR_MSG_LEN, "%s: %s", context, err->error_buffer);
+    memcpy(err->error_buffer, combined, ERROR_MSG_LEN);
 }
 
-const char *error_get(struct EngineContext *ctx)
+const char *error_get(const ErrorState *err)
 {
-    if (ctx->error.error_buffer[0] == '\0') {
+    if (err->error_buffer[0] == '\0') {
         return nullptr;
     }
-    return ctx->error.error_buffer;
+    return err->error_buffer;
 }
 
-void error_clear(struct EngineContext *ctx)
+void error_clear(ErrorState *err)
 {
-    ctx->error.error_buffer[0] = '\0';
+    err->error_buffer[0] = '\0';
 }

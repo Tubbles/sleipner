@@ -365,13 +365,13 @@ static bool backup_file(struct EngineContext *ctx, const char *path)
 
     FILE *source = fopen(path, "re");
     if (!source) {
-        error_set(ctx, "backup fopen(%s): %s", path, strerror(errno));
+        error_set(&ctx->error, "backup fopen(%s): %s", path, strerror(errno));
         return false;
     }
 
     FILE *dest = fopen(backup_path, "we");
     if (!dest) {
-        error_set(ctx, "backup fopen(%s): %s", backup_path, strerror(errno));
+        error_set(&ctx->error, "backup fopen(%s): %s", backup_path, strerror(errno));
         (void)fclose(source);
         return false;
     }
@@ -380,7 +380,7 @@ static bool backup_file(struct EngineContext *ctx, const char *path)
     for (;;) {
         size_t bytes = fread(buffer, 1, sizeof(buffer), source);
         if (bytes > 0 && fwrite(buffer, 1, bytes, dest) != bytes) {
-            error_set(ctx, "backup fwrite(%s): %s", backup_path, strerror(errno));
+            error_set(&ctx->error, "backup fwrite(%s): %s", backup_path, strerror(errno));
             (void)fclose(source);
             (void)fclose(dest);
             return false;
@@ -395,7 +395,7 @@ static bool backup_file(struct EngineContext *ctx, const char *path)
     (void)fclose(dest);
 
     if (!read_ok) {
-        error_set(ctx, "backup fread(%s): %s", path, strerror(errno));
+        error_set(&ctx->error, "backup fread(%s): %s", path, strerror(errno));
         return false;
     }
 
@@ -406,29 +406,29 @@ static bool backup_file(struct EngineContext *ctx, const char *path)
 static bool save_gamedata(struct EngineContext *ctx, const GameState *state)
 {
     if (!backup_file(ctx, GAMEDATA_PATH)) {
-        error_wrap(ctx, "save_gamedata");
+        error_wrap(&ctx->error, "save_gamedata");
         return false;
     }
 
     char buffer[MAX_GAMEDATA_SIZE];
     int written = toml_emit_gamedata(ctx, buffer, (int)sizeof(buffer), &state->blueprints, &state->current_level, 1);
     if (written < 0) {
-        error_wrap(ctx, "save_gamedata");
+        error_wrap(&ctx->error, "save_gamedata");
         return false;
     }
 
     FILE *file = fopen(GAMEDATA_PATH, "we");
     if (!file) {
-        error_set(ctx, "fopen(%s): %s", GAMEDATA_PATH, strerror(errno));
-        error_wrap(ctx, "save_gamedata");
+        error_set(&ctx->error, "fopen(%s): %s", GAMEDATA_PATH, strerror(errno));
+        error_wrap(&ctx->error, "save_gamedata");
         return false;
     }
 
     size_t to_write = (size_t)written;
     if (fwrite(buffer, 1, to_write, file) != to_write) {
-        error_set(ctx, "fwrite(%s): %s", GAMEDATA_PATH, strerror(errno));
+        error_set(&ctx->error, "fwrite(%s): %s", GAMEDATA_PATH, strerror(errno));
         (void)fclose(file);
-        error_wrap(ctx, "save_gamedata");
+        error_wrap(&ctx->error, "save_gamedata");
         return false;
     }
     (void)fclose(file);
@@ -442,7 +442,7 @@ static char *read_file_text(struct EngineContext *ctx, const char *path, Arena *
     /* Stat the file first for diagnostics */
     struct stat file_stat;
     if (stat(path, &file_stat) != 0) {
-        error_set(ctx, "stat(%s): %s", path, strerror(errno));
+        error_set(&ctx->error, "stat(%s): %s", path, strerror(errno));
         return nullptr;
     }
     debug_log(ctx, "gamedata: stat(%s): size=%ld mode=%o uid=%d gid=%d", path, (long)file_stat.st_size,
@@ -450,7 +450,7 @@ static char *read_file_text(struct EngineContext *ctx, const char *path, Arena *
 
     FILE *file = fopen(path, "re");
     if (!file) {
-        error_set(ctx, "fopen(%s): %s", path, strerror(errno));
+        error_set(&ctx->error, "fopen(%s): %s", path, strerror(errno));
         return nullptr;
     }
 
@@ -465,7 +465,7 @@ static char *read_file_text(struct EngineContext *ctx, const char *path, Arena *
 
     size_t bytes_read = fread(buffer, 1, MAX_GAMEDATA_SIZE, file);
     if (ferror(file)) {
-        error_set(ctx, "fread(%s): %s", path, strerror(errno));
+        error_set(&ctx->error, "fread(%s): %s", path, strerror(errno));
         arena_restore(arena, read_cp);
         (void)fclose(file);
         return nullptr;
@@ -511,9 +511,9 @@ static void load_gamedata(struct EngineContext *ctx, GameState *state)
 {
     char *content = read_file_text(ctx, GAMEDATA_PATH, &state->gamedata_arena);
     if (!content) {
-        error_wrap(ctx, "load_gamedata");
-        debug_log(ctx, "error: %s", error_get(ctx));
-        error_clear(ctx);
+        error_wrap(&ctx->error, "load_gamedata");
+        debug_log(ctx, "error: %s", error_get(&ctx->error));
+        error_clear(&ctx->error);
         return;
     }
 
@@ -552,8 +552,8 @@ static void load_gamedata(struct EngineContext *ctx, GameState *state)
             debug_log(ctx, "gamedata: WARNING player not found!");
         }
     } else {
-        debug_log(ctx, "error: %s", error_get(ctx));
-        error_clear(ctx);
+        debug_log(ctx, "error: %s", error_get(&ctx->error));
+        error_clear(&ctx->error);
     }
 
     ctx->gamedata_mtime = GetFileModTime(GAMEDATA_PATH);
@@ -629,8 +629,8 @@ handle_save_input(struct EngineContext *ctx, GameState *state, EditorState *edit
 {
     if (toggle_pressed((ToggleBinding){KEY_F9, GAMEPAD_BUTTON_RIGHT_FACE_UP})) {
         if (!save_gamedata(ctx, state)) {
-            debug_log(ctx, "save error: %s", error_get(ctx));
-            error_clear(ctx);
+            debug_log(ctx, "save error: %s", error_get(&ctx->error));
+            error_clear(&ctx->error);
         } else {
             load_gamedata(ctx, state);
             *editor_state = (EditorState){.selected_entity_index = -1,
@@ -660,8 +660,8 @@ static void handle_place_input(struct EngineContext *ctx,
         Allocator alloc = allocator_arena(&state->gamedata_arena);
         if (!level_spawn_entity(ctx, &state->current_level, blueprint, camera->target, &state->blueprints,
                                 texture_registry_lookup, ctx, &alloc)) {
-            debug_log(ctx, "error: %s", error_get(ctx));
-            error_clear(ctx);
+            debug_log(ctx, "error: %s", error_get(&ctx->error));
+            error_clear(&ctx->error);
         }
     }
     if (toggle_pressed((ToggleBinding){KEY_ESCAPE, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT})) {
@@ -816,8 +816,8 @@ int main(void)
 
     GameState state;
     if (!game_init(ctx, &state, game_bounds)) {
-        debug_log(ctx, "error: %s", error_get(ctx));
-        error_clear(ctx);
+        debug_log(ctx, "error: %s", error_get(&ctx->error));
+        error_clear(&ctx->error);
         return 1;
     }
 

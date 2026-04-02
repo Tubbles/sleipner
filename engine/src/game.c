@@ -1,4 +1,6 @@
 #include "game.h"
+
+#include "engine_context.h"
 #include "alloc.h"
 #include "arena.h"
 #include "attribute.h"
@@ -27,12 +29,12 @@ bool game_init(struct EngineContext *ctx, GameState *state, RectU32 game_bounds)
     state->player_index = -1;
     state->debug_enabled = true;
     if (!arena_init(ctx, &state->gamedata_arena)) {
-        error_wrap(ctx, "game_init");
+        error_wrap(&ctx->error, "game_init");
         return false;
     }
     if (!arena_init(ctx, &state->scratch_arena)) {
         arena_free(&state->gamedata_arena);
-        error_wrap(ctx, "game_init");
+        error_wrap(&ctx->error, "game_init");
         return false;
     }
     return true;
@@ -66,7 +68,7 @@ bool game_load_gamedata(struct EngineContext *ctx, GameState *state, GamedataPar
     size_t length = strlen(params.toml_string);
     char *buffer = arena_alloc(&state->gamedata_arena, length + 1);
     if (!buffer) {
-        error_wrap(ctx, "game_load_gamedata");
+        error_wrap(&ctx->error, "game_load_gamedata");
         return false;
     }
     memcpy(buffer, params.toml_string, length + 1);
@@ -77,8 +79,8 @@ bool game_load_gamedata(struct EngineContext *ctx, GameState *state, GamedataPar
     state->rule_table = (map_entity_ruleset){0};
     state->entity_blueprints = (map_int_str){0};
     if (!root) {
-        error_set(ctx, "toml_parse: %s", errbuf);
-        error_wrap(ctx, "game_load_gamedata");
+        error_set(&ctx->error, "toml_parse: %s", errbuf);
+        error_wrap(&ctx->error, "game_load_gamedata");
         return false;
     }
 
@@ -144,7 +146,7 @@ bool game_load_gamedata(struct EngineContext *ctx, GameState *state, GamedataPar
             }
         }
     } else {
-        error_wrap(ctx, "game_load_gamedata");
+        error_wrap(&ctx->error, "game_load_gamedata");
     }
 
     return level_ok;
