@@ -2,18 +2,6 @@
 
 ## Engineering Goals
 
-- **No opaque cross-module forward declarations** — `struct EngineContext;`
-  appears in 10 headers: arena.h, audio.h, blueprint.h, collision.h,
-  debug.h, error.h, game.h, input.h, level.h, rule.h. Eliminate by
-  decomposing EngineContext into what each lower-level
-  module actually needs (error context, log sink, arena pointers) as
-  lightweight structs at the foundation level. See DESIGN.md "Module
-  Dependencies" for the full dependency graph. Enforced by cppcheck addon
-  `tools/cppcheck/no_forward_decl.py` (run via `./ci.sh cppcheck`); the 10
-  known EngineContext violations are suppressed inline with
-  `// cppcheck-suppress noForwardDecl-noForwardDecl`. Once all 10 are
-  eliminated, remove the `--inline-suppr` flag from the cppcheck invocation
-  in `ci.sh` and the suppression comments from the headers.
 - **Vec types for all linear data** — `ActionNode.children` /
   `ActionNode.else_children` still use raw pointers (blocked, see below)
 

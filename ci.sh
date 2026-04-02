@@ -77,7 +77,7 @@ do_lint() {
 do_cppcheck() {
     echo "=== cppcheck ==="
     run bash -c "PYTHONPATH=/usr/local/share/Cppcheck/addons cppcheck \
-        --enable=warning --inline-suppr \
+        --enable=warning \
         --addon=tools/cppcheck/no_forward_decl.py \
         --suppress=unknownMacro \
         --error-exitcode=1 \
