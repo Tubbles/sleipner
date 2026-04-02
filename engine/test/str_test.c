@@ -1,8 +1,15 @@
+#include "fff.h"
 #include "unity.h"
 
-#include "str.h"
-#include "strv.h"
-#include "test_helpers.h"
+#include "../src/strv.c" // NOLINT(bugprone-suspicious-include)
+#include "../src/str.c"  // NOLINT(bugprone-suspicious-include)
+
+DEFINE_FFF_GLOBALS;
+
+#include "test_heap_alloc.h"
+
+void setUp(void) {}
+void tearDown(void) {}
 
 void test_str_from_cstr_len(void)
 {
@@ -204,4 +211,32 @@ void test_str_free_on_zero_is_safe(void)
 {
     Str str = {0};
     str_free(&test_heap_alloc, &str); /* must not crash */
+}
+
+int main(void)
+{
+    test_helpers_init();
+    UNITY_BEGIN();
+    RUN_TEST(test_str_from_cstr_len);
+    RUN_TEST(test_str_from_cstr_content);
+    RUN_TEST(test_str_from_cstr_null_terminated);
+    RUN_TEST(test_str_from_cstr_empty_nonnull_ptr);
+    RUN_TEST(test_str_from_strv_len);
+    RUN_TEST(test_str_from_strv_content);
+    RUN_TEST(test_str_from_strv_subview);
+    RUN_TEST(test_str_to_strv_len_excludes_null);
+    RUN_TEST(test_str_to_strv_ptr_matches);
+    RUN_TEST(test_str_push_char_len);
+    RUN_TEST(test_str_push_char_content);
+    RUN_TEST(test_str_push_char_null_terminated);
+    RUN_TEST(test_str_append_cstr_content);
+    RUN_TEST(test_str_append_strv_content);
+    RUN_TEST(test_str_append_strv_subview);
+    RUN_TEST(test_str_append_grows_beyond_initial_cap);
+    RUN_TEST(test_str_clear_resets_len);
+    RUN_TEST(test_str_clear_keeps_allocation);
+    RUN_TEST(test_str_clear_null_terminates);
+    RUN_TEST(test_str_free_zeros_struct);
+    RUN_TEST(test_str_free_on_zero_is_safe);
+    return UNITY_END();
 }

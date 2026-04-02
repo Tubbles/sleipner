@@ -1,7 +1,11 @@
-#include "vec.h"
-
+#include "fff.h"
 #include "unity.h"
-#include "test_helpers.h"
+
+#include "../src/vec.c" // NOLINT(bugprone-suspicious-include)
+
+DEFINE_FFF_GLOBALS;
+
+#include "test_heap_alloc.h"
 
 /* A small local struct to verify VEC_DECL/VEC_IMPL work for non-primitive types. */
 typedef struct {
@@ -11,6 +15,9 @@ typedef struct {
 
 VEC_DECL(point, Point)
 VEC_IMPL(point, Point)
+
+void setUp(void) {}
+void tearDown(void) {}
 
 /* ---- Initial state ---- */
 
@@ -308,4 +315,40 @@ void test_vec_struct_growth_preserves_fields(void)
         TEST_ASSERT_EQUAL_INT(index * 2, vector.data[index].y_pos);
     }
     vec_point_free(&vector);
+}
+
+int main(void)
+{
+    test_helpers_init();
+    UNITY_BEGIN();
+    RUN_TEST(test_vec_initial_state_count_is_zero);
+    RUN_TEST(test_vec_initial_state_capacity_is_zero);
+    RUN_TEST(test_vec_initial_state_data_is_null);
+    RUN_TEST(test_vec_push_increments_count);
+    RUN_TEST(test_vec_push_single_value_readable);
+    RUN_TEST(test_vec_push_multiple_values_in_order);
+    RUN_TEST(test_vec_push_returns_true_on_success);
+    RUN_TEST(test_vec_first_push_allocates_data);
+    RUN_TEST(test_vec_first_push_sets_initial_capacity);
+    RUN_TEST(test_vec_push_up_to_capacity_no_extra_alloc);
+    RUN_TEST(test_vec_push_one_past_capacity_triggers_growth);
+    RUN_TEST(test_vec_growth_preserves_existing_values);
+    RUN_TEST(test_vec_multiple_growths_all_values_intact);
+    RUN_TEST(test_vec_clear_resets_count_to_zero);
+    RUN_TEST(test_vec_clear_preserves_allocation);
+    RUN_TEST(test_vec_clear_allows_repush);
+    RUN_TEST(test_vec_clear_on_empty_is_safe);
+    RUN_TEST(test_vec_free_resets_count_to_zero);
+    RUN_TEST(test_vec_free_resets_capacity_to_zero);
+    RUN_TEST(test_vec_free_resets_data_to_null);
+    RUN_TEST(test_vec_free_on_empty_is_safe);
+    RUN_TEST(test_vec_free_allows_repush);
+    RUN_TEST(test_vec_data_is_contiguous_in_memory);
+    RUN_TEST(test_vec_float_push_and_read);
+    RUN_TEST(test_vec_bool_push_and_read);
+    RUN_TEST(test_vec_i64_push_and_read);
+    RUN_TEST(test_vec_u32_push_and_read);
+    RUN_TEST(test_vec_struct_push_and_read);
+    RUN_TEST(test_vec_struct_growth_preserves_fields);
+    return UNITY_END();
 }

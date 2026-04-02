@@ -14,11 +14,13 @@ add_unit_test(strv_test)
 add_unit_test(error_test)
 add_unit_test(shape_test)
 add_unit_test(touch_test)
+add_unit_test(str_test)
+add_unit_test(vec_test)
+add_unit_test(particle_test)
 
 add_executable(engine_tests
     main_test.c
     test_helpers.c
-    vec_test.c
     map_test.c
     arena_test.c
     alloc_test.c
@@ -28,12 +30,10 @@ add_executable(engine_tests
     game_test.c
     integration_test.c
     level_test.c
-    particle_test.c
     collision_test.c
     editor_test.c
     toml_emitter_test.c
     rule_test.c
-    str_test.c
     toml_str_test.c
 )
 target_compile_definitions(engine_tests PRIVATE _GNU_SOURCE)

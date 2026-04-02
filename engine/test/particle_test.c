@@ -1,11 +1,18 @@
+#include "fff.h"
 #include "unity.h"
-#include "test_helpers.h"
 
-#include "particle.h"
+#include "../src/particle.c" // NOLINT(bugprone-suspicious-include)
+
+DEFINE_FFF_GLOBALS;
+
+#include "test_heap_alloc.h"
 
 #include <stdlib.h>
 
 static ParticlePool pool;
+
+void setUp(void) {}
+void tearDown(void) {}
 
 void test_particle_init(void)
 {
@@ -66,4 +73,17 @@ void test_particle_free_cleans_up(void)
     TEST_ASSERT_NULL(pool.items.data);
     TEST_ASSERT_EQUAL_INT(0, pool.items.count);
     TEST_ASSERT_EQUAL_INT(0, pool.items.capacity);
+}
+
+int main(void)
+{
+    test_helpers_init();
+    UNITY_BEGIN();
+    RUN_TEST(test_particle_init);
+    RUN_TEST(test_particle_spawn_increases_count);
+    RUN_TEST(test_particle_lifetime_expiry);
+    RUN_TEST(test_particle_position_updates);
+    RUN_TEST(test_particle_capacity_grows);
+    RUN_TEST(test_particle_free_cleans_up);
+    return UNITY_END();
 }

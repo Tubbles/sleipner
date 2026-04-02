@@ -31,37 +31,6 @@ void test_map_int_i64_set_and_get(void);
 void test_map_get_returns_const_pointer_to_stored_slot(void);
 void test_map_arena_allocator(void);
 
-/* vec_test.c */
-void test_vec_initial_state_count_is_zero(void);
-void test_vec_initial_state_capacity_is_zero(void);
-void test_vec_initial_state_data_is_null(void);
-void test_vec_push_increments_count(void);
-void test_vec_push_single_value_readable(void);
-void test_vec_push_multiple_values_in_order(void);
-void test_vec_push_returns_true_on_success(void);
-void test_vec_first_push_allocates_data(void);
-void test_vec_first_push_sets_initial_capacity(void);
-void test_vec_push_up_to_capacity_no_extra_alloc(void);
-void test_vec_push_one_past_capacity_triggers_growth(void);
-void test_vec_growth_preserves_existing_values(void);
-void test_vec_multiple_growths_all_values_intact(void);
-void test_vec_clear_resets_count_to_zero(void);
-void test_vec_clear_preserves_allocation(void);
-void test_vec_clear_allows_repush(void);
-void test_vec_clear_on_empty_is_safe(void);
-void test_vec_free_resets_count_to_zero(void);
-void test_vec_free_resets_capacity_to_zero(void);
-void test_vec_free_resets_data_to_null(void);
-void test_vec_free_on_empty_is_safe(void);
-void test_vec_free_allows_repush(void);
-void test_vec_data_is_contiguous_in_memory(void);
-void test_vec_float_push_and_read(void);
-void test_vec_bool_push_and_read(void);
-void test_vec_i64_push_and_read(void);
-void test_vec_u32_push_and_read(void);
-void test_vec_struct_push_and_read(void);
-void test_vec_struct_growth_preserves_fields(void);
-
 /* attribute_test.c */
 void test_attr_set_and_get_float(void);
 void test_attr_set_and_get_int(void);
@@ -169,37 +138,6 @@ void test_integration_player_entity_spawns(void);
 void test_integration_on_spawn_trigger_fires_on_load(void);
 void test_integration_enter_trigger_fires_on_overlap(void);
 void test_integration_enter_trigger_fires_only_once(void);
-
-/* particle_test.c */
-void test_particle_init(void);
-void test_particle_spawn_increases_count(void);
-void test_particle_lifetime_expiry(void);
-void test_particle_position_updates(void);
-void test_particle_capacity_grows(void);
-void test_particle_free_cleans_up(void);
-
-/* str_test.c */
-void test_str_from_cstr_len(void);
-void test_str_from_cstr_content(void);
-void test_str_from_cstr_null_terminated(void);
-void test_str_from_cstr_empty_nonnull_ptr(void);
-void test_str_from_strv_len(void);
-void test_str_from_strv_content(void);
-void test_str_from_strv_subview(void);
-void test_str_to_strv_len_excludes_null(void);
-void test_str_to_strv_ptr_matches(void);
-void test_str_push_char_len(void);
-void test_str_push_char_content(void);
-void test_str_push_char_null_terminated(void);
-void test_str_append_cstr_content(void);
-void test_str_append_strv_content(void);
-void test_str_append_strv_subview(void);
-void test_str_append_grows_beyond_initial_cap(void);
-void test_str_clear_resets_len(void);
-void test_str_clear_keeps_allocation(void);
-void test_str_clear_null_terminates(void);
-void test_str_free_zeros_struct(void);
-void test_str_free_on_zero_is_safe(void);
 
 /* toml_str_test.c */
 void test_toml_str_content_is_copied(void);
@@ -409,36 +347,6 @@ int main(void)
     RUN_TEST(test_map_get_returns_const_pointer_to_stored_slot);
     RUN_TEST(test_map_arena_allocator);
 
-    RUN_TEST(test_vec_initial_state_count_is_zero);
-    RUN_TEST(test_vec_initial_state_capacity_is_zero);
-    RUN_TEST(test_vec_initial_state_data_is_null);
-    RUN_TEST(test_vec_push_increments_count);
-    RUN_TEST(test_vec_push_single_value_readable);
-    RUN_TEST(test_vec_push_multiple_values_in_order);
-    RUN_TEST(test_vec_push_returns_true_on_success);
-    RUN_TEST(test_vec_first_push_allocates_data);
-    RUN_TEST(test_vec_first_push_sets_initial_capacity);
-    RUN_TEST(test_vec_push_up_to_capacity_no_extra_alloc);
-    RUN_TEST(test_vec_push_one_past_capacity_triggers_growth);
-    RUN_TEST(test_vec_growth_preserves_existing_values);
-    RUN_TEST(test_vec_multiple_growths_all_values_intact);
-    RUN_TEST(test_vec_clear_resets_count_to_zero);
-    RUN_TEST(test_vec_clear_preserves_allocation);
-    RUN_TEST(test_vec_clear_allows_repush);
-    RUN_TEST(test_vec_clear_on_empty_is_safe);
-    RUN_TEST(test_vec_free_resets_count_to_zero);
-    RUN_TEST(test_vec_free_resets_capacity_to_zero);
-    RUN_TEST(test_vec_free_resets_data_to_null);
-    RUN_TEST(test_vec_free_on_empty_is_safe);
-    RUN_TEST(test_vec_free_allows_repush);
-    RUN_TEST(test_vec_data_is_contiguous_in_memory);
-    RUN_TEST(test_vec_float_push_and_read);
-    RUN_TEST(test_vec_bool_push_and_read);
-    RUN_TEST(test_vec_i64_push_and_read);
-    RUN_TEST(test_vec_u32_push_and_read);
-    RUN_TEST(test_vec_struct_push_and_read);
-    RUN_TEST(test_vec_struct_growth_preserves_fields);
-
     RUN_TEST(test_attr_set_and_get_float);
     RUN_TEST(test_attr_set_and_get_int);
     RUN_TEST(test_attr_set_and_get_bool);
@@ -539,13 +447,6 @@ int main(void)
     RUN_TEST(test_level_child_entity_tags);
     RUN_TEST(test_level_nested_children);
 
-    RUN_TEST(test_particle_init);
-    RUN_TEST(test_particle_spawn_increases_count);
-    RUN_TEST(test_particle_lifetime_expiry);
-    RUN_TEST(test_particle_position_updates);
-    RUN_TEST(test_particle_capacity_grows);
-    RUN_TEST(test_particle_free_cleans_up);
-
     RUN_TEST(test_flag_set_and_get);
     RUN_TEST(test_flag_clear);
     RUN_TEST(test_flag_unset_returns_false);
@@ -640,28 +541,6 @@ int main(void)
     RUN_TEST(test_tri_tri_no_overlap);
     RUN_TEST(test_tri_circle_overlap);
     RUN_TEST(test_tri_rect_overlap);
-
-    RUN_TEST(test_str_from_cstr_len);
-    RUN_TEST(test_str_from_cstr_content);
-    RUN_TEST(test_str_from_cstr_null_terminated);
-    RUN_TEST(test_str_from_cstr_empty_nonnull_ptr);
-    RUN_TEST(test_str_from_strv_len);
-    RUN_TEST(test_str_from_strv_content);
-    RUN_TEST(test_str_from_strv_subview);
-    RUN_TEST(test_str_to_strv_len_excludes_null);
-    RUN_TEST(test_str_to_strv_ptr_matches);
-    RUN_TEST(test_str_push_char_len);
-    RUN_TEST(test_str_push_char_content);
-    RUN_TEST(test_str_push_char_null_terminated);
-    RUN_TEST(test_str_append_cstr_content);
-    RUN_TEST(test_str_append_strv_content);
-    RUN_TEST(test_str_append_strv_subview);
-    RUN_TEST(test_str_append_grows_beyond_initial_cap);
-    RUN_TEST(test_str_clear_resets_len);
-    RUN_TEST(test_str_clear_keeps_allocation);
-    RUN_TEST(test_str_clear_null_terminates);
-    RUN_TEST(test_str_free_zeros_struct);
-    RUN_TEST(test_str_free_on_zero_is_safe);
 
     RUN_TEST(test_toml_str_content_is_copied);
     RUN_TEST(test_toml_str_datum_nulled_after_call);
