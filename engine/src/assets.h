@@ -1,5 +1,4 @@
-#ifndef ASSETS_H
-#define ASSETS_H
+#pragma once
 
 #include <stdint.h>
 
@@ -42,5 +41,3 @@ DECLARE_ASSET(royalfibre_ttf);
 
 /* Input mappings */
 DECLARE_ASSET(gamecontrollerdb_txt);
-
-#endif

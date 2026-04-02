@@ -1,5 +1,4 @@
-#ifndef EDITOR_H
-#define EDITOR_H
+#pragma once
 
 #include "diag.h"
 #include "game.h"
@@ -122,5 +121,3 @@ void draw_radial_picker(ScreenSize screen, const EditorState *editor_state);
 void handle_radial_input(EditorState *editor_state, InputState input);
 void handle_word_builder_input(Diag *diag, GameState *state, EditorState *editor_state);
 void draw_word_builder_panel(ScreenSize screen, const GameState *state, const EditorState *editor_state);
-
-#endif

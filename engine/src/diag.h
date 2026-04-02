@@ -1,5 +1,4 @@
-#ifndef DIAG_H
-#define DIAG_H
+#pragma once
 
 #include "debug.h"
 #include "error.h"
@@ -8,5 +7,3 @@ typedef struct {
     ErrorState *error;
     DebugState *debug;
 } Diag;
-
-#endif

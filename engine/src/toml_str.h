@@ -1,5 +1,4 @@
-#ifndef TOML_STR_H
-#define TOML_STR_H
+#pragma once
 
 #include "str.h"
 #include "toml.h"
@@ -10,5 +9,3 @@
  * and null datum->u.s to prevent use-after-free at the call site.
  * This is the standard boundary crossing from TOML into our memory model. */
 [[nodiscard]] bool str_from_toml_datum(Allocator *alloc, Str *out, toml_datum_t *datum);
-
-#endif

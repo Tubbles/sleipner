@@ -1,5 +1,4 @@
-#ifndef GAME_H
-#define GAME_H
+#pragma once
 
 #include "arena.h"
 #include "audio.h"
@@ -100,5 +99,3 @@ void game_free(Diag *diag, GameState *state);
 /* Resolve an entity's blueprint defaults via the entity→blueprint map.
  * Returns nullptr if entity has no blueprint mapping or blueprint not found. */
 const AttrSet *entity_resolve_defaults(const GameState *state, int entity_id);
-
-#endif

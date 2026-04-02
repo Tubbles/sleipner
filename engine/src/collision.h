@@ -1,5 +1,4 @@
-#ifndef COLLISION_H
-#define COLLISION_H
+#pragma once
 
 #include "raylib.h"
 #include "rect.h"
@@ -74,5 +73,3 @@ void resolve_arena_composite(const CollisionShape *shape, Vector2 *pos, float an
 void obb_corners(Vector2 center, float angle_deg, float half_w, float half_h, Vector2 *out);
 
 void project_corners(const Vector2 *corners, int count, Vector2 axis, float *out_min, float *out_max);
-
-#endif

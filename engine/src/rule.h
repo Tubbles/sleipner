@@ -1,5 +1,4 @@
-#ifndef RULE_H
-#define RULE_H
+#pragma once
 
 #include "alloc.h"
 #include "arena.h"
@@ -257,5 +256,3 @@ void rules_evaluate_batch(Diag *diag,
                           const vec_subroutine *subroutines,
                           vec_timer *timers,
                           const AttrSet *const *entity_defaults);
-
-#endif

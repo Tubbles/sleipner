@@ -1,5 +1,4 @@
-#ifndef ALLOC_H
-#define ALLOC_H
+#pragma once
 
 #include <stddef.h>
 
@@ -18,5 +17,3 @@ typedef struct Allocator {
     void *(*realloc_fn)(void *ctx, void *ptr, size_t new_size);
     void (*free_fn)(void *ctx, void *ptr);
 } Allocator;
-
-#endif

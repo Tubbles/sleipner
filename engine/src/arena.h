@@ -1,5 +1,4 @@
-#ifndef ARENA_H
-#define ARENA_H
+#pragma once
 
 #include "alloc.h"
 #include "error.h"
@@ -72,5 +71,3 @@ size_t arena_used(const Arena *arena);
 
 /* Construct an arena-backed allocator. free_fn is a no-op; the arena owns all memory. */
 Allocator allocator_arena(Arena *arena);
-
-#endif

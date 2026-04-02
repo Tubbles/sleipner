@@ -1,5 +1,4 @@
-#ifndef STRV_H
-#define STRV_H
+#pragma once
 
 #include <stddef.h>
 
@@ -43,5 +42,3 @@ bool strv_starts_with_cstr(Strv strv, const char *prefix);
 /* Copy at most dest_size-1 bytes from strv into dest and null-terminate.
  * dest_size must be at least 1. */
 void strv_copy_to_cstr(Strv strv, char *dest, size_t dest_size);
-
-#endif

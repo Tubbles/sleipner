@@ -1,5 +1,4 @@
-#ifndef TEST_HELPERS_H
-#define TEST_HELPERS_H
+#pragma once
 
 #include "alloc.h"
 #include "blueprint.h"
@@ -22,5 +21,3 @@ void test_level_free(Level *level);
 void test_entity_free(Entity *entity);
 void test_flag_set_free(FlagSet *flags);
 void test_attr_set_free(AttrSet *set);
-
-#endif

@@ -1,5 +1,4 @@
-#ifndef STR_H
-#define STR_H
+#pragma once
 
 #include "alloc.h"
 #include "strv.h"
@@ -39,5 +38,3 @@ Strv str_to_strv(Str str);
 
 /* Reset length to zero, keeping allocation. ptr[0] set to '\0'. */
 void str_clear(Str *str);
-
-#endif

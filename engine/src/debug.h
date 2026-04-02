@@ -1,5 +1,4 @@
-#ifndef DEBUG_H
-#define DEBUG_H
+#pragma once
 
 #include <stdbool.h>
 #include <stdio.h>
@@ -27,5 +26,3 @@ void debug_log(DebugState *dbg, const char *format, ...) __attribute__((format(p
 /* Access the log ring buffer for overlay rendering. */
 const char *debug_get_line(const DebugState *dbg, int index);
 int debug_get_line_count(const DebugState *dbg);
-
-#endif

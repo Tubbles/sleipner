@@ -1,5 +1,4 @@
-#ifndef TOML_EMITTER_H
-#define TOML_EMITTER_H
+#pragma once
 
 #include "blueprint.h"
 #include "error.h"
@@ -14,5 +13,3 @@
                                      const BlueprintTable *blueprints,
                                      const Level *levels,
                                      int level_count);
-
-#endif

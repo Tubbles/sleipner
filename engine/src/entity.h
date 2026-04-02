@@ -1,5 +1,4 @@
-#ifndef ENTITY_H
-#define ENTITY_H
+#pragma once
 
 #include "alloc.h"
 #include "attribute.h"
@@ -71,5 +70,3 @@ bool entity_is_visible(int entity_index, const Entity *entities, const AttrSet *
 bool entity_is_active(int entity_index, const Entity *entities, const AttrSet *const *entity_defaults);
 
 VEC_DECL(entity, Entity)
-
-#endif

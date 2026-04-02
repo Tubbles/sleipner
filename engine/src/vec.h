@@ -1,5 +1,4 @@
-#ifndef VEC_H
-#define VEC_H
+#pragma once
 
 /* vec.h — typed dynamic array via code-generation macros.
  *
@@ -101,6 +100,4 @@ VEC_DECL(f32, _Float32)
 #endif
 #ifdef __FLT64_MAX__
 VEC_DECL(f64, _Float64)
-#endif
-
 #endif

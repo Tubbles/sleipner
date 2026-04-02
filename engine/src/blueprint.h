@@ -1,5 +1,4 @@
-#ifndef BLUEPRINT_H
-#define BLUEPRINT_H
+#pragma once
 
 #include "alloc.h"
 #include "arena.h"
@@ -49,5 +48,3 @@ void blueprint_table_free(Allocator *alloc, BlueprintTable *table);
 
 /* Find a blueprint by name. Returns nullptr if not found. */
 const Blueprint *blueprint_find(const BlueprintTable *table, const char *name);
-
-#endif

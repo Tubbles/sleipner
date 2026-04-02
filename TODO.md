@@ -54,4 +54,3 @@
 ## misc
 
 - do the same stored-allocator change for map and Str types (parallels vec work)
-- change from include macro guards to pragma once

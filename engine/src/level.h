@@ -1,5 +1,4 @@
-#ifndef LEVEL_H
-#define LEVEL_H
+#pragma once
 
 #include "alloc.h"
 #include "blueprint.h"
@@ -47,5 +46,3 @@ void level_free(Allocator *alloc, Level *level);
                               TextureLookupFn texture_lookup,
                               void *texture_user_data,
                               Allocator *alloc);
-
-#endif

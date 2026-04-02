@@ -1,5 +1,4 @@
-#ifndef TOUCH_H
-#define TOUCH_H
+#pragma once
 
 #include "raylib.h"
 #include <stdbool.h>
@@ -24,5 +23,3 @@ void touch_update(TouchState *state, Rectangle debug_button_rect);
  * where max_radius pixels of drag maps to 1.0. Returns (0,0) if not in
  * stick mode or no drag. */
 Vector2 touch_get_stick(const TouchState *state, float max_radius);
-
-#endif

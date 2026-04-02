@@ -25,6 +25,7 @@ Checks: >
   -objc-*,
   -openmp-*,
   -zircon-*,
+  -portability-avoid-pragma-once,
   -readability-implicit-bool-conversion,
 
 CheckOptions:

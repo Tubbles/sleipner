@@ -1,5 +1,4 @@
-#ifndef PARTICLE_H
-#define PARTICLE_H
+#pragma once
 
 #include "alloc.h"
 #include "raylib.h"
@@ -23,5 +22,3 @@ void particles_init(ParticlePool *pool);
 void particles_spawn(ParticlePool *pool, Allocator *alloc, Vector2 pos, Color color, int count);
 void particles_update(ParticlePool *pool, float delta_time);
 void particles_free(ParticlePool *pool);
-
-#endif

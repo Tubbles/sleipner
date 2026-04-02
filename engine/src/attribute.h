@@ -1,5 +1,4 @@
-#ifndef ATTRIBUTE_H
-#define ATTRIBUTE_H
+#pragma once
 
 #include "alloc.h"
 #include "str.h"
@@ -70,5 +69,3 @@ float attr_get_scoped_float(const AttrSet *instance, const AttrSet *defaults, co
 int attr_get_scoped_int(const AttrSet *instance, const AttrSet *defaults, const char *name, int fallback);
 bool attr_get_scoped_bool(const AttrSet *instance, const AttrSet *defaults, const char *name, bool fallback);
 const char *attr_get_scoped_string(const AttrSet *instance, const AttrSet *defaults, const char *name);
-
-#endif

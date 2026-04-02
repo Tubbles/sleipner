@@ -1,5 +1,4 @@
-#ifndef RENDER_H
-#define RENDER_H
+#pragma once
 
 #include "raylib.h"
 #include "particle.h"
@@ -9,5 +8,3 @@
 void render_background(RectU32 bounds);
 void render_shape(ShapeKind kind, Vector2 pos, float rotation, float scale, Color color);
 void render_particles(const Particle *particles, int count);
-
-#endif

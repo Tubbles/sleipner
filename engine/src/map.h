@@ -1,5 +1,4 @@
-#ifndef MAP_H
-#define MAP_H
+#pragma once
 
 /* map.h — typed open-addressing hash map via code-generation macros.
  *
@@ -178,5 +177,3 @@ MAP_DECL(int_u16, int, uint16_t)
 MAP_DECL(int_u32, int, uint32_t)
 MAP_DECL(int_u64, int, uint64_t)
 MAP_DECL(int_str, int, Str)
-
-#endif

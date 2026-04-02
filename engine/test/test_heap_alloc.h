@@ -1,5 +1,4 @@
-#ifndef TEST_HEAP_ALLOC_H
-#define TEST_HEAP_ALLOC_H
+#pragma once
 
 #include "alloc.h"
 
@@ -11,5 +10,3 @@ void test_helpers_init(void);
 
 /* Heap allocator for test code — initialised by test_helpers_init(). */
 extern Allocator test_heap_alloc;
-
-#endif

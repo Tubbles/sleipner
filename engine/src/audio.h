@@ -1,5 +1,4 @@
-#ifndef AUDIO_H
-#define AUDIO_H
+#pragma once
 
 #include "raylib.h"
 
@@ -12,5 +11,3 @@ typedef struct {
 void audio_init(AudioState *audio);
 void audio_play(AudioState *audio, SoundKind kind);
 void audio_shutdown(AudioState *audio);
-
-#endif

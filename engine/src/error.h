@@ -1,5 +1,4 @@
-#ifndef ERROR_H
-#define ERROR_H
+#pragma once
 
 #define ERROR_MSG_LEN 512
 
@@ -19,5 +18,3 @@ void error_wrap(ErrorState *err, const char *format, ...) __attribute__((format(
 
 /* Clear the error state. Call after logging at the top-level boundary. */
 void error_clear(ErrorState *err);
-
-#endif
