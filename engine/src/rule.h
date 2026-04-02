@@ -10,8 +10,8 @@
 
 #include <stdbool.h>
 
-// cppcheck-suppress noForwardDecl-noForwardDecl
-struct EngineContext;
+#include "debug.h"
+#include "error.h"
 
 // Include actual TOML headers instead of forward declarations
 // This makes dependencies explicit and maintains module integrity
@@ -168,7 +168,7 @@ typedef struct {
 } FlagSet;
 
 bool flag_get(const FlagSet *flags, const char *name);
-void flag_set(struct EngineContext *ctx, Allocator *alloc, FlagSet *flags, const char *name);
+void flag_set(ErrorState *err, DebugState *dbg, Allocator *alloc, FlagSet *flags, const char *name);
 void flag_clear(Allocator *alloc, FlagSet *flags, const char *name);
 void flag_set_free(Allocator *alloc, FlagSet *flags);
 
@@ -199,14 +199,24 @@ typedef struct {
 }
 
 /* --- Parsing (from TOML) --- */
-[[nodiscard]] bool trigger_parse(struct EngineContext *ctx, Allocator *alloc, Trigger *trigger, const char *string);
 [[nodiscard]] bool
-condition_parse(struct EngineContext *ctx, Allocator *alloc, Condition *condition, const char *string);
-[[nodiscard]] bool action_node_parse(struct EngineContext *ctx, Allocator *alloc, ActionNode *node, toml_datum_t value);
-[[nodiscard]] bool rules_parse(
-    struct EngineContext *ctx, Allocator *alloc, vec_rule *rules, toml_table_t *toml_blueprint_table, Arena *arena);
-[[nodiscard]] bool subroutines_parse(
-    struct EngineContext *ctx, Allocator *alloc, vec_subroutine *subroutines, toml_table_t *toml_root, Arena *arena);
+trigger_parse(ErrorState *err, DebugState *dbg, Allocator *alloc, Trigger *trigger, const char *string);
+[[nodiscard]] bool
+condition_parse(ErrorState *err, DebugState *dbg, Allocator *alloc, Condition *condition, const char *string);
+[[nodiscard]] bool
+action_node_parse(ErrorState *err, DebugState *dbg, Allocator *alloc, ActionNode *node, toml_datum_t value);
+[[nodiscard]] bool rules_parse(ErrorState *err,
+                               DebugState *dbg,
+                               Allocator *alloc,
+                               vec_rule *rules,
+                               toml_table_t *toml_blueprint_table,
+                               Arena *arena);
+[[nodiscard]] bool subroutines_parse(ErrorState *err,
+                                     DebugState *dbg,
+                                     Allocator *alloc,
+                                     vec_subroutine *subroutines,
+                                     toml_table_t *toml_root,
+                                     Arena *arena);
 
 /* --- Trigger matching --- */
 bool trigger_matches(const Trigger *trigger, const TriggerEvent *event);
@@ -245,10 +255,11 @@ typedef struct {
 } ActionContext;
 
 [[nodiscard]] bool
-action_node_execute(struct EngineContext *ctx, Allocator *alloc, const ActionNode *node, ActionContext context);
+action_node_execute(ErrorState *err, DebugState *dbg, Allocator *alloc, const ActionNode *node, ActionContext context);
 
 /* --- Evaluation loop --- */
-void rules_evaluate_batch(struct EngineContext *ctx,
+void rules_evaluate_batch(ErrorState *err,
+                          DebugState *dbg,
                           Allocator *alloc,
                           Entity *entities,
                           int entity_count,

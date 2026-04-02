@@ -301,7 +301,7 @@ static bool parse_single_blueprint(
     if (!parse_children(alloc, blueprint, entry)) {
         return false;
     }
-    if (!rules_parse(ctx, alloc, &blueprint->rules, entry, arena)) {
+    if (!rules_parse(&ctx->error, &ctx->debug, alloc, &blueprint->rules, entry, arena)) {
         error_wrap(&ctx->error, "blueprint '%s'", attr_get_string(&blueprint->attrs, "name"));
         return false;
     }

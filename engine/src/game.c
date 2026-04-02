@@ -90,7 +90,8 @@ bool game_load_gamedata(struct EngineContext *ctx, GameState *state, GamedataPar
     state->prev_player_overlaps = vec_bool_new(gamedata_alloc);
     state->prev_solid_collisions = vec_bool_new(gamedata_alloc);
     blueprints_load(ctx, &state->blueprints, root, &state->gamedata_arena);
-    bool subs_ok = subroutines_parse(ctx, &gamedata_alloc, &state->subroutines, root, &state->gamedata_arena);
+    bool subs_ok =
+        subroutines_parse(&ctx->error, &ctx->debug, &gamedata_alloc, &state->subroutines, root, &state->gamedata_arena);
     bool level_ok = false;
     if (subs_ok) {
         level_ok = level_load(ctx, &state->current_level, root, params.level_name, &state->blueprints,
@@ -140,8 +141,8 @@ bool game_load_gamedata(struct EngineContext *ctx, GameState *state, GamedataPar
                                              (TriggerEvent){.type = TRIGGER_ON_SPAWN, .entity_index = index});
             }
             if (spawn_events.count > 0) {
-                rules_evaluate_batch(ctx, &gamedata_alloc, state->current_level.entities.data, spawn_count,
-                                     spawn_events.data, spawn_events.count, &state->flags, &state->vars,
+                rules_evaluate_batch(&ctx->error, &ctx->debug, &gamedata_alloc, state->current_level.entities.data,
+                                     spawn_count, spawn_events.data, spawn_events.count, &state->flags, &state->vars,
                                      &state->rule_table, &state->subroutines, &state->timers, spawn_defaults);
             }
         }
@@ -455,8 +456,8 @@ void game_update(struct EngineContext *ctx, GameState *state, InputState input, 
                 update_defaults[index] = entity_resolve_defaults(state, state->current_level.entities.data[index].id);
             }
             Allocator rule_alloc = allocator_arena(&state->gamedata_arena);
-            rules_evaluate_batch(ctx, &rule_alloc, state->current_level.entities.data, update_count,
-                                 trigger_events.data, trigger_events.count, &state->flags, &state->vars,
+            rules_evaluate_batch(&ctx->error, &ctx->debug, &rule_alloc, state->current_level.entities.data,
+                                 update_count, trigger_events.data, trigger_events.count, &state->flags, &state->vars,
                                  &state->rule_table, &state->subroutines, &state->timers, update_defaults);
         }
     }
