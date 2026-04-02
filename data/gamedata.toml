@@ -41,7 +41,19 @@ name = "house"
 texture = "house.png"
 src = [0, 0, 96, 128]
 collision_offset = [0, 64]
-collision_size = [96, 64]
+collision_size = [96, 48]
+behavior = "static"
+solid = true
+
+[[blueprint.child]]
+tag = "door"
+blueprint = "house_door"
+offset = [36, 120]
+
+[[blueprint]]
+name = "house_door"
+collision_offset = [0, 0]
+collision_size = [24, 16]
 behavior = "static"
 
 [[blueprint.rule]]
