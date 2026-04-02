@@ -995,7 +995,7 @@ static void word_builder_confirm(struct EngineContext *ctx, GameState *state, Ed
     Allocator alloc = allocator_arena(&state->gamedata_arena);
     AttrStringPair pair = {attr->name.ptr, editor_state->word_builder_buf};
     if (!attr_set_string(&alloc, target, pair)) {
-        debug_log(ctx, "word builder: attr_set_string failed: %s", error_get(&ctx->error));
+        debug_log(&ctx->debug, "word builder: attr_set_string failed: %s", error_get(&ctx->error));
         error_clear(&ctx->error);
     }
 }

@@ -2,21 +2,11 @@
 #define ENGINE_CONTEXT_H
 
 #include "audio.h"
+#include "debug.h"
 #include "error.h"
 #include "game.h"
 #include "raylib.h"
 #include "vec.h" // IWYU pragma: export
-#include <stdio.h>
-
-#define DEBUG_LOG_LINES 20
-#define DEBUG_LOG_LINE_LEN 128
-
-typedef struct {
-    char log_lines[DEBUG_LOG_LINES][DEBUG_LOG_LINE_LEN];
-    int log_head;
-    int log_count;
-    FILE *trace_file;
-} DebugState;
 
 typedef struct {
     Sound sounds[SOUND_COUNT];

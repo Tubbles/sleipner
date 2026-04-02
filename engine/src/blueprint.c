@@ -362,40 +362,40 @@ int blueprints_load(struct EngineContext *ctx, BlueprintTable *table, void *toml
 
     toml_array_t *blueprints = toml_array_in(toml_root, "blueprint");
     if (!blueprints) {
-        debug_log(ctx, "bp: no [[blueprint]] array in TOML root");
+        debug_log(&ctx->debug, "bp: no [[blueprint]] array in TOML root");
         return 0;
     }
 
     int count = toml_array_nelem(blueprints);
-    debug_log(ctx, "bp: found %d blueprint entries in TOML", count);
+    debug_log(&ctx->debug, "bp: found %d blueprint entries in TOML", count);
 
     for (int index = 0; index < count; index++) {
         toml_table_t *entry = toml_table_at(blueprints, index);
         if (!entry) {
-            debug_log(ctx, "bp[%d]: toml_table_at returned nullptr", index);
+            debug_log(&ctx->debug, "bp[%d]: toml_table_at returned nullptr", index);
             continue;
         }
 
         int nkval = toml_table_nkval(entry);
         int narr = toml_table_narr(entry);
         int ntab = toml_table_ntab(entry);
-        debug_log(ctx, "bp[%d]: keys=%d arrays=%d tables=%d", index, nkval, narr, ntab);
+        debug_log(&ctx->debug, "bp[%d]: keys=%d arrays=%d tables=%d", index, nkval, narr, ntab);
 
         int total_keys = nkval + narr + ntab;
         for (int key_index = 0; key_index < total_keys; key_index++) {
             const char *key = toml_key_in(entry, key_index);
-            debug_log(ctx, "bp[%d]: key[%d]='%s'", index, key_index, key ? key : "(null)");
+            debug_log(&ctx->debug, "bp[%d]: key[%d]='%s'", index, key_index, key ? key : "(null)");
         }
 
         Blueprint temp = {0};
         if (parse_single_blueprint(ctx, &alloc, &temp, entry, arena)) {
-            debug_log(ctx, "bp[%d]: parsed '%s' tex='%s'", index, attr_get_string(&temp.attrs, "name"),
+            debug_log(&ctx->debug, "bp[%d]: parsed '%s' tex='%s'", index, attr_get_string(&temp.attrs, "name"),
                       attr_get_string(&temp.attrs, "texture"));
             (void)vec_blueprint_push(&table->entries, temp);
         } else {
             blueprint_cleanup(&alloc, &temp);
             toml_datum_t name = toml_string_in(entry, "name");
-            debug_log(ctx, "bp[%d]: FAILED to parse (name=%s)", index, name.ok ? name.u.s : "missing");
+            debug_log(&ctx->debug, "bp[%d]: FAILED to parse (name=%s)", index, name.ok ? name.u.s : "missing");
             if (name.ok) {
                 free(name.u.s);
             }

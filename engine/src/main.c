@@ -44,8 +44,6 @@ VEC_IMPL(texture_entry, TextureEntry)
 
 #define PIXEL_SCALE 4
 #define TILE_SIZE 16
-#define DEBUG_LOG_LINES 20
-#define DEBUG_LOG_LINE_LEN 128
 #define DEBUG_FONT_SIZE 22
 #define DEBUG_LINE_HEIGHT 26
 #define DEBUG_PANEL_WIDTH 420
@@ -92,9 +90,9 @@ static void font_preview_add(struct EngineContext *ctx, const char *name, Embedd
     entry.font = LoadFontFromMemory(".ttf", asset.data, asset.size, FONT_PREVIEW_SIZE, nullptr, 0);
     entry.valid = IsFontValid(entry.font);
     if (entry.valid) {
-        debug_log(ctx, "font[%d]: '%s' (%d bytes)", ctx->assets.font_previews.count, name, asset.size);
+        debug_log(&ctx->debug, "font[%d]: '%s' (%d bytes)", ctx->assets.font_previews.count, name, asset.size);
     } else {
-        debug_log(ctx, "font[%d]: '%s' failed to load", ctx->assets.font_previews.count, name);
+        debug_log(&ctx->debug, "font[%d]: '%s' failed to load", ctx->assets.font_previews.count, name);
     }
     ctx->assets.font_previews.alloc = *alloc;
     (void)vec_font_preview_push(&ctx->assets.font_previews, entry);
@@ -170,10 +168,10 @@ static void log_gamepad_changes(struct EngineContext *ctx, int *prev_gamepads, i
 {
     int gamepads = input_count_gamepads();
     if (gamepads != *prev_gamepads) {
-        debug_log(ctx, "gamepads %d -> %d (frame %d)", *prev_gamepads, gamepads, frame);
+        debug_log(&ctx->debug, "gamepads %d -> %d (frame %d)", *prev_gamepads, gamepads, frame);
         for (int index = 0; index < 4; index++) {
             if (IsGamepadAvailable(index)) {
-                debug_log(ctx, "gp%d: %s", index, GetGamepadName(index));
+                debug_log(&ctx->debug, "gp%d: %s", index, GetGamepadName(index));
             }
         }
         *prev_gamepads = gamepads;
@@ -267,15 +265,15 @@ static void draw_debug_info(struct EngineContext *ctx, const GameState *state, R
     }
 
     /* Log panel at bottom */
-    int line_count = debug_get_line_count(ctx);
+    int line_count = debug_get_line_count(&ctx->debug);
     if (line_count > 0) {
         int log_height = (line_count * DEBUG_LINE_HEIGHT) + (DEBUG_MARGIN * 2);
         int log_y = ctx->screen_height - log_height;
         DrawRectangle(0, log_y, ctx->screen_width, log_height, debug_bg_color);
 
         for (int index = 0; index < line_count; index++) {
-            DrawText(debug_get_line(ctx, index), DEBUG_MARGIN, log_y + DEBUG_MARGIN + (index * DEBUG_LINE_HEIGHT),
-                     DEBUG_FONT_SIZE, debug_log_color);
+            DrawText(debug_get_line(&ctx->debug, index), DEBUG_MARGIN,
+                     log_y + DEBUG_MARGIN + (index * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, debug_log_color);
         }
     }
 }
@@ -290,7 +288,7 @@ static void load_persistent_assets(struct EngineContext *ctx, GameState *state)
     texture_registry_add(ctx, "house.png", load_embedded_texture(ASSET(house_png)), &gamedata_alloc);
     texture_registry_add(ctx, "fence.png", load_embedded_texture(ASSET(fence_png)), &gamedata_alloc);
     for (int index = 0; index < ctx->assets.textures.count; index++) {
-        debug_log(ctx, "texture[%d]: '%s' id=%u %dx%d", index, ctx->assets.textures.data[index].filename,
+        debug_log(&ctx->debug, "texture[%d]: '%s' id=%u %dx%d", index, ctx->assets.textures.data[index].filename,
                   ctx->assets.textures.data[index].texture.id, ctx->assets.textures.data[index].texture.width,
                   ctx->assets.textures.data[index].texture.height);
     }
@@ -399,7 +397,7 @@ static bool backup_file(struct EngineContext *ctx, const char *path)
         return false;
     }
 
-    debug_log(ctx, "backup: %s -> %s", path, backup_path);
+    debug_log(&ctx->debug, "backup: %s -> %s", path, backup_path);
     return true;
 }
 
@@ -433,7 +431,7 @@ static bool save_gamedata(struct EngineContext *ctx, const GameState *state)
     }
     (void)fclose(file);
 
-    debug_log(ctx, "saved gamedata: %d bytes to %s", written, GAMEDATA_PATH);
+    debug_log(&ctx->debug, "saved gamedata: %d bytes to %s", written, GAMEDATA_PATH);
     return true;
 }
 
@@ -445,7 +443,7 @@ static char *read_file_text(struct EngineContext *ctx, const char *path, Arena *
         error_set(&ctx->error, "stat(%s): %s", path, strerror(errno));
         return nullptr;
     }
-    debug_log(ctx, "gamedata: stat(%s): size=%ld mode=%o uid=%d gid=%d", path, (long)file_stat.st_size,
+    debug_log(&ctx->debug, "gamedata: stat(%s): size=%ld mode=%o uid=%d gid=%d", path, (long)file_stat.st_size,
               (unsigned)file_stat.st_mode, (int)file_stat.st_uid, (int)file_stat.st_gid);
 
     FILE *file = fopen(path, "re");
@@ -471,7 +469,7 @@ static char *read_file_text(struct EngineContext *ctx, const char *path, Arena *
         return nullptr;
     }
     (void)fclose(file);
-    debug_log(ctx, "gamedata: read %zu bytes from %s", bytes_read, path);
+    debug_log(&ctx->debug, "gamedata: read %zu bytes from %s", bytes_read, path);
     return buffer;
 }
 
@@ -495,7 +493,7 @@ apply_touch_input(InputState input, TouchState *touch_state, struct EngineContex
     touch_update(touch_state, button_rect);
     if (touch_state->debug_button_triggered) {
         state->debug_enabled = !state->debug_enabled;
-        debug_log(ctx, "debug %s (touch, frame %d)", (int)state->debug_enabled ? "ON" : "OFF", state->frame);
+        debug_log(&ctx->debug, "debug %s (touch, frame %d)", (int)state->debug_enabled ? "ON" : "OFF", state->frame);
     }
     Vector2 stick = touch_get_stick(touch_state, (float)ctx->screen_width / (float)TOUCH_STICK_RADIUS_DIV);
     if (stick.x != 0.0F) {
@@ -512,7 +510,7 @@ static void load_gamedata(struct EngineContext *ctx, GameState *state)
     char *content = read_file_text(ctx, GAMEDATA_PATH, &state->gamedata_arena);
     if (!content) {
         error_wrap(&ctx->error, "load_gamedata");
-        debug_log(ctx, "error: %s", error_get(&ctx->error));
+        debug_log(&ctx->debug, "error: %s", error_get(&ctx->error));
         error_clear(&ctx->error);
         return;
     }
@@ -526,33 +524,34 @@ static void load_gamedata(struct EngineContext *ctx, GameState *state)
         int offset = index * 3;
         (void)snprintf(&hexbuf[offset], 4, "%02x ", (unsigned char)content[index]);
     }
-    debug_log(ctx, "gamedata: hex[0..%d]: %s", hex_count - 1, hexbuf);
+    debug_log(&ctx->debug, "gamedata: hex[0..%d]: %s", hex_count - 1, hexbuf);
 
     bool loaded = game_load_gamedata(
         ctx, state,
         (GamedataParams){.toml_string = content, .texture_lookup = texture_registry_lookup, .texture_user_data = ctx});
 
     if (loaded) {
-        debug_log(ctx, "gamedata: %d blueprints", state->blueprints.entries.count);
+        debug_log(&ctx->debug, "gamedata: %d blueprints", state->blueprints.entries.count);
         for (int index = 0; index < state->blueprints.entries.count; index++) {
             const Blueprint *blueprint = &state->blueprints.entries.data[index];
-            debug_log(ctx, "  bp[%d]: '%s' tex='%s' attrs=%d", index, attr_get_string(&blueprint->attrs, "name"),
-                      attr_get_string(&blueprint->attrs, "texture"), blueprint->attrs.entries.count);
+            debug_log(&ctx->debug, "  bp[%d]: '%s' tex='%s' attrs=%d", index,
+                      attr_get_string(&blueprint->attrs, "name"), attr_get_string(&blueprint->attrs, "texture"),
+                      blueprint->attrs.entries.count);
         }
-        debug_log(ctx, "gamedata: level '%s' (%dx%d, %d entities)", state->current_level.name.ptr,
+        debug_log(&ctx->debug, "gamedata: level '%s' (%dx%d, %d entities)", state->current_level.name.ptr,
                   state->current_level.width, state->current_level.height, state->current_level.entities.count);
         for (int index = 0; index < state->current_level.entities.count; index++) {
             const Entity *entity = &state->current_level.entities.data[index];
-            debug_log(ctx, "  ent[%d]: bp='%s' pos=(%.0f,%.0f) tex=%s", index, entity->blueprint_name.ptr,
+            debug_log(&ctx->debug, "  ent[%d]: bp='%s' pos=(%.0f,%.0f) tex=%s", index, entity->blueprint_name.ptr,
                       entity->position.x, entity->position.y, entity->texture ? "ok" : "nullptr");
         }
         if (state->player_index >= 0) {
-            debug_log(ctx, "gamedata: player at entity[%d]", state->player_index);
+            debug_log(&ctx->debug, "gamedata: player at entity[%d]", state->player_index);
         } else {
-            debug_log(ctx, "gamedata: WARNING player not found!");
+            debug_log(&ctx->debug, "gamedata: WARNING player not found!");
         }
     } else {
-        debug_log(ctx, "error: %s", error_get(&ctx->error));
+        debug_log(&ctx->debug, "error: %s", error_get(&ctx->error));
         error_clear(&ctx->error);
     }
 
@@ -568,7 +567,7 @@ static bool poll_hot_reload(struct EngineContext *ctx, GameState *state)
 
     long current_mtime = GetFileModTime(GAMEDATA_PATH);
     if (current_mtime > 0 && current_mtime != ctx->gamedata_mtime) {
-        debug_log(ctx, "gamedata: hot-reload triggered");
+        debug_log(&ctx->debug, "gamedata: hot-reload triggered");
         load_gamedata(ctx, state);
         return true;
     }
@@ -629,7 +628,7 @@ handle_save_input(struct EngineContext *ctx, GameState *state, EditorState *edit
 {
     if (toggle_pressed((ToggleBinding){KEY_F9, GAMEPAD_BUTTON_RIGHT_FACE_UP})) {
         if (!save_gamedata(ctx, state)) {
-            debug_log(ctx, "save error: %s", error_get(&ctx->error));
+            debug_log(&ctx->debug, "save error: %s", error_get(&ctx->error));
             error_clear(&ctx->error);
         } else {
             load_gamedata(ctx, state);
@@ -660,7 +659,7 @@ static void handle_place_input(struct EngineContext *ctx,
         Allocator alloc = allocator_arena(&state->gamedata_arena);
         if (!level_spawn_entity(ctx, &state->current_level, blueprint, camera->target, &state->blueprints,
                                 texture_registry_lookup, ctx, &alloc)) {
-            debug_log(ctx, "error: %s", error_get(&ctx->error));
+            debug_log(&ctx->debug, "error: %s", error_get(&ctx->error));
             error_clear(&ctx->error);
         }
     }
@@ -774,7 +773,7 @@ int main(void)
     ctx->screen_width = SCREEN_WIDTH_DEFAULT;
     ctx->screen_height = SCREEN_HEIGHT_DEFAULT;
 
-    debug_init(ctx, TRACE_LOG_PATH);
+    debug_init(&ctx->debug, TRACE_LOG_PATH);
 
 #ifdef __ANDROID__
     SetConfigFlags(FLAG_FULLSCREEN_MODE);
@@ -790,7 +789,7 @@ int main(void)
     int monitor = GetCurrentMonitor();
     int mon_width = GetMonitorWidth(monitor);
     int mon_height = GetMonitorHeight(monitor);
-    debug_log(ctx, "monitor=%d resolution=%dx%d", monitor, mon_width, mon_height);
+    debug_log(&ctx->debug, "monitor=%d resolution=%dx%d", monitor, mon_width, mon_height);
     if (mon_width > 0 && mon_height > 0) {
         ctx->screen_width = mon_width;
         ctx->screen_height = mon_height;
@@ -800,7 +799,7 @@ int main(void)
 #ifndef __ANDROID__
     ToggleBorderlessWindowed();
 #endif
-    debug_log(ctx, "ctx->screen_width=%d ctx->screen_height=%d", ctx->screen_width, ctx->screen_height);
+    debug_log(&ctx->debug, "ctx->screen_width=%d ctx->screen_height=%d", ctx->screen_width, ctx->screen_height);
 
     SetTargetFPS(TARGET_FPS);
     audio_init(ctx);
@@ -816,7 +815,7 @@ int main(void)
 
     GameState state;
     if (!game_init(ctx, &state, game_bounds)) {
-        debug_log(ctx, "error: %s", error_get(&ctx->error));
+        debug_log(&ctx->debug, "error: %s", error_get(&ctx->error));
         error_clear(&ctx->error);
         return 1;
     }
@@ -851,10 +850,10 @@ int main(void)
                                 .radial_selected = -1};
     WatchList watches = {0};
 
-    debug_log(ctx, "gamedata path: %s", GAMEDATA_PATH);
-    debug_log(ctx, "screen %dx%d  game %ux%u  scale %d", ctx->screen_width, ctx->screen_height, game_bounds.width,
-              game_bounds.height, PIXEL_SCALE);
-    debug_log(ctx, "GetScreen %dx%d  GetRender %dx%d", GetScreenWidth(), GetScreenHeight(), GetRenderWidth(),
+    debug_log(&ctx->debug, "gamedata path: %s", GAMEDATA_PATH);
+    debug_log(&ctx->debug, "screen %dx%d  game %ux%u  scale %d", ctx->screen_width, ctx->screen_height,
+              game_bounds.width, game_bounds.height, PIXEL_SCALE);
+    debug_log(&ctx->debug, "GetScreen %dx%d  GetRender %dx%d", GetScreenWidth(), GetScreenHeight(), GetRenderWidth(),
               GetRenderHeight());
     load_gamedata(ctx, &state);
 
@@ -871,7 +870,7 @@ int main(void)
         /* Toggle debug overlay: F3 only (Select/MIDDLE_LEFT is now used by radial picker) */
         if (IsKeyPressed(KEY_F3)) {
             state.debug_enabled = !state.debug_enabled;
-            debug_log(ctx, "debug %s (frame %d)", (int)state.debug_enabled ? "ON" : "OFF", state.frame);
+            debug_log(&ctx->debug, "debug %s (frame %d)", (int)state.debug_enabled ? "ON" : "OFF", state.frame);
         }
 
         /* Toggle font preview: F4 or gamepad Right Thumb */
@@ -882,7 +881,7 @@ int main(void)
         /* Toggle editor mode: F5 or gamepad Start */
         if (toggle_pressed((ToggleBinding){KEY_F5, GAMEPAD_BUTTON_MIDDLE_RIGHT})) {
             state.editor_mode = !state.editor_mode;
-            debug_log(ctx, "editor %s (frame %d)", (int)state.editor_mode ? "ON" : "OFF", state.frame);
+            debug_log(&ctx->debug, "editor %s (frame %d)", (int)state.editor_mode ? "ON" : "OFF", state.frame);
         }
 
         log_gamepad_changes(ctx, &prev_gamepads, state.frame);
@@ -914,7 +913,7 @@ int main(void)
     }
 
 quit:
-    debug_log(ctx, "exiting game loop (frame=%d t=%.1fs)", state.frame, state.elapsed);
+    debug_log(&ctx->debug, "exiting game loop (frame=%d t=%.1fs)", state.frame, state.elapsed);
 
     UnloadMusicStream(bgm);
     UnloadRenderTexture(target);
@@ -922,7 +921,7 @@ quit:
     font_preview_cleanup(ctx);
     game_free(ctx, &state);
     audio_shutdown(ctx);
-    debug_shutdown(ctx);
+    debug_shutdown(&ctx->debug);
     CloseWindow();
     return 0;
 }

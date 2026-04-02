@@ -58,12 +58,12 @@ void flag_set(struct EngineContext *ctx, Allocator *alloc, FlagSet *flags, const
     flags->names.alloc = *alloc;
     FlagName entry = {0};
     if (!str_from_cstr(alloc, &entry.name, name)) {
-        debug_log(ctx, "flag_set: allocation failed for '%s'", name);
+        debug_log(&ctx->debug, "flag_set: allocation failed for '%s'", name);
         return;
     }
     if (!vec_flag_name_push(&flags->names, entry)) {
         str_free(alloc, &entry.name);
-        debug_log(ctx, "flag_set: vec push failed for '%s'", name);
+        debug_log(&ctx->debug, "flag_set: vec push failed for '%s'", name);
     }
 }
 
@@ -933,7 +933,7 @@ execute_set_attr_action(struct EngineContext *ctx, Allocator *alloc, const Actio
     char attr_name[MAX_ARG];
     Entity *target = resolve_target(node->argument.ptr, context, attr_name, MAX_ARG);
     if (!target) {
-        debug_log(ctx, "set_attr: target not found: %s", node->argument.ptr);
+        debug_log(&ctx->debug, "set_attr: target not found: %s", node->argument.ptr);
         return true;
     }
     int target_index = (int)(target - context.entities);
@@ -971,7 +971,7 @@ execute_add_attr_action(struct EngineContext *ctx, Allocator *alloc, const Actio
     char attr_name[MAX_ARG];
     Entity *target = resolve_target(node->argument.ptr, context, attr_name, MAX_ARG);
     if (!target) {
-        debug_log(ctx, "add_attr: target not found: %s", node->argument.ptr);
+        debug_log(&ctx->debug, "add_attr: target not found: %s", node->argument.ptr);
         return true;
     }
     int target_index = (int)(target - context.entities);
@@ -1007,7 +1007,7 @@ execute_toggle_attr_action(struct EngineContext *ctx, Allocator *alloc, const Ac
     char attr_name[MAX_ARG];
     Entity *target = resolve_target(node->argument.ptr, context, attr_name, MAX_ARG);
     if (!target) {
-        debug_log(ctx, "toggle_attr: target not found: %s", node->argument.ptr);
+        debug_log(&ctx->debug, "toggle_attr: target not found: %s", node->argument.ptr);
         return true;
     }
     int target_index = (int)(target - context.entities);
@@ -1032,7 +1032,7 @@ execute_set_var_action(struct EngineContext *ctx, Allocator *alloc, const Action
         var_name = node->argument.ptr;
     }
     if (!target_vars) {
-        debug_log(ctx, "set_var: no var storage for '%s'", node->argument.ptr);
+        debug_log(&ctx->debug, "set_var: no var storage for '%s'", node->argument.ptr);
         return true;
     }
     if (strcmp(resolved_value, "true") == 0) {
@@ -1113,7 +1113,7 @@ static bool
 execute_create_timer_action(struct EngineContext *ctx, const ActionNode *node, ActionContext context, bool periodic)
 {
     if (!context.timers) {
-        debug_log(ctx, "create_timer: no timer list in context");
+        debug_log(&ctx->debug, "create_timer: no timer list in context");
         return true;
     }
     float duration = node->second_argument.len > 0 ? strtof(node->second_argument.ptr, nullptr) : 1.0F;
@@ -1144,7 +1144,7 @@ execute_create_timer_action(struct EngineContext *ctx, const ActionNode *node, A
 static bool execute_destroy_timer_action(struct EngineContext *ctx, const ActionNode *node, ActionContext context)
 {
     if (!context.timers) {
-        debug_log(ctx, "destroy_timer: no timer list in context");
+        debug_log(&ctx->debug, "destroy_timer: no timer list in context");
         return true;
     }
     for (int timer_index = 0; timer_index < context.timers->count; timer_index++) {
@@ -1193,7 +1193,7 @@ dispatch_simple_action(struct EngineContext *ctx, Allocator *alloc, const Action
     case ACTION_DESTROY_TIMER:
         return execute_destroy_timer_action(ctx, node, context);
     default:
-        debug_log(ctx, "action stub: %s (not yet implemented)", node->argument.ptr);
+        debug_log(&ctx->debug, "action stub: %s (not yet implemented)", node->argument.ptr);
         return true;
     }
 }
@@ -1258,7 +1258,7 @@ execute_call_node(struct EngineContext *ctx, Allocator *alloc, const ActionNode 
         return false;
     }
     if (!context.subroutines) {
-        debug_log(ctx, "call: no subroutine table");
+        debug_log(&ctx->debug, "call: no subroutine table");
         return true;
     }
     for (int sub_index = 0; sub_index < context.subroutines->count; sub_index++) {
@@ -1269,7 +1269,7 @@ execute_call_node(struct EngineContext *ctx, Allocator *alloc, const ActionNode 
             return execute_action_nodes(ctx, alloc, sub->action_tree.nodes.data, sub->action_tree.nodes.count, sub_ctx);
         }
     }
-    debug_log(ctx, "call: subroutine '%s' not found", node->argument.ptr);
+    debug_log(&ctx->debug, "call: subroutine '%s' not found", node->argument.ptr);
     return true;
 }
 
@@ -1381,14 +1381,14 @@ static void evaluate_entity_rules(struct EngineContext *ctx,
             .timers = timers,
             .entity_defaults = entity_defaults,
         };
-        debug_log(ctx, "Rule triggered for entity %d (type: %s), rule %d", entity_index, entity->blueprint_name.ptr,
-                  rule_index);
+        debug_log(&ctx->debug, "Rule triggered for entity %d (type: %s), rule %d", entity_index,
+                  entity->blueprint_name.ptr, rule_index);
         if (!conditions_evaluate(rule->conditions.data, rule->conditions.count, cond_ctx)) {
-            debug_log(ctx, "Conditions not met for rule %d on entity %d (type: %s)", rule_index, entity_index,
+            debug_log(&ctx->debug, "Conditions not met for rule %d on entity %d (type: %s)", rule_index, entity_index,
                       entity->blueprint_name.ptr);
             continue;
         }
-        debug_log(ctx, "Executing actions for rule %d on entity %d (type: %s)", rule_index, entity_index,
+        debug_log(&ctx->debug, "Executing actions for rule %d on entity %d (type: %s)", rule_index, entity_index,
                   entity->blueprint_name.ptr);
         for (int action_index = 0; action_index < rule->action_tree.nodes.count; action_index++) {
             (void)action_node_execute(ctx, alloc, &rule->action_tree.nodes.data[action_index], act_ctx);
@@ -1484,7 +1484,8 @@ bool subroutines_parse(
             error_wrap(&ctx->error, "subroutine '%s'", pushed->name.ptr);
             return false;
         }
-        debug_log(ctx, "subroutine: parsed '%s' (%d actions)", pushed->name.ptr, pushed->action_tree.nodes.count);
+        debug_log(&ctx->debug, "subroutine: parsed '%s' (%d actions)", pushed->name.ptr,
+                  pushed->action_tree.nodes.count);
     }
     return true;
 }
