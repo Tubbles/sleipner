@@ -802,7 +802,7 @@ int main(void)
     debug_log(&ctx->debug, "ctx->screen_width=%d ctx->screen_height=%d", ctx->screen_width, ctx->screen_height);
 
     SetTargetFPS(TARGET_FPS);
-    audio_init(ctx);
+    audio_init(&ctx->audio);
 
     EmbeddedAsset bgm_asset = ASSET(bgm_mp3);
     Music bgm = LoadMusicStreamFromMemory(".mp3", bgm_asset.data, bgm_asset.size);
@@ -920,7 +920,7 @@ quit:
     unload_textures(ctx);
     font_preview_cleanup(ctx);
     game_free(ctx, &state);
-    audio_shutdown(ctx);
+    audio_shutdown(&ctx->audio);
     debug_shutdown(&ctx->debug);
     CloseWindow();
     return 0;

@@ -8,10 +8,6 @@
 #include "raylib.h"
 #include "vec.h" // IWYU pragma: export
 
-typedef struct {
-    Sound sounds[SOUND_COUNT];
-} AudioState;
-
 #define MAX_TEXTURE_FILENAME 64
 
 typedef struct {

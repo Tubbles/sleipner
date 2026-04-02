@@ -1,5 +1,5 @@
 #include "audio.h"
-#include "engine_context.h"
+
 #include "raylib.h"
 #include <math.h>
 
@@ -71,25 +71,25 @@ static Sound generate_bubble_pop(float duration, float volume)
     return LoadSoundFromWave(wave);
 }
 
-void audio_init(struct EngineContext *ctx)
+void audio_init(AudioState *audio)
 {
     InitAudioDevice();
 
-    ctx->audio.sounds[SOUND_BUTTON] = generate_tone(TONE_FREQ_HZ, TONE_DURATION_SEC, TONE_VOLUME);
-    ctx->audio.sounds[SOUND_COLLISION] = generate_bubble_pop(POP_DURATION_SEC, POP_VOLUME);
+    audio->sounds[SOUND_BUTTON] = generate_tone(TONE_FREQ_HZ, TONE_DURATION_SEC, TONE_VOLUME);
+    audio->sounds[SOUND_COLLISION] = generate_bubble_pop(POP_DURATION_SEC, POP_VOLUME);
 }
 
-void audio_play(struct EngineContext *ctx, SoundKind kind)
+void audio_play(AudioState *audio, SoundKind kind)
 {
     if ((int)kind >= 0 && (int)kind < SOUND_COUNT) {
-        PlaySound(ctx->audio.sounds[kind]);
+        PlaySound(audio->sounds[kind]);
     }
 }
 
-void audio_shutdown(struct EngineContext *ctx)
+void audio_shutdown(AudioState *audio)
 {
     for (int index = 0; index < SOUND_COUNT; index++) {
-        UnloadSound(ctx->audio.sounds[index]);
+        UnloadSound(audio->sounds[index]);
     }
     CloseAudioDevice();
 }
