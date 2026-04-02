@@ -10,6 +10,7 @@
 
 #include <stdbool.h>
 
+// cppcheck-suppress noForwardDecl-noForwardDecl
 struct EngineContext;
 
 // Include actual TOML headers instead of forward declarations

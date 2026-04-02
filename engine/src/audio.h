@@ -3,6 +3,7 @@
 
 typedef enum { SOUND_BUTTON, SOUND_COLLISION, SOUND_COUNT } SoundKind;
 
+// cppcheck-suppress noForwardDecl-noForwardDecl
 struct EngineContext;
 
 void audio_init(struct EngineContext *ctx);

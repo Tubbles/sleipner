@@ -7,7 +7,9 @@
 #   ./ci.sh build       # Install deps + compile
 #   ./ci.sh test        # Run unit tests (builds first if needed)
 #   ./ci.sh lint        # Run clang-tidy (builds first if needed)
-#   ./ci.sh all         # check + build + test + lint
+#   ./ci.sh all         # check + build + test + lint + cppcheck + pytest
+#   ./ci.sh cppcheck    # Run cppcheck forward-decl addon (host, needs ~/dev/cppcheck)
+#   ./ci.sh pytest      # Run Python unit tests for cppcheck addon
 #   ./ci.sh android     # Build Android arm64 shared library
 #   ./ci.sh apk         # Build Android APK (includes conan + gradle)
 #
@@ -72,6 +74,21 @@ do_lint() {
         && cd build/Release && clang-tidy -p . ../../engine/src/*.c ../../engine/test/*.c"
 }
 
+do_cppcheck() {
+    echo "=== cppcheck ==="
+    PYTHONPATH=~/dev/cppcheck/addons ~/dev/cppcheck/build/bin/cppcheck \
+        --enable=warning --inline-suppr \
+        --addon=tools/cppcheck/no_forward_decl.py \
+        --suppress=unknownMacro \
+        --error-exitcode=1 \
+        engine/src/*.h engine/src/*.c
+}
+
+do_pytest() {
+    echo "=== pytest ==="
+    python3 -m pytest tools/cppcheck/test_no_forward_decl.py -v
+}
+
 do_all() {
     echo "=== all ==="
     mkdir -p build/Release
@@ -81,6 +98,8 @@ do_all() {
                  && ./build/Release/engine/test/engine_tests \
                  && clang-format --dry-run --Werror $SOURCES \
                  && cd build/Release && clang-tidy -p . ../../engine/src/*.c ../../engine/test/*.c"
+    do_cppcheck
+    do_pytest
 }
 
 android_conan_setup="$conan_profile_setup"' && conan install . --output-folder=build/android/arm64-v8a --build=missing \
@@ -132,11 +151,13 @@ case "${1:-all}" in
     build)   do_build ;;
     test)    do_test ;;
     lint)    do_lint ;;
-    all)     do_all ;;
-    android) do_android ;;
+    all)      do_all ;;
+    cppcheck) do_cppcheck ;;
+    pytest)   do_pytest ;;
+    android)  do_android ;;
     apk)     do_apk ;;
     *)
-        echo "Usage: $0 {format|check|build|test|lint|all|android|apk}"
+        echo "Usage: $0 {format|check|build|test|lint|all|cppcheck|pytest|android|apk}"
         exit 1
         ;;
 esac

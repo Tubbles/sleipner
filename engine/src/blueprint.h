@@ -12,6 +12,7 @@
 
 #include <stdbool.h>
 
+// cppcheck-suppress noForwardDecl-noForwardDecl
 struct EngineContext;
 
 typedef struct {

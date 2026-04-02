@@ -8,9 +8,10 @@
   decomposing EngineContext into what each lower-level
   module actually needs (error context, log sink, arena pointers) as
   lightweight structs at the foundation level. See DESIGN.md "Module
-  Dependencies" for the full dependency graph. Also investigate cppcheck for
-  a built-in check; if none exists, write a small cppcheck Python plugin
-  (lives in this repo) to enforce it automatically.
+  Dependencies" for the full dependency graph. Enforced by cppcheck addon
+  `tools/cppcheck/no_forward_decl.py` (run via `./ci.sh cppcheck`); the 10
+  known EngineContext violations are suppressed inline with
+  `// cppcheck-suppress noForwardDecl-noForwardDecl`.
 - **Vec types for all linear data** — `ActionNode.children` /
   `ActionNode.else_children` still use raw pointers (blocked, see below)
 

@@ -7,6 +7,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+// cppcheck-suppress noForwardDecl-noForwardDecl
 struct EngineContext;
 
 /* 1 TiB virtual reservation — physical pages are demand-paged by the OS. */

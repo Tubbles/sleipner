@@ -8,6 +8,7 @@
 
 #include <stdbool.h>
 
+// cppcheck-suppress noForwardDecl-noForwardDecl
 struct EngineContext;
 
 /* Callback for resolving a texture name to a Texture2D pointer.

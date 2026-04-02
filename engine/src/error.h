@@ -4,6 +4,7 @@
 #define ERROR_MSG_LEN 512
 
 /* Set the root error (clears any previous chain). */
+// cppcheck-suppress noForwardDecl-noForwardDecl
 struct EngineContext;
 
 void error_set(struct EngineContext *ctx, const char *format, ...) __attribute__((format(printf, 2, 3)));

@@ -8,6 +8,7 @@
 
 /* Initialize the debug logging system. Call once at startup.
  * If trace_path is non-nullptr, opens a trace file at that path. */
+// cppcheck-suppress noForwardDecl-noForwardDecl
 struct EngineContext;
 
 void debug_init(struct EngineContext *ctx, const char *trace_path);

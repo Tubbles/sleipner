@@ -11,6 +11,7 @@
 
 #include <stdbool.h>
 
+// cppcheck-suppress noForwardDecl-noForwardDecl
 struct EngineContext;
 
 #define DEFAULT_PLAYER_SPEED 80.0F
