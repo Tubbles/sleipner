@@ -11,7 +11,9 @@
   Dependencies" for the full dependency graph. Enforced by cppcheck addon
   `tools/cppcheck/no_forward_decl.py` (run via `./ci.sh cppcheck`); the 10
   known EngineContext violations are suppressed inline with
-  `// cppcheck-suppress noForwardDecl-noForwardDecl`.
+  `// cppcheck-suppress noForwardDecl-noForwardDecl`. Once all 10 are
+  eliminated, remove the `--inline-suppr` flag from the cppcheck invocation
+  in `ci.sh` and the suppression comments from the headers.
 - **Vec types for all linear data** — `ActionNode.children` /
   `ActionNode.else_children` still use raw pointers (blocked, see below)
 
