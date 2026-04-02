@@ -590,6 +590,14 @@ static void handle_transition(Diag *diag, GameState *state)
     if (player) {
         player->position = (Vector2){spawn_x, spawn_y};
         entity_update_collision(player);
+
+        /* Pre-seed overlap tracking so enter triggers don't fire for entities
+         * the player already overlaps at the spawn position. */
+        for (int index = 0; index < state->current_level.entities.count && index < state->prev_player_overlaps.count;
+             index++) {
+            state->prev_player_overlaps.data[index] =
+                CheckCollisionRecs(player->collision, state->current_level.entities.data[index].collision);
+        }
     }
 }
 
