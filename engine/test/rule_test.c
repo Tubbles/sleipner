@@ -745,7 +745,7 @@ void test_rules_parse_from_toml(void)
     TEST_ASSERT_NOT_NULL(root);
 
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx, &arena));
+    TEST_ASSERT_TRUE(arena_init(&ctx.error, &arena));
     Allocator alloc = allocator_arena(&arena);
 
     vec_rule rules = {0};
@@ -777,7 +777,7 @@ void test_rules_parse_no_rules(void)
     TEST_ASSERT_NOT_NULL(root);
 
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx, &arena));
+    TEST_ASSERT_TRUE(arena_init(&ctx.error, &arena));
     Allocator alloc = allocator_arena(&arena);
 
     vec_rule rules = {0};
@@ -807,7 +807,7 @@ void test_rules_parse_multiple_rules(void)
     TEST_ASSERT_NOT_NULL(root);
 
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx, &arena));
+    TEST_ASSERT_TRUE(arena_init(&ctx.error, &arena));
     Allocator alloc = allocator_arena(&arena);
 
     vec_rule rules = {0};
@@ -831,7 +831,7 @@ void test_evaluate_interact_sets_flag(void)
         attr_set_string(&test_heap_alloc, &blueprint.attrs, (AttrStringPair){.name = "name", .value = "chest"}));
 
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx, &arena));
+    TEST_ASSERT_TRUE(arena_init(&ctx.error, &arena));
     Allocator rule_alloc = allocator_arena(&arena);
 
     Rule *rule = arena_alloc(&arena, sizeof(Rule));
@@ -878,7 +878,7 @@ void test_evaluate_condition_blocks_action(void)
         attr_set_string(&test_heap_alloc, &blueprint.attrs, (AttrStringPair){.name = "name", .value = "chest"}));
 
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx, &arena));
+    TEST_ASSERT_TRUE(arena_init(&ctx.error, &arena));
     Allocator rule_alloc = allocator_arena(&arena);
 
     Rule *rule = arena_alloc(&arena, sizeof(Rule));
@@ -925,7 +925,7 @@ void test_evaluate_condition_blocks_action(void)
 void test_evaluate_fire_event_cascading(void)
 {
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx, &arena));
+    TEST_ASSERT_TRUE(arena_init(&ctx.error, &arena));
     Allocator rule_alloc = allocator_arena(&arena);
 
     Blueprint bp_switch = {0};

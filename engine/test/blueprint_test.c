@@ -14,7 +14,7 @@ static struct EngineContext ctx;
 
 static void with_arena(Arena *arena)
 {
-    TEST_ASSERT_TRUE(arena_init(&ctx, arena));
+    TEST_ASSERT_TRUE(arena_init(&ctx.error, arena));
 }
 
 static toml_table_t *parse_toml(const char *input)

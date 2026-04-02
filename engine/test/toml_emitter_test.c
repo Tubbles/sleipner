@@ -59,7 +59,7 @@ static toml_table_t *parse_toml(const char *input)
 void test_toml_emit_blueprints(void)
 {
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx, &arena));
+    TEST_ASSERT_TRUE(arena_init(&ctx.error, &arena));
     BlueprintTable blueprints = {0};
 
     toml_table_t *root = parse_toml(fixture_gamedata);
@@ -86,7 +86,7 @@ void test_toml_emit_blueprints(void)
 void test_toml_emit_level_with_entities(void)
 {
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx, &arena));
+    TEST_ASSERT_TRUE(arena_init(&ctx.error, &arena));
     BlueprintTable blueprints = {0};
     Level level = {0};
 
@@ -117,7 +117,7 @@ void test_toml_emit_level_with_entities(void)
 void test_toml_emit_round_trip(void)
 {
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx, &arena));
+    TEST_ASSERT_TRUE(arena_init(&ctx.error, &arena));
     BlueprintTable blueprints = {0};
     Level level = {0};
 
@@ -135,7 +135,7 @@ void test_toml_emit_round_trip(void)
 
     /* Re-parse the emitted output */
     Arena arena2;
-    TEST_ASSERT_TRUE(arena_init(&ctx, &arena2));
+    TEST_ASSERT_TRUE(arena_init(&ctx.error, &arena2));
     BlueprintTable blueprints2 = {0};
     Level level2 = {0};
 
@@ -222,7 +222,7 @@ static const char *child_fixture = "[[blueprint]]\n"
 void test_toml_emit_blueprint_children(void)
 {
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx, &arena));
+    TEST_ASSERT_TRUE(arena_init(&ctx.error, &arena));
     BlueprintTable blueprints = {0};
 
     toml_table_t *root = parse_toml(child_fixture);
@@ -245,7 +245,7 @@ void test_toml_emit_blueprint_children(void)
 void test_toml_emit_skips_child_entities(void)
 {
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx, &arena));
+    TEST_ASSERT_TRUE(arena_init(&ctx.error, &arena));
     BlueprintTable blueprints = {0};
     Level level = {0};
 
@@ -312,7 +312,7 @@ static const char *custom_attr_fixture = "[[blueprint]]\n"
 void test_toml_emit_custom_attrs(void)
 {
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx, &arena));
+    TEST_ASSERT_TRUE(arena_init(&ctx.error, &arena));
     BlueprintTable blueprints = {0};
 
     toml_table_t *root = parse_toml(custom_attr_fixture);
@@ -330,7 +330,7 @@ void test_toml_emit_custom_attrs(void)
 
     /* Round-trip: re-parse and verify custom attrs survive */
     Arena arena2;
-    TEST_ASSERT_TRUE(arena_init(&ctx, &arena2));
+    TEST_ASSERT_TRUE(arena_init(&ctx.error, &arena2));
     BlueprintTable blueprints2 = {0};
 
     toml_table_t *root2 = parse_toml(output);
@@ -362,7 +362,7 @@ static const char *health_fixture = "[[blueprint]]\n"
 void test_toml_emit_health(void)
 {
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx, &arena));
+    TEST_ASSERT_TRUE(arena_init(&ctx.error, &arena));
     BlueprintTable blueprints = {0};
 
     toml_table_t *root = parse_toml(health_fixture);
@@ -379,7 +379,7 @@ void test_toml_emit_health(void)
 
     /* Round-trip: re-parse and verify health values survive */
     Arena arena2;
-    TEST_ASSERT_TRUE(arena_init(&ctx, &arena2));
+    TEST_ASSERT_TRUE(arena_init(&ctx.error, &arena2));
     BlueprintTable blueprints2 = {0};
 
     toml_table_t *root2 = parse_toml(output);
@@ -415,7 +415,7 @@ static const char *rule_fixture = "[[blueprint]]\n"
 void test_toml_emit_rules(void)
 {
     Arena arena;
-    TEST_ASSERT_TRUE(arena_init(&ctx, &arena));
+    TEST_ASSERT_TRUE(arena_init(&ctx.error, &arena));
     BlueprintTable blueprints = {0};
 
     toml_table_t *root = parse_toml(rule_fixture);
@@ -436,7 +436,7 @@ void test_toml_emit_rules(void)
 
     /* Round-trip: re-parse and verify rule structure survives */
     Arena arena2;
-    TEST_ASSERT_TRUE(arena_init(&ctx, &arena2));
+    TEST_ASSERT_TRUE(arena_init(&ctx.error, &arena2));
     BlueprintTable blueprints2 = {0};
 
     toml_table_t *root2 = parse_toml(output);

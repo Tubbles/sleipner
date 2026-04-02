@@ -28,11 +28,11 @@ bool game_init(struct EngineContext *ctx, GameState *state, RectU32 game_bounds)
     state->game_bounds = game_bounds;
     state->player_index = -1;
     state->debug_enabled = true;
-    if (!arena_init(ctx, &state->gamedata_arena)) {
+    if (!arena_init(&ctx->error, &state->gamedata_arena)) {
         error_wrap(&ctx->error, "game_init");
         return false;
     }
-    if (!arena_init(ctx, &state->scratch_arena)) {
+    if (!arena_init(&ctx->error, &state->scratch_arena)) {
         arena_free(&state->gamedata_arena);
         error_wrap(&ctx->error, "game_init");
         return false;

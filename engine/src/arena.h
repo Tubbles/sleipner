@@ -2,13 +2,11 @@
 #define ARENA_H
 
 #include "alloc.h"
+#include "error.h"
 
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-
-// cppcheck-suppress noForwardDecl-noForwardDecl
-struct EngineContext;
 
 /* 1 TiB virtual reservation — physical pages are demand-paged by the OS. */
 #define ARENA_VIRTUAL_SIZE (1ULL << 40)
@@ -47,7 +45,7 @@ static inline void arena_scope_pop(ArenaScope *scope)
                                                                                          arena_save(arena_ptr)}
 
 /* Reserve virtual address space for an arena. Returns false on mmap failure. */
-[[nodiscard]] bool arena_init(struct EngineContext *ctx, Arena *arena);
+[[nodiscard]] bool arena_init(ErrorState *err, Arena *arena);
 
 /* Allocate from the arena. Data is aligned to _Alignof(max_align_t).
  * A size_t header is stored before the returned pointer for arena_realloc.
