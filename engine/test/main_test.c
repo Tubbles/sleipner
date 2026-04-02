@@ -4,9 +4,6 @@
 void setUp(void) {}
 void tearDown(void) {}
 
-/* stub_test.c */
-void test_stub_passes(void);
-
 /* map_test.c */
 void test_map_initial_state_count_is_zero(void);
 void test_map_initial_state_capacity_is_zero(void);
@@ -445,8 +442,6 @@ int main(void)
 {
     test_helpers_init();
     UNITY_BEGIN();
-
-    RUN_TEST(test_stub_passes);
 
     RUN_TEST(test_map_initial_state_count_is_zero);
     RUN_TEST(test_map_initial_state_capacity_is_zero);

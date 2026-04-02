@@ -64,7 +64,7 @@ do_test() {
     mkdir -p build/Release
     run bash -c "export ASAN_OPTIONS=detect_leaks=1 && \
                  export UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 && \
-                 $conan_setup && conan build . && ./build/Release/engine/test/engine_tests"
+                 $conan_setup && conan build . && ctest --test-dir build/Release --output-on-failure"
 }
 
 do_lint() {
@@ -95,7 +95,7 @@ do_all() {
     run bash -c "export ASAN_OPTIONS=detect_leaks=1 && \
                  export UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 && \
                  $conan_setup && conan build . \
-                 && ./build/Release/engine/test/engine_tests \
+                 && ctest --test-dir build/Release --output-on-failure \
                  && clang-format --dry-run --Werror $SOURCES \
                  && cd build/Release && clang-tidy -p . ../../engine/src/*.c ../../engine/test/*.c"
     do_cppcheck

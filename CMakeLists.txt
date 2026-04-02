@@ -11,4 +11,5 @@ add_link_options(-fsanitize=address,undefined,leak)
 
 find_package(raylib REQUIRED)
 
+enable_testing()
 add_subdirectory(engine)
