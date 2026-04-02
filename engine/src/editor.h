@@ -1,7 +1,8 @@
 #ifndef EDITOR_H
 #define EDITOR_H
 
-#include "engine_context.h"
+#include "debug.h"
+#include "error.h"
 #include "game.h"
 #include "input.h"
 #include "level.h"
@@ -95,11 +96,11 @@ typedef struct {
 bool toggle_pressed(ToggleBinding binding);
 void update_editor_camera(Camera2D *camera, InputState input, float delta_time);
 void draw_editor_crosshair(RectU32 game_bounds);
-void draw_hints_bar(bool editor_mode, const EditorState *editor_state, const struct EngineContext *hints_ctx);
+void draw_hints_bar(bool editor_mode, const EditorState *editor_state, int screen_width, int screen_height);
 int find_nearest_entity(const Level *level, Vector2 cursor_world);
 void draw_editor_highlights(const GameState *state, const EditorState *editor_state, int hover_entity_index);
-void draw_editor_panel(const struct EngineContext *ctx, const GameState *state, const EditorState *editor_state);
-void draw_watch_overlay(const struct EngineContext *ctx, const GameState *state, const WatchList *watches);
+void draw_editor_panel(int screen_width, int screen_height, const GameState *state, const EditorState *editor_state);
+void draw_watch_overlay(int screen_width, int screen_height, const GameState *state, const WatchList *watches);
 void draw_collision_handles(const GameState *state, const EditorState *editor_state);
 void handle_browse_input(GameState *state,
                          Camera2D *camera,
@@ -107,15 +108,18 @@ void handle_browse_input(GameState *state,
                          WatchList *watches,
                          InputState input,
                          float delta_time);
-void draw_place_panel(const struct EngineContext *ctx, const GameState *state, const EditorState *editor_state);
+void draw_place_panel(int screen_width, int screen_height, const GameState *state, const EditorState *editor_state);
 void draw_place_preview(const GameState *state, const EditorState *editor_state, Camera2D camera);
 void handle_mode_transitions(const GameState *state, EditorState *editor_state);
 void handle_drag_input(GameState *state, EditorState *editor_state, InputState input, float delta_time);
 void handle_handle_input(GameState *state, EditorState *editor_state, InputState input, float delta_time);
 void handle_attr_edit_input(GameState *state, EditorState *editor_state, float delta_time);
-void draw_radial_picker(const struct EngineContext *ctx, const EditorState *editor_state);
+void draw_radial_picker(int screen_width, int screen_height, const EditorState *editor_state);
 void handle_radial_input(EditorState *editor_state, InputState input);
-void handle_word_builder_input(struct EngineContext *ctx, GameState *state, EditorState *editor_state);
-void draw_word_builder_panel(const struct EngineContext *ctx, const GameState *state, const EditorState *editor_state);
+void handle_word_builder_input(ErrorState *err, DebugState *dbg, GameState *state, EditorState *editor_state);
+void draw_word_builder_panel(int screen_width,
+                             int screen_height,
+                             const GameState *state,
+                             const EditorState *editor_state);
 
 #endif

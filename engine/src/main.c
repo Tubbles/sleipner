@@ -708,7 +708,7 @@ static void handle_editor_input(struct EngineContext *ctx,
     } else if (editor_state->sub_mode == EDITOR_SUB_RADIAL) {
         handle_radial_input(editor_state, input);
     } else if (editor_state->sub_mode == EDITOR_SUB_WORD_BUILDER) {
-        handle_word_builder_input(ctx, state, editor_state);
+        handle_word_builder_input(&ctx->error, &ctx->debug, state, editor_state);
     } else {
         handle_browse_input(state, camera, editor_state, watches, input, delta_time);
     }
@@ -754,16 +754,16 @@ static void render_frame(struct EngineContext *ctx, const GameState *state, Rend
     }
     if (state->editor_mode) {
         if (params.editor_state.sub_mode == EDITOR_SUB_PLACE) {
-            draw_place_panel(ctx, state, &params.editor_state);
+            draw_place_panel(ctx->screen_width, ctx->screen_height, state, &params.editor_state);
         } else if (params.editor_state.sub_mode == EDITOR_SUB_WORD_BUILDER) {
-            draw_word_builder_panel(ctx, state, &params.editor_state);
+            draw_word_builder_panel(ctx->screen_width, ctx->screen_height, state, &params.editor_state);
         } else {
-            draw_editor_panel(ctx, state, &params.editor_state);
+            draw_editor_panel(ctx->screen_width, ctx->screen_height, state, &params.editor_state);
         }
     }
-    draw_watch_overlay(ctx, state, params.watches);
-    draw_radial_picker(ctx, &params.editor_state);
-    draw_hints_bar(state->editor_mode, &params.editor_state, ctx);
+    draw_watch_overlay(ctx->screen_width, ctx->screen_height, state, params.watches);
+    draw_radial_picker(ctx->screen_width, ctx->screen_height, &params.editor_state);
+    draw_hints_bar(state->editor_mode, &params.editor_state, ctx->screen_width, ctx->screen_height);
     EndDrawing();
 }
 
