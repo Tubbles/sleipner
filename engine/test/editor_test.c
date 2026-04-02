@@ -1,32 +1,90 @@
-/* fff.h must come first — its macros must be visible before editor.c is preprocessed. */
 #include "fff.h"
-
-/* Redirect raylib input functions to fff.h fakes before compiling editor.c.
- * Draw/utility functions are NOT redirected — they still resolve to real raylib at link
- * time (tests never call draw functions). */
-// NOLINTBEGIN(readability-identifier-naming,readability-else-after-return)
-#define IsKeyPressed IsKeyPressed_mock                     // NOLINT
-#define IsKeyDown IsKeyDown_mock                           // NOLINT
-#define IsGamepadButtonPressed IsGamepadButtonPressed_mock // NOLINT
-#define IsGamepadButtonDown IsGamepadButtonDown_mock       // NOLINT
-
-DEFINE_FFF_GLOBALS;
-FAKE_VALUE_FUNC(bool, IsKeyPressed_mock, int);
-FAKE_VALUE_FUNC(bool, IsKeyDown_mock, int);
-FAKE_VALUE_FUNC(bool, IsGamepadButtonPressed_mock, int, int);
-FAKE_VALUE_FUNC(bool, IsGamepadButtonDown_mock, int, int);
-// NOLINTEND(readability-identifier-naming,readability-else-after-return)
-
-/* Include the implementation file to access static functions directly. */
-#include "../src/editor.c" // NOLINT(bugprone-suspicious-include)
-
 #include "unity.h"
 
-#include "test_helpers.h"
+#include "../src/strv.c"      // NOLINT(bugprone-suspicious-include)
+#include "../src/str.c"       // NOLINT(bugprone-suspicious-include)
+#include "../src/error.c"     // NOLINT(bugprone-suspicious-include)
+#include "../src/arena.c"     // NOLINT(bugprone-suspicious-include)
+#include "../src/attribute.c" // NOLINT(bugprone-suspicious-include)
+#include "../src/entity.c"    // NOLINT(bugprone-suspicious-include)
+#include "../src/map.c"       // NOLINT(bugprone-suspicious-include)
+#include "../src/editor.c"    // NOLINT(bugprone-suspicious-include)
+
+DEFINE_FFF_GLOBALS;
+
+/* raylib input fakes */
+FAKE_VALUE_FUNC(bool, IsKeyPressed, int);
+FAKE_VALUE_FUNC(bool, IsKeyDown, int);
+FAKE_VALUE_FUNC(bool, IsGamepadButtonPressed, int, int);
+FAKE_VALUE_FUNC(bool, IsGamepadButtonDown, int, int);
+
+/* raylib draw fakes */
+FAKE_VOID_FUNC(DrawLine, int, int, int, int, Color);
+FAKE_VOID_FUNC(DrawRectangle, int, int, int, int, Color);
+FAKE_VOID_FUNC(DrawText, const char *, int, int, int, Color);
+FAKE_VOID_FUNC(DrawRectangleLinesEx, Rectangle, float, Color);
+FAKE_VOID_FUNC(DrawCircle, int, int, float, Color);
+FAKE_VOID_FUNC(DrawRing, Vector2, float, float, float, float, int, Color);
+FAKE_VALUE_FUNC(int, MeasureText, const char *, int);
+
+/* TextFormat stub — variadic, cannot use FAKE_VALUE_FUNC */
+const char *TextFormat(const char *text, ...)
+{
+    (void)text;
+    return "";
+}
+
+/* blueprint function fakes — editor.c calls these but we don't include blueprint.c */
+FAKE_VALUE_FUNC(Vector2, blueprint_get_collision_offset, const Blueprint *);
+FAKE_VALUE_FUNC(Vector2, blueprint_get_collision_size, const Blueprint *);
+
+/* game function fakes — entity_resolve_defaults is defined in game.c */
+FAKE_VALUE_FUNC(const AttrSet *, entity_resolve_defaults, const GameState *, int);
+
+/* debug_log stub — cannot use FAKE_VOID_FUNC_VARARG due to __attribute__((format)) conflict */
+void debug_log(DebugState *dbg, const char *format, ...)
+{
+    (void)dbg;
+    (void)format;
+}
+
+/* VEC_IMPL for blueprint types — test code needs push/free for setup/cleanup,
+ * but we don't include blueprint.c (heavy toml deps). editor.c only reads
+ * these vecs, never pushes. */
+VEC_IMPL(blueprint_child, BlueprintChild)
+VEC_IMPL(blueprint, Blueprint)
+
+#include "test_heap_alloc.h"
 
 #include <string.h>
 
+void setUp(void) {}
+void tearDown(void) {}
+
 /* ---- Helpers ------------------------------------------------------------ */
+
+static void test_attr_set_free_local(AttrSet *set)
+{
+    attr_set_free(&test_heap_alloc, set);
+}
+
+static void test_blueprint_free_local(Blueprint *blueprint)
+{
+    for (int index = 0; index < blueprint->children.count; index++) {
+        str_free(&test_heap_alloc, &blueprint->children.data[index].blueprint_name);
+        str_free(&test_heap_alloc, &blueprint->children.data[index].tag);
+    }
+    vec_blueprint_child_free(&blueprint->children);
+    test_attr_set_free_local(&blueprint->attrs);
+}
+
+static void test_blueprint_table_free_local(BlueprintTable *table)
+{
+    for (int index = 0; index < table->entries.count; index++) {
+        test_blueprint_free_local(&table->entries.data[index]);
+    }
+    vec_blueprint_free(&table->entries);
+}
 
 static Blueprint make_named_blueprint(const char *name)
 {
@@ -178,7 +236,7 @@ void test_editor_word_builder_total_count_with_blueprints(void)
 
     TEST_ASSERT_EQUAL_INT(base + 1, word_builder_total_count(&state));
 
-    test_blueprint_table_free(&state.blueprints);
+    test_blueprint_table_free_local(&state.blueprints);
 }
 
 /* ---- word_builder_item -------------------------------------------------- */
@@ -205,7 +263,7 @@ void test_editor_word_builder_item_blueprint_name(void)
     int blueprint_index = 1 + WORD_BUILDER_BUILTIN_COUNT;
     TEST_ASSERT_EQUAL_STRING("player", word_builder_item(&state, blueprint_index));
 
-    test_blueprint_table_free(&state.blueprints);
+    test_blueprint_table_free_local(&state.blueprints);
 }
 
 void test_editor_word_builder_item_negative_index(void)
@@ -240,7 +298,7 @@ void test_editor_total_attr_count_instance_only(void)
 
     TEST_ASSERT_EQUAL_INT(2, total_attr_count(&state, &entity));
 
-    test_attr_set_free(&entity.attrs);
+    test_attr_set_free_local(&entity.attrs);
 }
 
 void test_editor_total_attr_count_with_blueprint(void)
@@ -260,10 +318,12 @@ void test_editor_total_attr_count_with_blueprint(void)
     TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &bp_name, "test_bp"));
     (void)map_int_str_set(&state.entity_blueprints, entity.id, bp_name, &test_heap_alloc);
 
+    entity_resolve_defaults_fake.return_val = &state.blueprints.entries.data[0].attrs;
     TEST_ASSERT_EQUAL_INT(2 + 1, total_attr_count(&state, &entity));
+    entity_resolve_defaults_fake.return_val = nullptr;
 
-    test_attr_set_free(&entity.attrs);
-    test_attr_set_free(&blueprint.attrs);
+    test_attr_set_free_local(&entity.attrs);
+    test_attr_set_free_local(&blueprint.attrs);
     str_free(&test_heap_alloc, &entity.blueprint_name);
     str_free(&test_heap_alloc, &bp_name);
     map_int_str_free(&state.entity_blueprints, &test_heap_alloc);
@@ -279,7 +339,7 @@ void test_editor_is_blueprint_attr_false_for_instance(void)
 
     TEST_ASSERT_FALSE(is_blueprint_attr(&entity, 0));
 
-    test_attr_set_free(&entity.attrs);
+    test_attr_set_free_local(&entity.attrs);
 }
 
 void test_editor_is_blueprint_attr_true_for_blueprint(void)
@@ -289,7 +349,7 @@ void test_editor_is_blueprint_attr_true_for_blueprint(void)
 
     TEST_ASSERT_TRUE(is_blueprint_attr(&entity, 1));
 
-    test_attr_set_free(&entity.attrs);
+    test_attr_set_free_local(&entity.attrs);
 }
 
 /* ---- find_nearest_entity ------------------------------------------------ */
@@ -366,7 +426,7 @@ void test_editor_entity_outline_rect_without_collision(void)
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 16.0F, rect.width);
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 24.0F, rect.height);
 
-    test_attr_set_free(&entity.attrs);
+    test_attr_set_free_local(&entity.attrs);
 }
 
 /* ---- find_blueprint_by_name --------------------------------------------- */
@@ -382,7 +442,7 @@ void test_editor_find_blueprint_by_name_found(void)
     TEST_ASSERT_NOT_NULL(result);
     TEST_ASSERT_EQUAL_STRING("chest", attr_get_string(&result->attrs, "name"));
 
-    test_blueprint_table_free(&state.blueprints);
+    test_blueprint_table_free_local(&state.blueprints);
 }
 
 void test_editor_find_blueprint_by_name_not_found(void)
@@ -394,7 +454,7 @@ void test_editor_find_blueprint_by_name_not_found(void)
 
     TEST_ASSERT_NULL(find_blueprint_by_name(&state, "nonexistent"));
 
-    test_blueprint_table_free(&state.blueprints);
+    test_blueprint_table_free_local(&state.blueprints);
 }
 
 void test_editor_find_blueprint_by_name_empty_table(void)
@@ -484,7 +544,7 @@ void test_editor_apply_attr_delta_int(void)
     Attribute *attr = &state.current_level.entities.data[0].attrs.entries.data[0];
     TEST_ASSERT_EQUAL_INT(15, attr->value.i);
 
-    test_attr_set_free(&state.current_level.entities.data[0].attrs);
+    test_attr_set_free_local(&state.current_level.entities.data[0].attrs);
     vec_entity_free(&state.current_level.entities);
 }
 
@@ -502,7 +562,7 @@ void test_editor_apply_attr_delta_float(void)
     Attribute *attr = &state.current_level.entities.data[0].attrs.entries.data[0];
     TEST_ASSERT_FLOAT_WITHIN(0.01F, 13.0F, attr->value.f);
 
-    test_attr_set_free(&state.current_level.entities.data[0].attrs);
+    test_attr_set_free_local(&state.current_level.entities.data[0].attrs);
     vec_entity_free(&state.current_level.entities);
 }
 
@@ -531,7 +591,7 @@ void test_editor_attr_at_display_index_instance(void)
     TEST_ASSERT_NOT_NULL(attr);
     TEST_ASSERT_EQUAL_INT(42, attr->value.i);
 
-    test_attr_set_free(&entity.attrs);
+    test_attr_set_free_local(&entity.attrs);
 }
 
 void test_editor_attr_at_display_index_blueprint(void)
@@ -554,8 +614,8 @@ void test_editor_attr_at_display_index_blueprint(void)
     TEST_ASSERT_EQUAL_INT(99, attr->value.i);
 
     str_free(&test_heap_alloc, &entity.blueprint_name);
-    test_attr_set_free(&entity.attrs);
-    test_blueprint_table_free(&state.blueprints);
+    test_attr_set_free_local(&entity.attrs);
+    test_blueprint_table_free_local(&state.blueprints);
 }
 
 void test_editor_attr_at_display_index_out_of_range(void)
@@ -567,17 +627,17 @@ void test_editor_attr_at_display_index_out_of_range(void)
     Attribute *attr = attr_at_display_index(&state, &entity, 99);
     TEST_ASSERT_NULL(attr);
 
-    test_attr_set_free(&entity.attrs);
+    test_attr_set_free_local(&entity.attrs);
 }
 
-/* ==== Phase 2: mocked raylib input tests ================================= */
+/* ==== Mocked raylib input tests ========================================== */
 
 static void reset_input_fakes(void)
 {
-    RESET_FAKE(IsKeyPressed_mock);
-    RESET_FAKE(IsKeyDown_mock);
-    RESET_FAKE(IsGamepadButtonPressed_mock);
-    RESET_FAKE(IsGamepadButtonDown_mock);
+    RESET_FAKE(IsKeyPressed);
+    RESET_FAKE(IsKeyDown);
+    RESET_FAKE(IsGamepadButtonPressed);
+    RESET_FAKE(IsGamepadButtonDown);
     FFF_RESET_HISTORY(); // NOLINT(bugprone-multi-level-implicit-pointer-conversion)
 }
 
@@ -606,20 +666,20 @@ static bool down_specific_button(int gamepad, int button)
 void test_editor_toggle_pressed_key(void)
 {
     reset_input_fakes();
-    IsKeyPressed_mock_fake.return_val = true;
+    IsKeyPressed_fake.return_val = true;
     TEST_ASSERT_TRUE(toggle_pressed((ToggleBinding){KEY_SPACE, GAMEPAD_BUTTON_RIGHT_FACE_DOWN}));
-    TEST_ASSERT_EQUAL_INT(1, IsKeyPressed_mock_fake.call_count);
-    TEST_ASSERT_EQUAL_INT(0, IsGamepadButtonPressed_mock_fake.call_count);
+    TEST_ASSERT_EQUAL_INT(1, IsKeyPressed_fake.call_count);
+    TEST_ASSERT_EQUAL_INT(0, IsGamepadButtonPressed_fake.call_count);
 }
 
 void test_editor_toggle_pressed_gamepad(void)
 {
     reset_input_fakes();
-    IsKeyPressed_mock_fake.return_val = false;
-    IsGamepadButtonPressed_mock_fake.return_val = true;
+    IsKeyPressed_fake.return_val = false;
+    IsGamepadButtonPressed_fake.return_val = true;
     TEST_ASSERT_TRUE(toggle_pressed((ToggleBinding){KEY_SPACE, GAMEPAD_BUTTON_RIGHT_FACE_DOWN}));
-    TEST_ASSERT_EQUAL_INT(1, IsKeyPressed_mock_fake.call_count);
-    TEST_ASSERT_EQUAL_INT(1, IsGamepadButtonPressed_mock_fake.call_count);
+    TEST_ASSERT_EQUAL_INT(1, IsKeyPressed_fake.call_count);
+    TEST_ASSERT_EQUAL_INT(1, IsGamepadButtonPressed_fake.call_count);
 }
 
 void test_editor_toggle_pressed_neither(void)
@@ -640,7 +700,7 @@ void test_editor_read_value_delta_large_minus(void)
 {
     reset_input_fakes();
     target_key_for_press = KEY_LEFT_BRACKET;
-    IsKeyPressed_mock_fake.custom_fake = press_specific_key;
+    IsKeyPressed_fake.custom_fake = press_specific_key;
     TEST_ASSERT_EQUAL_INT(-EDITOR_ATTR_LARGE_STEP, read_value_delta());
 }
 
@@ -648,7 +708,7 @@ void test_editor_read_value_delta_large_plus(void)
 {
     reset_input_fakes();
     target_key_for_press = KEY_RIGHT_BRACKET;
-    IsKeyPressed_mock_fake.custom_fake = press_specific_key;
+    IsKeyPressed_fake.custom_fake = press_specific_key;
     TEST_ASSERT_EQUAL_INT(EDITOR_ATTR_LARGE_STEP, read_value_delta());
 }
 
@@ -656,14 +716,14 @@ void test_editor_read_value_delta_huge_minus(void)
 {
     reset_input_fakes();
     target_key_for_press = KEY_PAGE_DOWN;
-    IsKeyPressed_mock_fake.custom_fake = press_specific_key;
+    IsKeyPressed_fake.custom_fake = press_specific_key;
     TEST_ASSERT_EQUAL_INT(-EDITOR_ATTR_HUGE_STEP, read_value_delta());
 }
 
 void test_editor_read_value_delta_combined(void)
 {
     reset_input_fakes();
-    IsKeyPressed_mock_fake.return_val = true;
+    IsKeyPressed_fake.return_val = true;
     int expected = -EDITOR_ATTR_LARGE_STEP + EDITOR_ATTR_LARGE_STEP - EDITOR_ATTR_HUGE_STEP + EDITOR_ATTR_HUGE_STEP;
     TEST_ASSERT_EQUAL_INT(expected, read_value_delta());
 }
@@ -674,7 +734,7 @@ void test_editor_read_held_dir_left_key(void)
 {
     reset_input_fakes();
     target_key_for_down = KEY_LEFT;
-    IsKeyDown_mock_fake.custom_fake = down_specific_key;
+    IsKeyDown_fake.custom_fake = down_specific_key;
     TEST_ASSERT_EQUAL_INT(-1, read_held_dir());
 }
 
@@ -682,7 +742,7 @@ void test_editor_read_held_dir_right_gamepad(void)
 {
     reset_input_fakes();
     target_button_for_down = GAMEPAD_BUTTON_LEFT_FACE_RIGHT;
-    IsGamepadButtonDown_mock_fake.custom_fake = down_specific_button;
+    IsGamepadButtonDown_fake.custom_fake = down_specific_button;
     TEST_ASSERT_EQUAL_INT(1, read_held_dir());
 }
 
@@ -698,7 +758,7 @@ void test_editor_word_builder_nav_up(void)
 {
     reset_input_fakes();
     target_key_for_press = KEY_UP;
-    IsKeyPressed_mock_fake.custom_fake = press_specific_key;
+    IsKeyPressed_fake.custom_fake = press_specific_key;
 
     EditorState editor_state = {.word_builder_scroll = 5};
     word_builder_navigate(&editor_state, 10);
@@ -709,7 +769,7 @@ void test_editor_word_builder_nav_up_clamped(void)
 {
     reset_input_fakes();
     target_key_for_press = KEY_UP;
-    IsKeyPressed_mock_fake.custom_fake = press_specific_key;
+    IsKeyPressed_fake.custom_fake = press_specific_key;
 
     EditorState editor_state = {.word_builder_scroll = 0};
     word_builder_navigate(&editor_state, 10);
@@ -720,7 +780,7 @@ void test_editor_word_builder_nav_down(void)
 {
     reset_input_fakes();
     target_key_for_press = KEY_DOWN;
-    IsKeyPressed_mock_fake.custom_fake = press_specific_key;
+    IsKeyPressed_fake.custom_fake = press_specific_key;
 
     EditorState editor_state = {.word_builder_scroll = 0};
     word_builder_navigate(&editor_state, 10);
@@ -731,7 +791,7 @@ void test_editor_word_builder_nav_down_clamped(void)
 {
     reset_input_fakes();
     target_key_for_press = KEY_DOWN;
-    IsKeyPressed_mock_fake.custom_fake = press_specific_key;
+    IsKeyPressed_fake.custom_fake = press_specific_key;
 
     EditorState editor_state = {.word_builder_scroll = 9};
     word_builder_navigate(&editor_state, 10);
@@ -742,7 +802,7 @@ void test_editor_word_builder_nav_page_up(void)
 {
     reset_input_fakes();
     target_key_for_press = KEY_Q;
-    IsKeyPressed_mock_fake.custom_fake = press_specific_key;
+    IsKeyPressed_fake.custom_fake = press_specific_key;
 
     EditorState editor_state = {.word_builder_scroll = 8};
     word_builder_navigate(&editor_state, 20);
@@ -753,9 +813,80 @@ void test_editor_word_builder_nav_page_down(void)
 {
     reset_input_fakes();
     target_key_for_press = KEY_E;
-    IsKeyPressed_mock_fake.custom_fake = press_specific_key;
+    IsKeyPressed_fake.custom_fake = press_specific_key;
 
     EditorState editor_state = {.word_builder_scroll = 0};
     word_builder_navigate(&editor_state, 20);
     TEST_ASSERT_EQUAL_INT(WORD_BUILDER_PAGE_SIZE, editor_state.word_builder_scroll);
+}
+
+int main(void)
+{
+    test_helpers_init();
+    UNITY_BEGIN();
+
+    RUN_TEST(test_editor_radial_dead_zone_returns_negative_one);
+    RUN_TEST(test_editor_radial_stick_up_four_items);
+    RUN_TEST(test_editor_radial_stick_right_four_items);
+    RUN_TEST(test_editor_radial_stick_down_four_items);
+    RUN_TEST(test_editor_radial_stick_left_four_items);
+    RUN_TEST(test_editor_radial_label_grab);
+    RUN_TEST(test_editor_radial_label_delete);
+    RUN_TEST(test_editor_radial_label_out_of_bounds);
+    RUN_TEST(test_editor_word_builder_append_to_empty);
+    RUN_TEST(test_editor_word_builder_append_with_underscore);
+    RUN_TEST(test_editor_word_builder_append_overflow_noop);
+    RUN_TEST(test_editor_word_builder_append_multiple);
+    RUN_TEST(test_editor_word_builder_pop_last_word);
+    RUN_TEST(test_editor_word_builder_pop_single_word);
+    RUN_TEST(test_editor_word_builder_pop_empty_noop);
+    RUN_TEST(test_editor_word_builder_total_count_no_blueprints);
+    RUN_TEST(test_editor_word_builder_total_count_with_blueprints);
+    RUN_TEST(test_editor_word_builder_item_zero_is_done);
+    RUN_TEST(test_editor_word_builder_item_first_builtin);
+    RUN_TEST(test_editor_word_builder_item_blueprint_name);
+    RUN_TEST(test_editor_word_builder_item_negative_index);
+    RUN_TEST(test_editor_place_visible_count_known_height);
+    RUN_TEST(test_editor_place_visible_count_small_height);
+    RUN_TEST(test_editor_total_attr_count_instance_only);
+    RUN_TEST(test_editor_total_attr_count_with_blueprint);
+    RUN_TEST(test_editor_is_blueprint_attr_false_for_instance);
+    RUN_TEST(test_editor_is_blueprint_attr_true_for_blueprint);
+    RUN_TEST(test_editor_find_nearest_single_entity);
+    RUN_TEST(test_editor_find_nearest_closer_wins);
+    RUN_TEST(test_editor_find_nearest_skips_children);
+    RUN_TEST(test_editor_find_nearest_empty_level);
+    RUN_TEST(test_editor_entity_outline_rect_with_collision);
+    RUN_TEST(test_editor_entity_outline_rect_without_collision);
+    RUN_TEST(test_editor_find_blueprint_by_name_found);
+    RUN_TEST(test_editor_find_blueprint_by_name_not_found);
+    RUN_TEST(test_editor_find_blueprint_by_name_empty_table);
+    RUN_TEST(test_editor_mark_deleted_root_marks_child);
+    RUN_TEST(test_editor_mark_deleted_chain);
+    RUN_TEST(test_editor_mark_deleted_sibling_untouched);
+    RUN_TEST(test_editor_apply_attr_delta_int);
+    RUN_TEST(test_editor_apply_attr_delta_float);
+    RUN_TEST(test_editor_apply_attr_delta_null_attr_no_crash);
+    RUN_TEST(test_editor_attr_at_display_index_instance);
+    RUN_TEST(test_editor_attr_at_display_index_blueprint);
+    RUN_TEST(test_editor_attr_at_display_index_out_of_range);
+    RUN_TEST(test_editor_toggle_pressed_key);
+    RUN_TEST(test_editor_toggle_pressed_gamepad);
+    RUN_TEST(test_editor_toggle_pressed_neither);
+    RUN_TEST(test_editor_read_value_delta_no_input);
+    RUN_TEST(test_editor_read_value_delta_large_minus);
+    RUN_TEST(test_editor_read_value_delta_large_plus);
+    RUN_TEST(test_editor_read_value_delta_huge_minus);
+    RUN_TEST(test_editor_read_value_delta_combined);
+    RUN_TEST(test_editor_read_held_dir_left_key);
+    RUN_TEST(test_editor_read_held_dir_right_gamepad);
+    RUN_TEST(test_editor_read_held_dir_none);
+    RUN_TEST(test_editor_word_builder_nav_up);
+    RUN_TEST(test_editor_word_builder_nav_up_clamped);
+    RUN_TEST(test_editor_word_builder_nav_down);
+    RUN_TEST(test_editor_word_builder_nav_down_clamped);
+    RUN_TEST(test_editor_word_builder_nav_page_up);
+    RUN_TEST(test_editor_word_builder_nav_page_down);
+
+    return UNITY_END();
 }

@@ -24,23 +24,6 @@
   `events[MAX_CASCADE_EVENTS]` instead of a vec. Violates "prefer vec over
   fixed-size arrays with MAX_* constants" in CLAUDE.md.
 
-## Rework unit test harness
-
-- **Self-contained test executables** — each `test_*.c` file gets its own
-  `main()` and `RUN_TEST()` calls. Remove `main_test.c` entirely.
-- **No linking against engine or raylib** — unit test binaries compile only the
-  file under test (`#include "../src/foo.c"`) plus test helpers. No linking
-  against `libengine.a`, `raylib`, or any other library beyond Unity and libc.
-- **Mock all external dependencies** — every function external to the unit under
-  test is mocked via fff.h (or a manual stub). This includes raylib, other
-  engine modules, and any transitive dependency.
-- **Shared custom mock routines** — when a mock needs non-trivial behavior
-  (beyond an empty stub / zero return), put the custom fake in a shared helper
-  file (e.g. `test_mocks.c`) so it can be reused across test files without
-  duplication.
-- **Scope: unit tests only** — integration tests remain as-is (linked against
-  the full engine, real subsystem interactions).
-
 ## Type safety cleanup
 
 - **Replace pre-resolved `entity_defaults[]` parallel array** — rule.c
@@ -71,3 +54,4 @@
 ## misc
 
 - do the same stored-allocator change for map and Str types (parallels vec work)
+- change from include macro guards to pragma once
