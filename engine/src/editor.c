@@ -976,7 +976,7 @@ void draw_word_builder_panel(int screen_width,
     }
 }
 
-static void word_builder_confirm(ErrorState *err, DebugState *dbg, GameState *state, EditorState *editor_state)
+static void word_builder_confirm(Diag *diag, GameState *state, EditorState *editor_state)
 {
     int sel = editor_state->selected_entity_index;
     int attr_idx = editor_state->selected_attr_index;
@@ -998,8 +998,8 @@ static void word_builder_confirm(ErrorState *err, DebugState *dbg, GameState *st
     Allocator alloc = allocator_arena(&state->gamedata_arena);
     AttrStringPair pair = {attr->name.ptr, editor_state->word_builder_buf};
     if (!attr_set_string(&alloc, target, pair)) {
-        debug_log(dbg, "word builder: attr_set_string failed: %s", error_get(err));
-        error_clear(err);
+        debug_log(diag->debug, "word builder: attr_set_string failed: %s", error_get(diag->error));
+        error_clear(diag->error);
     }
 }
 
@@ -1025,13 +1025,13 @@ static void word_builder_navigate(EditorState *editor_state, int total)
     }
 }
 
-void handle_word_builder_input(ErrorState *err, DebugState *dbg, GameState *state, EditorState *editor_state)
+void handle_word_builder_input(Diag *diag, GameState *state, EditorState *editor_state)
 {
     int total = word_builder_total_count(state);
     word_builder_navigate(editor_state, total);
     if (toggle_pressed((ToggleBinding){KEY_ENTER, GAMEPAD_BUTTON_RIGHT_FACE_DOWN})) {
         if (editor_state->word_builder_scroll == 0) {
-            word_builder_confirm(err, dbg, state, editor_state);
+            word_builder_confirm(diag, state, editor_state);
             editor_state->sub_mode = EDITOR_SUB_BROWSE;
         } else {
             word_builder_append(editor_state, word_builder_item(state, editor_state->word_builder_scroll));

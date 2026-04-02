@@ -1,5 +1,7 @@
 #include "blueprint.h"
 
+#include "diag.h"
+
 #include "alloc.h"
 #include "arena.h"
 #include "attribute.h"
@@ -273,8 +275,8 @@ static bool parse_children(Allocator *alloc, Blueprint *blueprint, toml_table_t 
     return true;
 }
 
-static bool parse_single_blueprint(
-    ErrorState *err, DebugState *dbg, Allocator *alloc, Blueprint *blueprint, toml_table_t *entry, Arena *arena)
+static bool
+parse_single_blueprint(Diag *diag, Allocator *alloc, Blueprint *blueprint, toml_table_t *entry, Arena *arena)
 {
     memset(blueprint, 0, sizeof(*blueprint));
 
@@ -300,8 +302,8 @@ static bool parse_single_blueprint(
     if (!parse_children(alloc, blueprint, entry)) {
         return false;
     }
-    if (!rules_parse(err, dbg, alloc, &blueprint->rules, entry, arena)) {
-        error_wrap(err, "blueprint '%s'", attr_get_string(&blueprint->attrs, "name"));
+    if (!rules_parse(diag, alloc, &blueprint->rules, entry, arena)) {
+        error_wrap(diag->error, "blueprint '%s'", attr_get_string(&blueprint->attrs, "name"));
         return false;
     }
     return true;
@@ -352,7 +354,7 @@ Vector2 blueprint_get_collision_size(const Blueprint *blp)
     };
 }
 
-int blueprints_load(ErrorState *err, DebugState *dbg, BlueprintTable *table, void *toml_root, Arena *arena)
+int blueprints_load(Diag *diag, BlueprintTable *table, void *toml_root, Arena *arena)
 {
     Allocator alloc = allocator_arena(arena);
     /* Reset the table struct — arena_reset in the caller already freed the old data. */
@@ -361,40 +363,40 @@ int blueprints_load(ErrorState *err, DebugState *dbg, BlueprintTable *table, voi
 
     toml_array_t *blueprints = toml_array_in(toml_root, "blueprint");
     if (!blueprints) {
-        debug_log(dbg, "bp: no [[blueprint]] array in TOML root");
+        debug_log(diag->debug, "bp: no [[blueprint]] array in TOML root");
         return 0;
     }
 
     int count = toml_array_nelem(blueprints);
-    debug_log(dbg, "bp: found %d blueprint entries in TOML", count);
+    debug_log(diag->debug, "bp: found %d blueprint entries in TOML", count);
 
     for (int index = 0; index < count; index++) {
         toml_table_t *entry = toml_table_at(blueprints, index);
         if (!entry) {
-            debug_log(dbg, "bp[%d]: toml_table_at returned nullptr", index);
+            debug_log(diag->debug, "bp[%d]: toml_table_at returned nullptr", index);
             continue;
         }
 
         int nkval = toml_table_nkval(entry);
         int narr = toml_table_narr(entry);
         int ntab = toml_table_ntab(entry);
-        debug_log(dbg, "bp[%d]: keys=%d arrays=%d tables=%d", index, nkval, narr, ntab);
+        debug_log(diag->debug, "bp[%d]: keys=%d arrays=%d tables=%d", index, nkval, narr, ntab);
 
         int total_keys = nkval + narr + ntab;
         for (int key_index = 0; key_index < total_keys; key_index++) {
             const char *key = toml_key_in(entry, key_index);
-            debug_log(dbg, "bp[%d]: key[%d]='%s'", index, key_index, key ? key : "(null)");
+            debug_log(diag->debug, "bp[%d]: key[%d]='%s'", index, key_index, key ? key : "(null)");
         }
 
         Blueprint temp = {0};
-        if (parse_single_blueprint(err, dbg, &alloc, &temp, entry, arena)) {
-            debug_log(dbg, "bp[%d]: parsed '%s' tex='%s'", index, attr_get_string(&temp.attrs, "name"),
+        if (parse_single_blueprint(diag, &alloc, &temp, entry, arena)) {
+            debug_log(diag->debug, "bp[%d]: parsed '%s' tex='%s'", index, attr_get_string(&temp.attrs, "name"),
                       attr_get_string(&temp.attrs, "texture"));
             (void)vec_blueprint_push(&table->entries, temp);
         } else {
             blueprint_cleanup(&alloc, &temp);
             toml_datum_t name = toml_string_in(entry, "name");
-            debug_log(dbg, "bp[%d]: FAILED to parse (name=%s)", index, name.ok ? name.u.s : "missing");
+            debug_log(diag->debug, "bp[%d]: FAILED to parse (name=%s)", index, name.ok ? name.u.s : "missing");
             if (name.ok) {
                 free(name.u.s);
             }

@@ -1,4 +1,5 @@
 #include "game.h"
+#include "diag.h"
 
 #include "alloc.h"
 #include "arena.h"
@@ -21,21 +22,20 @@
 
 #define TOML_ERRBUF_SIZE 200
 
-bool game_init(ErrorState *err, DebugState *dbg, GameState *state, RectU32 game_bounds)
+bool game_init(Diag *diag, GameState *state, RectU32 game_bounds)
 {
-    (void)dbg;
     /* Callers must zero-initialize state before calling game_init.
      * We only set fields that need non-zero defaults. */
     state->game_bounds = game_bounds;
     state->player_index = -1;
     state->debug_enabled = true;
-    if (!arena_init(err, &state->gamedata_arena)) {
-        error_wrap(err, "game_init");
+    if (!arena_init(diag->error, &state->gamedata_arena)) {
+        error_wrap(diag->error, "game_init");
         return false;
     }
-    if (!arena_init(err, &state->scratch_arena)) {
+    if (!arena_init(diag->error, &state->scratch_arena)) {
         arena_free(&state->gamedata_arena);
-        error_wrap(err, "game_init");
+        error_wrap(diag->error, "game_init");
         return false;
     }
     return true;
@@ -64,12 +64,12 @@ static int find_player_entity(const GameState *state)
     return -1;
 }
 
-bool game_load_gamedata(ErrorState *err, DebugState *dbg, GameState *state, GamedataParams params)
+bool game_load_gamedata(Diag *diag, GameState *state, GamedataParams params)
 {
     size_t length = strlen(params.toml_string);
     char *buffer = arena_alloc(&state->gamedata_arena, length + 1);
     if (!buffer) {
-        error_wrap(err, "game_load_gamedata");
+        error_wrap(diag->error, "game_load_gamedata");
         return false;
     }
     memcpy(buffer, params.toml_string, length + 1);
@@ -80,8 +80,8 @@ bool game_load_gamedata(ErrorState *err, DebugState *dbg, GameState *state, Game
     state->rule_table = (map_entity_ruleset){0};
     state->entity_blueprints = (map_int_str){0};
     if (!root) {
-        error_set(err, "toml_parse: %s", errbuf);
-        error_wrap(err, "game_load_gamedata");
+        error_set(diag->error, "toml_parse: %s", errbuf);
+        error_wrap(diag->error, "game_load_gamedata");
         return false;
     }
 
@@ -90,11 +90,11 @@ bool game_load_gamedata(ErrorState *err, DebugState *dbg, GameState *state, Game
     state->timers = vec_timer_new(gamedata_alloc);
     state->prev_player_overlaps = vec_bool_new(gamedata_alloc);
     state->prev_solid_collisions = vec_bool_new(gamedata_alloc);
-    blueprints_load(err, dbg, &state->blueprints, root, &state->gamedata_arena);
-    bool subs_ok = subroutines_parse(err, dbg, &gamedata_alloc, &state->subroutines, root, &state->gamedata_arena);
+    blueprints_load(diag, &state->blueprints, root, &state->gamedata_arena);
+    bool subs_ok = subroutines_parse(diag, &gamedata_alloc, &state->subroutines, root, &state->gamedata_arena);
     bool level_ok = false;
     if (subs_ok) {
-        level_ok = level_load(err, dbg, &state->current_level, root, params.level_name, &state->blueprints,
+        level_ok = level_load(diag, &state->current_level, root, params.level_name, &state->blueprints,
                               params.texture_lookup, params.texture_user_data, &gamedata_alloc);
     }
 
@@ -141,13 +141,13 @@ bool game_load_gamedata(ErrorState *err, DebugState *dbg, GameState *state, Game
                                              (TriggerEvent){.type = TRIGGER_ON_SPAWN, .entity_index = index});
             }
             if (spawn_events.count > 0) {
-                rules_evaluate_batch(err, dbg, &gamedata_alloc, state->current_level.entities.data, spawn_count,
+                rules_evaluate_batch(diag, &gamedata_alloc, state->current_level.entities.data, spawn_count,
                                      spawn_events.data, spawn_events.count, &state->flags, &state->vars,
                                      &state->rule_table, &state->subroutines, &state->timers, spawn_defaults);
             }
         }
     } else {
-        error_wrap(err, "game_load_gamedata");
+        error_wrap(diag->error, "game_load_gamedata");
     }
 
     return level_ok;
@@ -399,7 +399,7 @@ static void collect_trigger_events(DebugState *dbg, GameState *state, InputState
     }
 }
 
-void game_update(ErrorState *err, DebugState *dbg, GameState *state, InputState input, float delta_time)
+void game_update(Diag *diag, GameState *state, InputState input, float delta_time)
 {
     state->frame++;
     state->elapsed += delta_time;
@@ -445,7 +445,7 @@ void game_update(ErrorState *err, DebugState *dbg, GameState *state, InputState 
             }
         }
 
-        collect_trigger_events(dbg, state, input, &trigger_events);
+        collect_trigger_events(diag->debug, state, input, &trigger_events);
 
         if (trigger_events.count > 0) {
             int update_count = state->current_level.entities.count;
@@ -455,17 +455,16 @@ void game_update(ErrorState *err, DebugState *dbg, GameState *state, InputState 
                 update_defaults[index] = entity_resolve_defaults(state, state->current_level.entities.data[index].id);
             }
             Allocator rule_alloc = allocator_arena(&state->gamedata_arena);
-            rules_evaluate_batch(err, dbg, &rule_alloc, state->current_level.entities.data, update_count,
+            rules_evaluate_batch(diag, &rule_alloc, state->current_level.entities.data, update_count,
                                  trigger_events.data, trigger_events.count, &state->flags, &state->vars,
                                  &state->rule_table, &state->subroutines, &state->timers, update_defaults);
         }
     }
 }
 
-void game_free(ErrorState *err, DebugState *dbg, GameState *state)
+void game_free(Diag *diag, GameState *state)
 {
-    (void)err;
-    (void)dbg;
+    (void)diag;
     arena_free(&state->gamedata_arena);
     arena_free(&state->scratch_arena);
     *state = (GameState){0};

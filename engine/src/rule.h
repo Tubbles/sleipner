@@ -10,8 +10,7 @@
 
 #include <stdbool.h>
 
-#include "debug.h"
-#include "error.h"
+#include "diag.h"
 
 // Include actual TOML headers instead of forward declarations
 // This makes dependencies explicit and maintains module integrity
@@ -168,7 +167,7 @@ typedef struct {
 } FlagSet;
 
 bool flag_get(const FlagSet *flags, const char *name);
-void flag_set(ErrorState *err, DebugState *dbg, Allocator *alloc, FlagSet *flags, const char *name);
+void flag_set(Diag *diag, Allocator *alloc, FlagSet *flags, const char *name);
 void flag_clear(Allocator *alloc, FlagSet *flags, const char *name);
 void flag_set_free(Allocator *alloc, FlagSet *flags);
 
@@ -199,24 +198,13 @@ typedef struct {
 }
 
 /* --- Parsing (from TOML) --- */
+[[nodiscard]] bool trigger_parse(Diag *diag, Allocator *alloc, Trigger *trigger, const char *string);
+[[nodiscard]] bool condition_parse(Diag *diag, Allocator *alloc, Condition *condition, const char *string);
+[[nodiscard]] bool action_node_parse(Diag *diag, Allocator *alloc, ActionNode *node, toml_datum_t value);
 [[nodiscard]] bool
-trigger_parse(ErrorState *err, DebugState *dbg, Allocator *alloc, Trigger *trigger, const char *string);
+rules_parse(Diag *diag, Allocator *alloc, vec_rule *rules, toml_table_t *toml_blueprint_table, Arena *arena);
 [[nodiscard]] bool
-condition_parse(ErrorState *err, DebugState *dbg, Allocator *alloc, Condition *condition, const char *string);
-[[nodiscard]] bool
-action_node_parse(ErrorState *err, DebugState *dbg, Allocator *alloc, ActionNode *node, toml_datum_t value);
-[[nodiscard]] bool rules_parse(ErrorState *err,
-                               DebugState *dbg,
-                               Allocator *alloc,
-                               vec_rule *rules,
-                               toml_table_t *toml_blueprint_table,
-                               Arena *arena);
-[[nodiscard]] bool subroutines_parse(ErrorState *err,
-                                     DebugState *dbg,
-                                     Allocator *alloc,
-                                     vec_subroutine *subroutines,
-                                     toml_table_t *toml_root,
-                                     Arena *arena);
+subroutines_parse(Diag *diag, Allocator *alloc, vec_subroutine *subroutines, toml_table_t *toml_root, Arena *arena);
 
 /* --- Trigger matching --- */
 bool trigger_matches(const Trigger *trigger, const TriggerEvent *event);
@@ -254,12 +242,10 @@ typedef struct {
     int call_depth;                        /* recursion guard for call: */
 } ActionContext;
 
-[[nodiscard]] bool
-action_node_execute(ErrorState *err, DebugState *dbg, Allocator *alloc, const ActionNode *node, ActionContext context);
+[[nodiscard]] bool action_node_execute(Diag *diag, Allocator *alloc, const ActionNode *node, ActionContext context);
 
 /* --- Evaluation loop --- */
-void rules_evaluate_batch(ErrorState *err,
-                          DebugState *dbg,
+void rules_evaluate_batch(Diag *diag,
                           Allocator *alloc,
                           Entity *entities,
                           int entity_count,

@@ -9,6 +9,7 @@
 #include "debug.h"
 #include "editor.h"
 #include "entity.h"
+#include "diag.h"
 #include "game.h"
 #include "input.h"
 #include "level.h"
@@ -504,13 +505,13 @@ static InputState apply_touch_input(InputState input, TouchState *touch_state, G
     return input;
 }
 
-static void load_gamedata(GameState *state)
+static void load_gamedata(Diag *diag, GameState *state)
 {
     char *content = read_file_text(state, GAMEDATA_PATH, &state->gamedata_arena);
     if (!content) {
-        error_wrap(&state->error, "load_gamedata");
-        debug_log(&state->debug, "error: %s", error_get(&state->error));
-        error_clear(&state->error);
+        error_wrap(diag->error, "load_gamedata");
+        debug_log(diag->debug, "error: %s", error_get(diag->error));
+        error_clear(diag->error);
         return;
     }
 
@@ -523,60 +524,60 @@ static void load_gamedata(GameState *state)
         int offset = index * 3;
         (void)snprintf(&hexbuf[offset], 4, "%02x ", (unsigned char)content[index]);
     }
-    debug_log(&state->debug, "gamedata: hex[0..%d]: %s", hex_count - 1, hexbuf);
+    debug_log(diag->debug, "gamedata: hex[0..%d]: %s", hex_count - 1, hexbuf);
 
-    bool loaded = game_load_gamedata(&state->error, &state->debug, state,
+    bool loaded = game_load_gamedata(diag, state,
                                      (GamedataParams){.toml_string = content,
                                                       .texture_lookup = texture_registry_lookup,
                                                       .texture_user_data = state});
 
     if (loaded) {
-        debug_log(&state->debug, "gamedata: %d blueprints", state->blueprints.entries.count);
+        debug_log(diag->debug, "gamedata: %d blueprints", state->blueprints.entries.count);
         for (int index = 0; index < state->blueprints.entries.count; index++) {
             const Blueprint *blueprint = &state->blueprints.entries.data[index];
-            debug_log(&state->debug, "  bp[%d]: '%s' tex='%s' attrs=%d", index,
+            debug_log(diag->debug, "  bp[%d]: '%s' tex='%s' attrs=%d", index,
                       attr_get_string(&blueprint->attrs, "name"), attr_get_string(&blueprint->attrs, "texture"),
                       blueprint->attrs.entries.count);
         }
-        debug_log(&state->debug, "gamedata: level '%s' (%dx%d, %d entities)", state->current_level.name.ptr,
+        debug_log(diag->debug, "gamedata: level '%s' (%dx%d, %d entities)", state->current_level.name.ptr,
                   state->current_level.width, state->current_level.height, state->current_level.entities.count);
         for (int index = 0; index < state->current_level.entities.count; index++) {
             const Entity *entity = &state->current_level.entities.data[index];
-            debug_log(&state->debug, "  ent[%d]: bp='%s' pos=(%.0f,%.0f) tex=%s", index, entity->blueprint_name.ptr,
+            debug_log(diag->debug, "  ent[%d]: bp='%s' pos=(%.0f,%.0f) tex=%s", index, entity->blueprint_name.ptr,
                       entity->position.x, entity->position.y, entity->texture ? "ok" : "nullptr");
         }
         if (state->player_index >= 0) {
-            debug_log(&state->debug, "gamedata: player at entity[%d]", state->player_index);
+            debug_log(diag->debug, "gamedata: player at entity[%d]", state->player_index);
         } else {
-            debug_log(&state->debug, "gamedata: WARNING player not found!");
+            debug_log(diag->debug, "gamedata: WARNING player not found!");
         }
     } else {
-        debug_log(&state->debug, "error: %s", error_get(&state->error));
-        error_clear(&state->error);
+        debug_log(diag->debug, "error: %s", error_get(diag->error));
+        error_clear(diag->error);
     }
 
     state->gamedata_mtime = GetFileModTime(GAMEDATA_PATH);
 }
 
-static bool poll_hot_reload(GameState *state)
+static bool poll_hot_reload(Diag *diag, GameState *state)
 {
     if (!state->gamedata_loaded) {
-        load_gamedata(state);
+        load_gamedata(diag, state);
         return true;
     }
 
     long current_mtime = GetFileModTime(GAMEDATA_PATH);
     if (current_mtime > 0 && current_mtime != state->gamedata_mtime) {
-        debug_log(&state->debug, "gamedata: hot-reload triggered");
-        load_gamedata(state);
+        debug_log(diag->debug, "gamedata: hot-reload triggered");
+        load_gamedata(diag, state);
         return true;
     }
     return false;
 }
 
-static void handle_hot_reload(GameState *state, EditorState *editor_state, WatchList *watches)
+static void handle_hot_reload(Diag *diag, GameState *state, EditorState *editor_state, WatchList *watches)
 {
-    if (poll_hot_reload(state)) {
+    if (poll_hot_reload(diag, state)) {
         *editor_state = (EditorState){.selected_entity_index = -1,
                                       .sub_mode = EDITOR_SUB_BROWSE,
                                       .selected_attr_index = -1,
@@ -622,14 +623,14 @@ static void draw_entities_depth_sorted(const GameState *state)
     }
 }
 
-static void handle_save_input(GameState *state, EditorState *editor_state, WatchList *watches)
+static void handle_save_input(Diag *diag, GameState *state, EditorState *editor_state, WatchList *watches)
 {
     if (toggle_pressed((ToggleBinding){KEY_F9, GAMEPAD_BUTTON_RIGHT_FACE_UP})) {
         if (!save_gamedata(state)) {
-            debug_log(&state->debug, "save error: %s", error_get(&state->error));
-            error_clear(&state->error);
+            debug_log(diag->debug, "save error: %s", error_get(diag->error));
+            error_clear(diag->error);
         } else {
-            load_gamedata(state);
+            load_gamedata(diag, state);
             *editor_state = (EditorState){.selected_entity_index = -1,
                                           .sub_mode = EDITOR_SUB_BROWSE,
                                           .selected_attr_index = -1,
@@ -640,8 +641,8 @@ static void handle_save_input(GameState *state, EditorState *editor_state, Watch
     }
 }
 
-static void
-handle_place_input(GameState *state, Camera2D *camera, EditorState *editor_state, InputState input, float delta_time)
+static void handle_place_input(
+    Diag *diag, GameState *state, Camera2D *camera, EditorState *editor_state, InputState input, float delta_time)
 {
     if (state->blueprints.entries.count == 0) {
         editor_state->sub_mode = EDITOR_SUB_BROWSE;
@@ -651,10 +652,10 @@ handle_place_input(GameState *state, Camera2D *camera, EditorState *editor_state
         int bp_index = editor_state->place_blueprint_index;
         const Blueprint *blueprint = &state->blueprints.entries.data[bp_index];
         Allocator alloc = allocator_arena(&state->gamedata_arena);
-        if (!level_spawn_entity(&state->error, &state->debug, &state->current_level, blueprint, camera->target,
-                                &state->blueprints, texture_registry_lookup, state, &alloc)) {
-            debug_log(&state->debug, "error: %s", error_get(&state->error));
-            error_clear(&state->error);
+        if (!level_spawn_entity(diag, &state->current_level, blueprint, camera->target, &state->blueprints,
+                                texture_registry_lookup, state, &alloc)) {
+            debug_log(diag->debug, "error: %s", error_get(diag->error));
+            error_clear(diag->error);
         }
     }
     if (toggle_pressed((ToggleBinding){KEY_ESCAPE, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT})) {
@@ -680,27 +681,28 @@ handle_place_input(GameState *state, Camera2D *camera, EditorState *editor_state
     update_editor_camera(camera, input, delta_time);
 }
 
-static void handle_editor_input(GameState *state,
+static void handle_editor_input(Diag *diag,
+                                GameState *state,
                                 Camera2D *camera,
                                 EditorState *editor_state,
                                 WatchList *watches,
                                 InputState input,
                                 float delta_time)
 {
-    handle_save_input(state, editor_state, watches);
+    handle_save_input(diag, state, editor_state, watches);
     handle_mode_transitions(state, editor_state);
     if (editor_state->sub_mode == EDITOR_SUB_DRAG) {
         handle_drag_input(state, editor_state, input, delta_time);
     } else if (editor_state->sub_mode == EDITOR_SUB_HANDLES) {
         handle_handle_input(state, editor_state, input, delta_time);
     } else if (editor_state->sub_mode == EDITOR_SUB_PLACE) {
-        handle_place_input(state, camera, editor_state, input, delta_time);
+        handle_place_input(diag, state, camera, editor_state, input, delta_time);
     } else if (editor_state->sub_mode == EDITOR_SUB_ATTR_EDIT) {
         handle_attr_edit_input(state, editor_state, delta_time);
     } else if (editor_state->sub_mode == EDITOR_SUB_RADIAL) {
         handle_radial_input(editor_state, input);
     } else if (editor_state->sub_mode == EDITOR_SUB_WORD_BUILDER) {
-        handle_word_builder_input(&state->error, &state->debug, state, editor_state);
+        handle_word_builder_input(diag, state, editor_state);
     } else {
         handle_browse_input(state, camera, editor_state, watches, input, delta_time);
     }
@@ -763,6 +765,8 @@ int main(void)
 {
     GameState state_val = {0};
     GameState *state = &state_val;
+    Diag diag_val = {&state->error, &state->debug};
+    Diag *diag = &diag_val;
     state->screen_width = SCREEN_WIDTH_DEFAULT;
     state->screen_height = SCREEN_HEIGHT_DEFAULT;
 
@@ -807,7 +811,7 @@ int main(void)
     RectU32 game_bounds = {(uint32_t)state->screen_width / PIXEL_SCALE, (uint32_t)state->screen_height / PIXEL_SCALE};
     RenderTexture2D target = LoadRenderTexture((int)game_bounds.width, (int)game_bounds.height);
 
-    if (!game_init(&state->error, &state->debug, state, game_bounds)) {
+    if (!game_init(diag, state, game_bounds)) {
         debug_log(&state->debug, "error: %s", error_get(&state->error));
         error_clear(&state->error);
         return 1;
@@ -848,7 +852,7 @@ int main(void)
               game_bounds.width, game_bounds.height, PIXEL_SCALE);
     debug_log(&state->debug, "GetScreen %dx%d  GetRender %dx%d", GetScreenWidth(), GetScreenHeight(), GetRenderWidth(),
               GetRenderHeight());
-    load_gamedata(state);
+    load_gamedata(diag, state);
 
     while (!WindowShouldClose()) {
         float delta_time = GetFrameTime();
@@ -857,7 +861,7 @@ int main(void)
 
         /* Hot-reload: poll mtime and reload if gamedata changed */
         if (state->frame % HOT_RELOAD_POLL_FRAMES == 0) {
-            handle_hot_reload(state, &editor_state, &watches);
+            handle_hot_reload(diag, state, &editor_state, &watches);
         }
 
         /* Toggle debug overlay: F3 only (Select/MIDDLE_LEFT is now used by radial picker) */
@@ -888,11 +892,11 @@ int main(void)
 
         /* Handle editor-only actions: save, entity browse, and camera pan */
         if (state->editor_mode) {
-            handle_editor_input(state, &editor_camera, &editor_state, &watches, input, delta_time);
+            handle_editor_input(diag, state, &editor_camera, &editor_state, &watches, input, delta_time);
         }
 
         /* Update (pure logic — no rendering) */
-        game_update(&state->error, &state->debug, state, input, delta_time);
+        game_update(diag, state, input, delta_time);
 
         render_frame(state, (RenderParams){
                                 .target = target,
@@ -911,7 +915,7 @@ quit:
     UnloadRenderTexture(target);
     unload_textures(state);
     font_preview_cleanup(state);
-    game_free(&state->error, &state->debug, state);
+    game_free(diag, state);
     audio_shutdown(&state->audio);
     debug_shutdown(&state->debug);
     CloseWindow();

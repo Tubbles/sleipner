@@ -1,4 +1,5 @@
 #include "unity.h"
+#include "diag.h"
 #include "entity.h"
 #include "game.h"
 
@@ -117,9 +118,10 @@ static Texture2D *dummy_lookup(const char *texture_name, void *user_data)
 void test_integration_load_gamedata(void)
 {
     GameState state = {0};
-    TEST_ASSERT_TRUE(game_init(&state.error, &state.debug, &state, (RectU32){320, 240}));
+    Diag diag = {&state.error, &state.debug};
+    TEST_ASSERT_TRUE(game_init(&diag, &state, (RectU32){320, 240}));
 
-    bool loaded = game_load_gamedata(&state.error, &state.debug, &state,
+    bool loaded = game_load_gamedata(&diag, &state,
                                      (GamedataParams){.toml_string = fixture_gamedata, .texture_lookup = dummy_lookup});
     TEST_ASSERT_TRUE(loaded);
     TEST_ASSERT_TRUE(state.gamedata_loaded);
@@ -128,32 +130,33 @@ void test_integration_load_gamedata(void)
     TEST_ASSERT_EQUAL_INT(3, state.blueprints.entries.count);
     TEST_ASSERT_TRUE(state.player_index >= 0);
 
-    game_free(&state.error, &state.debug, &state);
+    game_free(&diag, &state);
 }
 
 void test_integration_load_specific_level(void)
 {
     GameState state = {0};
-    TEST_ASSERT_TRUE(game_init(&state.error, &state.debug, &state, (RectU32){160, 120}));
+    Diag diag = {&state.error, &state.debug};
+    TEST_ASSERT_TRUE(game_init(&diag, &state, (RectU32){160, 120}));
 
     bool loaded = game_load_gamedata(
-        &state.error, &state.debug, &state,
+        &diag, &state,
         (GamedataParams){.toml_string = fixture_gamedata, .level_name = "cave", .texture_lookup = dummy_lookup});
     TEST_ASSERT_TRUE(loaded);
     TEST_ASSERT_EQUAL_STRING("cave", state.current_level.name.ptr);
     TEST_ASSERT_EQUAL_INT(2, state.current_level.entities.count);
     TEST_ASSERT_TRUE(state.player_index >= 0);
 
-    game_free(&state.error, &state.debug, &state);
+    game_free(&diag, &state);
 }
 
 void test_integration_walk_and_collide(void)
 {
     GameState state = {0};
-    TEST_ASSERT_TRUE(game_init(&state.error, &state.debug, &state, (RectU32){320, 240}));
-    TEST_ASSERT_TRUE(
-        game_load_gamedata(&state.error, &state.debug, &state,
-                           (GamedataParams){.toml_string = fixture_gamedata, .texture_lookup = dummy_lookup}));
+    Diag diag = {&state.error, &state.debug};
+    TEST_ASSERT_TRUE(game_init(&diag, &state, (RectU32){320, 240}));
+    TEST_ASSERT_TRUE(game_load_gamedata(
+        &diag, &state, (GamedataParams){.toml_string = fixture_gamedata, .texture_lookup = dummy_lookup}));
 
     /* Player starts at (160, 120), rock at (200, 120) with 16x16 collision.
      * Walk right into the rock. */
@@ -161,7 +164,7 @@ void test_integration_walk_and_collide(void)
     input.left_stick.x = 1.0F;
 
     for (int iteration = 0; iteration < 300; iteration++) {
-        game_update(&state.error, &state.debug, &state, input, 1.0F / 60.0F);
+        game_update(&diag, &state, input, 1.0F / 60.0F);
     }
 
     /* Player collision must not overlap the rock */
@@ -170,16 +173,16 @@ void test_integration_walk_and_collide(void)
     Rectangle rock = state.current_level.entities.data[1].collision;
     TEST_ASSERT_TRUE(player->collision.x + player->collision.width <= rock.x + 0.1F);
 
-    game_free(&state.error, &state.debug, &state);
+    game_free(&diag, &state);
 }
 
 void test_integration_walk_freely(void)
 {
     GameState state = {0};
-    TEST_ASSERT_TRUE(game_init(&state.error, &state.debug, &state, (RectU32){320, 240}));
-    TEST_ASSERT_TRUE(
-        game_load_gamedata(&state.error, &state.debug, &state,
-                           (GamedataParams){.toml_string = fixture_gamedata, .texture_lookup = dummy_lookup}));
+    Diag diag = {&state.error, &state.debug};
+    TEST_ASSERT_TRUE(game_init(&diag, &state, (RectU32){320, 240}));
+    TEST_ASSERT_TRUE(game_load_gamedata(
+        &diag, &state, (GamedataParams){.toml_string = fixture_gamedata, .texture_lookup = dummy_lookup}));
 
     const Entity *player = game_get_player_const(&state);
     float start_x = player->position.x;
@@ -191,7 +194,7 @@ void test_integration_walk_freely(void)
     input.left_stick.y = 0.5F;
 
     for (int iteration = 0; iteration < 30; iteration++) {
-        game_update(&state.error, &state.debug, &state, input, 1.0F / 60.0F);
+        game_update(&diag, &state, input, 1.0F / 60.0F);
     }
 
     player = game_get_player_const(&state);
@@ -199,16 +202,16 @@ void test_integration_walk_freely(void)
     TEST_ASSERT_TRUE(player->position.y > start_y);
     TEST_ASSERT_EQUAL_INT(30, state.frame);
 
-    game_free(&state.error, &state.debug, &state);
+    game_free(&diag, &state);
 }
 
 void test_integration_boundary_all_directions(void)
 {
     GameState state = {0};
-    TEST_ASSERT_TRUE(game_init(&state.error, &state.debug, &state, (RectU32){320, 240}));
-    TEST_ASSERT_TRUE(
-        game_load_gamedata(&state.error, &state.debug, &state,
-                           (GamedataParams){.toml_string = fixture_gamedata, .texture_lookup = dummy_lookup}));
+    Diag diag = {&state.error, &state.debug};
+    TEST_ASSERT_TRUE(game_init(&diag, &state, (RectU32){320, 240}));
+    TEST_ASSERT_TRUE(game_load_gamedata(
+        &diag, &state, (GamedataParams){.toml_string = fixture_gamedata, .texture_lookup = dummy_lookup}));
 
     float half = FRAME_SIZE / 2.0F;
     InputState input = {0};
@@ -217,41 +220,41 @@ void test_integration_boundary_all_directions(void)
     input.left_stick.x = -1.0F;
     input.left_stick.y = 0.0F;
     for (int iteration = 0; iteration < 500; iteration++) {
-        game_update(&state.error, &state.debug, &state, input, 1.0F / 60.0F);
+        game_update(&diag, &state, input, 1.0F / 60.0F);
     }
     TEST_ASSERT_FLOAT_WITHIN(0.1F, half, game_get_player_const(&state)->position.x);
 
     input.left_stick.x = 0.0F;
     input.left_stick.y = -1.0F;
     for (int iteration = 0; iteration < 500; iteration++) {
-        game_update(&state.error, &state.debug, &state, input, 1.0F / 60.0F);
+        game_update(&diag, &state, input, 1.0F / 60.0F);
     }
     TEST_ASSERT_FLOAT_WITHIN(0.1F, half, game_get_player_const(&state)->position.y);
 
     input.left_stick.x = 1.0F;
     input.left_stick.y = 0.0F;
     for (int iteration = 0; iteration < 500; iteration++) {
-        game_update(&state.error, &state.debug, &state, input, 1.0F / 60.0F);
+        game_update(&diag, &state, input, 1.0F / 60.0F);
     }
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 320.0F - half, game_get_player_const(&state)->position.x);
 
     input.left_stick.x = 0.0F;
     input.left_stick.y = 1.0F;
     for (int iteration = 0; iteration < 500; iteration++) {
-        game_update(&state.error, &state.debug, &state, input, 1.0F / 60.0F);
+        game_update(&diag, &state, input, 1.0F / 60.0F);
     }
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 240.0F - half, game_get_player_const(&state)->position.y);
 
-    game_free(&state.error, &state.debug, &state);
+    game_free(&diag, &state);
 }
 
 void test_integration_player_entity_spawns(void)
 {
     GameState state = {0};
-    TEST_ASSERT_TRUE(game_init(&state.error, &state.debug, &state, (RectU32){640, 360}));
-    TEST_ASSERT_TRUE(
-        game_load_gamedata(&state.error, &state.debug, &state,
-                           (GamedataParams){.toml_string = fixture_gamedata, .texture_lookup = dummy_lookup}));
+    Diag diag = {&state.error, &state.debug};
+    TEST_ASSERT_TRUE(game_init(&diag, &state, (RectU32){640, 360}));
+    TEST_ASSERT_TRUE(game_load_gamedata(
+        &diag, &state, (GamedataParams){.toml_string = fixture_gamedata, .texture_lookup = dummy_lookup}));
 
     /* Player entity must exist */
     TEST_ASSERT_TRUE(state.player_index >= 0);
@@ -279,35 +282,35 @@ void test_integration_player_entity_spawns(void)
     InputState input = {0};
     input.left_stick.x = 1.0F;
     for (int iteration = 0; iteration < 10; iteration++) {
-        game_update(&state.error, &state.debug, &state, input, 1.0F / 60.0F);
+        game_update(&diag, &state, input, 1.0F / 60.0F);
     }
     TEST_ASSERT_TRUE(game_get_player_const(&state)->position.x > start_x);
 
-    game_free(&state.error, &state.debug, &state);
+    game_free(&diag, &state);
 }
 
 void test_integration_on_spawn_trigger_fires_on_load(void)
 {
     GameState state = {0};
-    TEST_ASSERT_TRUE(game_init(&state.error, &state.debug, &state, (RectU32){320, 240}));
-    TEST_ASSERT_TRUE(
-        game_load_gamedata(&state.error, &state.debug, &state,
-                           (GamedataParams){.toml_string = fixture_triggers, .texture_lookup = dummy_lookup}));
+    Diag diag = {&state.error, &state.debug};
+    TEST_ASSERT_TRUE(game_init(&diag, &state, (RectU32){320, 240}));
+    TEST_ASSERT_TRUE(game_load_gamedata(
+        &diag, &state, (GamedataParams){.toml_string = fixture_triggers, .texture_lookup = dummy_lookup}));
 
     /* beacon blueprint has on_spawn → set_flag:beacon_spawned.
      * No game_update needed — the flag must be set by game_load_gamedata. */
     TEST_ASSERT_TRUE(flag_get(&state.flags, "beacon_spawned"));
 
-    game_free(&state.error, &state.debug, &state);
+    game_free(&diag, &state);
 }
 
 void test_integration_enter_trigger_fires_on_overlap(void)
 {
     GameState state = {0};
-    TEST_ASSERT_TRUE(game_init(&state.error, &state.debug, &state, (RectU32){320, 240}));
-    TEST_ASSERT_TRUE(
-        game_load_gamedata(&state.error, &state.debug, &state,
-                           (GamedataParams){.toml_string = fixture_triggers, .texture_lookup = dummy_lookup}));
+    Diag diag = {&state.error, &state.debug};
+    TEST_ASSERT_TRUE(game_init(&diag, &state, (RectU32){320, 240}));
+    TEST_ASSERT_TRUE(game_load_gamedata(
+        &diag, &state, (GamedataParams){.toml_string = fixture_triggers, .texture_lookup = dummy_lookup}));
 
     /* zone_entered must not be set before the player reaches the zone */
     TEST_ASSERT_FALSE(flag_get(&state.flags, "zone_entered"));
@@ -318,18 +321,19 @@ void test_integration_enter_trigger_fires_on_overlap(void)
     InputState input = {0};
     input.left_stick.x = 1.0F;
     for (int iteration = 0; iteration < 80; iteration++) {
-        game_update(&state.error, &state.debug, &state, input, 1.0F / 60.0F);
+        game_update(&diag, &state, input, 1.0F / 60.0F);
     }
 
     TEST_ASSERT_TRUE(flag_get(&state.flags, "zone_entered"));
 
-    game_free(&state.error, &state.debug, &state);
+    game_free(&diag, &state);
 }
 
 void test_integration_enter_trigger_fires_only_once(void)
 {
     GameState state = {0};
-    TEST_ASSERT_TRUE(game_init(&state.error, &state.debug, &state, (RectU32){320, 240}));
+    Diag diag = {&state.error, &state.debug};
+    TEST_ASSERT_TRUE(game_init(&diag, &state, (RectU32){320, 240}));
 
     /* Zone blueprint uses add_attr:self.enter_count,1 to count firings */
     static const char *fixture_enter_count = "[[blueprint]]\n"
@@ -366,20 +370,19 @@ void test_integration_enter_trigger_fires_only_once(void)
                                              "blueprint = \"zone\"\n"
                                              "pos = [200, 100]\n";
 
-    TEST_ASSERT_TRUE(
-        game_load_gamedata(&state.error, &state.debug, &state,
-                           (GamedataParams){.toml_string = fixture_enter_count, .texture_lookup = dummy_lookup}));
+    TEST_ASSERT_TRUE(game_load_gamedata(
+        &diag, &state, (GamedataParams){.toml_string = fixture_enter_count, .texture_lookup = dummy_lookup}));
 
     /* Walk into zone and keep walking through it for 200 frames total */
     InputState input = {0};
     input.left_stick.x = 1.0F;
     for (int iteration = 0; iteration < 200; iteration++) {
-        game_update(&state.error, &state.debug, &state, input, 1.0F / 60.0F);
+        game_update(&diag, &state, input, 1.0F / 60.0F);
     }
 
     /* enter_count must be exactly 1 — edge-triggered, not level-triggered */
     const Entity *zone = &state.current_level.entities.data[1];
     TEST_ASSERT_EQUAL_INT(1, (int)attr_get_scoped_float(&zone->attrs, nullptr, "enter_count", 0.0F));
 
-    game_free(&state.error, &state.debug, &state);
+    game_free(&diag, &state);
 }

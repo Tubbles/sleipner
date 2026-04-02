@@ -1,8 +1,7 @@
 #ifndef EDITOR_H
 #define EDITOR_H
 
-#include "debug.h"
-#include "error.h"
+#include "diag.h"
 #include "game.h"
 #include "input.h"
 #include "level.h"
@@ -116,7 +115,7 @@ void handle_handle_input(GameState *state, EditorState *editor_state, InputState
 void handle_attr_edit_input(GameState *state, EditorState *editor_state, float delta_time);
 void draw_radial_picker(int screen_width, int screen_height, const EditorState *editor_state);
 void handle_radial_input(EditorState *editor_state, InputState input);
-void handle_word_builder_input(ErrorState *err, DebugState *dbg, GameState *state, EditorState *editor_state);
+void handle_word_builder_input(Diag *diag, GameState *state, EditorState *editor_state);
 void draw_word_builder_panel(int screen_width,
                              int screen_height,
                              const GameState *state,

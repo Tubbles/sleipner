@@ -4,8 +4,7 @@
 #include "alloc.h"
 #include "arena.h"
 #include "attribute.h"
-#include "debug.h"
-#include "error.h"
+#include "diag.h"
 #include "rule.h"
 #include "str.h"
 #include "vec.h"
@@ -43,7 +42,7 @@ Vector2 blueprint_get_collision_size(const Blueprint *blp);
 /* Parse all [[blueprint]] entries from a tomlc99 root table into the blueprint table.
  * Arena is used for variable-length data (rule arrays).
  * Returns the number of blueprints loaded, or -1 on error. */
-int blueprints_load(ErrorState *err, DebugState *dbg, BlueprintTable *table, void *toml_root, Arena *arena);
+int blueprints_load(Diag *diag, BlueprintTable *table, void *toml_root, Arena *arena);
 
 /* Free all blueprints and their children/attrs from a table, and the table's vec. */
 void blueprint_table_free(Allocator *alloc, BlueprintTable *table);

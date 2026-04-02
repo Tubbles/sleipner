@@ -4,8 +4,7 @@
 #include "arena.h"
 #include "audio.h"
 #include "blueprint.h"
-#include "debug.h"
-#include "error.h"
+#include "diag.h"
 #include "input.h"
 #include "level.h"
 #include "raylib.h"
@@ -91,12 +90,12 @@ typedef struct {
     void *texture_user_data;
 } GamedataParams;
 
-[[nodiscard]] bool game_init(ErrorState *err, DebugState *dbg, GameState *state, RectU32 game_bounds);
-[[nodiscard]] bool game_load_gamedata(ErrorState *err, DebugState *dbg, GameState *state, GamedataParams params);
-void game_update(ErrorState *err, DebugState *dbg, GameState *state, InputState input, float delta_time);
+[[nodiscard]] bool game_init(Diag *diag, GameState *state, RectU32 game_bounds);
+[[nodiscard]] bool game_load_gamedata(Diag *diag, GameState *state, GamedataParams params);
+void game_update(Diag *diag, GameState *state, InputState input, float delta_time);
 Entity *game_get_player(GameState *state);
 const Entity *game_get_player_const(const GameState *state);
-void game_free(ErrorState *err, DebugState *dbg, GameState *state);
+void game_free(Diag *diag, GameState *state);
 
 /* Resolve an entity's blueprint defaults via the entity→blueprint map.
  * Returns nullptr if entity has no blueprint mapping or blueprint not found. */

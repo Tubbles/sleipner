@@ -3,9 +3,8 @@
 
 #include "alloc.h"
 #include "blueprint.h"
-#include "debug.h"
+#include "diag.h"
 #include "entity.h"
-#include "error.h"
 #include "str.h"
 
 #include <stdbool.h>
@@ -28,8 +27,7 @@ void level_free(Allocator *alloc, Level *level);
 
 /* Spawn a new root entity from a blueprint at the given position.
  * Instantiates children; assigns next_entity_id. Returns true on success. */
-[[nodiscard]] bool level_spawn_entity(ErrorState *err,
-                                      DebugState *dbg,
+[[nodiscard]] bool level_spawn_entity(Diag *diag,
                                       Level *level,
                                       const Blueprint *blueprint,
                                       Vector2 position,
@@ -41,8 +39,7 @@ void level_free(Allocator *alloc, Level *level);
 /* Parse the first [[level]] (or the one matching `level_name` if non-nullptr)
  * from a tomlc99 root table. Instantiates entities from blueprints.
  * Returns true on success. */
-[[nodiscard]] bool level_load(ErrorState *err,
-                              DebugState *dbg,
+[[nodiscard]] bool level_load(Diag *diag,
                               Level *level,
                               void *toml_root,
                               const char *level_name,

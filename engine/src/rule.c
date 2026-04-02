@@ -5,6 +5,7 @@
 #include "arena.h"
 #include "attribute.h"
 #include "debug.h"
+#include "diag.h"
 #include "entity.h"
 #include "error.h"
 #include "map.h"
@@ -49,21 +50,20 @@ bool flag_get(const FlagSet *flags, const char *name)
     return flag_find(flags, name) >= 0;
 }
 
-void flag_set(ErrorState *err, DebugState *dbg, Allocator *alloc, FlagSet *flags, const char *name)
+void flag_set(Diag *diag, Allocator *alloc, FlagSet *flags, const char *name)
 {
-    (void)err;
     if (flag_find(flags, name) >= 0) {
         return;
     }
     flags->names.alloc = *alloc;
     FlagName entry = {0};
     if (!str_from_cstr(alloc, &entry.name, name)) {
-        debug_log(dbg, "flag_set: allocation failed for '%s'", name);
+        debug_log(diag->debug, "flag_set: allocation failed for '%s'", name);
         return;
     }
     if (!vec_flag_name_push(&flags->names, entry)) {
         str_free(alloc, &entry.name);
-        debug_log(dbg, "flag_set: vec push failed for '%s'", name);
+        debug_log(diag->debug, "flag_set: vec push failed for '%s'", name);
     }
 }
 
@@ -91,9 +91,8 @@ void flag_set_free(Allocator *alloc, FlagSet *flags)
 
 /* ---- Parsing helpers ---- */
 
-bool trigger_parse(ErrorState *err, DebugState *dbg, Allocator *alloc, Trigger *trigger, const char *string)
+bool trigger_parse(Diag *diag, Allocator *alloc, Trigger *trigger, const char *string)
 {
-    (void)dbg;
     memset(trigger, 0, sizeof(*trigger));
     Strv strv = strv_from_cstr(string);
 
@@ -114,7 +113,7 @@ bool trigger_parse(ErrorState *err, DebugState *dbg, Allocator *alloc, Trigger *
         Strv rest = strv;
         (void)strv_split(&rest, ':');
         if (!str_from_strv(alloc, &trigger->argument, rest)) {
-            error_set(err, "trigger_parse: allocation failed");
+            error_set(diag->error, "trigger_parse: allocation failed");
             return false;
         }
         return true;
@@ -124,7 +123,7 @@ bool trigger_parse(ErrorState *err, DebugState *dbg, Allocator *alloc, Trigger *
         Strv rest = strv;
         (void)strv_split(&rest, ':');
         if (!str_from_strv(alloc, &trigger->argument, rest)) {
-            error_set(err, "trigger_parse: allocation failed");
+            error_set(diag->error, "trigger_parse: allocation failed");
             return false;
         }
         return true;
@@ -134,7 +133,7 @@ bool trigger_parse(ErrorState *err, DebugState *dbg, Allocator *alloc, Trigger *
         Strv rest = strv;
         (void)strv_split(&rest, ':');
         if (!str_from_strv(alloc, &trigger->argument, rest)) {
-            error_set(err, "trigger_parse: allocation failed");
+            error_set(diag->error, "trigger_parse: allocation failed");
             return false;
         }
         return true;
@@ -144,7 +143,7 @@ bool trigger_parse(ErrorState *err, DebugState *dbg, Allocator *alloc, Trigger *
         Strv rest = strv;
         (void)strv_split(&rest, ':');
         if (!str_from_strv(alloc, &trigger->argument, rest)) {
-            error_set(err, "trigger_parse: allocation failed");
+            error_set(diag->error, "trigger_parse: allocation failed");
             return false;
         }
         return true;
@@ -162,7 +161,7 @@ bool trigger_parse(ErrorState *err, DebugState *dbg, Allocator *alloc, Trigger *
         Strv rest = strv;
         (void)strv_split(&rest, ':');
         if (!str_from_strv(alloc, &trigger->argument, rest)) {
-            error_set(err, "trigger_parse: allocation failed");
+            error_set(diag->error, "trigger_parse: allocation failed");
             return false;
         }
         return true;
@@ -172,7 +171,7 @@ bool trigger_parse(ErrorState *err, DebugState *dbg, Allocator *alloc, Trigger *
         return true;
     }
 
-    error_set(err, "unknown trigger type: '%s'", string);
+    error_set(diag->error, "unknown trigger type: '%s'", string);
     return false;
 }
 
@@ -214,9 +213,8 @@ static int parse_condition_attr_comparison(Allocator *alloc, Condition *conditio
     return 0;
 }
 
-bool condition_parse(ErrorState *err, DebugState *dbg, Allocator *alloc, Condition *condition, const char *string)
+bool condition_parse(Diag *diag, Allocator *alloc, Condition *condition, const char *string)
 {
-    (void)dbg;
     memset(condition, 0, sizeof(*condition));
     Strv strv = strv_from_cstr(string);
 
@@ -225,7 +223,7 @@ bool condition_parse(ErrorState *err, DebugState *dbg, Allocator *alloc, Conditi
         Strv rest = strv;
         (void)strv_split(&rest, ':');
         if (!str_from_strv(alloc, &condition->argument, rest)) {
-            error_set(err, "condition_parse: allocation failed");
+            error_set(diag->error, "condition_parse: allocation failed");
             return false;
         }
         return true;
@@ -235,7 +233,7 @@ bool condition_parse(ErrorState *err, DebugState *dbg, Allocator *alloc, Conditi
         Strv rest = strv;
         (void)strv_split(&rest, ':');
         if (!str_from_strv(alloc, &condition->argument, rest)) {
-            error_set(err, "condition_parse: allocation failed");
+            error_set(diag->error, "condition_parse: allocation failed");
             return false;
         }
         return true;
@@ -245,7 +243,7 @@ bool condition_parse(ErrorState *err, DebugState *dbg, Allocator *alloc, Conditi
         Strv rest = strv;
         (void)strv_split(&rest, ':');
         if (!str_from_strv(alloc, &condition->argument, rest)) {
-            error_set(err, "condition_parse: allocation failed");
+            error_set(diag->error, "condition_parse: allocation failed");
             return false;
         }
         return true;
@@ -255,7 +253,7 @@ bool condition_parse(ErrorState *err, DebugState *dbg, Allocator *alloc, Conditi
         Strv rest = strv;
         (void)strv_split(&rest, ':');
         if (!str_from_strv(alloc, &condition->argument, rest)) {
-            error_set(err, "condition_parse: allocation failed");
+            error_set(diag->error, "condition_parse: allocation failed");
             return false;
         }
         return true;
@@ -265,7 +263,7 @@ bool condition_parse(ErrorState *err, DebugState *dbg, Allocator *alloc, Conditi
         Strv rest = strv;
         (void)strv_split(&rest, ':');
         if (!str_from_strv(alloc, &condition->argument, rest)) {
-            error_set(err, "condition_parse: allocation failed");
+            error_set(diag->error, "condition_parse: allocation failed");
             return false;
         }
         return true;
@@ -277,7 +275,7 @@ bool condition_parse(ErrorState *err, DebugState *dbg, Allocator *alloc, Conditi
         strv_copy_to_cstr(rest, attr_arg, MAX_ARG);
         int cmp = parse_condition_attr_comparison(alloc, condition, attr_arg);
         if (cmp < 0) {
-            error_set(err, "condition_parse: allocation failed");
+            error_set(diag->error, "condition_parse: allocation failed");
             return false;
         }
         if (cmp > 0) {
@@ -285,13 +283,13 @@ bool condition_parse(ErrorState *err, DebugState *dbg, Allocator *alloc, Conditi
         }
         condition->type = COND_ATTR;
         if (!str_from_strv(alloc, &condition->argument, rest)) {
-            error_set(err, "condition_parse: allocation failed");
+            error_set(diag->error, "condition_parse: allocation failed");
             return false;
         }
         return true;
     }
 
-    error_set(err, "unknown condition: '%s'", string);
+    error_set(diag->error, "unknown condition: '%s'", string);
     return false;
 }
 
@@ -342,10 +340,8 @@ static const ActionMapping action_mappings[] = {
     {nullptr, 0, false},
 };
 
-static bool
-parse_simple_action(ErrorState *err, DebugState *dbg, Allocator *alloc, ActionNode *node, const char *string)
+static bool parse_simple_action(Diag *diag, Allocator *alloc, ActionNode *node, const char *string)
 {
-    (void)dbg;
     memset(node, 0, sizeof(*node));
     Strv strv = strv_from_cstr(string);
 
@@ -366,7 +362,7 @@ parse_simple_action(ErrorState *err, DebugState *dbg, Allocator *alloc, ActionNo
         }
     }
 
-    error_set(err, "unknown action: '%s'", string);
+    error_set(diag->error, "unknown action: '%s'", string);
     return false;
 }
 
@@ -375,8 +371,7 @@ typedef struct {
     toml_table_t *table;
 } ParseCFTask;
 
-static bool parse_branch_array_into(ErrorState *err,
-                                    DebugState *dbg,
+static bool parse_branch_array_into(Diag *diag,
                                     Allocator *alloc,
                                     ActionNode **out_nodes,
                                     int *out_count,
@@ -395,14 +390,14 @@ static bool parse_branch_array_into(ErrorState *err,
     }
     ActionNode *nodes = arena_alloc(arena, (size_t)count * sizeof(ActionNode));
     if (!nodes) {
-        error_wrap(err, "parse_branch_array_into: arena_alloc");
+        error_wrap(diag->error, "parse_branch_array_into: arena_alloc");
         return false;
     }
     for (int child_index = 0; child_index < count; child_index++) {
         toml_datum_t value = toml_string_at(array, child_index);
         if (value.ok) {
-            if (!action_node_parse(err, dbg, alloc, &nodes[child_index], value)) {
-                error_wrap(err, "%s[%d]", branch_name, child_index);
+            if (!action_node_parse(diag, alloc, &nodes[child_index], value)) {
+                error_wrap(diag->error, "%s[%d]", branch_name, child_index);
                 free(value.u.s);
                 return false;
             }
@@ -410,11 +405,11 @@ static bool parse_branch_array_into(ErrorState *err,
         } else {
             toml_table_t *table = toml_table_at(array, child_index);
             if (!table) {
-                error_set(err, "%s[%d] is not a string or table", branch_name, child_index);
+                error_set(diag->error, "%s[%d] is not a string or table", branch_name, child_index);
                 return false;
             }
             if (*task_top >= MAX_PARSE_CF_STACK) {
-                error_set(err, "parse_branch_array_into: task stack overflow");
+                error_set(diag->error, "parse_branch_array_into: task stack overflow");
                 return false;
             }
             memset(&nodes[child_index], 0, sizeof(ActionNode));
@@ -426,45 +421,40 @@ static bool parse_branch_array_into(ErrorState *err,
     return true;
 }
 
-static bool parse_conditions_into(ErrorState *err,
-                                  DebugState *dbg,
-                                  Allocator *alloc,
-                                  vec_condition *out,
-                                  toml_array_t *array,
-                                  const char *context_name)
+static bool
+parse_conditions_into(Diag *diag, Allocator *alloc, vec_condition *out, toml_array_t *array, const char *context_name)
 {
     if (!array) {
         return true;
     }
     int count = toml_array_nelem(array);
     if (count > MAX_CONDITIONS) {
-        error_set(err, "%s: too many conditions (%d, max %d)", context_name, count, MAX_CONDITIONS);
+        error_set(diag->error, "%s: too many conditions (%d, max %d)", context_name, count, MAX_CONDITIONS);
         return false;
     }
     out->alloc = *alloc;
     for (int index = 0; index < count; index++) {
         toml_datum_t value = toml_string_at(array, index);
         if (!value.ok) {
-            error_set(err, "%s: condition[%d] is not a string", context_name, index);
+            error_set(diag->error, "%s: condition[%d] is not a string", context_name, index);
             return false;
         }
         Condition cond = {0};
-        if (!condition_parse(err, dbg, alloc, &cond, value.u.s)) {
+        if (!condition_parse(diag, alloc, &cond, value.u.s)) {
             free(value.u.s);
-            error_wrap(err, "%s: condition[%d]", context_name, index);
+            error_wrap(diag->error, "%s: condition[%d]", context_name, index);
             return false;
         }
         free(value.u.s);
         if (!vec_condition_push(out, cond)) {
-            error_set(err, "%s: condition[%d]: out of memory", context_name, index);
+            error_set(diag->error, "%s: condition[%d]: out of memory", context_name, index);
             return false;
         }
     }
     return true;
 }
 
-static bool parse_one_cf_node(ErrorState *err,
-                              DebugState *dbg,
+static bool parse_one_cf_node(Diag *diag,
                               Allocator *alloc,
                               ActionNode *node,
                               toml_table_t *table,
@@ -477,14 +467,14 @@ static bool parse_one_cf_node(ErrorState *err,
     toml_array_t *if_conds = toml_array_in(table, "if");
     if (if_conds) {
         node->type = ACTION_IF_ELSE;
-        if (!parse_conditions_into(err, dbg, alloc, &node->conditions, if_conds, "if")) {
+        if (!parse_conditions_into(diag, alloc, &node->conditions, if_conds, "if")) {
             return false;
         }
-        if (!parse_branch_array_into(err, dbg, alloc, &node->children, &node->child_count, toml_array_in(table, "then"),
+        if (!parse_branch_array_into(diag, alloc, &node->children, &node->child_count, toml_array_in(table, "then"),
                                      arena, "then", task_stack, task_top)) {
             return false;
         }
-        return parse_branch_array_into(err, dbg, alloc, &node->else_children, &node->else_child_count,
+        return parse_branch_array_into(diag, alloc, &node->else_children, &node->else_child_count,
                                        toml_array_in(table, "else"), arena, "else", task_stack, task_top);
     }
 
@@ -494,10 +484,10 @@ static bool parse_one_cf_node(ErrorState *err,
         bool alloc_ok = str_from_cstr(alloc, &node->argument, repeat_str.u.s);
         free(repeat_str.u.s);
         if (!alloc_ok) {
-            error_set(err, "parse_one_cf_node: allocation failed");
+            error_set(diag->error, "parse_one_cf_node: allocation failed");
             return false;
         }
-        return parse_branch_array_into(err, dbg, alloc, &node->children, &node->child_count, toml_array_in(table, "do"),
+        return parse_branch_array_into(diag, alloc, &node->children, &node->child_count, toml_array_in(table, "do"),
                                        arena, "do", task_stack, task_top);
     }
 
@@ -507,11 +497,11 @@ static bool parse_one_cf_node(ErrorState *err,
         bool alloc_ok = str_from_cstr(alloc, &node->argument, for_each_str.u.s);
         free(for_each_str.u.s);
         if (!alloc_ok) {
-            error_set(err, "parse_one_cf_node: allocation failed for for_each");
+            error_set(diag->error, "parse_one_cf_node: allocation failed for for_each");
             return false;
         }
         if (strcmp(node->argument.ptr, "entities") != 0) {
-            error_set(err, "for_each: unknown collection '%s' (supported: 'entities')", node->argument.ptr);
+            error_set(diag->error, "for_each: unknown collection '%s' (supported: 'entities')", node->argument.ptr);
             return false;
         }
         toml_datum_t bind_str = toml_string_in(table, "bind");
@@ -519,66 +509,63 @@ static bool parse_one_cf_node(ErrorState *err,
             bool bind_ok = str_from_cstr(alloc, &node->second_argument, bind_str.u.s);
             free(bind_str.u.s);
             if (!bind_ok) {
-                error_set(err, "parse_one_cf_node: allocation failed for bind");
+                error_set(diag->error, "parse_one_cf_node: allocation failed for bind");
                 return false;
             }
         }
-        if (!parse_conditions_into(err, dbg, alloc, &node->conditions, toml_array_in(table, "conditions"),
-                                   "for_each")) {
+        if (!parse_conditions_into(diag, alloc, &node->conditions, toml_array_in(table, "conditions"), "for_each")) {
             return false;
         }
-        return parse_branch_array_into(err, dbg, alloc, &node->children, &node->child_count, toml_array_in(table, "do"),
+        return parse_branch_array_into(diag, alloc, &node->children, &node->child_count, toml_array_in(table, "do"),
                                        arena, "do", task_stack, task_top);
     }
 
-    error_set(err, "unknown control flow structure");
+    error_set(diag->error, "unknown control flow structure");
     return false;
 }
 
-static bool parse_control_flow_node(
-    ErrorState *err, DebugState *dbg, Allocator *alloc, ActionNode *node, toml_table_t *table, Arena *arena)
+static bool parse_control_flow_node(Diag *diag, Allocator *alloc, ActionNode *node, toml_table_t *table, Arena *arena)
 {
     ParseCFTask task_stack[MAX_PARSE_CF_STACK];
     int task_top = 0;
 
-    if (!parse_one_cf_node(err, dbg, alloc, node, table, arena, task_stack, &task_top)) {
+    if (!parse_one_cf_node(diag, alloc, node, table, arena, task_stack, &task_top)) {
         return false;
     }
     while (task_top > 0) {
         ParseCFTask task = task_stack[--task_top];
-        if (!parse_one_cf_node(err, dbg, alloc, task.target, task.table, arena, task_stack, &task_top)) {
+        if (!parse_one_cf_node(diag, alloc, task.target, task.table, arena, task_stack, &task_top)) {
             return false;
         }
     }
     return true;
 }
 
-bool action_node_parse(ErrorState *err, DebugState *dbg, Allocator *alloc, ActionNode *node, toml_datum_t value)
+bool action_node_parse(Diag *diag, Allocator *alloc, ActionNode *node, toml_datum_t value)
 {
     if (!value.ok || !value.u.s) {
-        error_set(err, "action_node_parse: expected string value");
+        error_set(diag->error, "action_node_parse: expected string value");
         return false;
     }
-    return parse_simple_action(err, dbg, alloc, node, value.u.s);
+    return parse_simple_action(diag, alloc, node, value.u.s);
 }
 
 /* ---- TOML rule parsing ---- */
 
-static bool
-parse_conditions_array(ErrorState *err, DebugState *dbg, Allocator *alloc, Rule *rule, toml_array_t *conditions)
+static bool parse_conditions_array(Diag *diag, Allocator *alloc, Rule *rule, toml_array_t *conditions)
 {
-    return parse_conditions_into(err, dbg, alloc, &rule->conditions, conditions, "rule");
+    return parse_conditions_into(diag, alloc, &rule->conditions, conditions, "rule");
 }
 
-static bool parse_action_nodes_into(
-    ErrorState *err, DebugState *dbg, Allocator *alloc, vec_action_node *nodes, toml_array_t *actions, Arena *arena)
+static bool
+parse_action_nodes_into(Diag *diag, Allocator *alloc, vec_action_node *nodes, toml_array_t *actions, Arena *arena)
 {
     if (!actions) {
         return true;
     }
     int count = toml_array_nelem(actions);
     if (count > MAX_ACTIONS) {
-        error_set(err, "too many actions (%d, max %d)", count, MAX_ACTIONS);
+        error_set(diag->error, "too many actions (%d, max %d)", count, MAX_ACTIONS);
         return false;
     }
     nodes->alloc = *alloc;
@@ -587,8 +574,8 @@ static bool parse_action_nodes_into(
         ActionNode node = {0};
         toml_datum_t value = toml_string_at(actions, index);
         if (value.ok) {
-            if (!action_node_parse(err, dbg, alloc, &node, value)) {
-                error_wrap(err, "action[%d]", index);
+            if (!action_node_parse(diag, alloc, &node, value)) {
+                error_wrap(diag->error, "action[%d]", index);
                 free(value.u.s);
                 return false;
             }
@@ -596,68 +583,61 @@ static bool parse_action_nodes_into(
         } else {
             toml_table_t *table_value = toml_table_at(actions, index);
             if (table_value) {
-                if (!parse_control_flow_node(err, dbg, alloc, &node, table_value, arena)) {
-                    error_wrap(err, "action[%d]", index);
+                if (!parse_control_flow_node(diag, alloc, &node, table_value, arena)) {
+                    error_wrap(diag->error, "action[%d]", index);
                     return false;
                 }
             } else {
-                error_set(err, "action[%d] is not a string or table", index);
+                error_set(diag->error, "action[%d] is not a string or table", index);
                 return false;
             }
         }
         if (!vec_action_node_push(nodes, node)) {
-            error_set(err, "action[%d]: out of memory", index);
+            error_set(diag->error, "action[%d]: out of memory", index);
             return false;
         }
     }
     return true;
 }
 
-static bool
-parse_actions_array(ErrorState *err, DebugState *dbg, Allocator *alloc, Rule *rule, toml_array_t *actions, Arena *arena)
+static bool parse_actions_array(Diag *diag, Allocator *alloc, Rule *rule, toml_array_t *actions, Arena *arena)
 {
-    return parse_action_nodes_into(err, dbg, alloc, &rule->action_tree.nodes, actions, arena);
+    return parse_action_nodes_into(diag, alloc, &rule->action_tree.nodes, actions, arena);
 }
 
-static bool
-parse_single_rule(ErrorState *err, DebugState *dbg, Allocator *alloc, Rule *rule, toml_table_t *entry, Arena *arena)
+static bool parse_single_rule(Diag *diag, Allocator *alloc, Rule *rule, toml_table_t *entry, Arena *arena)
 {
     memset(rule, 0, sizeof(*rule));
 
     toml_datum_t trigger_str = toml_string_in(entry, "trigger");
     if (!trigger_str.ok) {
-        error_set(err, "rule missing 'trigger' key");
+        error_set(diag->error, "rule missing 'trigger' key");
         return false;
     }
-    if (!trigger_parse(err, dbg, alloc, &rule->trigger, trigger_str.u.s)) {
-        error_wrap(err, "rule trigger");
+    if (!trigger_parse(diag, alloc, &rule->trigger, trigger_str.u.s)) {
+        error_wrap(diag->error, "rule trigger");
         free(trigger_str.u.s);
         return false;
     }
     free(trigger_str.u.s);
 
     toml_array_t *conditions = toml_array_in(entry, "conditions");
-    if (!parse_conditions_array(err, dbg, alloc, rule, conditions)) {
-        error_wrap(err, "rule conditions");
+    if (!parse_conditions_array(diag, alloc, rule, conditions)) {
+        error_wrap(diag->error, "rule conditions");
         return false;
     }
 
     toml_array_t *actions = toml_array_in(entry, "actions");
-    if (!parse_actions_array(err, dbg, alloc, rule, actions, arena)) {
+    if (!parse_actions_array(diag, alloc, rule, actions, arena)) {
         vec_condition_free(&rule->conditions);
-        error_wrap(err, "rule actions");
+        error_wrap(diag->error, "rule actions");
         return false;
     }
 
     return true;
 }
 
-bool rules_parse(ErrorState *err,
-                 DebugState *dbg,
-                 Allocator *alloc,
-                 vec_rule *rules,
-                 toml_table_t *toml_blueprint_table,
-                 Arena *arena)
+bool rules_parse(Diag *diag, Allocator *alloc, vec_rule *rules, toml_table_t *toml_blueprint_table, Arena *arena)
 {
     *rules = (vec_rule){0};
     rules->alloc = *alloc;
@@ -672,27 +652,27 @@ bool rules_parse(ErrorState *err,
         return true;
     }
     if (count > MAX_RULES) {
-        error_set(err, "too many rules (%d, max %d)", count, MAX_RULES);
+        error_set(diag->error, "too many rules (%d, max %d)", count, MAX_RULES);
         return false;
     }
 
     for (int index = 0; index < count; index++) {
         toml_table_t *entry = toml_table_at(rule_array, index);
         if (!entry) {
-            error_set(err, "rule[%d]: toml_table_at returned nullptr", index);
+            error_set(diag->error, "rule[%d]: toml_table_at returned nullptr", index);
             return false;
         }
         Rule rule = {0};
-        if (!parse_single_rule(err, dbg, alloc, &rule, entry, arena)) {
+        if (!parse_single_rule(diag, alloc, &rule, entry, arena)) {
             vec_condition_free(&rule.conditions);
             vec_action_node_free(&rule.action_tree.nodes);
-            error_wrap(err, "rule[%d]", index);
+            error_wrap(diag->error, "rule[%d]", index);
             return false;
         }
         if (!vec_rule_push(rules, rule)) {
             vec_condition_free(&rule.conditions);
             vec_action_node_free(&rule.action_tree.nodes);
-            error_set(err, "rule[%d]: out of memory", index);
+            error_set(diag->error, "rule[%d]: out of memory", index);
             return false;
         }
     }
@@ -943,14 +923,12 @@ static void resolve_arg(char *out, int out_size, const char *arg, ActionContext 
     out[out_pos] = '\0';
 }
 
-static bool execute_set_attr_action(
-    ErrorState *err, DebugState *dbg, Allocator *alloc, const ActionNode *node, ActionContext context)
+static bool execute_set_attr_action(Diag *diag, Allocator *alloc, const ActionNode *node, ActionContext context)
 {
-    (void)err;
     char attr_name[MAX_ARG];
     Entity *target = resolve_target(node->argument.ptr, context, attr_name, MAX_ARG);
     if (!target) {
-        debug_log(dbg, "set_attr: target not found: %s", node->argument.ptr);
+        debug_log(diag->debug, "set_attr: target not found: %s", node->argument.ptr);
         return true;
     }
     int target_index = (int)(target - context.entities);
@@ -982,14 +960,12 @@ static bool execute_set_attr_action(
     return true;
 }
 
-static bool execute_add_attr_action(
-    ErrorState *err, DebugState *dbg, Allocator *alloc, const ActionNode *node, ActionContext context)
+static bool execute_add_attr_action(Diag *diag, Allocator *alloc, const ActionNode *node, ActionContext context)
 {
-    (void)err;
     char attr_name[MAX_ARG];
     Entity *target = resolve_target(node->argument.ptr, context, attr_name, MAX_ARG);
     if (!target) {
-        debug_log(dbg, "add_attr: target not found: %s", node->argument.ptr);
+        debug_log(diag->debug, "add_attr: target not found: %s", node->argument.ptr);
         return true;
     }
     int target_index = (int)(target - context.entities);
@@ -1019,14 +995,12 @@ static bool execute_add_attr_action(
     return true;
 }
 
-static bool execute_toggle_attr_action(
-    ErrorState *err, DebugState *dbg, Allocator *alloc, const ActionNode *node, ActionContext context)
+static bool execute_toggle_attr_action(Diag *diag, Allocator *alloc, const ActionNode *node, ActionContext context)
 {
-    (void)err;
     char attr_name[MAX_ARG];
     Entity *target = resolve_target(node->argument.ptr, context, attr_name, MAX_ARG);
     if (!target) {
-        debug_log(dbg, "toggle_attr: target not found: %s", node->argument.ptr);
+        debug_log(diag->debug, "toggle_attr: target not found: %s", node->argument.ptr);
         return true;
     }
     int target_index = (int)(target - context.entities);
@@ -1035,10 +1009,8 @@ static bool execute_toggle_attr_action(
     return attr_set_bool(alloc, &target->attrs, attr_name, !current_val);
 }
 
-static bool execute_set_var_action(
-    ErrorState *err, DebugState *dbg, Allocator *alloc, const ActionNode *node, ActionContext context)
+static bool execute_set_var_action(Diag *diag, Allocator *alloc, const ActionNode *node, ActionContext context)
 {
-    (void)err;
     char resolved_value[MAX_ARG];
     resolve_arg(resolved_value, MAX_ARG, node->second_argument.ptr, context);
 
@@ -1052,7 +1024,7 @@ static bool execute_set_var_action(
         var_name = node->argument.ptr;
     }
     if (!target_vars) {
-        debug_log(dbg, "set_var: no var storage for '%s'", node->argument.ptr);
+        debug_log(diag->debug, "set_var: no var storage for '%s'", node->argument.ptr);
         return true;
     }
     if (strcmp(resolved_value, "true") == 0) {
@@ -1072,12 +1044,12 @@ static bool execute_set_var_action(
     return attr_set_string(alloc, target_vars, (AttrStringPair){.name = var_name, .value = resolved_value});
 }
 
-static bool push_branch_nodes(
-    ErrorState *err, DebugState *dbg, const ActionNode **exec_stack, int *stack_top, const ActionNode *nodes, int count)
+static bool
+push_branch_nodes(Diag *diag, const ActionNode **exec_stack, int *stack_top, const ActionNode *nodes, int count)
 {
     for (int push_index = count - 1; push_index >= 0; push_index--) {
         if (*stack_top >= MAX_EXEC_STACK) {
-            error_set(err, "action execution stack overflow");
+            error_set(diag->error, "action execution stack overflow");
             return false;
         }
         exec_stack[(*stack_top)++] = &nodes[push_index];
@@ -1085,14 +1057,9 @@ static bool push_branch_nodes(
     return true;
 }
 
-static bool expand_if_else_node(ErrorState *err,
-                                DebugState *dbg,
-                                const ActionNode *node,
-                                ActionContext context,
-                                const ActionNode **exec_stack,
-                                int *stack_top)
+static bool expand_if_else_node(
+    Diag *diag, const ActionNode *node, ActionContext context, const ActionNode **exec_stack, int *stack_top)
 {
-    (void)dbg;
     ConditionContext cond_ctx = {
         .entity = context.entity,
         .entity_index = context.entity_index,
@@ -1113,29 +1080,27 @@ static bool expand_if_else_node(ErrorState *err,
         branch = node->else_children;
         branch_count = node->else_child_count;
     }
-    return push_branch_nodes(err, dbg, exec_stack, stack_top, branch, branch_count);
+    return push_branch_nodes(diag, exec_stack, stack_top, branch, branch_count);
 }
 
-static bool expand_repeat_node(
-    ErrorState *err, DebugState *dbg, const ActionNode *node, const ActionNode **exec_stack, int *stack_top)
+static bool expand_repeat_node(Diag *diag, const ActionNode *node, const ActionNode **exec_stack, int *stack_top)
 {
     int repeat_count = (int)strtol(node->argument.ptr, nullptr, RADIX_DECIMAL);
     if (repeat_count <= 0) {
         repeat_count = 1;
     }
     for (int repeat_index = 0; repeat_index < repeat_count; repeat_index++) {
-        if (!push_branch_nodes(err, dbg, exec_stack, stack_top, node->children, node->child_count)) {
+        if (!push_branch_nodes(diag, exec_stack, stack_top, node->children, node->child_count)) {
             return false;
         }
     }
     return true;
 }
 
-static bool execute_create_timer_action(
-    ErrorState *err, DebugState *dbg, const ActionNode *node, ActionContext context, bool periodic)
+static bool execute_create_timer_action(Diag *diag, const ActionNode *node, ActionContext context, bool periodic)
 {
     if (!context.timers) {
-        debug_log(dbg, "create_timer: no timer list in context");
+        debug_log(diag->debug, "create_timer: no timer list in context");
         return true;
     }
     float duration = node->second_argument.len > 0 ? strtof(node->second_argument.ptr, nullptr) : 1.0F;
@@ -1157,18 +1122,16 @@ static bool execute_create_timer_action(
         .periodic = periodic,
     };
     if (!vec_timer_push(context.timers, new_timer)) {
-        error_set(err, "create_timer: allocation failed");
+        error_set(diag->error, "create_timer: allocation failed");
         return false;
     }
     return true;
 }
 
-static bool
-execute_destroy_timer_action(ErrorState *err, DebugState *dbg, const ActionNode *node, ActionContext context)
+static bool execute_destroy_timer_action(Diag *diag, const ActionNode *node, ActionContext context)
 {
-    (void)err;
     if (!context.timers) {
-        debug_log(dbg, "destroy_timer: no timer list in context");
+        debug_log(diag->debug, "destroy_timer: no timer list in context");
         return true;
     }
     for (int timer_index = 0; timer_index < context.timers->count; timer_index++) {
@@ -1182,24 +1145,23 @@ execute_destroy_timer_action(ErrorState *err, DebugState *dbg, const ActionNode 
     return true;
 }
 
-static bool dispatch_simple_action(
-    ErrorState *err, DebugState *dbg, Allocator *alloc, const ActionNode *node, ActionContext context)
+static bool dispatch_simple_action(Diag *diag, Allocator *alloc, const ActionNode *node, ActionContext context)
 {
     switch (node->type) {
     case ACTION_SET_FLAG:
-        flag_set(err, dbg, alloc, context.flags, node->argument.ptr);
+        flag_set(diag, alloc, context.flags, node->argument.ptr);
         return true;
     case ACTION_CLEAR_FLAG:
         flag_clear(alloc, context.flags, node->argument.ptr);
         return true;
     case ACTION_SET_ATTR:
-        return execute_set_attr_action(err, dbg, alloc, node, context);
+        return execute_set_attr_action(diag, alloc, node, context);
     case ACTION_ADD_ATTR:
-        return execute_add_attr_action(err, dbg, alloc, node, context);
+        return execute_add_attr_action(diag, alloc, node, context);
     case ACTION_TOGGLE_ATTR:
-        return execute_toggle_attr_action(err, dbg, alloc, node, context);
+        return execute_toggle_attr_action(diag, alloc, node, context);
     case ACTION_SET_VAR:
-        return execute_set_var_action(err, dbg, alloc, node, context);
+        return execute_set_var_action(diag, alloc, node, context);
     case ACTION_DESTROY: {
         TriggerEvent destroy_event = {.type = TRIGGER_ON_DESTROY, .entity_index = context.entity_index};
         (void)trigger_event_queue_push(context.event_queue, destroy_event);
@@ -1211,24 +1173,23 @@ static bool dispatch_simple_action(
         return trigger_event_queue_push(context.event_queue, fire);
     }
     case ACTION_CREATE_TIMER:
-        return execute_create_timer_action(err, dbg, node, context, false);
+        return execute_create_timer_action(diag, node, context, false);
     case ACTION_CREATE_TIMER_PERIODIC:
-        return execute_create_timer_action(err, dbg, node, context, true);
+        return execute_create_timer_action(diag, node, context, true);
     case ACTION_DESTROY_TIMER:
-        return execute_destroy_timer_action(err, dbg, node, context);
+        return execute_destroy_timer_action(diag, node, context);
     default:
-        debug_log(dbg, "action stub: %s (not yet implemented)", node->argument.ptr);
+        debug_log(diag->debug, "action stub: %s (not yet implemented)", node->argument.ptr);
         return true;
     }
 }
 
 /* Forward declaration — execute_action_nodes and execute_for_each_node are mutually recursive */
-static bool execute_action_nodes(
-    ErrorState *err, DebugState *dbg, Allocator *alloc, const ActionNode *nodes, int count, ActionContext context);
+static bool
+execute_action_nodes(Diag *diag, Allocator *alloc, const ActionNode *nodes, int count, ActionContext context);
 
 // NOLINTBEGIN(misc-no-recursion) -- mutually recursive; bounded by for_each nesting depth
-static bool
-execute_for_each_node(ErrorState *err, DebugState *dbg, Allocator *alloc, const ActionNode *node, ActionContext context)
+static bool execute_for_each_node(Diag *diag, Allocator *alloc, const ActionNode *node, ActionContext context)
 {
     bool has_bind = node->second_argument.len > 0;
     for (int entity_index = 0; entity_index < context.entity_count; entity_index++) {
@@ -1258,7 +1219,7 @@ execute_for_each_node(ErrorState *err, DebugState *dbg, Allocator *alloc, const 
             };
             ActionContext iter_ctx = context;
             iter_ctx.scope = &iter_scope;
-            if (!execute_action_nodes(err, dbg, alloc, node->children, node->child_count, iter_ctx)) {
+            if (!execute_action_nodes(diag, alloc, node->children, node->child_count, iter_ctx)) {
                 return false;
             }
         } else {
@@ -1266,7 +1227,7 @@ execute_for_each_node(ErrorState *err, DebugState *dbg, Allocator *alloc, const 
             ActionContext iter_ctx = context;
             iter_ctx.entity = &context.entities[entity_index];
             iter_ctx.entity_index = entity_index;
-            if (!execute_action_nodes(err, dbg, alloc, node->children, node->child_count, iter_ctx)) {
+            if (!execute_action_nodes(diag, alloc, node->children, node->child_count, iter_ctx)) {
                 return false;
             }
         }
@@ -1274,15 +1235,14 @@ execute_for_each_node(ErrorState *err, DebugState *dbg, Allocator *alloc, const 
     return true;
 }
 
-static bool
-execute_call_node(ErrorState *err, DebugState *dbg, Allocator *alloc, const ActionNode *node, ActionContext context)
+static bool execute_call_node(Diag *diag, Allocator *alloc, const ActionNode *node, ActionContext context)
 {
     if (context.call_depth >= MAX_CALL_DEPTH) {
-        error_set(err, "call: max depth %d exceeded", MAX_CALL_DEPTH);
+        error_set(diag->error, "call: max depth %d exceeded", MAX_CALL_DEPTH);
         return false;
     }
     if (!context.subroutines) {
-        debug_log(dbg, "call: no subroutine table");
+        debug_log(diag->debug, "call: no subroutine table");
         return true;
     }
     for (int sub_index = 0; sub_index < context.subroutines->count; sub_index++) {
@@ -1290,22 +1250,22 @@ execute_call_node(ErrorState *err, DebugState *dbg, Allocator *alloc, const Acti
         if (strcmp(sub->name.ptr, node->argument.ptr) == 0) {
             ActionContext sub_ctx = context;
             sub_ctx.call_depth++;
-            return execute_action_nodes(err, dbg, alloc, sub->action_tree.nodes.data, sub->action_tree.nodes.count,
+            return execute_action_nodes(diag, alloc, sub->action_tree.nodes.data, sub->action_tree.nodes.count,
                                         sub_ctx);
         }
     }
-    debug_log(dbg, "call: subroutine '%s' not found", node->argument.ptr);
+    debug_log(diag->debug, "call: subroutine '%s' not found", node->argument.ptr);
     return true;
 }
 
-static bool execute_action_nodes(
-    ErrorState *err, DebugState *dbg, Allocator *alloc, const ActionNode *nodes, int count, ActionContext context)
+static bool
+execute_action_nodes(Diag *diag, Allocator *alloc, const ActionNode *nodes, int count, ActionContext context)
 {
     const ActionNode *exec_stack[MAX_EXEC_STACK];
     int stack_top = 0;
     for (int index = count - 1; index >= 0; index--) {
         if (stack_top >= MAX_EXEC_STACK) {
-            error_set(err, "action execution stack overflow");
+            error_set(diag->error, "action execution stack overflow");
             return false;
         }
         exec_stack[stack_top++] = &nodes[index];
@@ -1314,22 +1274,22 @@ static bool execute_action_nodes(
     while (stack_top > 0) {
         const ActionNode *current = exec_stack[--stack_top];
         if (current->type == ACTION_IF_ELSE) {
-            if (!expand_if_else_node(err, dbg, current, context, exec_stack, &stack_top)) {
+            if (!expand_if_else_node(diag, current, context, exec_stack, &stack_top)) {
                 return false;
             }
         } else if (current->type == ACTION_REPEAT) {
-            if (!expand_repeat_node(err, dbg, current, exec_stack, &stack_top)) {
+            if (!expand_repeat_node(diag, current, exec_stack, &stack_top)) {
                 return false;
             }
         } else if (current->type == ACTION_FOR_EACH) {
-            if (!execute_for_each_node(err, dbg, alloc, current, context)) {
+            if (!execute_for_each_node(diag, alloc, current, context)) {
                 return false;
             }
         } else if (current->type == ACTION_CALL) {
-            if (!execute_call_node(err, dbg, alloc, current, context)) {
+            if (!execute_call_node(diag, alloc, current, context)) {
                 return false;
             }
-        } else if (!dispatch_simple_action(err, dbg, alloc, current, context)) {
+        } else if (!dispatch_simple_action(diag, alloc, current, context)) {
             return false;
         }
     }
@@ -1337,10 +1297,9 @@ static bool execute_action_nodes(
 }
 // NOLINTEND(misc-no-recursion)
 
-bool action_node_execute(
-    ErrorState *err, DebugState *dbg, Allocator *alloc, const ActionNode *node, ActionContext context)
+bool action_node_execute(Diag *diag, Allocator *alloc, const ActionNode *node, ActionContext context)
 {
-    return execute_action_nodes(err, dbg, alloc, node, 1, context);
+    return execute_action_nodes(diag, alloc, node, 1, context);
 }
 
 /* ---- Evaluation loop ---- */
@@ -1359,8 +1318,7 @@ static bool rule_triggered_by_events(const Rule *rule, int entity_index, const T
     return false;
 }
 
-static void evaluate_entity_rules(ErrorState *err,
-                                  DebugState *dbg,
+static void evaluate_entity_rules(Diag *diag,
                                   Allocator *alloc,
                                   Entity *entity,
                                   int entity_index,
@@ -1408,24 +1366,23 @@ static void evaluate_entity_rules(ErrorState *err,
             .timers = timers,
             .entity_defaults = entity_defaults,
         };
-        debug_log(dbg, "Rule triggered for entity %d (type: %s), rule %d", entity_index, entity->blueprint_name.ptr,
-                  rule_index);
+        debug_log(diag->debug, "Rule triggered for entity %d (type: %s), rule %d", entity_index,
+                  entity->blueprint_name.ptr, rule_index);
         if (!conditions_evaluate(rule->conditions.data, rule->conditions.count, cond_ctx)) {
-            debug_log(dbg, "Conditions not met for rule %d on entity %d (type: %s)", rule_index, entity_index,
+            debug_log(diag->debug, "Conditions not met for rule %d on entity %d (type: %s)", rule_index, entity_index,
                       entity->blueprint_name.ptr);
             continue;
         }
-        debug_log(dbg, "Executing actions for rule %d on entity %d (type: %s)", rule_index, entity_index,
+        debug_log(diag->debug, "Executing actions for rule %d on entity %d (type: %s)", rule_index, entity_index,
                   entity->blueprint_name.ptr);
         for (int action_index = 0; action_index < rule->action_tree.nodes.count; action_index++) {
-            (void)action_node_execute(err, dbg, alloc, &rule->action_tree.nodes.data[action_index], act_ctx);
+            (void)action_node_execute(diag, alloc, &rule->action_tree.nodes.data[action_index], act_ctx);
         }
         attr_set_free(alloc, &local_vars);
     }
 }
 
-void rules_evaluate_batch(ErrorState *err,
-                          DebugState *dbg,
+void rules_evaluate_batch(Diag *diag,
                           Allocator *alloc,
                           Entity *entities,
                           int entity_count,
@@ -1463,7 +1420,7 @@ void rules_evaluate_batch(ErrorState *err,
                     continue;
                 }
             }
-            evaluate_entity_rules(err, dbg, alloc, entity, entity_index, entities, entity_count, flags, global_vars,
+            evaluate_entity_rules(diag, alloc, entity, entity_index, entities, entity_count, flags, global_vars,
                                   &pending_events, &next_events, rule_table, subroutines, timers, entity_defaults);
         }
 
@@ -1473,12 +1430,7 @@ void rules_evaluate_batch(ErrorState *err,
 
 /* ---- Subroutine parsing ---- */
 
-bool subroutines_parse(ErrorState *err,
-                       DebugState *dbg,
-                       Allocator *alloc,
-                       vec_subroutine *subroutines,
-                       toml_table_t *toml_root,
-                       Arena *arena)
+bool subroutines_parse(Diag *diag, Allocator *alloc, vec_subroutine *subroutines, toml_table_t *toml_root, Arena *arena)
 {
     toml_array_t *sub_array = toml_array_in(toml_root, "subroutine");
     if (!sub_array) {
@@ -1488,12 +1440,12 @@ bool subroutines_parse(ErrorState *err,
     for (int index = 0; index < count; index++) {
         toml_table_t *sub_table = toml_table_at(sub_array, index);
         if (!sub_table) {
-            error_set(err, "subroutine[%d]: expected table", index);
+            error_set(diag->error, "subroutine[%d]: expected table", index);
             return false;
         }
         toml_datum_t name_datum = toml_string_in(sub_table, "name");
         if (!name_datum.ok) {
-            error_set(err, "subroutine[%d]: missing 'name'", index);
+            error_set(diag->error, "subroutine[%d]: missing 'name'", index);
             return false;
         }
         /* Push a name-only stub first so the action_tree lives inside the vec element
@@ -1503,20 +1455,21 @@ bool subroutines_parse(ErrorState *err,
         bool alloc_ok = str_from_cstr(alloc, &stub.name, name_datum.u.s);
         free(name_datum.u.s);
         if (!alloc_ok) {
-            error_set(err, "subroutine[%d]: allocation failed for name", index);
+            error_set(diag->error, "subroutine[%d]: allocation failed for name", index);
             return false;
         }
         if (!vec_subroutine_push(subroutines, stub)) {
-            error_set(err, "subroutine[%d]: push failed", index);
+            error_set(diag->error, "subroutine[%d]: push failed", index);
             return false;
         }
         Subroutine *pushed = &subroutines->data[subroutines->count - 1];
-        if (!parse_action_nodes_into(err, dbg, alloc, &pushed->action_tree.nodes, toml_array_in(sub_table, "actions"),
+        if (!parse_action_nodes_into(diag, alloc, &pushed->action_tree.nodes, toml_array_in(sub_table, "actions"),
                                      arena)) {
-            error_wrap(err, "subroutine '%s'", pushed->name.ptr);
+            error_wrap(diag->error, "subroutine '%s'", pushed->name.ptr);
             return false;
         }
-        debug_log(dbg, "subroutine: parsed '%s' (%d actions)", pushed->name.ptr, pushed->action_tree.nodes.count);
+        debug_log(diag->debug, "subroutine: parsed '%s' (%d actions)", pushed->name.ptr,
+                  pushed->action_tree.nodes.count);
     }
     return true;
 }
