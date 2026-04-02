@@ -1,7 +1,16 @@
+#include "fff.h"
 #include "unity.h"
 
-#include "attribute.h"
-#include "test_helpers.h"
+#include "../src/strv.c"      // NOLINT(bugprone-suspicious-include)
+#include "../src/str.c"       // NOLINT(bugprone-suspicious-include)
+#include "../src/attribute.c" // NOLINT(bugprone-suspicious-include)
+
+DEFINE_FFF_GLOBALS;
+
+#include "test_heap_alloc.h"
+
+void setUp(void) {}
+void tearDown(void) {}
 
 void test_attr_set_and_get_float(void)
 {
@@ -13,7 +22,7 @@ void test_attr_set_and_get_float(void)
     TEST_ASSERT_NOT_NULL(entry);
     TEST_ASSERT_EQUAL_INT(ATTR_FLOAT, entry->type);
     TEST_ASSERT_FLOAT_WITHIN(0.01F, 80.0F, entry->value.f);
-    test_attr_set_free(&set);
+    attr_set_free(&test_heap_alloc, &set);
 }
 
 void test_attr_set_and_get_int(void)
@@ -22,7 +31,7 @@ void test_attr_set_and_get_int(void)
     TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, &set, "health", 10));
 
     TEST_ASSERT_EQUAL_INT(10, attr_get_int(&set, "health", 0));
-    test_attr_set_free(&set);
+    attr_set_free(&test_heap_alloc, &set);
 }
 
 void test_attr_set_and_get_bool(void)
@@ -31,7 +40,7 @@ void test_attr_set_and_get_bool(void)
     TEST_ASSERT_TRUE(attr_set_bool(&test_heap_alloc, &set, "is_locked", true));
 
     TEST_ASSERT_TRUE(attr_get_bool(&set, "is_locked", false));
-    test_attr_set_free(&set);
+    attr_set_free(&test_heap_alloc, &set);
 }
 
 void test_attr_set_and_get_string(void)
@@ -41,7 +50,7 @@ void test_attr_set_and_get_string(void)
         attr_set_string(&test_heap_alloc, &set, (AttrStringPair){.name = "loot_table", .value = "common"}));
 
     TEST_ASSERT_EQUAL_STRING("common", attr_get_string(&set, "loot_table"));
-    test_attr_set_free(&set);
+    attr_set_free(&test_heap_alloc, &set);
 }
 
 void test_attr_overwrite_existing(void)
@@ -52,7 +61,7 @@ void test_attr_overwrite_existing(void)
 
     TEST_ASSERT_EQUAL_INT(1, set.entries.count);
     TEST_ASSERT_EQUAL_INT(5, attr_get_int(&set, "health", 0));
-    test_attr_set_free(&set);
+    attr_set_free(&test_heap_alloc, &set);
 }
 
 void test_attr_get_missing_returns_fallback(void)
@@ -63,7 +72,7 @@ void test_attr_get_missing_returns_fallback(void)
     TEST_ASSERT_EQUAL_INT(42, attr_get_int(&set, "missing", 42));
     TEST_ASSERT_FALSE(attr_get_bool(&set, "missing", false));
     TEST_ASSERT_NULL(attr_get_string(&set, "missing"));
-    test_attr_set_free(&set);
+    attr_set_free(&test_heap_alloc, &set);
 }
 
 void test_attr_push_many_entries(void)
@@ -81,7 +90,7 @@ void test_attr_push_many_entries(void)
         snprintf(name, sizeof(name), "attr_%d", index);
         TEST_ASSERT_EQUAL_INT(index, attr_get_int(&set, name, -1));
     }
-    test_attr_set_free(&set);
+    attr_set_free(&test_heap_alloc, &set);
 }
 
 void test_attr_type_change(void)
@@ -94,7 +103,7 @@ void test_attr_type_change(void)
     const Attribute *entry = attr_get(&set, "value");
     TEST_ASSERT_EQUAL_INT(ATTR_FLOAT, entry->type);
     TEST_ASSERT_FLOAT_WITHIN(0.01F, 3.14F, entry->value.f);
-    test_attr_set_free(&set);
+    attr_set_free(&test_heap_alloc, &set);
 }
 
 void test_attr_scoped_instance_overrides_blueprint(void)
@@ -120,8 +129,8 @@ void test_attr_scoped_instance_overrides_blueprint(void)
     /* Missing in both */
     const Attribute *missing = attr_get_scoped(&instance, &blueprint, "nonexistent");
     TEST_ASSERT_NULL(missing);
-    test_attr_set_free(&blueprint);
-    test_attr_set_free(&instance);
+    attr_set_free(&test_heap_alloc, &blueprint);
+    attr_set_free(&test_heap_alloc, &instance);
 }
 
 void test_attr_multiple_types(void)
@@ -137,7 +146,7 @@ void test_attr_multiple_types(void)
     TEST_ASSERT_EQUAL_INT(10, attr_get_int(&set, "health", 0));
     TEST_ASSERT_TRUE(attr_get_bool(&set, "visible", false));
     TEST_ASSERT_EQUAL_STRING("chest", attr_get_string(&set, "name"));
-    test_attr_set_free(&set);
+    attr_set_free(&test_heap_alloc, &set);
 }
 
 void test_attr_get_scoped_float(void)
@@ -161,8 +170,8 @@ void test_attr_get_scoped_float(void)
     /* Missing in both returns fallback */
     TEST_ASSERT_FLOAT_WITHIN(0.01F, 99.0F, attr_get_scoped_float(&instance, &blueprint, "missing", 99.0F));
 
-    test_attr_set_free(&blueprint);
-    test_attr_set_free(&instance);
+    attr_set_free(&test_heap_alloc, &blueprint);
+    attr_set_free(&test_heap_alloc, &instance);
 }
 
 void test_attr_get_scoped_int(void)
@@ -183,8 +192,8 @@ void test_attr_get_scoped_int(void)
     /* Float-to-int coercion from blueprint */
     TEST_ASSERT_EQUAL_INT(3, attr_get_scoped_int(&instance, &blueprint, "level", 0));
 
-    test_attr_set_free(&blueprint);
-    test_attr_set_free(&instance);
+    attr_set_free(&test_heap_alloc, &blueprint);
+    attr_set_free(&test_heap_alloc, &instance);
 }
 
 void test_attr_get_scoped_bool(void)
@@ -205,8 +214,8 @@ void test_attr_get_scoped_bool(void)
     /* Missing returns fallback */
     TEST_ASSERT_FALSE(attr_get_scoped_bool(&instance, &blueprint, "active", false));
 
-    test_attr_set_free(&blueprint);
-    test_attr_set_free(&instance);
+    attr_set_free(&test_heap_alloc, &blueprint);
+    attr_set_free(&test_heap_alloc, &instance);
 }
 
 void test_attr_get_scoped_string(void)
@@ -230,8 +239,8 @@ void test_attr_get_scoped_string(void)
     /* Missing returns nullptr */
     TEST_ASSERT_NULL(attr_get_scoped_string(&instance, &blueprint, "missing"));
 
-    test_attr_set_free(&blueprint);
-    test_attr_set_free(&instance);
+    attr_set_free(&test_heap_alloc, &blueprint);
+    attr_set_free(&test_heap_alloc, &instance);
 }
 
 void test_attr_get_scoped_null_blueprint(void)
@@ -250,5 +259,27 @@ void test_attr_get_scoped_null_blueprint(void)
     const Attribute *not_found = attr_get_scoped(&instance, nullptr, "missing");
     TEST_ASSERT_NULL(not_found);
 
-    test_attr_set_free(&instance);
+    attr_set_free(&test_heap_alloc, &instance);
+}
+
+int main(void)
+{
+    test_helpers_init();
+    UNITY_BEGIN();
+    RUN_TEST(test_attr_set_and_get_float);
+    RUN_TEST(test_attr_set_and_get_int);
+    RUN_TEST(test_attr_set_and_get_bool);
+    RUN_TEST(test_attr_set_and_get_string);
+    RUN_TEST(test_attr_overwrite_existing);
+    RUN_TEST(test_attr_get_missing_returns_fallback);
+    RUN_TEST(test_attr_push_many_entries);
+    RUN_TEST(test_attr_type_change);
+    RUN_TEST(test_attr_scoped_instance_overrides_blueprint);
+    RUN_TEST(test_attr_multiple_types);
+    RUN_TEST(test_attr_get_scoped_float);
+    RUN_TEST(test_attr_get_scoped_int);
+    RUN_TEST(test_attr_get_scoped_bool);
+    RUN_TEST(test_attr_get_scoped_string);
+    RUN_TEST(test_attr_get_scoped_null_blueprint);
+    return UNITY_END();
 }

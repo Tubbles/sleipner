@@ -4,23 +4,6 @@
 void setUp(void) {}
 void tearDown(void) {}
 
-/* attribute_test.c */
-void test_attr_set_and_get_float(void);
-void test_attr_set_and_get_int(void);
-void test_attr_set_and_get_bool(void);
-void test_attr_set_and_get_string(void);
-void test_attr_overwrite_existing(void);
-void test_attr_get_missing_returns_fallback(void);
-void test_attr_push_many_entries(void);
-void test_attr_type_change(void);
-void test_attr_scoped_instance_overrides_blueprint(void);
-void test_attr_multiple_types(void);
-void test_attr_get_scoped_float(void);
-void test_attr_get_scoped_int(void);
-void test_attr_get_scoped_bool(void);
-void test_attr_get_scoped_string(void);
-void test_attr_get_scoped_null_blueprint(void);
-
 /* blueprint_test.c */
 void test_blueprint_load_single(void);
 void test_blueprint_load_multiple(void);
@@ -35,26 +18,6 @@ void test_blueprint_child_parsed(void);
 void test_blueprint_multiple_children(void);
 void test_blueprint_child_no_tag(void);
 void test_blueprint_child_default_offset(void);
-
-/* entity_test.c */
-void test_entity_init_from_blueprint(void);
-void test_entity_get_attr_from_blueprint(void);
-void test_entity_instance_overrides_blueprint(void);
-void test_entity_get_missing_attr(void);
-void test_entity_int_float_coercion(void);
-void test_entity_no_blueprint(void);
-void test_entity_solid_from_collision(void);
-void test_entity_find_by_tag_self(void);
-void test_entity_find_by_tag_parent(void);
-void test_entity_find_by_tag_parent_of_root(void);
-void test_entity_find_by_tag_root(void);
-void test_entity_find_by_tag_custom(void);
-void test_entity_find_by_tag_not_found(void);
-void test_entity_is_visible_standalone(void);
-void test_entity_is_visible_parent_hidden(void);
-void test_entity_is_visible_both_visible(void);
-void test_entity_is_active_parent_inactive(void);
-void test_entity_is_active_both_active(void);
 
 /* game_test.c */
 void test_game_init_defaults(void);
@@ -88,10 +51,6 @@ void test_integration_player_entity_spawns(void);
 void test_integration_on_spawn_trigger_fires_on_load(void);
 void test_integration_enter_trigger_fires_on_overlap(void);
 void test_integration_enter_trigger_fires_only_once(void);
-
-/* toml_str_test.c */
-void test_toml_str_content_is_copied(void);
-void test_toml_str_datum_nulled_after_call(void);
 
 /* toml_emitter_test.c */
 void test_toml_emit_blueprints(void);
@@ -254,22 +213,6 @@ int main(void)
     test_helpers_init();
     UNITY_BEGIN();
 
-    RUN_TEST(test_attr_set_and_get_float);
-    RUN_TEST(test_attr_set_and_get_int);
-    RUN_TEST(test_attr_set_and_get_bool);
-    RUN_TEST(test_attr_set_and_get_string);
-    RUN_TEST(test_attr_overwrite_existing);
-    RUN_TEST(test_attr_get_missing_returns_fallback);
-    RUN_TEST(test_attr_push_many_entries);
-    RUN_TEST(test_attr_type_change);
-    RUN_TEST(test_attr_scoped_instance_overrides_blueprint);
-    RUN_TEST(test_attr_multiple_types);
-    RUN_TEST(test_attr_get_scoped_float);
-    RUN_TEST(test_attr_get_scoped_int);
-    RUN_TEST(test_attr_get_scoped_bool);
-    RUN_TEST(test_attr_get_scoped_string);
-    RUN_TEST(test_attr_get_scoped_null_blueprint);
-
     RUN_TEST(test_blueprint_load_single);
     RUN_TEST(test_blueprint_load_multiple);
     RUN_TEST(test_blueprint_find);
@@ -283,25 +226,6 @@ int main(void)
     RUN_TEST(test_blueprint_multiple_children);
     RUN_TEST(test_blueprint_child_no_tag);
     RUN_TEST(test_blueprint_child_default_offset);
-
-    RUN_TEST(test_entity_init_from_blueprint);
-    RUN_TEST(test_entity_get_attr_from_blueprint);
-    RUN_TEST(test_entity_instance_overrides_blueprint);
-    RUN_TEST(test_entity_get_missing_attr);
-    RUN_TEST(test_entity_int_float_coercion);
-    RUN_TEST(test_entity_no_blueprint);
-    RUN_TEST(test_entity_solid_from_collision);
-    RUN_TEST(test_entity_find_by_tag_self);
-    RUN_TEST(test_entity_find_by_tag_parent);
-    RUN_TEST(test_entity_find_by_tag_parent_of_root);
-    RUN_TEST(test_entity_find_by_tag_root);
-    RUN_TEST(test_entity_find_by_tag_custom);
-    RUN_TEST(test_entity_find_by_tag_not_found);
-    RUN_TEST(test_entity_is_visible_standalone);
-    RUN_TEST(test_entity_is_visible_parent_hidden);
-    RUN_TEST(test_entity_is_visible_both_visible);
-    RUN_TEST(test_entity_is_active_parent_inactive);
-    RUN_TEST(test_entity_is_active_both_active);
 
     RUN_TEST(test_game_init_defaults);
     RUN_TEST(test_game_update_increments_frame);
@@ -411,9 +335,6 @@ int main(void)
     RUN_TEST(test_var_condition_falsy_when_unset);
     RUN_TEST(test_var_substitution_in_set_attr);
     RUN_TEST(test_local_var_scoped_per_rule);
-
-    RUN_TEST(test_toml_str_content_is_copied);
-    RUN_TEST(test_toml_str_datum_nulled_after_call);
 
     RUN_TEST(test_toml_emit_blueprints);
     RUN_TEST(test_toml_emit_level_with_entities);

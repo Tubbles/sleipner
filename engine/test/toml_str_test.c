@@ -1,48 +1,54 @@
+#include "fff.h"
 #include "unity.h"
 
-#include "str.h"
-#include "test_helpers.h"
-#include "toml.h"
-#include "toml_str.h"
+#include "../src/strv.c"     // NOLINT(bugprone-suspicious-include)
+#include "../src/str.c"      // NOLINT(bugprone-suspicious-include)
+#include "../src/toml_str.c" // NOLINT(bugprone-suspicious-include)
 
-/* Parse a tiny TOML table and return the string datum for key "val".
- * Caller must toml_free(table) after the test. */
-static toml_table_t *make_table_with_string(const char *value, toml_datum_t *out_datum)
+DEFINE_FFF_GLOBALS;
+
+#include "test_heap_alloc.h"
+
+#include <stdlib.h>
+#include <string.h>
+
+void setUp(void) {}
+void tearDown(void) {}
+
+/* Build a toml_datum_t with .ok=1 and .u.s = strdup(value).
+ * This mirrors what toml_string_in() returns — a malloc'd copy. */
+static toml_datum_t make_string_datum(const char *value)
 {
-    char src[128];
-    snprintf(src, sizeof(src), "val = \"%s\"\n", value);
-    char errbuf[64] = {0};
-    toml_table_t *table = toml_parse(src, errbuf, sizeof(errbuf));
-    if (!table) {
-        return nullptr;
-    }
-    *out_datum = toml_string_in(table, "val");
-    return table;
+    toml_datum_t datum = {0};
+    datum.ok = 1;
+    datum.u.s = strdup(value);
+    return datum;
 }
 
 void test_toml_str_content_is_copied(void)
 {
-    toml_datum_t datum = {0};
-    toml_table_t *table = make_table_with_string("hello", &datum);
-    TEST_ASSERT_NOT_NULL(table);
-    TEST_ASSERT_TRUE(datum.ok);
+    toml_datum_t datum = make_string_datum("hello");
     Str str = {0};
     TEST_ASSERT_TRUE(str_from_toml_datum(&test_heap_alloc, &str, &datum));
     TEST_ASSERT_EQUAL_STRING("hello", str.ptr);
     TEST_ASSERT_EQUAL_size_t(5, str.len);
     str_free(&test_heap_alloc, &str);
-    toml_free(table);
 }
 
 void test_toml_str_datum_nulled_after_call(void)
 {
-    toml_datum_t datum = {0};
-    toml_table_t *table = make_table_with_string("world", &datum);
-    TEST_ASSERT_NOT_NULL(table);
-    TEST_ASSERT_TRUE(datum.ok);
+    toml_datum_t datum = make_string_datum("world");
     Str str = {0};
     TEST_ASSERT_TRUE(str_from_toml_datum(&test_heap_alloc, &str, &datum));
     TEST_ASSERT_NULL(datum.u.s);
     str_free(&test_heap_alloc, &str);
-    toml_free(table);
+}
+
+int main(void)
+{
+    test_helpers_init();
+    UNITY_BEGIN();
+    RUN_TEST(test_toml_str_content_is_copied);
+    RUN_TEST(test_toml_str_datum_nulled_after_call);
+    return UNITY_END();
 }

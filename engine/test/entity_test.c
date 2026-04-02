@@ -1,55 +1,86 @@
+#include "fff.h"
 #include "unity.h"
 
-#include "attribute.h"
-#include "blueprint.h"
-#include "entity.h"
-#include "str.h"
-#include "strv.h"
-#include "test_helpers.h"
+#include "../src/strv.c"      // NOLINT(bugprone-suspicious-include)
+#include "../src/str.c"       // NOLINT(bugprone-suspicious-include)
+#include "../src/attribute.c" // NOLINT(bugprone-suspicious-include)
+#include "../src/entity.c"    // NOLINT(bugprone-suspicious-include)
+
+DEFINE_FFF_GLOBALS;
+
+#include "test_heap_alloc.h"
 
 #include <string.h>
 
-static EntitySpec spec_from_blueprint(const Blueprint *blueprint, Texture2D *texture)
+void setUp(void) {}
+void tearDown(void) {}
+
+/* Lightweight stand-in for blueprint geometry helpers.
+ * The real functions live in blueprint.c but only read attrs — replicate
+ * that logic here so we avoid pulling in the full blueprint/rule/toml chain. */
+static Vector2 get_collision_offset(const AttrSet *attrs)
+{
+    return (Vector2){
+        attr_get_float(attrs, "collision_offset_x", 0.0F),
+        attr_get_float(attrs, "collision_offset_y", 0.0F),
+    };
+}
+
+static Vector2 get_collision_size(const AttrSet *attrs)
+{
+    return (Vector2){
+        attr_get_float(attrs, "collision_w", 0.0F),
+        attr_get_float(attrs, "collision_h", 0.0F),
+    };
+}
+
+static EntitySpec spec_from_attrs(const AttrSet *attrs, Texture2D *texture)
 {
     return (EntitySpec){
-        .blueprint_name = strv_from_cstr(attr_get_string(&blueprint->attrs, "name")),
-        .collision_offset = blueprint_get_collision_offset(blueprint),
-        .collision_size = blueprint_get_collision_size(blueprint),
+        .blueprint_name = strv_from_cstr(attr_get_string(attrs, "name")),
+        .collision_offset = get_collision_offset(attrs),
+        .collision_size = get_collision_size(attrs),
         .texture = texture,
     };
 }
 
-static Blueprint make_test_blueprint(void)
+static AttrSet make_test_blueprint_attrs(void)
 {
-    Blueprint blueprint = {0};
+    AttrSet attrs = {0};
+    TEST_ASSERT_TRUE(attr_set_string(&test_heap_alloc, &attrs, (AttrStringPair){.name = "name", .value = "chest"}));
     TEST_ASSERT_TRUE(
-        attr_set_string(&test_heap_alloc, &blueprint.attrs, (AttrStringPair){.name = "name", .value = "chest"}));
-    TEST_ASSERT_TRUE(
-        attr_set_string(&test_heap_alloc, &blueprint.attrs, (AttrStringPair){.name = "texture", .value = "chest.png"}));
-    TEST_ASSERT_TRUE(attr_set_float(&test_heap_alloc, &blueprint.attrs, "src_x", 0.0F));
-    TEST_ASSERT_TRUE(attr_set_float(&test_heap_alloc, &blueprint.attrs, "src_y", 0.0F));
-    TEST_ASSERT_TRUE(attr_set_float(&test_heap_alloc, &blueprint.attrs, "src_w", 16.0F));
-    TEST_ASSERT_TRUE(attr_set_float(&test_heap_alloc, &blueprint.attrs, "src_h", 16.0F));
-    TEST_ASSERT_TRUE(attr_set_float(&test_heap_alloc, &blueprint.attrs, "collision_offset_x", 2.0F));
-    TEST_ASSERT_TRUE(attr_set_float(&test_heap_alloc, &blueprint.attrs, "collision_offset_y", 4.0F));
-    TEST_ASSERT_TRUE(attr_set_float(&test_heap_alloc, &blueprint.attrs, "collision_w", 12.0F));
-    TEST_ASSERT_TRUE(attr_set_float(&test_heap_alloc, &blueprint.attrs, "collision_h", 8.0F));
+        attr_set_string(&test_heap_alloc, &attrs, (AttrStringPair){.name = "texture", .value = "chest.png"}));
+    TEST_ASSERT_TRUE(attr_set_float(&test_heap_alloc, &attrs, "src_x", 0.0F));
+    TEST_ASSERT_TRUE(attr_set_float(&test_heap_alloc, &attrs, "src_y", 0.0F));
+    TEST_ASSERT_TRUE(attr_set_float(&test_heap_alloc, &attrs, "src_w", 16.0F));
+    TEST_ASSERT_TRUE(attr_set_float(&test_heap_alloc, &attrs, "src_h", 16.0F));
+    TEST_ASSERT_TRUE(attr_set_float(&test_heap_alloc, &attrs, "collision_offset_x", 2.0F));
+    TEST_ASSERT_TRUE(attr_set_float(&test_heap_alloc, &attrs, "collision_offset_y", 4.0F));
+    TEST_ASSERT_TRUE(attr_set_float(&test_heap_alloc, &attrs, "collision_w", 12.0F));
+    TEST_ASSERT_TRUE(attr_set_float(&test_heap_alloc, &attrs, "collision_h", 8.0F));
 
     TEST_ASSERT_TRUE(
-        attr_set_string(&test_heap_alloc, &blueprint.attrs, (AttrStringPair){.name = "behavior", .value = "static"}));
-    TEST_ASSERT_TRUE(attr_set_bool(&test_heap_alloc, &blueprint.attrs, "is_locked", true));
-    TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, &blueprint.attrs, "health", 3));
-    TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, &blueprint.attrs, "max_health", 5));
-    TEST_ASSERT_TRUE(attr_set_float(&test_heap_alloc, &blueprint.attrs, "speed", 0.0F));
+        attr_set_string(&test_heap_alloc, &attrs, (AttrStringPair){.name = "behavior", .value = "static"}));
+    TEST_ASSERT_TRUE(attr_set_bool(&test_heap_alloc, &attrs, "is_locked", true));
+    TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, &attrs, "health", 3));
+    TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, &attrs, "max_health", 5));
+    TEST_ASSERT_TRUE(attr_set_float(&test_heap_alloc, &attrs, "speed", 0.0F));
 
-    return blueprint;
+    return attrs;
+}
+
+static void free_test_entity(Entity *entity)
+{
+    str_free(&test_heap_alloc, &entity->blueprint_name);
+    str_free(&test_heap_alloc, &entity->tag);
+    attr_set_free(&test_heap_alloc, &entity->attrs);
 }
 
 void test_entity_init_from_blueprint(void)
 {
-    Blueprint blueprint = make_test_blueprint();
+    AttrSet bp_attrs = make_test_blueprint_attrs();
     Texture2D dummy = {0};
-    EntitySpec spec = spec_from_blueprint(&blueprint, &dummy);
+    EntitySpec spec = spec_from_attrs(&bp_attrs, &dummy);
     Entity entity;
 
     TEST_ASSERT_TRUE(entity_init(&entity, spec, (Vector2){100, 200}, &test_heap_alloc));
@@ -61,7 +92,7 @@ void test_entity_init_from_blueprint(void)
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 204.0F, entity.collision.y);
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 12.0F, entity.collision.width);
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 8.0F, entity.collision.height);
-    const AttrSet *defaults = &blueprint.attrs;
+    const AttrSet *defaults = &bp_attrs;
     TEST_ASSERT_EQUAL_INT(3, attr_get_scoped_int(&entity.attrs, defaults, "health", 0));
     TEST_ASSERT_EQUAL_INT(5, attr_get_scoped_int(&entity.attrs, defaults, "max_health", 0));
     TEST_ASSERT_TRUE(attr_get_scoped_bool(&entity.attrs, defaults, "visible", true));
@@ -69,80 +100,79 @@ void test_entity_init_from_blueprint(void)
     /* solid is now set by level.c, not entity_init — check collision size instead */
     TEST_ASSERT_TRUE(spec.collision_size.x > 0.0F || spec.collision_size.y > 0.0F);
     TEST_ASSERT_EQUAL_INT(-1, entity.parent_index);
-    test_blueprint_free(&blueprint);
-    test_entity_free(&entity);
+    attr_set_free(&test_heap_alloc, &bp_attrs);
+    free_test_entity(&entity);
 }
 
 void test_entity_get_attr_from_blueprint(void)
 {
-    Blueprint blueprint = make_test_blueprint();
+    AttrSet bp_attrs = make_test_blueprint_attrs();
     Texture2D dummy = {0};
     Entity entity;
 
-    TEST_ASSERT_TRUE(entity_init(&entity, spec_from_blueprint(&blueprint, &dummy), (Vector2){0, 0}, &test_heap_alloc));
+    TEST_ASSERT_TRUE(entity_init(&entity, spec_from_attrs(&bp_attrs, &dummy), (Vector2){0, 0}, &test_heap_alloc));
 
-    const AttrSet *defaults = &blueprint.attrs;
+    const AttrSet *defaults = &bp_attrs;
     TEST_ASSERT_EQUAL_STRING("static", attr_get_scoped_string(&entity.attrs, defaults, "behavior"));
     TEST_ASSERT_TRUE(attr_get_scoped_bool(&entity.attrs, defaults, "is_locked", false));
     TEST_ASSERT_FLOAT_WITHIN(0.01F, 0.0F, attr_get_scoped_float(&entity.attrs, defaults, "speed", -1.0F));
-    test_blueprint_free(&blueprint);
-    test_entity_free(&entity);
+    attr_set_free(&test_heap_alloc, &bp_attrs);
+    free_test_entity(&entity);
 }
 
 void test_entity_instance_overrides_blueprint(void)
 {
-    Blueprint blueprint = make_test_blueprint();
+    AttrSet bp_attrs = make_test_blueprint_attrs();
     Texture2D dummy = {0};
     Entity entity;
 
-    TEST_ASSERT_TRUE(entity_init(&entity, spec_from_blueprint(&blueprint, &dummy), (Vector2){0, 0}, &test_heap_alloc));
+    TEST_ASSERT_TRUE(entity_init(&entity, spec_from_attrs(&bp_attrs, &dummy), (Vector2){0, 0}, &test_heap_alloc));
 
     /* Override at instance level */
     TEST_ASSERT_TRUE(attr_set_bool(&test_heap_alloc, &entity.attrs, "is_locked", false));
     TEST_ASSERT_TRUE(attr_set_float(&test_heap_alloc, &entity.attrs, "speed", 50.0F));
 
-    const AttrSet *defaults = &blueprint.attrs;
+    const AttrSet *defaults = &bp_attrs;
     /* Instance wins */
     TEST_ASSERT_FALSE(attr_get_scoped_bool(&entity.attrs, defaults, "is_locked", true));
     TEST_ASSERT_FLOAT_WITHIN(0.01F, 50.0F, attr_get_scoped_float(&entity.attrs, defaults, "speed", 0));
 
     /* Blueprint still provides unoverridden attrs */
     TEST_ASSERT_EQUAL_STRING("static", attr_get_scoped_string(&entity.attrs, defaults, "behavior"));
-    test_blueprint_free(&blueprint);
-    test_entity_free(&entity);
+    attr_set_free(&test_heap_alloc, &bp_attrs);
+    free_test_entity(&entity);
 }
 
 void test_entity_get_missing_attr(void)
 {
-    Blueprint blueprint = make_test_blueprint();
+    AttrSet bp_attrs = make_test_blueprint_attrs();
     Texture2D dummy = {0};
     Entity entity;
 
-    TEST_ASSERT_TRUE(entity_init(&entity, spec_from_blueprint(&blueprint, &dummy), (Vector2){0, 0}, &test_heap_alloc));
+    TEST_ASSERT_TRUE(entity_init(&entity, spec_from_attrs(&bp_attrs, &dummy), (Vector2){0, 0}, &test_heap_alloc));
 
-    const AttrSet *defaults = &blueprint.attrs;
+    const AttrSet *defaults = &bp_attrs;
     TEST_ASSERT_EQUAL_INT(42, attr_get_scoped_int(&entity.attrs, defaults, "nonexistent", 42));
     TEST_ASSERT_NULL(attr_get_scoped_string(&entity.attrs, defaults, "nope"));
-    test_blueprint_free(&blueprint);
-    test_entity_free(&entity);
+    attr_set_free(&test_heap_alloc, &bp_attrs);
+    free_test_entity(&entity);
 }
 
 void test_entity_int_float_coercion(void)
 {
-    Blueprint blueprint = {0};
-    TEST_ASSERT_TRUE(
-        attr_set_string(&test_heap_alloc, &blueprint.attrs, (AttrStringPair){.name = "name", .value = "test"}));
-    TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, &blueprint.attrs, "speed", 80));
+    AttrSet bp_attrs = {0};
+    TEST_ASSERT_TRUE(attr_set_string(&test_heap_alloc, &bp_attrs, (AttrStringPair){.name = "name", .value = "test"}));
+    TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, &bp_attrs, "speed", 80));
 
     Texture2D dummy = {0};
     Entity entity;
-    TEST_ASSERT_TRUE(entity_init(&entity, spec_from_blueprint(&blueprint, &dummy), (Vector2){0, 0}, &test_heap_alloc));
+    TEST_ASSERT_TRUE(entity_init(&entity, spec_from_attrs(&bp_attrs, &dummy), (Vector2){0, 0}, &test_heap_alloc));
 
-    const AttrSet *defaults = &blueprint.attrs;
+    const AttrSet *defaults = &bp_attrs;
     /* Int attr retrieved as float via coercion */
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 80.0F, attr_get_scoped_float(&entity.attrs, defaults, "speed", 0));
-    test_blueprint_free(&blueprint);
-    test_entity_free(&entity);
+    attr_set_free(&test_heap_alloc, &bp_attrs);
+    free_test_entity(&entity);
 }
 
 void test_entity_no_blueprint(void)
@@ -155,7 +185,7 @@ void test_entity_no_blueprint(void)
     /* Works without defaults (nullptr) */
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 100.0F, attr_get_scoped_float(&entity.attrs, nullptr, "speed", 0));
     TEST_ASSERT_EQUAL_INT(0, attr_get_scoped_int(&entity.attrs, nullptr, "missing", 0));
-    test_entity_free(&entity);
+    free_test_entity(&entity);
 }
 
 void test_entity_solid_from_collision(void)
@@ -167,7 +197,7 @@ void test_entity_solid_from_collision(void)
     TEST_ASSERT_TRUE(attr_set_bool(&test_heap_alloc, &entity.attrs, "solid", false));
 
     TEST_ASSERT_FALSE(attr_get_scoped_bool(&entity.attrs, nullptr, "solid", true));
-    test_entity_free(&entity);
+    free_test_entity(&entity);
 }
 
 /* Helper: set up a 3-entity tree (parent -> child -> grandchild) */
@@ -190,7 +220,7 @@ static void make_entity_tree(Entity *entities)
 static void free_entity_tree(Entity *entities)
 {
     for (int index = 0; index < 3; index++) {
-        test_entity_free(&entities[index]);
+        free_test_entity(&entities[index]);
     }
 }
 
@@ -261,7 +291,7 @@ void test_entity_is_visible_standalone(void)
     const AttrSet *defaults[] = {nullptr};
 
     TEST_ASSERT_TRUE(entity_is_visible(0, &entity, defaults));
-    test_entity_free(&entity);
+    free_test_entity(&entity);
 }
 
 void test_entity_is_visible_parent_hidden(void)
@@ -307,4 +337,29 @@ void test_entity_is_active_both_active(void)
 
     TEST_ASSERT_TRUE(entity_is_active(1, entities, defaults));
     free_entity_tree(entities);
+}
+
+int main(void)
+{
+    test_helpers_init();
+    UNITY_BEGIN();
+    RUN_TEST(test_entity_init_from_blueprint);
+    RUN_TEST(test_entity_get_attr_from_blueprint);
+    RUN_TEST(test_entity_instance_overrides_blueprint);
+    RUN_TEST(test_entity_get_missing_attr);
+    RUN_TEST(test_entity_int_float_coercion);
+    RUN_TEST(test_entity_no_blueprint);
+    RUN_TEST(test_entity_solid_from_collision);
+    RUN_TEST(test_entity_find_by_tag_self);
+    RUN_TEST(test_entity_find_by_tag_parent);
+    RUN_TEST(test_entity_find_by_tag_parent_of_root);
+    RUN_TEST(test_entity_find_by_tag_root);
+    RUN_TEST(test_entity_find_by_tag_custom);
+    RUN_TEST(test_entity_find_by_tag_not_found);
+    RUN_TEST(test_entity_is_visible_standalone);
+    RUN_TEST(test_entity_is_visible_parent_hidden);
+    RUN_TEST(test_entity_is_visible_both_visible);
+    RUN_TEST(test_entity_is_active_parent_inactive);
+    RUN_TEST(test_entity_is_active_both_active);
+    return UNITY_END();
 }
