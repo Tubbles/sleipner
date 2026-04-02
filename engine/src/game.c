@@ -143,7 +143,8 @@ bool game_load_gamedata(Diag *diag, GameState *state, GamedataParams params)
             if (spawn_events.count > 0) {
                 rules_evaluate_batch(diag, &gamedata_alloc, state->current_level.entities.data, spawn_count,
                                      spawn_events.data, spawn_events.count, &state->flags, &state->vars,
-                                     &state->rule_table, &state->subroutines, &state->timers, spawn_defaults);
+                                     &state->rule_table, &state->subroutines, &state->timers, spawn_defaults,
+                                     &state->transition);
             }
         }
     } else {
@@ -457,7 +458,8 @@ void game_update(Diag *diag, GameState *state, InputState input, float delta_tim
             Allocator rule_alloc = allocator_arena(&state->gamedata_arena);
             rules_evaluate_batch(diag, &rule_alloc, state->current_level.entities.data, update_count,
                                  trigger_events.data, trigger_events.count, &state->flags, &state->vars,
-                                 &state->rule_table, &state->subroutines, &state->timers, update_defaults);
+                                 &state->rule_table, &state->subroutines, &state->timers, update_defaults,
+                                 &state->transition);
         }
     }
 }

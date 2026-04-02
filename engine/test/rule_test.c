@@ -799,7 +799,7 @@ void test_evaluate_interact_sets_flag(void)
     const AttrSet *defaults_array[] = {&blueprint.attrs};
 
     rules_evaluate_batch(&test_diag, &test_heap_alloc, &entity, 1, &event, 1, &flags, &global_vars, &rule_table,
-                         nullptr, nullptr, defaults_array);
+                         nullptr, nullptr, defaults_array, nullptr);
     TEST_ASSERT_TRUE(flag_get(&flags, "chest_opened"));
 
     arena_free(&arena);
@@ -850,7 +850,7 @@ void test_evaluate_condition_blocks_action(void)
     const AttrSet *defaults_array[] = {&blueprint.attrs};
 
     rules_evaluate_batch(&test_diag, &test_heap_alloc, &entity, 1, &event, 1, &flags, &global_vars, &rule_table,
-                         nullptr, nullptr, defaults_array);
+                         nullptr, nullptr, defaults_array, nullptr);
     TEST_ASSERT_FALSE(flag_get(&flags, "chest_opened"));
 
     arena_free(&arena);
@@ -913,7 +913,7 @@ void test_evaluate_fire_event_cascading(void)
     const AttrSet *defaults_array[] = {&bp_switch.attrs, &bp_door.attrs};
 
     rules_evaluate_batch(&test_diag, &test_heap_alloc, entities, 2, &event, 1, &flags, &global_vars, &rule_table,
-                         nullptr, nullptr, defaults_array);
+                         nullptr, nullptr, defaults_array, nullptr);
     TEST_ASSERT_TRUE(flag_get(&flags, "door_opened"));
 
     arena_free(&arena);

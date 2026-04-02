@@ -1145,6 +1145,34 @@ static bool execute_destroy_timer_action(Diag *diag, const ActionNode *node, Act
     return true;
 }
 
+static bool execute_transition_action(Diag *diag, Allocator *alloc, const ActionNode *node, ActionContext context)
+{
+    if (!context.transition) {
+        error_set(diag->error, "transition action: no transition context");
+        return false;
+    }
+    const char *arg = node->argument.ptr;
+    const char *first_comma = strchr(arg, ',');
+    if (!first_comma) {
+        error_set(diag->error, "transition: expected 'level,x,y', got '%s'", arg);
+        return false;
+    }
+    const char *second_comma = strchr(first_comma + 1, ',');
+    if (!second_comma) {
+        error_set(diag->error, "transition: expected 'level,x,y', got '%s'", arg);
+        return false;
+    }
+    Strv level_name = {.ptr = arg, .len = (size_t)(first_comma - arg)};
+    if (!str_from_strv(alloc, &context.transition->level, level_name)) {
+        error_set(diag->error, "transition: allocation failed for level name");
+        return false;
+    }
+    context.transition->x = strtof(first_comma + 1, nullptr);
+    context.transition->y = strtof(second_comma + 1, nullptr);
+    context.transition->pending = true;
+    return true;
+}
+
 static bool dispatch_simple_action(Diag *diag, Allocator *alloc, const ActionNode *node, ActionContext context)
 {
     switch (node->type) {
@@ -1178,6 +1206,8 @@ static bool dispatch_simple_action(Diag *diag, Allocator *alloc, const ActionNod
         return execute_create_timer_action(diag, node, context, true);
     case ACTION_DESTROY_TIMER:
         return execute_destroy_timer_action(diag, node, context);
+    case ACTION_TRANSITION:
+        return execute_transition_action(diag, alloc, node, context);
     default:
         debug_log(diag->debug, "action stub: %s (not yet implemented)", node->argument.ptr);
         return true;
@@ -1331,7 +1361,8 @@ static void evaluate_entity_rules(Diag *diag,
                                   map_entity_ruleset *rule_table,
                                   const vec_subroutine *subroutines,
                                   vec_timer *timers,
-                                  const AttrSet *const *entity_defaults)
+                                  const AttrSet *const *entity_defaults,
+                                  TransitionRequest *transition)
 {
     const vec_rule *ruleset = map_entity_ruleset_get(rule_table, entity->id);
     if (!ruleset) {
@@ -1365,6 +1396,7 @@ static void evaluate_entity_rules(Diag *diag,
             .subroutines = subroutines,
             .timers = timers,
             .entity_defaults = entity_defaults,
+            .transition = transition,
         };
         debug_log(diag->debug, "Rule triggered for entity %d (type: %s), rule %d", entity_index,
                   entity->blueprint_name.ptr, rule_index);
@@ -1393,7 +1425,8 @@ void rules_evaluate_batch(Diag *diag,
                           map_entity_ruleset *rule_table,
                           const vec_subroutine *subroutines,
                           vec_timer *timers,
-                          const AttrSet *const *entity_defaults)
+                          const AttrSet *const *entity_defaults,
+                          TransitionRequest *transition)
 {
     TriggerEventQueue pending_events = {0};
     for (int event_index = 0; event_index < event_count; event_index++) {
@@ -1421,7 +1454,8 @@ void rules_evaluate_batch(Diag *diag,
                 }
             }
             evaluate_entity_rules(diag, alloc, entity, entity_index, entities, entity_count, flags, global_vars,
-                                  &pending_events, &next_events, rule_table, subroutines, timers, entity_defaults);
+                                  &pending_events, &next_events, rule_table, subroutines, timers, entity_defaults,
+                                  transition);
         }
 
         pending_events = next_events;

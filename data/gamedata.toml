@@ -46,7 +46,7 @@ behavior = "static"
 
 [[blueprint.rule]]
 trigger = "enter"
-actions = ["set_flag:house_entered"]
+actions = ["transition:house_interior,48,100"]
 
 [[blueprint]]
 name = "fence_v"
@@ -136,3 +136,27 @@ pos = [300, 150]
 [[level.entity]]
 blueprint = "secret_door"
 pos = [350, 150]
+
+[[blueprint]]
+name = "exit_door"
+texture = "chest.png"
+src = [0, 0, 16, 16]
+collision_offset = [0, 0]
+collision_size = [16, 16]
+behavior = "static"
+
+[[blueprint.rule]]
+trigger = "enter"
+actions = ["transition:overworld,78,80"]
+
+[[level]]
+name = "house_interior"
+size = [96, 128]
+
+[[level.entity]]
+blueprint = "player"
+pos = [48, 100]
+
+[[level.entity]]
+blueprint = "exit_door"
+pos = [48, 120]

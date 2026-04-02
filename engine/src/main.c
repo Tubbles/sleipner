@@ -505,7 +505,7 @@ static InputState apply_touch_input(InputState input, TouchState *touch_state, G
     return input;
 }
 
-static void load_gamedata(Diag *diag, GameState *state)
+static void load_gamedata(Diag *diag, GameState *state, const char *level_name)
 {
     char *content = read_file_text(state, GAMEDATA_PATH, &state->gamedata_arena);
     if (!content) {
@@ -528,6 +528,7 @@ static void load_gamedata(Diag *diag, GameState *state)
 
     bool loaded = game_load_gamedata(diag, state,
                                      (GamedataParams){.toml_string = content,
+                                                      .level_name = level_name,
                                                       .texture_lookup = texture_registry_lookup,
                                                       .texture_user_data = state});
 
@@ -562,17 +563,34 @@ static void load_gamedata(Diag *diag, GameState *state)
 static bool poll_hot_reload(Diag *diag, GameState *state)
 {
     if (!state->gamedata_loaded) {
-        load_gamedata(diag, state);
+        load_gamedata(diag, state, nullptr);
         return true;
     }
 
     long current_mtime = GetFileModTime(GAMEDATA_PATH);
     if (current_mtime > 0 && current_mtime != state->gamedata_mtime) {
         debug_log(diag->debug, "gamedata: hot-reload triggered");
-        load_gamedata(diag, state);
+        load_gamedata(diag, state, nullptr);
         return true;
     }
     return false;
+}
+
+static void handle_transition(Diag *diag, GameState *state)
+{
+    if (!state->transition.pending) {
+        return;
+    }
+    state->transition.pending = false;
+    float spawn_x = state->transition.x;
+    float spawn_y = state->transition.y;
+    debug_log(diag->debug, "transition to '%s' at (%.0f, %.0f)", state->transition.level.ptr, spawn_x, spawn_y);
+    load_gamedata(diag, state, state->transition.level.ptr);
+    Entity *player = game_get_player(state);
+    if (player) {
+        player->position = (Vector2){spawn_x, spawn_y};
+        entity_update_collision(player);
+    }
 }
 
 static void handle_hot_reload(Diag *diag, GameState *state, EditorState *editor_state, WatchList *watches)
@@ -630,7 +648,7 @@ static void handle_save_input(Diag *diag, GameState *state, EditorState *editor_
             debug_log(diag->debug, "save error: %s", error_get(diag->error));
             error_clear(diag->error);
         } else {
-            load_gamedata(diag, state);
+            load_gamedata(diag, state, nullptr);
             *editor_state = (EditorState){.selected_entity_index = -1,
                                           .sub_mode = EDITOR_SUB_BROWSE,
                                           .selected_attr_index = -1,
@@ -853,7 +871,7 @@ int main(void)
               game_bounds.width, game_bounds.height, PIXEL_SCALE);
     debug_log(&state->debug, "GetScreen %dx%d  GetRender %dx%d", GetScreenWidth(), GetScreenHeight(), GetRenderWidth(),
               GetRenderHeight());
-    load_gamedata(diag, state);
+    load_gamedata(diag, state, nullptr);
 
     while (!WindowShouldClose()) {
         float delta_time = GetFrameTime();
@@ -898,6 +916,8 @@ int main(void)
 
         /* Update (pure logic — no rendering) */
         game_update(diag, state, input, delta_time);
+
+        handle_transition(diag, state);
 
         render_frame(state, (RenderParams){
                                 .target = target,

@@ -80,6 +80,7 @@ typedef struct {
     long gamedata_mtime;
     int screen_width;
     int screen_height;
+    TransitionRequest transition;
 } GameState;
 
 typedef struct {

@@ -654,7 +654,7 @@ void test_integration_timer_destroy_cancels(void)
     Allocator rule_alloc = allocator_arena(&state.gamedata_arena);
     rules_evaluate_batch(&test_diag, &rule_alloc, state.current_level.entities.data, cancel_count, &cancel, 1,
                          &state.flags, &state.vars, &state.rule_table, &state.subroutines, &state.timers,
-                         cancel_defaults);
+                         cancel_defaults, &state.transition);
     str_free(&heap_alloc, &cancel.argument);
 
     TEST_ASSERT_EQUAL_INT(0, state.timers.count);

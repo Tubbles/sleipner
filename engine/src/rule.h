@@ -222,6 +222,14 @@ typedef struct {
 
 bool conditions_evaluate(const Condition *conditions, int count, ConditionContext context);
 
+/* --- Level transition request (written by ACTION_TRANSITION, read by game loop) --- */
+typedef struct {
+    bool pending;
+    Str level; /* target level name */
+    float x;   /* player spawn X */
+    float y;   /* player spawn Y */
+} TransitionRequest;
+
 /* --- Action execution --- */
 #define MAX_CALL_DEPTH 32
 
@@ -238,6 +246,7 @@ typedef struct {
     const vec_subroutine *subroutines;     /* read-only subroutine table */
     vec_timer *timers;                     /* mutable timer list for create_timer/destroy_timer */
     const AttrSet *const *entity_defaults; /* parallel to entities — blueprint defaults per entity */
+    TransitionRequest *transition;         /* written by transition action */
     int call_depth;                        /* recursion guard for call: */
 } ActionContext;
 
@@ -255,4 +264,5 @@ void rules_evaluate_batch(Diag *diag,
                           map_entity_ruleset *rule_table,
                           const vec_subroutine *subroutines,
                           vec_timer *timers,
-                          const AttrSet *const *entity_defaults);
+                          const AttrSet *const *entity_defaults,
+                          TransitionRequest *transition);
