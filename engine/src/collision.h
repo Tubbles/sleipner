@@ -6,9 +6,6 @@
 #include "vec.h"
 #include <stdbool.h>
 
-// cppcheck-suppress noForwardDecl-noForwardDecl
-struct EngineContext;
-
 typedef enum { COLLIDER_RECT, COLLIDER_CIRCLE, COLLIDER_TRIANGLE } ColliderKind;
 
 typedef struct {
