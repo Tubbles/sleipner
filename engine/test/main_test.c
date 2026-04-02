@@ -51,6 +51,8 @@ void test_integration_player_entity_spawns(void);
 void test_integration_on_spawn_trigger_fires_on_load(void);
 void test_integration_enter_trigger_fires_on_overlap(void);
 void test_integration_enter_trigger_fires_only_once(void);
+void test_integration_real_gamedata_loads(void);
+void test_integration_real_gamedata_all_levels_load(void);
 
 /* toml_emitter_test.c */
 void test_toml_emit_blueprints(void);
@@ -121,6 +123,8 @@ int main(void)
     RUN_TEST(test_integration_on_spawn_trigger_fires_on_load);
     RUN_TEST(test_integration_enter_trigger_fires_on_overlap);
     RUN_TEST(test_integration_enter_trigger_fires_only_once);
+    RUN_TEST(test_integration_real_gamedata_loads);
+    RUN_TEST(test_integration_real_gamedata_all_levels_load);
 
     RUN_TEST(test_level_load_first);
     RUN_TEST(test_level_load_by_name);

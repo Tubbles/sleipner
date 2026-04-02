@@ -3,6 +3,12 @@
 #include "entity.h"
 #include "game.h"
 
+#include "toml.h"
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
 static const char *fixture_gamedata = "[[blueprint]]\n"
                                       "name = \"player\"\n"
                                       "texture = \"player.png\"\n"
@@ -385,4 +391,97 @@ void test_integration_enter_trigger_fires_only_once(void)
     TEST_ASSERT_EQUAL_INT(1, (int)attr_get_scoped_float(&zone->attrs, nullptr, "enter_count", 0.0F));
 
     game_free(&diag, &state);
+}
+
+static char *read_file(const char *path)
+{
+    FILE *file = fopen(path, "re");
+    if (!file) {
+        return nullptr;
+    }
+    (void)fseek(file, 0, SEEK_END);
+    long length = ftell(file);
+    (void)fseek(file, 0, SEEK_SET);
+    char *buffer = malloc((size_t)length + 1);
+    if (!buffer) {
+        (void)fclose(file);
+        return nullptr;
+    }
+    size_t read = fread(buffer, 1, (size_t)length, file);
+    buffer[read] = '\0';
+    (void)fclose(file);
+    return buffer;
+}
+
+void test_integration_real_gamedata_loads(void)
+{
+    char *content = read_file(GAMEDATA_PATH);
+    TEST_ASSERT_NOT_NULL_MESSAGE(content, "could not read " GAMEDATA_PATH);
+
+    GameState state = {0};
+    Diag diag = {&state.error, &state.debug};
+    TEST_ASSERT_TRUE(game_init(&diag, &state, (RectU32){480, 270}));
+
+    bool loaded =
+        game_load_gamedata(&diag, &state, (GamedataParams){.toml_string = content, .texture_lookup = dummy_lookup});
+    TEST_ASSERT_TRUE_MESSAGE(loaded, error_get(&state.error));
+    TEST_ASSERT_TRUE(state.player_index >= 0);
+
+    /* Run a few frames to exercise update logic (timers, overlap tracking, etc.) */
+    InputState input = {0};
+    for (int iteration = 0; iteration < 10; iteration++) {
+        game_update(&diag, &state, input, 1.0F / 60.0F);
+    }
+
+    game_free(&diag, &state);
+    free(content);
+}
+
+void test_integration_real_gamedata_all_levels_load(void)
+{
+    char *content = read_file(GAMEDATA_PATH);
+    TEST_ASSERT_NOT_NULL_MESSAGE(content, "could not read " GAMEDATA_PATH);
+
+    /* Parse once to discover level names */
+    char errbuf[200];
+    char *parse_buf = strdup(content);
+    toml_table_t *root = toml_parse(parse_buf, errbuf, (int)sizeof(errbuf));
+    free(parse_buf);
+    TEST_ASSERT_NOT_NULL(root);
+
+    toml_array_t *levels = toml_array_in(root, "level");
+    TEST_ASSERT_NOT_NULL(levels);
+    int level_count = toml_array_nelem(levels);
+    TEST_ASSERT_TRUE(level_count > 0);
+
+    /* Collect level names (freed after the loop) */
+    char *level_names[32] = {0};
+    TEST_ASSERT_TRUE(level_count <= 32);
+    for (int index = 0; index < level_count; index++) {
+        toml_table_t *level_table = toml_table_at(levels, index);
+        toml_datum_t name = toml_string_in(level_table, "name");
+        TEST_ASSERT_TRUE(name.ok);
+        level_names[index] = name.u.s;
+    }
+    toml_free(root);
+
+    /* Load each level through the full engine path */
+    for (int index = 0; index < level_count; index++) {
+        GameState state = {0};
+        Diag diag = {&state.error, &state.debug};
+        TEST_ASSERT_TRUE(game_init(&diag, &state, (RectU32){480, 270}));
+
+        bool loaded = game_load_gamedata(
+            &diag, &state,
+            (GamedataParams){.toml_string = content, .level_name = level_names[index], .texture_lookup = dummy_lookup});
+        TEST_ASSERT_TRUE_MESSAGE(loaded, error_get(&state.error));
+        TEST_ASSERT_TRUE(state.player_index >= 0);
+
+        game_free(&diag, &state);
+    }
+
+    for (int index = 0; index < level_count; index++) {
+        free(level_names[index]);
+    }
+    free(content);
 }
