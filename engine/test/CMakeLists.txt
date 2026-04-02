@@ -25,6 +25,7 @@ add_unit_test(collision_test)
 add_unit_test(attribute_test)
 add_unit_test(entity_test)
 add_unit_test(toml_str_test)
+add_unit_test(rule_test)
 
 add_executable(engine_tests
     main_test.c
@@ -35,7 +36,7 @@ add_executable(engine_tests
     level_test.c
     editor_test.c
     toml_emitter_test.c
-    rule_test.c
+    rule_integration_test.c
 )
 target_compile_definitions(engine_tests PRIVATE _GNU_SOURCE)
 target_include_directories(engine_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../vendor/fff)
