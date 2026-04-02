@@ -8,7 +8,7 @@
 #   ./ci.sh test        # Run unit tests (builds first if needed)
 #   ./ci.sh lint        # Run clang-tidy (builds first if needed)
 #   ./ci.sh all         # check + build + test + lint + cppcheck + pytest
-#   ./ci.sh cppcheck    # Run cppcheck forward-decl addon (host, needs ~/dev/cppcheck)
+#   ./ci.sh cppcheck    # Run cppcheck forward-decl addon
 #   ./ci.sh pytest      # Run Python unit tests for cppcheck addon
 #   ./ci.sh android     # Build Android arm64 shared library
 #   ./ci.sh apk         # Build Android APK (includes conan + gradle)
@@ -76,17 +76,17 @@ do_lint() {
 
 do_cppcheck() {
     echo "=== cppcheck ==="
-    PYTHONPATH=~/dev/cppcheck/addons ~/dev/cppcheck/build/bin/cppcheck \
+    run bash -c "PYTHONPATH=/usr/local/share/Cppcheck/addons cppcheck \
         --enable=warning --inline-suppr \
         --addon=tools/cppcheck/no_forward_decl.py \
         --suppress=unknownMacro \
         --error-exitcode=1 \
-        engine/src/*.h engine/src/*.c
+        engine/src/*.h engine/src/*.c"
 }
 
 do_pytest() {
     echo "=== pytest ==="
-    python3 -m pytest tools/cppcheck/test_no_forward_decl.py -v
+    run pytest tools/cppcheck/test_no_forward_decl.py -v
 }
 
 do_all() {

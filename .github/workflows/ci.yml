@@ -48,10 +48,16 @@ jobs:
       - name: Lint
         run: CONTAINER_CMD=docker ./ci.sh lint lint.log
 
+      - name: Cppcheck forward-decl addon
+        run: CONTAINER_CMD=docker ./ci.sh cppcheck cppcheck.log
+
+      - name: Pytest addon tests
+        run: CONTAINER_CMD=docker ./ci.sh pytest pytest.log
+
       - name: Show logs
         if: always()
         run: |
-          for log in tmp/check.log tmp/build.log tmp/test.log tmp/lint.log; do
+          for log in tmp/check.log tmp/build.log tmp/test.log tmp/lint.log tmp/cppcheck.log tmp/pytest.log; do
             [ -f "$log" ] && echo "=== $log ===" && cat "$log" || true
           done
 

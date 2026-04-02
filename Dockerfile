@@ -64,7 +64,15 @@ RUN wget -qO /tmp/gradle.zip https://services.gradle.org/distributions/gradle-8.
     && rm /tmp/gradle.zip
 ENV PATH="/opt/gradle-8.11.1/bin:${PATH}"
 
-# Install conan in a venv
+# Build cppcheck 2.20.0 from source
+RUN wget -qO /tmp/cppcheck.tar.gz https://github.com/danmar/cppcheck/archive/refs/tags/2.20.0.tar.gz \
+    && tar xzf /tmp/cppcheck.tar.gz -C /tmp \
+    && cmake -S /tmp/cppcheck-2.20.0 -B /tmp/cppcheck-build -DCMAKE_BUILD_TYPE=Release \
+    && cmake --build /tmp/cppcheck-build -j"$(nproc)" \
+    && cmake --install /tmp/cppcheck-build \
+    && rm -rf /tmp/cppcheck.tar.gz /tmp/cppcheck-2.20.0 /tmp/cppcheck-build
+
+# Install conan and pytest in a venv
 RUN python3 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
-RUN pip install --no-cache-dir conan
+RUN pip install --no-cache-dir conan pytest
