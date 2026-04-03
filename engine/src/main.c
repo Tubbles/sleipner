@@ -587,8 +587,10 @@ static void handle_transition(Diag *diag, GameState *state)
     state->transition.pending = false;
     float spawn_x = state->transition.x;
     float spawn_y = state->transition.y;
-    debug_log(diag->debug, "transition to '%s' at (%.0f, %.0f)", state->transition.level.ptr, spawn_x, spawn_y);
-    load_gamedata(diag, state, state->transition.level.ptr);
+    char level_name[MAX_TEXTURE_FILENAME];
+    (void)snprintf(level_name, sizeof(level_name), "%s", state->transition.level.ptr);
+    debug_log(diag->debug, "transition to '%s' at (%.0f, %.0f)", level_name, spawn_x, spawn_y);
+    load_gamedata(diag, state, level_name);
     Entity *player = game_get_player(state);
     if (player) {
         player->position = (Vector2){spawn_x, spawn_y};

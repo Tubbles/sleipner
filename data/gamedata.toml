@@ -48,13 +48,14 @@ solid = true
 [[blueprint.child]]
 tag = "door"
 blueprint = "house_door"
-offset = [36, 120]
+offset = [38, 88]
 
 [[blueprint]]
 name = "house_door"
 collision_offset = [0, 0]
-collision_size = [24, 16]
+collision_size = [20, 28]
 behavior = "static"
+solid = false
 
 [[blueprint.rule]]
 trigger = "enter"
