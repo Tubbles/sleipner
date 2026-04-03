@@ -159,7 +159,7 @@ solid = false
 
 [[blueprint.rule]]
 trigger = "enter"
-actions = ["transition:overworld,78,80"]
+actions = ["transition:overworld,78,135"]
 
 [[level]]
 name = "house_interior"
