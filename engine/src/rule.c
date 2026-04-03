@@ -1151,24 +1151,23 @@ static bool execute_transition_action(Diag *diag, Allocator *alloc, const Action
         error_set(diag->error, "transition action: no transition context");
         return false;
     }
-    const char *arg = node->argument.ptr;
-    const char *first_comma = strchr(arg, ',');
-    if (!first_comma) {
-        error_set(diag->error, "transition: expected 'level,x,y', got '%s'", arg);
+    /* Action parser splits "level,x,y" into argument="level" and second_argument="x,y" */
+    if (!node->argument.ptr || !node->second_argument.ptr) {
+        error_set(diag->error, "transition: expected 'level,x,y'");
         return false;
     }
-    const char *second_comma = strchr(first_comma + 1, ',');
-    if (!second_comma) {
-        error_set(diag->error, "transition: expected 'level,x,y', got '%s'", arg);
-        return false;
-    }
-    Strv level_name = {.ptr = arg, .len = (size_t)(first_comma - arg)};
-    if (!str_from_strv(alloc, &context.transition->level, level_name)) {
+    if (!str_from_strv(alloc, &context.transition->level, str_to_strv(node->argument))) {
         error_set(diag->error, "transition: allocation failed for level name");
         return false;
     }
-    context.transition->x = strtof(first_comma + 1, nullptr);
-    context.transition->y = strtof(second_comma + 1, nullptr);
+    const char *coords = node->second_argument.ptr;
+    const char *comma = strchr(coords, ',');
+    if (!comma) {
+        error_set(diag->error, "transition: expected 'x,y' in second argument, got '%s'", coords);
+        return false;
+    }
+    context.transition->x = strtof(coords, nullptr);
+    context.transition->y = strtof(comma + 1, nullptr);
     context.transition->pending = true;
     return true;
 }

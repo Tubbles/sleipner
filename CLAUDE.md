@@ -142,7 +142,7 @@ Two levels of testing, both run in CI:
 - **Every new feature ships with tests.** Unit tests for the pure logic, integration tests for the subsystem interaction. A feature is not done until its tests are written.
 - **Tests document behavior.** Integration test scenarios serve as executable documentation of how the game systems work together.
 - **Test the interesting cases.** Don't test trivial getters. Test state transitions, edge cases, rule interactions, and anything that has broken before.
-- **Regression tests for bugs.** Every bug gets an integration-level regression test that reproduces the failure before the fix is applied.
+- **Regression tests for every bug.** When you fix a bug, always add a test for it — no exceptions. The test serves two purposes: (1) verify the fix actually works, and (2) prevent the bug from reappearing in the future. Write the test at the appropriate level (unit for pure logic bugs, integration for subsystem interaction bugs). A bug fix without a regression test is not complete.
 
 ## Diagnostics: Logging and Error Handling
 

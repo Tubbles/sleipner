@@ -112,6 +112,66 @@ static const char *fixture_triggers = "[[blueprint]]\n"
                                       "blueprint = \"beacon\"\n"
                                       "pos = [50, 50]\n";
 
+/* Fixture with two levels and a transition trigger.
+ * Player at (100,100), door at (200,100) with enter → transition:interior,80,60.
+ * Interior level has player at (80,60) and exit_door with enter → transition:field,100,100. */
+static const char *fixture_transition = "[[blueprint]]\n"
+                                        "name = \"player\"\n"
+                                        "texture = \"player.png\"\n"
+                                        "src = [0, 0, 32, 32]\n"
+                                        "collision_offset = [0, 0]\n"
+                                        "collision_size = [16, 16]\n"
+                                        "behavior = \"player\"\n"
+                                        "speed = 80\n"
+                                        "\n"
+                                        "[[blueprint]]\n"
+                                        "name = \"door\"\n"
+                                        "texture = \"rock.png\"\n"
+                                        "src = [0, 0, 16, 16]\n"
+                                        "collision_offset = [0, 0]\n"
+                                        "collision_size = [32, 32]\n"
+                                        "solid = false\n"
+                                        "\n"
+                                        "[[blueprint.rule]]\n"
+                                        "trigger = \"enter\"\n"
+                                        "actions = [\"transition:interior,80,60\"]\n"
+                                        "\n"
+                                        "[[blueprint]]\n"
+                                        "name = \"exit_door\"\n"
+                                        "texture = \"rock.png\"\n"
+                                        "src = [0, 0, 16, 16]\n"
+                                        "collision_offset = [0, 0]\n"
+                                        "collision_size = [32, 32]\n"
+                                        "solid = false\n"
+                                        "\n"
+                                        "[[blueprint.rule]]\n"
+                                        "trigger = \"enter\"\n"
+                                        "actions = [\"transition:field,100,100\"]\n"
+                                        "\n"
+                                        "[[level]]\n"
+                                        "name = \"field\"\n"
+                                        "size = [320, 240]\n"
+                                        "\n"
+                                        "[[level.entity]]\n"
+                                        "blueprint = \"player\"\n"
+                                        "pos = [100, 100]\n"
+                                        "\n"
+                                        "[[level.entity]]\n"
+                                        "blueprint = \"door\"\n"
+                                        "pos = [200, 100]\n"
+                                        "\n"
+                                        "[[level]]\n"
+                                        "name = \"interior\"\n"
+                                        "size = [160, 120]\n"
+                                        "\n"
+                                        "[[level.entity]]\n"
+                                        "blueprint = \"player\"\n"
+                                        "pos = [80, 60]\n"
+                                        "\n"
+                                        "[[level.entity]]\n"
+                                        "blueprint = \"exit_door\"\n"
+                                        "pos = [80, 110]\n";
+
 static Texture2D dummy_texture;
 
 static Texture2D *dummy_lookup(const char *texture_name, void *user_data)
@@ -488,4 +548,42 @@ void test_integration_real_gamedata_all_levels_load(void)
         free(level_names[index]);
     }
     free(content);
+}
+
+void test_integration_transition_changes_level(void)
+{
+    GameState state = {0};
+    Diag diag = {&state.error, &state.debug};
+    TEST_ASSERT_TRUE(game_init(&diag, &state, (RectU32){320, 240}));
+    TEST_ASSERT_TRUE(game_load_gamedata(
+        &diag, &state, (GamedataParams){.toml_string = fixture_transition, .texture_lookup = dummy_lookup}));
+
+    TEST_ASSERT_EQUAL_STRING("field", state.current_level.name.ptr);
+    TEST_ASSERT_FALSE(state.transition.pending);
+
+    /* Walk right into the door trigger: player at (100,100), door at (200,100).
+     * Speed = 80 px/s, gap ~84px → ~63 frames. Run 80 to be safe. */
+    InputState input = {0};
+    input.left_stick.x = 1.0F;
+    for (int iteration = 0; iteration < 80; iteration++) {
+        game_update(&diag, &state, input, 1.0F / 60.0F);
+    }
+
+    /* The enter trigger should have set transition.pending */
+    TEST_ASSERT_TRUE_MESSAGE(state.transition.pending, error_get(&state.error));
+    TEST_ASSERT_EQUAL_STRING("interior", state.transition.level.ptr);
+
+    /* Simulate what handle_transition does: reload with the target level name.
+     * This is the exact path that broke — the level name was in gamedata_arena
+     * and got wiped by arena_restore before level_load could use it. */
+    state.transition.pending = false;
+    bool reloaded = game_load_gamedata(&diag, &state,
+                                       (GamedataParams){.toml_string = fixture_transition,
+                                                        .level_name = state.transition.level.ptr,
+                                                        .texture_lookup = dummy_lookup});
+    TEST_ASSERT_TRUE_MESSAGE(reloaded, error_get(&state.error));
+    TEST_ASSERT_EQUAL_STRING("interior", state.current_level.name.ptr);
+    TEST_ASSERT_TRUE(state.player_index >= 0);
+
+    game_free(&diag, &state);
 }
