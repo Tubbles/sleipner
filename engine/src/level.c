@@ -306,6 +306,36 @@ void level_free(Allocator *alloc, Level *level)
     vec_entity_free(&level->entities);
 }
 
+static void parse_toml_int_pair(toml_table_t *table, const char *key, int output[static 2])
+{
+    toml_array_t *array = toml_array_in(table, key);
+    if (!array || toml_array_nelem(array) != 2) {
+        return;
+    }
+    toml_datum_t first = toml_int_at(array, 0);
+    toml_datum_t second = toml_int_at(array, 1);
+    if (first.ok) {
+        output[0] = (int)first.u.i;
+    }
+    if (second.ok) {
+        output[1] = (int)second.u.i;
+    }
+}
+
+static void parse_toml_color(toml_table_t *table, const char *key, Color *out)
+{
+    toml_array_t *array = toml_array_in(table, key);
+    if (!array || toml_array_nelem(array) != 3) {
+        return;
+    }
+    toml_datum_t red = toml_int_at(array, 0);
+    toml_datum_t green = toml_int_at(array, 1);
+    toml_datum_t blue = toml_int_at(array, 2);
+    if (red.ok && green.ok && blue.ok) {
+        *out = (Color){(unsigned char)red.u.i, (unsigned char)green.u.i, (unsigned char)blue.u.i, 255};
+    }
+}
+
 static bool parse_level_metadata(Allocator *alloc, Level *level, toml_table_t *level_table)
 {
     /* Level name */
@@ -333,45 +363,19 @@ static bool parse_level_metadata(Allocator *alloc, Level *level, toml_table_t *l
     }
 
     /* Level size */
-    toml_array_t *size = toml_array_in(level_table, "size");
-    if (size && toml_array_nelem(size) == 2) {
-        toml_datum_t width = toml_int_at(size, 0);
-        toml_datum_t height = toml_int_at(size, 1);
-        if (width.ok) {
-            level->width = (int)width.u.i;
-        }
-        if (height.ok) {
-            level->height = (int)height.u.i;
-        }
-    }
+    int size_pair[] = {0, 0};
+    parse_toml_int_pair(level_table, "size", size_pair);
+    level->width = size_pair[0];
+    level->height = size_pair[1];
 
     /* Floor size — area covered by background tiles. Defaults to level size. */
-    toml_array_t *floor = toml_array_in(level_table, "floor_size");
-    if (floor && toml_array_nelem(floor) == 2) {
-        toml_datum_t floor_w = toml_int_at(floor, 0);
-        toml_datum_t floor_h = toml_int_at(floor, 1);
-        if (floor_w.ok) {
-            level->floor_width = (int)floor_w.u.i;
-        }
-        if (floor_h.ok) {
-            level->floor_height = (int)floor_h.u.i;
-        }
-    } else {
-        level->floor_width = level->width;
-        level->floor_height = level->height;
-    }
+    int floor_pair[] = {level->width, level->height};
+    parse_toml_int_pair(level_table, "floor_size", floor_pair);
+    level->floor_width = floor_pair[0];
+    level->floor_height = floor_pair[1];
 
     /* Background tint — defaults to WHITE, override with [r, g, b] */
-    toml_array_t *tint = toml_array_in(level_table, "background_tint");
-    if (tint && toml_array_nelem(tint) == 3) {
-        toml_datum_t red = toml_int_at(tint, 0);
-        toml_datum_t green = toml_int_at(tint, 1);
-        toml_datum_t blue = toml_int_at(tint, 2);
-        if (red.ok && green.ok && blue.ok) {
-            level->background_tint =
-                (Color){(unsigned char)red.u.i, (unsigned char)green.u.i, (unsigned char)blue.u.i, 255};
-        }
-    }
+    parse_toml_color(level_table, "background_tint", &level->background_tint);
 
     return true;
 }
