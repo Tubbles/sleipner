@@ -295,12 +295,67 @@ void level_free(Allocator *alloc, Level *level)
 {
     str_free(alloc, &level->name);
     str_free(alloc, &level->music_name);
+    str_free(alloc, &level->background_tile);
     for (int index = 0; index < level->entities.count; index++) {
         str_free(alloc, &level->entities.data[index].blueprint_name);
         str_free(alloc, &level->entities.data[index].tag);
         attr_set_free(alloc, &level->entities.data[index].attrs);
     }
     vec_entity_free(&level->entities);
+}
+
+static bool parse_level_metadata(Allocator *alloc, Level *level, toml_table_t *level_table)
+{
+    /* Level name */
+    toml_datum_t name = toml_string_in(level_table, "name");
+    if (name.ok && !str_from_toml_datum(alloc, &level->name, &name)) {
+        return false;
+    }
+
+    /* Level music */
+    toml_datum_t music = toml_string_in(level_table, "music");
+    if (music.ok && !str_from_toml_datum(alloc, &level->music_name, &music)) {
+        return false;
+    }
+
+    /* Background tile — defaults to "grass.png" */
+    toml_datum_t bg_tile = toml_string_in(level_table, "background_tile");
+    if (bg_tile.ok) {
+        if (!str_from_toml_datum(alloc, &level->background_tile, &bg_tile)) {
+            return false;
+        }
+    } else {
+        if (!str_from_cstr(alloc, &level->background_tile, "grass.png")) {
+            return false;
+        }
+    }
+
+    /* Level size */
+    toml_array_t *size = toml_array_in(level_table, "size");
+    if (size && toml_array_nelem(size) == 2) {
+        toml_datum_t width = toml_int_at(size, 0);
+        toml_datum_t height = toml_int_at(size, 1);
+        if (width.ok) {
+            level->width = (int)width.u.i;
+        }
+        if (height.ok) {
+            level->height = (int)height.u.i;
+        }
+    }
+
+    /* Background tint — defaults to WHITE, override with [r, g, b] */
+    toml_array_t *tint = toml_array_in(level_table, "background_tint");
+    if (tint && toml_array_nelem(tint) == 3) {
+        toml_datum_t red = toml_int_at(tint, 0);
+        toml_datum_t green = toml_int_at(tint, 1);
+        toml_datum_t blue = toml_int_at(tint, 2);
+        if (red.ok && green.ok && blue.ok) {
+            level->background_tint =
+                (Color){(unsigned char)red.u.i, (unsigned char)green.u.i, (unsigned char)blue.u.i, 255};
+        }
+    }
+
+    return true;
 }
 
 bool level_load(Diag *diag,
@@ -329,41 +384,8 @@ bool level_load(Diag *diag,
         return false;
     }
 
-    /* Level name */
-    toml_datum_t name = toml_string_in(level_table, "name");
-    if (name.ok && !str_from_toml_datum(alloc, &level->name, &name)) {
+    if (!parse_level_metadata(alloc, level, level_table)) {
         return false;
-    }
-
-    /* Level music */
-    toml_datum_t music = toml_string_in(level_table, "music");
-    if (music.ok && !str_from_toml_datum(alloc, &level->music_name, &music)) {
-        return false;
-    }
-
-    /* Level size */
-    toml_array_t *size = toml_array_in(level_table, "size");
-    if (size && toml_array_nelem(size) == 2) {
-        toml_datum_t width = toml_int_at(size, 0);
-        toml_datum_t height = toml_int_at(size, 1);
-        if (width.ok) {
-            level->width = (int)width.u.i;
-        }
-        if (height.ok) {
-            level->height = (int)height.u.i;
-        }
-    }
-
-    /* Background tint — defaults to WHITE, override with [r, g, b] */
-    toml_array_t *tint = toml_array_in(level_table, "background_tint");
-    if (tint && toml_array_nelem(tint) == 3) {
-        toml_datum_t red = toml_int_at(tint, 0);
-        toml_datum_t green = toml_int_at(tint, 1);
-        toml_datum_t blue = toml_int_at(tint, 2);
-        if (red.ok && green.ok && blue.ok) {
-            level->background_tint =
-                (Color){(unsigned char)red.u.i, (unsigned char)green.u.i, (unsigned char)blue.u.i, 255};
-        }
     }
 
     /* Parse entities */

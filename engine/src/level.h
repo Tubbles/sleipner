@@ -15,6 +15,7 @@ typedef Texture2D *(*TextureLookupFn)(const char *texture_name, void *user_data)
 typedef struct {
     Str name;
     Str music_name;
+    Str background_tile;
     Color background_tint;
     int width;
     int height;

@@ -63,6 +63,7 @@ macro(embed_all_assets target root)
     embed_asset(${target} chest_png            "${root}/assets/sprites/chest.png")
     embed_asset(${target} house_png            "${root}/assets/sprites/house.png")
     embed_asset(${target} fence_png            "${root}/assets/sprites/fence.png")
+    embed_asset(${target} floor_png            "${root}/assets/sprites/floor.png")
     # Music
     embed_asset(${target} bgm_mp3              "${root}/assets/music/bgm.mp3")
     # Fonts

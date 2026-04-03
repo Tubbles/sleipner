@@ -27,6 +27,7 @@ DECLARE_ASSET(tree_png);
 DECLARE_ASSET(chest_png);
 DECLARE_ASSET(house_png);
 DECLARE_ASSET(fence_png);
+DECLARE_ASSET(floor_png);
 
 /* Music */
 DECLARE_ASSET(bgm_mp3);

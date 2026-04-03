@@ -164,7 +164,7 @@ actions = ["transition:overworld,78,80"]
 [[level]]
 name = "house_interior"
 size = [96, 128]
-background_tint = [139, 90, 43]
+background_tile = "floor.png"
 
 [[level.entity]]
 blueprint = "player"

@@ -291,6 +291,7 @@ static void load_persistent_assets(GameState *state)
     texture_registry_add(state, "chest.png", load_embedded_texture(ASSET(chest_png)), &gamedata_alloc);
     texture_registry_add(state, "house.png", load_embedded_texture(ASSET(house_png)), &gamedata_alloc);
     texture_registry_add(state, "fence.png", load_embedded_texture(ASSET(fence_png)), &gamedata_alloc);
+    texture_registry_add(state, "floor.png", load_embedded_texture(ASSET(floor_png)), &gamedata_alloc);
     for (int index = 0; index < state->assets.textures.count; index++) {
         debug_log(&state->debug, "texture[%d]: '%s' id=%u %dx%d", index, state->assets.textures.data[index].filename,
                   state->assets.textures.data[index].texture.id, state->assets.textures.data[index].texture.width,
@@ -758,7 +759,9 @@ static void render_frame(GameState *state, RenderParams params)
     if (state->editor_mode) {
         BeginMode2D(params.editor_camera);
     }
-    draw_background_tiles(*texture_registry_lookup("grass.png", state), params.game_bounds,
+    const char *bg_tile =
+        state->current_level.background_tile.ptr ? state->current_level.background_tile.ptr : "grass.png";
+    draw_background_tiles(*texture_registry_lookup(bg_tile, state), params.game_bounds,
                           state->current_level.background_tint);
     draw_entities_depth_sorted(state);
     if (state->editor_mode) {
