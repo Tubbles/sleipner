@@ -19,6 +19,8 @@ typedef struct {
     Color background_tint;
     int width;
     int height;
+    int floor_width;
+    int floor_height;
     int next_entity_id;
     vec_entity entities;
 } Level;

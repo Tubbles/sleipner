@@ -766,20 +766,32 @@ static void render_frame(GameState *state, RenderParams params)
 {
     BeginTextureMode(params.target);
     ClearBackground(BLACK);
+
+    /* Gameplay camera: center the level in the viewport when level is smaller than game_bounds */
+    Camera2D gameplay_camera = {
+        .offset = {(float)params.game_bounds.width / 2.0F, (float)params.game_bounds.height / 2.0F},
+        .target = {(float)state->current_level.width / 2.0F, (float)state->current_level.height / 2.0F},
+        .zoom = 1.0F,
+    };
+
     if (state->editor_mode) {
         BeginMode2D(params.editor_camera);
+    } else {
+        BeginMode2D(gameplay_camera);
     }
     const char *bg_tile =
         state->current_level.background_tile.ptr ? state->current_level.background_tile.ptr : "grass.png";
-    draw_background_tiles(*texture_registry_lookup(bg_tile, state), params.game_bounds,
-                          state->current_level.background_tint);
+    RectU32 floor_bounds = {(uint32_t)state->current_level.floor_width, (uint32_t)state->current_level.floor_height};
+    draw_background_tiles(*texture_registry_lookup(bg_tile, state), floor_bounds, state->current_level.background_tint);
     draw_entities_depth_sorted(state);
     if (state->editor_mode) {
         int hover_index = find_nearest_entity(&state->current_level, params.editor_camera.target);
         draw_editor_highlights(state, &params.editor_state, hover_index);
         draw_collision_handles(state, &params.editor_state);
         draw_place_preview(state, &params.editor_state, params.editor_camera);
-        EndMode2D();
+    }
+    EndMode2D();
+    if (state->editor_mode) {
         draw_editor_crosshair(params.game_bounds);
     }
     EndTextureMode();

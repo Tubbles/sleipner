@@ -345,6 +345,22 @@ static bool parse_level_metadata(Allocator *alloc, Level *level, toml_table_t *l
         }
     }
 
+    /* Floor size — area covered by background tiles. Defaults to level size. */
+    toml_array_t *floor = toml_array_in(level_table, "floor_size");
+    if (floor && toml_array_nelem(floor) == 2) {
+        toml_datum_t floor_w = toml_int_at(floor, 0);
+        toml_datum_t floor_h = toml_int_at(floor, 1);
+        if (floor_w.ok) {
+            level->floor_width = (int)floor_w.u.i;
+        }
+        if (floor_h.ok) {
+            level->floor_height = (int)floor_h.u.i;
+        }
+    } else {
+        level->floor_width = level->width;
+        level->floor_height = level->height;
+    }
+
     /* Background tint — defaults to WHITE, override with [r, g, b] */
     toml_array_t *tint = toml_array_in(level_table, "background_tint");
     if (tint && toml_array_nelem(tint) == 3) {

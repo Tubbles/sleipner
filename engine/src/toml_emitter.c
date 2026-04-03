@@ -398,6 +398,10 @@ static int emit_levels(char *buffer, int capacity, int offset, const Level *leve
         if (level->music_name.len > 0) {
             offset = emit_append(buffer, capacity, offset, "music = \"%s\"\n", level->music_name.ptr);
         }
+        if (level->floor_width != level->width || level->floor_height != level->height) {
+            offset = emit_append(buffer, capacity, offset, "floor_size = [%d, %d]\n", level->floor_width,
+                                 level->floor_height);
+        }
         if (level->background_tile.len > 0 && strcmp(level->background_tile.ptr, "grass.png") != 0) {
             offset = emit_append(buffer, capacity, offset, "background_tile = \"%s\"\n", level->background_tile.ptr);
         }
