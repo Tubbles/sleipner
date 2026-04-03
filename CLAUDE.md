@@ -4,6 +4,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **IMPORTANT:** This document applies to all LLMs working on this project. However, only Mistral LLM (devstral-2) shall also read and follow CONTRIBUTING.md.
 
+**DO NOT default to traditional C idioms.** This project uses modern C (C23) with its own abstractions (`Str`, `vec`, arenas, `Allocator`). Do not reach for `char[]` buffers, `malloc`/`free`, `MAX_*`-sized arrays, `sprintf` into stack buffers, or other old-school patterns — they are almost always wrong here. Read and follow the conventions in this document carefully; the project's own types and patterns exist for a reason.
+
 ## Project Overview
 
 Sleipner is a top-down Zelda-like action RPG written in C using raylib. The game is controller-driven and targets Linux x86_64. It is designed to also run on Android phones via the "Game Native" app, which uses FEX (x86_64 emulation) and Proton under the hood — so the build target is a standard Linux binary, not an Android NDK build.
