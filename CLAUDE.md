@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **IMPORTANT:** This document applies to all LLMs working on this project. However, only Mistral LLM (devstral-2) shall also read and follow CONTRIBUTING.md.
 
-**DO NOT default to traditional C idioms.** This project uses modern C (C23) with its own abstractions (`Str`, `vec`, arenas, `Allocator`). Do not reach for `char[]` buffers, `malloc`/`free`, `MAX_*`-sized arrays, `sprintf` into stack buffers, or other old-school patterns — they are almost always wrong here. Read and follow the conventions in this document carefully; the project's own types and patterns exist for a reason.
+**DO NOT default to traditional C idioms.** This project uses modern C (C23) with its own abstractions (`Str`, `vec`, arenas, `Allocator`). Do not reach for `char[]` buffers, `malloc`/`free`, `MAX_*`-sized arrays, or other old-school patterns — they are almost always wrong here. When a project abstraction exists for the job (e.g. `Str` + arena instead of a fixed-size `char` buffer), use it. Read and follow the conventions in this document carefully; the project's own types and patterns exist for a reason.
 
 ## Project Overview
 
