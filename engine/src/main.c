@@ -14,6 +14,7 @@
 #include "input.h"
 #include "level.h"
 #include "rect.h"
+#include "str.h"
 
 #include "touch.h"
 #include "toml_emitter.h"
