@@ -152,11 +152,10 @@ pos = [350, 150]
 
 [[blueprint]]
 name = "exit_door"
-texture = "chest.png"
-src = [0, 0, 16, 16]
 collision_offset = [0, 0]
-collision_size = [16, 16]
+collision_size = [20, 16]
 behavior = "static"
+solid = false
 
 [[blueprint.rule]]
 trigger = "enter"
@@ -165,11 +164,36 @@ actions = ["transition:overworld,78,80"]
 [[level]]
 name = "house_interior"
 size = [96, 128]
+background_tint = [139, 90, 43]
 
 [[level.entity]]
 blueprint = "player"
-pos = [48, 100]
+pos = [48, 80]
+
+[[level.entity]]
+blueprint = "chest"
+pos = [10, 10]
+
+[[level.entity]]
+blueprint = "chest"
+pos = [70, 10]
+
+[[level.entity]]
+blueprint = "fence_v"
+pos = [0, 30]
+
+[[level.entity]]
+blueprint = "fence_v"
+pos = [80, 30]
+
+[[level.entity]]
+blueprint = "fence_v"
+pos = [20, 80]
+
+[[level.entity]]
+blueprint = "fence_v"
+pos = [60, 80]
 
 [[level.entity]]
 blueprint = "exit_door"
-pos = [48, 120]
+pos = [38, 112]

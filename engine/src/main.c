@@ -192,11 +192,11 @@ static bool any_gamepad_exit_requested(void)
     return false;
 }
 
-static void draw_grass(Texture2D texture, RectU32 bounds)
+static void draw_background_tiles(Texture2D texture, RectU32 bounds, Color tint)
 {
     for (uint32_t tile_y = 0; tile_y < bounds.height; tile_y += TILE_SIZE) {
         for (uint32_t tile_x = 0; tile_x < bounds.width; tile_x += TILE_SIZE) {
-            DrawTexture(texture, (int)tile_x, (int)tile_y, WHITE);
+            DrawTexture(texture, (int)tile_x, (int)tile_y, tint);
         }
     }
 }
@@ -758,7 +758,8 @@ static void render_frame(GameState *state, RenderParams params)
     if (state->editor_mode) {
         BeginMode2D(params.editor_camera);
     }
-    draw_grass(*texture_registry_lookup("grass.png", state), params.game_bounds);
+    draw_background_tiles(*texture_registry_lookup("grass.png", state), params.game_bounds,
+                          state->current_level.background_tint);
     draw_entities_depth_sorted(state);
     if (state->editor_mode) {
         int hover_index = find_nearest_entity(&state->current_level, params.editor_camera.target);

@@ -396,6 +396,10 @@ static int emit_levels(char *buffer, int capacity, int offset, const Level *leve
         if (level->music_name.len > 0) {
             offset = emit_append(buffer, capacity, offset, "music = \"%s\"\n", level->music_name.ptr);
         }
+        Color tint = level->background_tint;
+        if (tint.r != 255 || tint.g != 255 || tint.b != 255) {
+            offset = emit_append(buffer, capacity, offset, "background_tint = [%d, %d, %d]\n", tint.r, tint.g, tint.b);
+        }
         offset = emit_append(buffer, capacity, offset, "\n");
 
         for (int entity_index = 0; entity_index < level->entities.count; entity_index++) {

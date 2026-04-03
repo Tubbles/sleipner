@@ -314,6 +314,7 @@ bool level_load(Diag *diag,
 {
     /* Reset the level struct — arena_reset in the caller already freed the old data. */
     memset(level, 0, sizeof(*level));
+    level->background_tint = WHITE;
     level->entities.alloc = *alloc;
 
     toml_array_t *levels = toml_array_in(toml_root, "level");
@@ -350,6 +351,18 @@ bool level_load(Diag *diag,
         }
         if (height.ok) {
             level->height = (int)height.u.i;
+        }
+    }
+
+    /* Background tint — defaults to WHITE, override with [r, g, b] */
+    toml_array_t *tint = toml_array_in(level_table, "background_tint");
+    if (tint && toml_array_nelem(tint) == 3) {
+        toml_datum_t red = toml_int_at(tint, 0);
+        toml_datum_t green = toml_int_at(tint, 1);
+        toml_datum_t blue = toml_int_at(tint, 2);
+        if (red.ok && green.ok && blue.ok) {
+            level->background_tint =
+                (Color){(unsigned char)red.u.i, (unsigned char)green.u.i, (unsigned char)blue.u.i, 255};
         }
     }
 
