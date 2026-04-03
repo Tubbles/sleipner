@@ -64,6 +64,7 @@ typedef struct {
     vec_subroutine subroutines;
     vec_timer timers;
     Level current_level;
+    vec_level other_levels;
     FlagSet flags;
     AttrSet vars;
     RectU32 game_bounds;

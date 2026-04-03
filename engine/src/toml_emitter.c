@@ -160,17 +160,17 @@ static int emit_condition_value(char *buffer, int capacity, int offset, const Co
     case COND_NOT_FLAG:
         return emit_append(buffer, capacity, offset, "\"not_flag:%s\"", condition->argument.ptr);
     case COND_ATTR:
-        return emit_append(buffer, capacity, offset, "\"attr:%s\"", condition->argument.ptr);
+        return emit_append(buffer, capacity, offset, "\"self.attr:%s\"", condition->argument.ptr);
     case COND_NOT_ATTR:
-        return emit_append(buffer, capacity, offset, "\"not_attr:%s\"", condition->argument.ptr);
+        return emit_append(buffer, capacity, offset, "\"self.not_attr:%s\"", condition->argument.ptr);
     case COND_ATTR_LT:
-        return emit_append(buffer, capacity, offset, "\"attr:%s<%g\"", condition->argument.ptr,
+        return emit_append(buffer, capacity, offset, "\"self.attr:%s<%g\"", condition->argument.ptr,
                            (double)condition->compare_value);
     case COND_ATTR_GT:
-        return emit_append(buffer, capacity, offset, "\"attr:%s>%g\"", condition->argument.ptr,
+        return emit_append(buffer, capacity, offset, "\"self.attr:%s>%g\"", condition->argument.ptr,
                            (double)condition->compare_value);
     case COND_ATTR_EQ:
-        return emit_append(buffer, capacity, offset, "\"attr:%s==%g\"", condition->argument.ptr,
+        return emit_append(buffer, capacity, offset, "\"self.attr:%s==%g\"", condition->argument.ptr,
                            (double)condition->compare_value);
     case COND_HAS_ITEM:
         return emit_append(buffer, capacity, offset, "\"has_item:%s\"", condition->argument.ptr);
@@ -215,7 +215,7 @@ static const ActionEmitEntry action_emit_table[] = {
     {.prefix = "remove_item:", .type = ACTION_REMOVE_ITEM, .arg_count = ACTION_EMIT_ONE_ARG},
     {.prefix = "play_sound:", .type = ACTION_PLAY_SOUND, .arg_count = ACTION_EMIT_ONE_ARG},
     {.prefix = "dialogue:", .type = ACTION_DIALOGUE, .arg_count = ACTION_EMIT_ONE_ARG},
-    {.prefix = "transition:", .type = ACTION_TRANSITION, .arg_count = ACTION_EMIT_ONE_ARG},
+    {.prefix = "transition:", .type = ACTION_TRANSITION, .arg_count = ACTION_EMIT_TWO_ARGS},
     {.prefix = "spawn:", .type = ACTION_SPAWN, .arg_count = ACTION_EMIT_ONE_ARG},
     {.prefix = "camera_pan:", .type = ACTION_CAMERA_PAN, .arg_count = ACTION_EMIT_ONE_ARG},
     {.prefix = "camera_shake:", .type = ACTION_CAMERA_SHAKE, .arg_count = ACTION_EMIT_ONE_ARG},
@@ -352,10 +352,12 @@ static int emit_blueprints(char *buffer, int capacity, int offset, const Bluepri
 
         offset = emit_append(buffer, capacity, offset, "[[blueprint]]\n");
         offset = emit_append(buffer, capacity, offset, "name = \"%s\"\n", attr_get_string(&blueprint->attrs, "name"));
-        offset =
-            emit_append(buffer, capacity, offset, "texture = \"%s\"\n", attr_get_string(&blueprint->attrs, "texture"));
-        offset = emit_append(buffer, capacity, offset, "src = [%d, %d, %d, %d]\n", (int)source.x, (int)source.y,
-                             (int)source.width, (int)source.height);
+        const char *texture_name = attr_get_string(&blueprint->attrs, "texture");
+        if (texture_name) {
+            offset = emit_append(buffer, capacity, offset, "texture = \"%s\"\n", texture_name);
+            offset = emit_append(buffer, capacity, offset, "src = [%d, %d, %d, %d]\n", (int)source.x, (int)source.y,
+                                 (int)source.width, (int)source.height);
+        }
         offset = emit_append(buffer, capacity, offset, "collision_offset = [%d, %d]\n", (int)col_offset.x,
                              (int)col_offset.y);
         offset = emit_append(buffer, capacity, offset, "collision_size = [%d, %d]\n", (int)col_size.x, (int)col_size.y);

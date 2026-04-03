@@ -159,7 +159,7 @@ static const char *rule_test_gamedata = "[[blueprint]]\n"
 
 void test_integration_interact_rule(void)
 {
-    GameState state;
+    GameState state = {0};
     TEST_ASSERT_TRUE(game_init(&test_diag, &state, (RectU32){320, 240}));
     TEST_ASSERT_TRUE(game_load_gamedata(
         &test_diag, &state,
@@ -217,7 +217,7 @@ void test_integration_condition_blocks_interact(void)
                                   "blueprint = \"locked_chest\"\n"
                                   "pos = [165, 120]\n";
 
-    GameState state;
+    GameState state = {0};
     TEST_ASSERT_TRUE(game_init(&test_diag, &state, (RectU32){320, 240}));
     TEST_ASSERT_TRUE(game_load_gamedata(
         &test_diag, &state, (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));
@@ -280,7 +280,7 @@ void test_integration_for_each_no_bind_iterates_all_entities(void)
                                   "blueprint = \"target\"\n"
                                   "pos = [90, 10]\n";
 
-    GameState state;
+    GameState state = {0};
     TEST_ASSERT_TRUE(game_init(&test_diag, &state, (RectU32){320, 240}));
     TEST_ASSERT_TRUE(game_load_gamedata(
         &test_diag, &state, (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));
@@ -338,7 +338,7 @@ void test_integration_for_each_condition_filter(void)
                                   "blueprint = \"bystander\"\n"
                                   "pos = [90, 10]\n";
 
-    GameState state;
+    GameState state = {0};
     TEST_ASSERT_TRUE(game_init(&test_diag, &state, (RectU32){320, 240}));
     TEST_ASSERT_TRUE(game_load_gamedata(
         &test_diag, &state, (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));
@@ -391,7 +391,7 @@ void test_integration_for_each_bind_mode(void)
         "blueprint = \"thing\"\n"
         "pos = [90, 10]\n";
 
-    GameState state;
+    GameState state = {0};
     TEST_ASSERT_TRUE(game_init(&test_diag, &state, (RectU32){320, 240}));
     TEST_ASSERT_TRUE(game_load_gamedata(
         &test_diag, &state, (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));
@@ -432,7 +432,7 @@ void test_integration_subroutine_call(void)
                                   "blueprint = \"beacon\"\n"
                                   "pos = [10, 10]\n";
 
-    GameState state;
+    GameState state = {0};
     TEST_ASSERT_TRUE(game_init(&test_diag, &state, (RectU32){320, 240}));
     TEST_ASSERT_TRUE(game_load_gamedata(
         &test_diag, &state, (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));
@@ -467,7 +467,7 @@ void test_integration_subroutine_inherits_self(void)
                                   "blueprint = \"counter\"\n"
                                   "pos = [10, 10]\n";
 
-    GameState state;
+    GameState state = {0};
     TEST_ASSERT_TRUE(game_init(&test_diag, &state, (RectU32){320, 240}));
     TEST_ASSERT_TRUE(game_load_gamedata(
         &test_diag, &state, (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));
@@ -500,7 +500,7 @@ void test_integration_subroutine_missing_is_soft_fail(void)
                                   "blueprint = \"thing\"\n"
                                   "pos = [10, 10]\n";
 
-    GameState state;
+    GameState state = {0};
     TEST_ASSERT_TRUE(game_init(&test_diag, &state, (RectU32){320, 240}));
     TEST_ASSERT_TRUE(game_load_gamedata(
         &test_diag, &state, (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));
@@ -540,7 +540,7 @@ void test_integration_timer_oneshot_fires_once(void)
                                   "pos = [10, 10]\n"
                                   "fired_count = 0\n";
 
-    GameState state;
+    GameState state = {0};
     TEST_ASSERT_TRUE(game_init(&test_diag, &state, (RectU32){320, 240}));
     TEST_ASSERT_TRUE(game_load_gamedata(
         &test_diag, &state, (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));
@@ -587,7 +587,7 @@ void test_integration_timer_periodic_fires_repeatedly(void)
                                   "pos = [10, 10]\n"
                                   "pulse_count = 0\n";
 
-    GameState state;
+    GameState state = {0};
     TEST_ASSERT_TRUE(game_init(&test_diag, &state, (RectU32){320, 240}));
     TEST_ASSERT_TRUE(game_load_gamedata(
         &test_diag, &state, (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));
@@ -635,7 +635,7 @@ void test_integration_timer_destroy_cancels(void)
                                   "pos = [10, 10]\n"
                                   "fired_count = 0\n";
 
-    GameState state;
+    GameState state = {0};
     TEST_ASSERT_TRUE(game_init(&test_diag, &state, (RectU32){320, 240}));
     TEST_ASSERT_TRUE(game_load_gamedata(
         &test_diag, &state, (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));
@@ -693,7 +693,7 @@ void test_integration_on_destroy_fires(void)
                                   "blueprint = \"thing\"\n"
                                   "pos = [10, 10]\n";
 
-    GameState state;
+    GameState state = {0};
     TEST_ASSERT_TRUE(game_init(&test_diag, &state, (RectU32){320, 240}));
     TEST_ASSERT_TRUE(game_load_gamedata(
         &test_diag, &state, (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));
@@ -734,7 +734,7 @@ void test_integration_defeat_fires_when_health_drops_to_zero(void)
                                   "blueprint = \"enemy\"\n"
                                   "pos = [10, 10]\n";
 
-    GameState state;
+    GameState state = {0};
     TEST_ASSERT_TRUE(game_init(&test_diag, &state, (RectU32){320, 240}));
     TEST_ASSERT_TRUE(game_load_gamedata(
         &test_diag, &state, (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));
@@ -779,7 +779,7 @@ void test_integration_collide_fires_on_overlap(void)
                                   "blueprint = \"barrel\"\n"
                                   "pos = [10, 10]\n";
 
-    GameState state;
+    GameState state = {0};
     TEST_ASSERT_TRUE(game_init(&test_diag, &state, (RectU32){320, 240}));
     TEST_ASSERT_TRUE(game_load_gamedata(
         &test_diag, &state, (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));

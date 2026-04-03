@@ -23,6 +23,8 @@ typedef struct {
     vec_entity entities;
 } Level;
 
+VEC_DECL(level, Level)
+
 /* Free level name, music name, and all entity Str fields and attrs. */
 void level_free(Allocator *alloc, Level *level);
 
@@ -48,3 +50,14 @@ void level_free(Allocator *alloc, Level *level);
                               TextureLookupFn texture_lookup,
                               void *texture_user_data,
                               Allocator *alloc);
+
+/* Parse all [[level]] sections EXCEPT the one named `exclude_name` into a vec.
+ * Used to preserve non-current levels during editor save. */
+[[nodiscard]] bool level_load_others(Diag *diag,
+                                     vec_level *others,
+                                     void *toml_root,
+                                     const char *exclude_name,
+                                     const BlueprintTable *blueprints,
+                                     TextureLookupFn texture_lookup,
+                                     void *texture_user_data,
+                                     Allocator *alloc);

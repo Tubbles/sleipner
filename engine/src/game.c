@@ -90,12 +90,17 @@ bool game_load_gamedata(Diag *diag, GameState *state, GamedataParams params)
     state->timers = vec_timer_new(gamedata_alloc);
     state->prev_player_overlaps = vec_bool_new(gamedata_alloc);
     state->prev_solid_collisions = vec_bool_new(gamedata_alloc);
+    state->other_levels = vec_level_new(gamedata_alloc);
     blueprints_load(diag, &state->blueprints, root, &state->gamedata_arena);
     bool subs_ok = subroutines_parse(diag, &gamedata_alloc, &state->subroutines, root, &state->gamedata_arena);
     bool level_ok = false;
     if (subs_ok) {
         level_ok = level_load(diag, &state->current_level, root, params.level_name, &state->blueprints,
                               params.texture_lookup, params.texture_user_data, &gamedata_alloc);
+    }
+    if (level_ok) {
+        (void)level_load_others(diag, &state->other_levels, root, state->current_level.name.ptr, &state->blueprints,
+                                params.texture_lookup, params.texture_user_data, &gamedata_alloc);
     }
 
     toml_free(root);

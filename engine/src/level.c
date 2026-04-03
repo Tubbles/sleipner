@@ -17,6 +17,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+VEC_IMPL(level, Level)
+
 static bool parse_instance_attr(Allocator *alloc, AttrSet *attrs, toml_table_t *table, const char *key)
 {
     toml_datum_t bool_value = toml_bool_in(table, key);
@@ -405,5 +407,63 @@ bool level_load(Diag *diag,
         }
     }
 
+    return true;
+}
+
+bool level_load_others(Diag *diag,
+                       vec_level *others,
+                       void *toml_root,
+                       const char *exclude_name,
+                       const BlueprintTable *blueprints,
+                       TextureLookupFn texture_lookup,
+                       void *texture_user_data,
+                       Allocator *alloc)
+{
+    toml_array_t *levels = toml_array_in(toml_root, "level");
+    if (!levels) {
+        return true;
+    }
+
+    int level_count = toml_array_nelem(levels);
+    for (int index = 0; index < level_count; index++) {
+        toml_table_t *level_table = toml_table_at(levels, index);
+        if (!level_table) {
+            continue;
+        }
+
+        toml_datum_t name = toml_string_in(level_table, "name");
+        if (name.ok && exclude_name && strcmp(name.u.s, exclude_name) == 0) {
+            free(name.u.s);
+            continue;
+        }
+        if (name.ok) {
+            free(name.u.s);
+        }
+
+        Level level = {0};
+        level.background_tint = WHITE;
+        level.entities.alloc = *alloc;
+
+        if (!parse_level_metadata(alloc, &level, level_table)) {
+            return false;
+        }
+
+        toml_array_t *entities = toml_array_in(level_table, "entity");
+        if (entities) {
+            int entity_count = toml_array_nelem(entities);
+            for (int entity_index = 0; entity_index < entity_count; entity_index++) {
+                toml_table_t *entity_table = toml_table_at(entities, entity_index);
+                if (entity_table) {
+                    parse_entity(diag, alloc, &level, entity_index, entity_table, blueprints, texture_lookup,
+                                 texture_user_data);
+                }
+            }
+        }
+
+        if (!vec_level_push(others, level)) {
+            error_set(diag->error, "level_load_others: out of memory");
+            return false;
+        }
+    }
     return true;
 }

@@ -413,9 +413,19 @@ static bool save_gamedata(GameState *state)
         return false;
     }
 
+    /* Build a combined level array: current level first, then other levels.
+     * Allocate on scratch arena to avoid permanent allocation. */
+    SCRATCH_SCOPE(&state->scratch_arena);
+    int total_levels = 1 + state->other_levels.count;
+    Level *all_levels = (Level *)arena_alloc(&state->scratch_arena, sizeof(Level) * (size_t)total_levels);
+    all_levels[0] = state->current_level;
+    for (int index = 0; index < state->other_levels.count; index++) {
+        all_levels[1 + index] = state->other_levels.data[index];
+    }
+
     char buffer[MAX_GAMEDATA_SIZE];
     int written =
-        toml_emit_gamedata(&state->error, buffer, (int)sizeof(buffer), &state->blueprints, &state->current_level, 1);
+        toml_emit_gamedata(&state->error, buffer, (int)sizeof(buffer), &state->blueprints, all_levels, total_levels);
     if (written < 0) {
         error_wrap(&state->error, "save_gamedata");
         return false;
