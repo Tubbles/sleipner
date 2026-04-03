@@ -59,7 +59,7 @@ solid = false
 
 [[blueprint.rule]]
 trigger = "enter"
-actions = ["transition:house_interior,48,100"]
+actions = ["transition:house_interior,48,55"]
 
 [[blueprint]]
 name = "fence_v"
