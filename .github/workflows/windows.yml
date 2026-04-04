@@ -45,4 +45,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: sleipner-windows-x86_64
-          path: build/windows/Release/engine/sleipner.exe
+          path: build/windows/build/Release/engine/sleipner.exe
