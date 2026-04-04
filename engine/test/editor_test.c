@@ -21,11 +21,12 @@ FAKE_VALUE_FUNC(bool, IsGamepadButtonDown, int, int);
 /* raylib draw fakes */
 FAKE_VOID_FUNC(DrawLine, int, int, int, int, Color);
 FAKE_VOID_FUNC(DrawRectangle, int, int, int, int, Color);
-FAKE_VOID_FUNC(DrawText, const char *, int, int, int, Color);
+FAKE_VOID_FUNC(DrawTextEx, Font, const char *, Vector2, float, float, Color);
 FAKE_VOID_FUNC(DrawRectangleLinesEx, Rectangle, float, Color);
 FAKE_VOID_FUNC(DrawCircle, int, int, float, Color);
 FAKE_VOID_FUNC(DrawRing, Vector2, float, float, float, float, int, Color);
-FAKE_VALUE_FUNC(int, MeasureText, const char *, int);
+FAKE_VALUE_FUNC(Vector2, MeasureTextEx, Font, const char *, float, float);
+FAKE_VALUE_FUNC(bool, IsFontValid, Font);
 
 /* TextFormat stub — variadic, cannot use FAKE_VALUE_FUNC */
 const char *TextFormat(const char *text, ...)

@@ -51,6 +51,12 @@ VEC_IMPL(texture_entry, TextureEntry)
 #define DEBUG_LINES 14
 #define FONT_PREVIEW_SIZE 32
 
+/* UI text helpers — wrap DrawTextEx with the same ergonomics as DrawText */
+static void draw_ui_text(Font font, const char *text, int pos_x, int pos_y, int font_size, Color color)
+{
+    DrawTextEx(font, text, (Vector2){(float)pos_x, (float)pos_y}, (float)font_size, 1, color);
+}
+
 /* Texture registry — maps texture filenames to loaded Texture2D handles */
 static void texture_registry_add(GameState *state, const char *filename, Texture2D texture, Allocator *alloc)
 {
@@ -237,34 +243,37 @@ static void draw_debug_info(GameState *state, RectU32 game_bounds)
     int panel_height = (DEBUG_LINES * DEBUG_LINE_HEIGHT) + (DEBUG_MARGIN * 2);
     DrawRectangle(0, 0, panel_width, panel_height, debug_bg_color);
 
-    DrawText("v" SLEIPNER_VERSION "  " __DATE__, DEBUG_MARGIN, DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT),
-             DEBUG_FONT_SIZE, debug_text_color);
-    DrawText(TextFormat("FPS: %d  frame: %d  t: %.1fs", GetFPS(), state->frame, state->elapsed), DEBUG_MARGIN,
-             DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, debug_text_color);
-    DrawText(TextFormat("arena: %zu bytes", arena_used(&state->gamedata_arena)), DEBUG_MARGIN,
-             DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, debug_text_color);
-    DrawText(TextFormat("screen: %dx%d", state->screen_width, state->screen_height), DEBUG_MARGIN,
-             DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, debug_text_color);
-    DrawText(TextFormat("GetScreen: %dx%d  GetRender: %dx%d", screen_w, screen_h, render_w, render_h), DEBUG_MARGIN,
-             DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, debug_text_color);
-    DrawText(TextFormat("game: %ux%u  scale: %d", game_bounds.width, game_bounds.height, PIXEL_SCALE), DEBUG_MARGIN,
-             DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, debug_text_color);
+    Font font = state->assets.ui_font;
+    draw_ui_text(font, "v" SLEIPNER_VERSION "  " __DATE__, DEBUG_MARGIN, DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT),
+                 DEBUG_FONT_SIZE, debug_text_color);
+    draw_ui_text(font, TextFormat("FPS: %d  frame: %d  t: %.1fs", GetFPS(), state->frame, state->elapsed), DEBUG_MARGIN,
+                 DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, debug_text_color);
+    draw_ui_text(font, TextFormat("arena: %zu bytes", arena_used(&state->gamedata_arena)), DEBUG_MARGIN,
+                 DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, debug_text_color);
+    draw_ui_text(font, TextFormat("screen: %dx%d", state->screen_width, state->screen_height), DEBUG_MARGIN,
+                 DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, debug_text_color);
+    draw_ui_text(font, TextFormat("GetScreen: %dx%d  GetRender: %dx%d", screen_w, screen_h, render_w, render_h),
+                 DEBUG_MARGIN, DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, debug_text_color);
+    draw_ui_text(font, TextFormat("game: %ux%u  scale: %d", game_bounds.width, game_bounds.height, PIXEL_SCALE),
+                 DEBUG_MARGIN, DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, debug_text_color);
 
     if (player) {
-        DrawText(TextFormat("player: %.1f, %.1f  row: %d", player->position.x, player->position.y, player->anim_row),
-                 DEBUG_MARGIN, DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, debug_text_color);
-        DrawText(TextFormat("collision: %.0f,%.0f %.0fx%.0f", player->collision.x, player->collision.y,
-                            player->collision.width, player->collision.height),
-                 DEBUG_MARGIN, DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, debug_text_color);
+        draw_ui_text(
+            font, TextFormat("player: %.1f, %.1f  row: %d", player->position.x, player->position.y, player->anim_row),
+            DEBUG_MARGIN, DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, debug_text_color);
+        draw_ui_text(font,
+                     TextFormat("collision: %.0f,%.0f %.0fx%.0f", player->collision.x, player->collision.y,
+                                player->collision.width, player->collision.height),
+                     DEBUG_MARGIN, DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, debug_text_color);
     }
 
-    DrawText(TextFormat("gamepads: %d", input_count_gamepads()), DEBUG_MARGIN,
-             DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, debug_text_color);
+    draw_ui_text(font, TextFormat("gamepads: %d", input_count_gamepads()), DEBUG_MARGIN,
+                 DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, debug_text_color);
 
     for (int index = 0; index < 4; index++) {
         if (IsGamepadAvailable(index)) {
-            DrawText(TextFormat("  gp%d: %s", index, GetGamepadName(index)), DEBUG_MARGIN,
-                     DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, debug_text_color);
+            draw_ui_text(font, TextFormat("  gp%d: %s", index, GetGamepadName(index)), DEBUG_MARGIN,
+                         DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, debug_text_color);
         }
     }
 
@@ -276,8 +285,8 @@ static void draw_debug_info(GameState *state, RectU32 game_bounds)
         DrawRectangle(0, log_y, state->screen_width, log_height, debug_bg_color);
 
         for (int index = 0; index < line_count; index++) {
-            DrawText(debug_get_line(&state->debug, index), DEBUG_MARGIN,
-                     log_y + DEBUG_MARGIN + (index * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, debug_log_color);
+            draw_ui_text(font, debug_get_line(&state->debug, index), DEBUG_MARGIN,
+                         log_y + DEBUG_MARGIN + (index * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, debug_log_color);
         }
     }
 }
@@ -303,6 +312,12 @@ static void load_persistent_assets(GameState *state)
     font_preview_add(state, "Nudge Orb", ASSET(nudge_orb_ttf), &gamedata_alloc);
     font_preview_add(state, "CardboardCrown", ASSET(cardboardcrown_ttf), &gamedata_alloc);
     font_preview_add(state, "RoyalFibre", ASSET(royalfibre_ttf), &gamedata_alloc);
+
+    EmbeddedAsset ui_font_asset = ASSET(golden_apple_ttf);
+    state->assets.ui_font =
+        LoadFontFromMemory(".ttf", ui_font_asset.data, ui_font_asset.size, DEBUG_FONT_SIZE, nullptr, 0);
+    debug_log(&state->debug, "ui_font: Golden Apple %dpx valid=%d", DEBUG_FONT_SIZE,
+              IsFontValid(state->assets.ui_font));
 }
 
 static void unload_textures(GameState *state)
@@ -319,6 +334,9 @@ static void font_preview_cleanup(GameState *state)
             UnloadFont(state->assets.font_previews.data[index].font);
         }
     }
+    if (IsFontValid(state->assets.ui_font)) {
+        UnloadFont(state->assets.ui_font);
+    }
 }
 
 static void draw_font_preview(GameState *state)
@@ -329,23 +347,24 @@ static void draw_font_preview(GameState *state)
                        (DEBUG_LINE_HEIGHT * 3);
     DrawRectangle(panel_x, 0, state->screen_width - panel_x, panel_height, debug_bg_color);
 
+    Font font = state->assets.ui_font;
     int y_offset = DEBUG_MARGIN;
-    DrawText("Font Preview - All fonts loaded at 32px", panel_x + DEBUG_MARGIN, y_offset, DEBUG_FONT_SIZE,
-             debug_text_color);
+    draw_ui_text(font, "Font Preview - All fonts loaded at 32px", panel_x + DEBUG_MARGIN, y_offset, DEBUG_FONT_SIZE,
+                 debug_text_color);
     y_offset += DEBUG_LINE_HEIGHT;
-    DrawText("(Visual size varies by font design)", panel_x + DEBUG_MARGIN, y_offset, DEBUG_FONT_SIZE,
-             debug_text_color);
+    draw_ui_text(font, "(Visual size varies by font design)", panel_x + DEBUG_MARGIN, y_offset, DEBUG_FONT_SIZE,
+                 debug_text_color);
     y_offset += DEBUG_LINE_HEIGHT;
-    DrawText(TextFormat("Showing %d fonts total", state->assets.font_previews.count), panel_x + DEBUG_MARGIN, y_offset,
-             DEBUG_FONT_SIZE, debug_text_color);
+    draw_ui_text(font, TextFormat("Showing %d fonts total", state->assets.font_previews.count), panel_x + DEBUG_MARGIN,
+                 y_offset, DEBUG_FONT_SIZE, debug_text_color);
     y_offset += DEBUG_LINE_HEIGHT;
 
     for (int index = 0; index < state->assets.font_previews.count; index++) {
         if (!state->assets.font_previews.data[index].valid) {
             continue;
         }
-        DrawText(TextFormat("%d. %s", index + 1, state->assets.font_previews.data[index].name), panel_x + DEBUG_MARGIN,
-                 y_offset, DEBUG_FONT_SIZE, debug_text_color);
+        draw_ui_text(font, TextFormat("%d. %s", index + 1, state->assets.font_previews.data[index].name),
+                     panel_x + DEBUG_MARGIN, y_offset, DEBUG_FONT_SIZE, debug_text_color);
         y_offset += DEBUG_LINE_HEIGHT;
         DrawTextEx(state->assets.font_previews.data[index].font, "The quick brown fox 0123456789",
                    (Vector2){(float)(panel_x + DEBUG_MARGIN), (float)y_offset}, FONT_PREVIEW_SIZE, 1, WHITE);
@@ -817,8 +836,8 @@ static void render_frame(GameState *state, RenderParams params)
         }
     }
     draw_watch_overlay(screen, state, params.watches);
-    draw_radial_picker(screen, &params.editor_state);
-    draw_hints_bar(state->editor_mode, &params.editor_state, screen);
+    draw_radial_picker(screen, &params.editor_state, state->assets.ui_font);
+    draw_hints_bar(state->editor_mode, &params.editor_state, screen, state->assets.ui_font);
     EndDrawing();
 }
 

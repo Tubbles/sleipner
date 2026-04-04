@@ -49,6 +49,7 @@ VEC_DECL(font_preview, FontPreviewEntry)
 typedef struct {
     vec_texture_entry textures;
     vec_font_preview font_previews;
+    Font ui_font;
 } AssetRegistry;
 
 typedef struct {

@@ -99,7 +99,7 @@ typedef struct {
 bool toggle_pressed(ToggleBinding binding);
 void update_editor_camera(Camera2D *camera, InputState input, float delta_time);
 void draw_editor_crosshair(RectU32 game_bounds);
-void draw_hints_bar(bool editor_mode, const EditorState *editor_state, ScreenSize screen);
+void draw_hints_bar(bool editor_mode, const EditorState *editor_state, ScreenSize screen, Font ui_font);
 int find_nearest_entity(const Level *level, Vector2 cursor_world);
 void draw_editor_highlights(const GameState *state, const EditorState *editor_state, int hover_entity_index);
 void draw_editor_panel(ScreenSize screen, const GameState *state, const EditorState *editor_state);
@@ -117,7 +117,7 @@ void handle_mode_transitions(const GameState *state, EditorState *editor_state);
 void handle_drag_input(GameState *state, EditorState *editor_state, InputState input, float delta_time);
 void handle_handle_input(GameState *state, EditorState *editor_state, InputState input, float delta_time);
 void handle_attr_edit_input(GameState *state, EditorState *editor_state, float delta_time);
-void draw_radial_picker(ScreenSize screen, const EditorState *editor_state);
+void draw_radial_picker(ScreenSize screen, const EditorState *editor_state, Font ui_font);
 void handle_radial_input(EditorState *editor_state, InputState input);
 void handle_word_builder_input(Diag *diag, GameState *state, EditorState *editor_state);
 void draw_word_builder_panel(ScreenSize screen, const GameState *state, const EditorState *editor_state);

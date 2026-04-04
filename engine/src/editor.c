@@ -25,6 +25,16 @@ static const Color handle_color = {0, 255, 255, 255};            /* cyan: collis
 static const Color place_ghost_color = {100, 255, 100, 180};     /* semi-transparent green: place preview */
 static const Color radial_highlight_color = {255, 200, 50, 200}; /* amber: selected radial sector */
 
+static void draw_ui_text(Font font, const char *text, int pos_x, int pos_y, int font_size, Color color)
+{
+    DrawTextEx(font, text, (Vector2){(float)pos_x, (float)pos_y}, (float)font_size, 1, color);
+}
+
+static int measure_ui_text(Font font, const char *text, int font_size)
+{
+    return (int)MeasureTextEx(font, text, (float)font_size, 1).x;
+}
+
 bool toggle_pressed(ToggleBinding binding)
 {
     if (IsKeyPressed(binding.key)) {
@@ -47,7 +57,7 @@ void draw_editor_crosshair(RectU32 game_bounds)
     DrawLine(center_x, center_y - EDITOR_CROSSHAIR_HALF, center_x, center_y + EDITOR_CROSSHAIR_HALF, WHITE);
 }
 
-void draw_hints_bar(bool editor_mode, const EditorState *editor_state, ScreenSize screen)
+void draw_hints_bar(bool editor_mode, const EditorState *editor_state, ScreenSize screen, Font ui_font)
 {
     int bar_y = screen.height - HINTS_BAR_HEIGHT;
     DrawRectangle(0, bar_y, screen.width, HINTS_BAR_HEIGHT, debug_bg_color);
@@ -74,7 +84,7 @@ void draw_hints_bar(bool editor_mode, const EditorState *editor_state, ScreenSiz
         hints = "F5: Editor  |  F3: Debug  |  F4: Fonts";
     }
     int text_y = bar_y + ((HINTS_BAR_HEIGHT - HINTS_FONT_SIZE) / 2);
-    DrawText(hints, DEBUG_MARGIN, text_y, HINTS_FONT_SIZE, debug_text_color);
+    draw_ui_text(ui_font, hints, DEBUG_MARGIN, text_y, HINTS_FONT_SIZE, debug_text_color);
 }
 
 int find_nearest_entity(const Level *level, Vector2 cursor_world)
@@ -145,13 +155,14 @@ static const char *attr_display_value(const Attribute *attr)
     return "";
 }
 
-static void draw_attr_section(const AttrSet *set, int panel_x, int *y_offset, int base_index, int selected_attr_index)
+static void
+draw_attr_section(Font font, const AttrSet *set, int panel_x, int *y_offset, int base_index, int selected_attr_index)
 {
     for (int index = 0; index < set->entries.count; index++) {
         const Attribute *attr = &set->entries.data[index];
         Color text_color = (base_index + index == selected_attr_index) ? WHITE : debug_text_color;
-        DrawText(TextFormat("  %s: %s", attr->name.ptr, attr_display_value(attr)), panel_x + DEBUG_MARGIN, *y_offset,
-                 EDITOR_PANEL_FONT_SIZE, text_color);
+        draw_ui_text(font, TextFormat("  %s: %s", attr->name.ptr, attr_display_value(attr)), panel_x + DEBUG_MARGIN,
+                     *y_offset, EDITOR_PANEL_FONT_SIZE, text_color);
         *y_offset += EDITOR_PANEL_LINE_HEIGHT;
     }
 }
@@ -162,26 +173,29 @@ void draw_editor_panel(ScreenSize screen, const GameState *state, const EditorSt
     if (sel < 0 || sel >= state->current_level.entities.count) {
         return;
     }
+    Font font = state->assets.ui_font;
     const Entity *entity = &state->current_level.entities.data[sel];
     int panel_x = screen.width - EDITOR_PANEL_WIDTH;
     int y_offset = 0;
     DrawRectangle(panel_x, 0, EDITOR_PANEL_WIDTH, screen.height, debug_bg_color);
-    DrawText(TextFormat("[ %s ]  id: %d  parent: %d", entity->blueprint_name.ptr, entity->id, entity->parent_index),
-             panel_x + DEBUG_MARGIN, y_offset, EDITOR_PANEL_FONT_SIZE, debug_text_color);
+    draw_ui_text(font,
+                 TextFormat("[ %s ]  id: %d  parent: %d", entity->blueprint_name.ptr, entity->id, entity->parent_index),
+                 panel_x + DEBUG_MARGIN, y_offset, EDITOR_PANEL_FONT_SIZE, debug_text_color);
     y_offset += EDITOR_PANEL_LINE_HEIGHT;
-    DrawText(TextFormat("pos: %.1f %.1f", entity->position.x, entity->position.y), panel_x + DEBUG_MARGIN, y_offset,
-             EDITOR_PANEL_FONT_SIZE, debug_text_color);
+    draw_ui_text(font, TextFormat("pos: %.1f %.1f", entity->position.x, entity->position.y), panel_x + DEBUG_MARGIN,
+                 y_offset, EDITOR_PANEL_FONT_SIZE, debug_text_color);
     y_offset += EDITOR_PANEL_LINE_HEIGHT * 2;
-    DrawText("--- instance ---", panel_x + DEBUG_MARGIN, y_offset, EDITOR_PANEL_FONT_SIZE, debug_text_color);
+    draw_ui_text(font, "--- instance ---", panel_x + DEBUG_MARGIN, y_offset, EDITOR_PANEL_FONT_SIZE, debug_text_color);
     y_offset += EDITOR_PANEL_LINE_HEIGHT;
     int sel_attr = editor_state->selected_attr_index;
-    draw_attr_section(&entity->attrs, panel_x, &y_offset, 0, sel_attr);
+    draw_attr_section(font, &entity->attrs, panel_x, &y_offset, 0, sel_attr);
     const AttrSet *defaults = entity_resolve_defaults(state, entity->id);
     if (defaults) {
-        DrawText("--- blueprint ---", panel_x + DEBUG_MARGIN, y_offset, EDITOR_PANEL_FONT_SIZE, debug_text_color);
+        draw_ui_text(font, "--- blueprint ---", panel_x + DEBUG_MARGIN, y_offset, EDITOR_PANEL_FONT_SIZE,
+                     debug_text_color);
         y_offset += EDITOR_PANEL_LINE_HEIGHT;
         int blueprint_base = entity->attrs.entries.count;
-        draw_attr_section(defaults, panel_x, &y_offset, blueprint_base, sel_attr);
+        draw_attr_section(font, defaults, panel_x, &y_offset, blueprint_base, sel_attr);
     }
 }
 
@@ -201,15 +215,17 @@ void draw_watch_overlay(ScreenSize screen, const GameState *state, const WatchLi
             continue;
         }
         const Entity *entity = &state->current_level.entities.data[entity_index];
-        DrawText(TextFormat("[%s] pos:%.0f,%.0f", entity->blueprint_name.ptr, entity->position.x, entity->position.y),
-                 panel_x + DEBUG_MARGIN, y_offset, EDITOR_PANEL_FONT_SIZE, debug_text_color);
+        draw_ui_text(
+            state->assets.ui_font,
+            TextFormat("[%s] pos:%.0f,%.0f", entity->blueprint_name.ptr, entity->position.x, entity->position.y),
+            panel_x + DEBUG_MARGIN, y_offset, EDITOR_PANEL_FONT_SIZE, debug_text_color);
         y_offset += EDITOR_PANEL_LINE_HEIGHT;
         const AttrSet *defaults = entity_resolve_defaults(state, entity->id);
         const Attribute *hp_attr = attr_get_scoped(&entity->attrs, defaults, "hp");
         const Attribute *hp_max_attr = attr_get_scoped(&entity->attrs, defaults, "hp_max");
         if (hp_attr && hp_max_attr) {
-            DrawText(TextFormat("  hp: %d/%d", hp_attr->value.i, hp_max_attr->value.i), panel_x + DEBUG_MARGIN,
-                     y_offset, EDITOR_PANEL_FONT_SIZE, debug_text_color);
+            draw_ui_text(state->assets.ui_font, TextFormat("  hp: %d/%d", hp_attr->value.i, hp_max_attr->value.i),
+                         panel_x + DEBUG_MARGIN, y_offset, EDITOR_PANEL_FONT_SIZE, debug_text_color);
         }
         y_offset += EDITOR_PANEL_LINE_HEIGHT;
     }
@@ -355,7 +371,8 @@ void draw_place_panel(ScreenSize screen, const GameState *state, const EditorSta
     int panel_x = screen.width - EDITOR_PANEL_WIDTH;
     DrawRectangle(panel_x, 0, EDITOR_PANEL_WIDTH, screen.height, debug_bg_color);
     int y_offset = 0;
-    DrawText("[ Place Mode ]", panel_x + DEBUG_MARGIN, y_offset, EDITOR_PANEL_FONT_SIZE, debug_text_color);
+    Font font = state->assets.ui_font;
+    draw_ui_text(font, "[ Place Mode ]", panel_x + DEBUG_MARGIN, y_offset, EDITOR_PANEL_FONT_SIZE, debug_text_color);
     y_offset += EDITOR_PANEL_LINE_HEIGHT;
 
     int visible = place_visible_count(screen.height);
@@ -378,8 +395,8 @@ void draw_place_panel(ScreenSize screen, const GameState *state, const EditorSta
         const char *name = attr_get_string(&state->blueprints.entries.data[index].attrs, "name");
         bool selected = (index == bp_index);
         Color color = selected ? WHITE : debug_text_color;
-        DrawText(TextFormat("%s %s", selected ? ">" : " ", name ? name : "?"), panel_x + DEBUG_MARGIN, y_offset,
-                 EDITOR_PANEL_FONT_SIZE, color);
+        draw_ui_text(font, TextFormat("%s %s", selected ? ">" : " ", name ? name : "?"), panel_x + DEBUG_MARGIN,
+                     y_offset, EDITOR_PANEL_FONT_SIZE, color);
         y_offset += EDITOR_PANEL_LINE_HEIGHT;
     }
 }
@@ -820,7 +837,7 @@ static const char *radial_label(const EditorState *editor_state, int index)
     return "";
 }
 
-void draw_radial_picker(ScreenSize screen, const EditorState *editor_state)
+void draw_radial_picker(ScreenSize screen, const EditorState *editor_state, Font ui_font)
 {
     if (editor_state->sub_mode != EDITOR_SUB_RADIAL) {
         return;
@@ -845,8 +862,9 @@ void draw_radial_picker(ScreenSize screen, const EditorState *editor_state)
         int label_x = center_x + (int)(cosf(mid_rad) * label_radius);
         int label_y = center_y + (int)(sinf(mid_rad) * label_radius);
         const char *label = radial_label(editor_state, index);
-        int text_width = MeasureText(label, RADIAL_FONT_SIZE);
-        DrawText(label, label_x - (text_width / 2), label_y - (RADIAL_FONT_SIZE / 2), RADIAL_FONT_SIZE, sector_color);
+        int text_width = measure_ui_text(ui_font, label, RADIAL_FONT_SIZE);
+        draw_ui_text(ui_font, label, label_x - (text_width / 2), label_y - (RADIAL_FONT_SIZE / 2), RADIAL_FONT_SIZE,
+                     sector_color);
     }
     DrawCircle(center_x, center_y, RADIAL_INNER_RADIUS, debug_bg_color);
 }
@@ -939,10 +957,11 @@ void draw_word_builder_panel(ScreenSize screen, const GameState *state, const Ed
     int panel_x = screen.width - EDITOR_PANEL_WIDTH;
     DrawRectangle(panel_x, 0, EDITOR_PANEL_WIDTH, screen.height, debug_bg_color);
     int y_offset = 0;
-    DrawText("[ Word Builder ]", panel_x + DEBUG_MARGIN, y_offset, EDITOR_PANEL_FONT_SIZE, debug_text_color);
+    Font font = state->assets.ui_font;
+    draw_ui_text(font, "[ Word Builder ]", panel_x + DEBUG_MARGIN, y_offset, EDITOR_PANEL_FONT_SIZE, debug_text_color);
     y_offset += EDITOR_PANEL_LINE_HEIGHT;
-    DrawText(TextFormat("  %s", editor_state->word_builder_buf), panel_x + DEBUG_MARGIN, y_offset,
-             EDITOR_PANEL_FONT_SIZE, WHITE);
+    draw_ui_text(font, TextFormat("  %s", editor_state->word_builder_buf), panel_x + DEBUG_MARGIN, y_offset,
+                 EDITOR_PANEL_FONT_SIZE, WHITE);
     y_offset += EDITOR_PANEL_LINE_HEIGHT * 2;
 
     int total = word_builder_total_count(state);
@@ -967,8 +986,8 @@ void draw_word_builder_panel(ScreenSize screen, const GameState *state, const Ed
         const char *item = word_builder_item(state, index);
         bool selected = (index == scroll);
         Color color = selected ? WHITE : debug_text_color;
-        DrawText(TextFormat("%s %s", selected ? ">" : " ", item), panel_x + DEBUG_MARGIN, y_offset,
-                 EDITOR_PANEL_FONT_SIZE, color);
+        draw_ui_text(font, TextFormat("%s %s", selected ? ">" : " ", item), panel_x + DEBUG_MARGIN, y_offset,
+                     EDITOR_PANEL_FONT_SIZE, color);
         y_offset += EDITOR_PANEL_LINE_HEIGHT;
     }
 }
