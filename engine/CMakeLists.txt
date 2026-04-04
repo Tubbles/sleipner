@@ -12,7 +12,11 @@ endforeach()
 
 add_library(engine STATIC ${engine_srcs})
 target_include_directories(engine PUBLIC src)
-target_compile_definitions(engine PRIVATE _GNU_SOURCE)
+if(WIN32)
+    target_link_libraries(engine PUBLIC kernel32)
+else()
+    target_compile_definitions(engine PRIVATE _GNU_SOURCE)
+endif()
 target_link_libraries(engine PUBLIC raylib tomlc99)
 
 add_executable(sleipner src/main.c)

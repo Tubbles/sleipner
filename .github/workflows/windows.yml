@@ -1,0 +1,48 @@
+name: Windows
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache Docker layers
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-docker-${{ hashFiles('Dockerfile') }}
+          restore-keys: |
+            ${{ runner.os }}-docker-
+
+      - name: Build toolchain image with cache
+        run: |
+          docker buildx create --use
+          docker buildx build --cache-from=type=local,src=/tmp/.buildx-cache --cache-to=type=local,dest=/tmp/.buildx-cache --load -t sleipner-toolchain .
+
+      - name: Cache Conan build
+        uses: actions/cache@v4
+        with:
+          path: build/.conan2
+          key: ${{ runner.os }}-conan-windows-${{ hashFiles('conanfile.py') }}
+          restore-keys: |
+            ${{ runner.os }}-conan-windows-
+
+      - name: Build Windows exe
+        run: CONTAINER_CMD=docker ./ci.sh windows windows.log
+
+      - name: Show log
+        if: always()
+        run: cat tmp/windows.log
+
+      - name: Upload exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: sleipner-windows-x86_64
+          path: build/windows/Release/engine/sleipner.exe

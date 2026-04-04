@@ -102,6 +102,15 @@ do_all() {
     do_pytest
 }
 
+windows_conan_setup="$conan_profile_setup"' && conan install . --output-folder=build/windows --build=missing \
+    -pr:h profiles/windows-x86_64'
+
+do_windows() {
+    echo "=== windows ==="
+    mkdir -p build/windows
+    run bash -c "$windows_conan_setup && conan build . --output-folder=build/windows"
+}
+
 android_conan_setup="$conan_profile_setup"' && conan install . --output-folder=build/android/arm64-v8a --build=missing \
     -s os=Android -s os.api_level=27 -s arch=armv8 \
     -s compiler=clang -s compiler.version=18 -s compiler.libcxx=c++_static -s compiler.cppstd=17 \
@@ -154,10 +163,11 @@ case "${1:-all}" in
     all)      do_all ;;
     cppcheck) do_cppcheck ;;
     pytest)   do_pytest ;;
+    windows)  do_windows ;;
     android)  do_android ;;
     apk)     do_apk ;;
     *)
-        echo "Usage: $0 {format|check|build|test|lint|all|cppcheck|pytest|android|apk}"
+        echo "Usage: $0 {format|check|build|test|lint|all|cppcheck|pytest|windows|android|apk}"
         exit 1
         ;;
 esac

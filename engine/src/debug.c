@@ -5,9 +5,36 @@
 #include <string.h>
 #include <time.h>
 
+#ifdef _WIN32
+#define FOPEN_APPEND "a"
+#else
+#define FOPEN_APPEND "ae"
+#endif
+
 #define NSEC_PER_MSEC 1000000L
 #define TM_YEAR_OFFSET 1900
 
+#ifdef _WIN32
+#include <windows.h>
+
+#define WIN32_EPOCH_OFFSET 116444736000000000ULL
+#define FILETIME_TICKS_PER_SEC 10000000ULL
+#define FILETIME_TICKS_PER_MSEC 10000ULL
+
+static void write_timestamp(FILE *output)
+{
+    FILETIME ft;
+    GetSystemTimePreciseAsFileTime(&ft);
+    ULARGE_INTEGER ull = {.LowPart = ft.dwLowDateTime, .HighPart = ft.dwHighDateTime};
+    uint64_t unix_ticks = ull.QuadPart - WIN32_EPOCH_OFFSET;
+    time_t sec = (time_t)(unix_ticks / FILETIME_TICKS_PER_SEC);
+    long msec = (long)((unix_ticks % FILETIME_TICKS_PER_SEC) / FILETIME_TICKS_PER_MSEC);
+    struct tm local;
+    localtime_s(&local, &sec);
+    (void)fprintf(output, "[%04d-%02d-%02d %02d:%02d:%02d.%03ld] ", local.tm_year + TM_YEAR_OFFSET, local.tm_mon + 1,
+                  local.tm_mday, local.tm_hour, local.tm_min, local.tm_sec, msec);
+}
+#else
 static void write_timestamp(FILE *output)
 {
     struct timespec now;
@@ -18,6 +45,7 @@ static void write_timestamp(FILE *output)
     (void)fprintf(output, "[%04d-%02d-%02d %02d:%02d:%02d.%03ld] ", local.tm_year + TM_YEAR_OFFSET, local.tm_mon + 1,
                   local.tm_mday, local.tm_hour, local.tm_min, local.tm_sec, now.tv_nsec / NSEC_PER_MSEC);
 }
+#endif
 
 void debug_init(DebugState *dbg, const char *trace_path)
 {
@@ -27,7 +55,7 @@ void debug_init(DebugState *dbg, const char *trace_path)
     dbg->trace_file = nullptr;
 
     if (trace_path) {
-        dbg->trace_file = fopen(trace_path, "ae");
+        dbg->trace_file = fopen(trace_path, FOPEN_APPEND);
         if (dbg->trace_file) {
             debug_log(dbg, "trace file opened: %s", trace_path);
         } else {

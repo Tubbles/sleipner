@@ -29,6 +29,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxcb-cursor-dev libxcb-dri2-0-dev libxcb-present-dev \
     libxcb-composite0-dev libxcb-ewmh-dev libxcb-res0-dev \
     libxcb-util-dev \
+    gcc-mingw-w64-x86-64 \
     && rm -rf /var/lib/apt/lists/*
 
 # Install LLVM 22 via llvm.sh (sets up repo + installs clang)

@@ -27,6 +27,14 @@
 #include <string.h>
 #include <sys/stat.h>
 
+#ifdef _WIN32
+#define FOPEN_READ "r"
+#define FOPEN_WRITE "w"
+#else
+#define FOPEN_READ "re"
+#define FOPEN_WRITE "we"
+#endif
+
 VEC_IMPL(font_preview, FontPreviewEntry)
 VEC_IMPL(texture_entry, TextureEntry)
 
@@ -385,13 +393,13 @@ static bool backup_file(GameState *state, const char *path)
     char backup_path[MAX_PATH_LEN];
     (void)snprintf(backup_path, MAX_PATH_LEN, "%s.bak", path);
 
-    FILE *source = fopen(path, "re");
+    FILE *source = fopen(path, FOPEN_READ);
     if (!source) {
         error_set(&state->error, "backup fopen(%s): %s", path, strerror(errno));
         return false;
     }
 
-    FILE *dest = fopen(backup_path, "we");
+    FILE *dest = fopen(backup_path, FOPEN_WRITE);
     if (!dest) {
         error_set(&state->error, "backup fopen(%s): %s", backup_path, strerror(errno));
         (void)fclose(source);
@@ -450,7 +458,7 @@ static bool save_gamedata(GameState *state)
         return false;
     }
 
-    FILE *file = fopen(GAMEDATA_PATH, "we");
+    FILE *file = fopen(GAMEDATA_PATH, FOPEN_WRITE);
     if (!file) {
         error_set(&state->error, "fopen(%s): %s", GAMEDATA_PATH, strerror(errno));
         error_wrap(&state->error, "save_gamedata");
@@ -481,7 +489,7 @@ static char *read_file_text(GameState *state, const char *path, Arena *arena)
     debug_log(&state->debug, "gamedata: stat(%s): size=%ld mode=%o uid=%d gid=%d", path, (long)file_stat.st_size,
               (unsigned)file_stat.st_mode, (int)file_stat.st_uid, (int)file_stat.st_gid);
 
-    FILE *file = fopen(path, "re");
+    FILE *file = fopen(path, FOPEN_READ);
     if (!file) {
         error_set(&state->error, "fopen(%s): %s", path, strerror(errno));
         return nullptr;

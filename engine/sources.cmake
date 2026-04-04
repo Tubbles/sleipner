@@ -7,8 +7,14 @@
 #   embed_asset(target symbol path)  — embed one binary asset via .incbin
 #   embed_all_assets(target root)    — embed all standard assets; root is absolute project root
 
+if(WIN32)
+    set(ARENA_SOURCE arena_win32.c)
+else()
+    set(ARENA_SOURCE arena_posix.c)
+endif()
+
 set(ENGINE_SOURCE_FILES
-    arena.c
+    ${ARENA_SOURCE}
     attribute.c
     audio.c
     blueprint.c
@@ -39,8 +45,14 @@ set(ENGINE_SOURCE_FILES
 function(embed_asset target symbol_name abs_asset)
     set(asm_file "${CMAKE_CURRENT_BINARY_DIR}/embed_${symbol_name}.S")
 
+    if(WIN32)
+        set(section_dir "    .section .rdata,\"dr\"\n")
+    else()
+        set(section_dir "    .section .rodata\n")
+    endif()
+
     file(WRITE "${asm_file}"
-        "    .section .rodata\n"
+        "${section_dir}"
         "    .global embed_${symbol_name}_start\n"
         "    .global embed_${symbol_name}_end\n"
         "    .balign 16\n"

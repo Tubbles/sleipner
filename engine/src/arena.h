@@ -14,6 +14,9 @@ typedef struct Arena {
     uint8_t *buffer;
     size_t offset;
     uint8_t *last_alloc;
+#ifdef _WIN32
+    size_t committed; /* bytes committed via VirtualAlloc MEM_COMMIT */
+#endif
 } Arena;
 
 /* Opaque checkpoint — stores an arena offset for later restore. */

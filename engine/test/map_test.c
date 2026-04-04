@@ -1,11 +1,11 @@
 #include "fff.h"
 #include "unity.h"
 
-#include "../src/strv.c"  // NOLINT(bugprone-suspicious-include)
-#include "../src/str.c"   // NOLINT(bugprone-suspicious-include)
-#include "../src/error.c" // NOLINT(bugprone-suspicious-include)
-#include "../src/arena.c" // NOLINT(bugprone-suspicious-include)
-#include "../src/map.c"   // NOLINT(bugprone-suspicious-include)
+#include "../src/strv.c"        // NOLINT(bugprone-suspicious-include)
+#include "../src/str.c"         // NOLINT(bugprone-suspicious-include)
+#include "../src/error.c"       // NOLINT(bugprone-suspicious-include)
+#include "../src/arena_posix.c" // NOLINT(bugprone-suspicious-include)
+#include "../src/map.c"         // NOLINT(bugprone-suspicious-include)
 
 DEFINE_FFF_GLOBALS;
 
