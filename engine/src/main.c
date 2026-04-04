@@ -860,6 +860,7 @@ int main(void)
 
     debug_init(&state->debug, TRACE_LOG_PATH);
 
+    debug_log(&state->debug, "calling InitWindow");
 #ifdef __ANDROID__
     SetConfigFlags(FLAG_FULLSCREEN_MODE);
     InitWindow(1920, 1080, "Sleipner");
@@ -868,6 +869,7 @@ int main(void)
 #else
     InitWindow(SCREEN_WIDTH_DEFAULT, SCREEN_HEIGHT_DEFAULT, "Sleipner");
 #endif
+    debug_log(&state->debug, "InitWindow done");
     HideCursor();
 
 #ifndef __ANDROID__
@@ -882,23 +884,32 @@ int main(void)
     }
 #endif
 #ifndef __ANDROID__
+    debug_log(&state->debug, "calling ToggleBorderlessWindowed");
     ToggleBorderlessWindowed();
+    debug_log(&state->debug, "ToggleBorderlessWindowed done");
 #endif
     debug_log(&state->debug, "state->screen_width=%d state->screen_height=%d", state->screen_width,
               state->screen_height);
 
     SetTargetFPS(TARGET_FPS);
+    debug_log(&state->debug, "calling audio_init");
     audio_init(&state->audio);
+    debug_log(&state->debug, "audio_init done");
 
+    debug_log(&state->debug, "loading bgm");
     EmbeddedAsset bgm_asset = ASSET(bgm_mp3);
     Music bgm = LoadMusicStreamFromMemory(".mp3", bgm_asset.data, bgm_asset.size);
     bgm.looping = true;
     PlayMusicStream(bgm);
+    debug_log(&state->debug, "bgm loaded");
 
     /* Render target at game resolution for pixel-perfect scaling */
     RectU32 game_bounds = {(uint32_t)state->screen_width / PIXEL_SCALE, (uint32_t)state->screen_height / PIXEL_SCALE};
+    debug_log(&state->debug, "loading render texture %ux%u", game_bounds.width, game_bounds.height);
     RenderTexture2D target = LoadRenderTexture((int)game_bounds.width, (int)game_bounds.height);
+    debug_log(&state->debug, "render texture loaded");
 
+    debug_log(&state->debug, "calling game_init");
     if (!game_init(diag, state, game_bounds)) {
         debug_log(&state->debug, "error: %s", error_get(&state->error));
         error_clear(&state->error);
