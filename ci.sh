@@ -108,7 +108,7 @@ windows_conan_setup="$conan_profile_setup"' && conan install . --output-folder=b
 do_windows() {
     echo "=== windows ==="
     mkdir -p build/windows
-    run bash -c "$windows_conan_setup && conan build . --output-folder=build/windows"
+    run bash -c "$windows_conan_setup && conan build . --output-folder=build/windows -pr:h profiles/windows-x86_64"
 }
 
 android_conan_setup="$conan_profile_setup"' && conan install . --output-folder=build/android/arm64-v8a --build=missing \
