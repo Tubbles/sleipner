@@ -30,9 +30,11 @@
 #ifdef _WIN32
 #define FOPEN_READ "r"
 #define FOPEN_WRITE "w"
+#define FOPEN_APPEND "a"
 #else
 #define FOPEN_READ "re"
 #define FOPEN_WRITE "we"
+#define FOPEN_APPEND "ae"
 #endif
 
 VEC_IMPL(font_preview, FontPreviewEntry)
@@ -849,22 +851,6 @@ static void render_frame(GameState *state, RenderParams params)
     EndDrawing();
 }
 
-/* Raylib trace log callback — forwards raylib/GLFW messages to our trace file.
- * Uses a file-scope pointer because raylib's callback signature is fixed. */
-static DebugState *raylib_log_target = nullptr;
-
-static void raylib_trace_callback(int log_level, const char *text, va_list args)
-{
-    (void)log_level;
-    if (!raylib_log_target || !raylib_log_target->trace_file) {
-        return;
-    }
-    (void)fprintf(raylib_log_target->trace_file, "[raylib] ");
-    (void)vfprintf(raylib_log_target->trace_file, text, args);
-    (void)fputc('\n', raylib_log_target->trace_file);
-    (void)fflush(raylib_log_target->trace_file);
-}
-
 int main(void)
 {
     GameState state_val = {0};
@@ -876,8 +862,11 @@ int main(void)
 
     debug_init(&state->debug, TRACE_LOG_PATH);
 
-    raylib_log_target = &state->debug;
-    SetTraceLogCallback(raylib_trace_callback);
+#ifdef _WIN32
+    /* GUI subsystem has no console — stdout is dead. Reopen it to the trace
+     * file so raylib's built-in TraceLog output is captured. */
+    (void)freopen(TRACE_LOG_PATH, FOPEN_APPEND, stdout);
+#endif
 
     debug_log(&state->debug, "calling InitWindow");
 #ifdef __ANDROID__
