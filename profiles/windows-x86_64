@@ -5,6 +5,9 @@ compiler=clang
 compiler.version=22
 build_type=Release
 
+[options]
+raylib/*:opengl_version=2.1
+
 [conf]
 tools.cmake.cmaketoolchain:user_toolchain=["{{os.getcwd()}}/cmake/mingw-x86_64.cmake"]
 tools.build:compiler_executables={"c": "clang", "cpp": "clang++"}
