@@ -952,8 +952,9 @@ int main(void)
             handle_hot_reload(diag, state, &editor_state, &watches);
         }
 
-        /* Toggle debug overlay: F3 only (Select/MIDDLE_LEFT is now used by radial picker) */
-        if (IsKeyPressed(KEY_F3)) {
+        /* Toggle debug overlay: F3 or gamepad Select (Select is also used by radial picker,
+         * but only in editor mode — so allow it when editor is off) */
+        if (IsKeyPressed(KEY_F3) || (!state->editor_mode && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_MIDDLE_LEFT))) {
             state->debug_enabled = !state->debug_enabled;
             debug_log(&state->debug, "debug %s (frame %d)", (int)state->debug_enabled ? "ON" : "OFF", state->frame);
         }
