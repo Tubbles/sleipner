@@ -41,7 +41,8 @@ conan_profile_setup='conan profile detect --force \
     && printf "\n[conf]\ntools.build:compiler_executables={\"c\": \"clang\", \"cpp\": \"clang++\"}\n" >> "$CONAN_HOME/profiles/default" \
     && sed -i "s/\"21\"]/\"21\", \"22\"]/" "$CONAN_HOME/settings.yml"'
 
-conan_setup="$conan_profile_setup && conan install . --output-folder=build --build=missing"
+conan_setup="$conan_profile_setup && conan export recipes/raylib --version=5.5 \
+    && conan install . --output-folder=build --build=missing"
 
 do_format() {
     echo "=== format ==="
@@ -102,7 +103,8 @@ do_all() {
     do_pytest
 }
 
-windows_conan_setup="$conan_profile_setup"' && conan install . --output-folder=build/windows --build=missing \
+windows_conan_setup="$conan_profile_setup"' && conan export recipes/raylib --version=5.5 \
+    && conan install . --output-folder=build/windows --build=missing \
     -pr:h profiles/windows-x86_64'
 
 do_windows() {
