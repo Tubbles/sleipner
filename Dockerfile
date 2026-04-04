@@ -36,12 +36,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh \
     && chmod +x /tmp/llvm.sh \
     && /tmp/llvm.sh 22 \
-    && apt-get install -y --no-install-recommends clang-format-22 clang-tidy-22 \
+    && apt-get install -y --no-install-recommends clang-format-22 clang-tidy-22 lld-22 \
     && rm -rf /tmp/llvm.sh /var/lib/apt/lists/* \
     && update-alternatives --install /usr/bin/clang clang /usr/bin/clang-22 100 \
     && update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-22 100 \
     && update-alternatives --install /usr/bin/clang-format clang-format /usr/bin/clang-format-22 100 \
-    && update-alternatives --install /usr/bin/clang-tidy clang-tidy /usr/bin/clang-tidy-22 100
+    && update-alternatives --install /usr/bin/clang-tidy clang-tidy /usr/bin/clang-tidy-22 100 \
+    && update-alternatives --install /usr/bin/ld.lld ld.lld /usr/bin/ld.lld-22 100 \
+    && update-alternatives --install /usr/bin/llvm-ar llvm-ar /usr/bin/llvm-ar-22 100 \
+    && update-alternatives --install /usr/bin/llvm-ranlib llvm-ranlib /usr/bin/llvm-ranlib-22 100
 
 # Install JDK 21 and Android SDK/NDK for Android builds
 RUN apt-get update && apt-get install -y --no-install-recommends \
