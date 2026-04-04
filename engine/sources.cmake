@@ -46,7 +46,7 @@ function(embed_asset target symbol_name abs_asset)
     set(asm_file "${CMAKE_CURRENT_BINARY_DIR}/embed_${symbol_name}.S")
 
     if(WIN32)
-        set(section_dir "    .section .rdata,\"dr\"\n")
+        set(section_dir "    .section .rdata\n")
     else()
         set(section_dir "    .section .rodata\n")
     endif()
