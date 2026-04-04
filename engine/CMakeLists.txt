@@ -27,4 +27,6 @@ target_compile_definitions(sleipner PRIVATE SLEIPNER_VERSION="${SLEIPNER_GIT_VER
 
 embed_all_assets(sleipner ${CMAKE_SOURCE_DIR})
 
-add_subdirectory(test)
+if(NOT CMAKE_CROSSCOMPILING)
+    add_subdirectory(test)
+endif()

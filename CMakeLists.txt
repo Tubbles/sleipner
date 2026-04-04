@@ -13,5 +13,7 @@ endif()
 
 find_package(raylib REQUIRED)
 
-enable_testing()
+if(NOT CMAKE_CROSSCOMPILING)
+    enable_testing()
+endif()
 add_subdirectory(engine)

@@ -29,7 +29,7 @@ static void write_timestamp(FILE *output)
     uint64_t unix_ticks = ull.QuadPart - WIN32_EPOCH_OFFSET;
     time_t sec = (time_t)(unix_ticks / FILETIME_TICKS_PER_SEC);
     long msec = (long)((unix_ticks % FILETIME_TICKS_PER_SEC) / FILETIME_TICKS_PER_MSEC);
-    struct tm local;
+    struct tm local = {0};
     localtime_s(&local, &sec);
     (void)fprintf(output, "[%04d-%02d-%02d %02d:%02d:%02d.%03ld] ", local.tm_year + TM_YEAR_OFFSET, local.tm_mon + 1,
                   local.tm_mday, local.tm_hour, local.tm_min, local.tm_sec, msec);
