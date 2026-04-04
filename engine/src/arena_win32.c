@@ -8,7 +8,7 @@
 #include <string.h>
 #include <windows.h>
 
-#define WIN32_COMMIT_GRANULARITY (64U * 1024U) /* 64 KiB — Windows allocation granularity */
+#define WIN32_COMMIT_GRANULARITY ((size_t)64U * 1024U) /* 64 KiB — Windows allocation granularity */
 
 bool arena_init(ErrorState *err, Arena *arena)
 {

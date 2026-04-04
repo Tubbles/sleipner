@@ -6,4 +6,5 @@ compiler.version=22
 build_type=Release
 
 [conf]
-tools.cmake:cmake_toolchain_file={{os.getcwd()}}/cmake/mingw-x86_64.cmake
+tools.cmake.cmaketoolchain:user_toolchain=["{{os.getcwd()}}/cmake/mingw-x86_64.cmake"]
+tools.build:compiler_executables={"c": "clang", "cpp": "clang++"}

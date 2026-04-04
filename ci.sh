@@ -71,7 +71,7 @@ do_lint() {
     echo "=== lint ==="
     mkdir -p build/Release
     run bash -c "$conan_setup && conan build . \
-        && cd build/Release && clang-tidy -p . ../../engine/src/*.c ../../engine/test/*.c"
+        && cd build/Release && clang-tidy -p . \$(ls ../../engine/src/*.c ../../engine/test/*.c | grep -v arena_win32)"
 }
 
 do_cppcheck() {
@@ -97,7 +97,7 @@ do_all() {
                  $conan_setup && conan build . \
                  && ctest --test-dir build/Release --output-on-failure \
                  && clang-format --dry-run --Werror $SOURCES \
-                 && cd build/Release && clang-tidy -p . ../../engine/src/*.c ../../engine/test/*.c"
+                 && cd build/Release && clang-tidy -p . \$(ls ../../engine/src/*.c ../../engine/test/*.c | grep -v arena_win32)"
     do_cppcheck
     do_pytest
 }
