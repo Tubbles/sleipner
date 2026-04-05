@@ -604,6 +604,7 @@ static void handle_transition(Diag *diag, GameState *state)
     if (player) {
         player->position = (Vector2){spawn_x, spawn_y};
         entity_update_collision(player);
+        game_snap_camera(state);
 
         /* Pre-seed overlap tracking so enter triggers don't fire for entities
          * the player already overlaps at the spawn position. */
@@ -774,10 +775,10 @@ static void render_frame(GameState *state, RenderParams params)
     BeginTextureMode(params.target);
     ClearBackground(BLACK);
 
-    /* Gameplay camera: center the level in the viewport when level is smaller than game_bounds */
+    /* Gameplay camera: follows player, clamped to level bounds */
     Camera2D gameplay_camera = {
         .offset = {(float)params.game_bounds.width / 2.0F, (float)params.game_bounds.height / 2.0F},
-        .target = {(float)state->current_level.width / 2.0F, (float)state->current_level.height / 2.0F},
+        .target = state->camera_target,
         .zoom = 1.0F,
     };
 

@@ -241,3 +241,125 @@ void test_game_update_resolves_obstacle_collision(void)
 
     game_free(&diag, &state);
 }
+
+/* Large level: 640x480, larger than the 320x240 viewport */
+static const char *camera_large_level = "[[blueprint]]\n"
+                                        "name = \"player\"\n"
+                                        "texture = \"player.png\"\n"
+                                        "src = [0, 0, 32, 32]\n"
+                                        "collision_offset = [-5, 6]\n"
+                                        "collision_size = [10, 10]\n"
+                                        "behavior = \"player\"\n"
+                                        "speed = 80\n"
+                                        "\n"
+                                        "[[level]]\n"
+                                        "name = \"test\"\n"
+                                        "size = [640, 480]\n"
+                                        "\n"
+                                        "[[level.entity]]\n"
+                                        "blueprint = \"player\"\n"
+                                        "pos = [320, 240]\n";
+
+/* Small level: 160x128, smaller than the 320x240 viewport */
+static const char *camera_small_level = "[[blueprint]]\n"
+                                        "name = \"player\"\n"
+                                        "texture = \"player.png\"\n"
+                                        "src = [0, 0, 32, 32]\n"
+                                        "collision_offset = [-5, 6]\n"
+                                        "collision_size = [10, 10]\n"
+                                        "behavior = \"player\"\n"
+                                        "speed = 80\n"
+                                        "\n"
+                                        "[[level]]\n"
+                                        "name = \"test\"\n"
+                                        "size = [160, 128]\n"
+                                        "\n"
+                                        "[[level.entity]]\n"
+                                        "blueprint = \"player\"\n"
+                                        "pos = [80, 64]\n";
+
+void test_camera_follows_player(void)
+{
+    GameState state = {0};
+    Diag diag = {&state.error, &state.debug};
+    TEST_ASSERT_TRUE(game_init(&diag, &state, (RectU32){320, 240}));
+    TEST_ASSERT_TRUE(game_load_gamedata(
+        &diag, &state, (GamedataParams){.toml_string = camera_large_level, .texture_lookup = dummy_lookup}));
+
+    float initial_x = state.camera_target.x;
+
+    InputState input = {0};
+    input.left_stick.x = 1.0F;
+
+    for (int iteration = 0; iteration < 60; iteration++) {
+        game_update(&diag, &state, input, 1.0F / 60.0F);
+    }
+
+    TEST_ASSERT_TRUE(state.camera_target.x > initial_x);
+
+    game_free(&diag, &state);
+}
+
+void test_camera_clamped_to_level_bounds(void)
+{
+    GameState state = {0};
+    Diag diag = {&state.error, &state.debug};
+    TEST_ASSERT_TRUE(game_init(&diag, &state, (RectU32){320, 240}));
+    TEST_ASSERT_TRUE(game_load_gamedata(
+        &diag, &state, (GamedataParams){.toml_string = camera_large_level, .texture_lookup = dummy_lookup}));
+
+    /* Push player to bottom-right for many frames */
+    InputState input = {0};
+    input.left_stick.x = 1.0F;
+    input.left_stick.y = 1.0F;
+
+    for (int iteration = 0; iteration < 1000; iteration++) {
+        game_update(&diag, &state, input, 1.0F / 60.0F);
+    }
+
+    /* Camera must not exceed level_width - viewport_width/2 on X */
+    float max_camera_x = 640.0F - 320.0F / 2.0F;
+    float max_camera_y = 480.0F - 240.0F / 2.0F;
+    TEST_ASSERT_FLOAT_WITHIN(1.0F, max_camera_x, state.camera_target.x);
+    TEST_ASSERT_FLOAT_WITHIN(1.0F, max_camera_y, state.camera_target.y);
+
+    game_free(&diag, &state);
+}
+
+void test_camera_centers_small_level(void)
+{
+    GameState state = {0};
+    Diag diag = {&state.error, &state.debug};
+    TEST_ASSERT_TRUE(game_init(&diag, &state, (RectU32){320, 240}));
+    TEST_ASSERT_TRUE(game_load_gamedata(
+        &diag, &state, (GamedataParams){.toml_string = camera_small_level, .texture_lookup = dummy_lookup}));
+
+    /* Move player around — camera should stay centered on the level */
+    InputState input = {0};
+    input.left_stick.x = 1.0F;
+
+    for (int iteration = 0; iteration < 60; iteration++) {
+        game_update(&diag, &state, input, 1.0F / 60.0F);
+    }
+
+    /* Level is 160x128, smaller than viewport 320x240 — camera locks to level center */
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 80.0F, state.camera_target.x);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 64.0F, state.camera_target.y);
+
+    game_free(&diag, &state);
+}
+
+void test_camera_snaps_on_load(void)
+{
+    GameState state = {0};
+    Diag diag = {&state.error, &state.debug};
+    TEST_ASSERT_TRUE(game_init(&diag, &state, (RectU32){320, 240}));
+    TEST_ASSERT_TRUE(game_load_gamedata(
+        &diag, &state, (GamedataParams){.toml_string = camera_large_level, .texture_lookup = dummy_lookup}));
+
+    /* Player at (320, 240), camera should snap there immediately (clamped) */
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 320.0F, state.camera_target.x);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 240.0F, state.camera_target.y);
+
+    game_free(&diag, &state);
+}

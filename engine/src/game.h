@@ -69,6 +69,7 @@ typedef struct {
     FlagSet flags;
     AttrSet vars;
     RectU32 game_bounds;
+    Vector2 camera_target;
     int frame;
     float elapsed;
     bool gamedata_loaded;
@@ -98,6 +99,9 @@ void game_update(Diag *diag, GameState *state, InputState input, float delta_tim
 Entity *game_get_player(GameState *state);
 const Entity *game_get_player_const(const GameState *state);
 void game_free(Diag *diag, GameState *state);
+
+/* Snap camera to the clamped player position (no lerp). Call after level load or transition. */
+void game_snap_camera(GameState *state);
 
 /* Resolve an entity's blueprint defaults via the entity→blueprint map.
  * Returns nullptr if entity has no blueprint mapping or blueprint not found. */

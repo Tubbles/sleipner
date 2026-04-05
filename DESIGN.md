@@ -1232,7 +1232,7 @@ This is bounded (one leaked backing per growth event) and reclaimed on level rel
 
 ### Phase 8 — Gameplay Systems
 - [ ] Proper PRNG (xoshiro256 or similar, replacing `rand()` in particle system)
-- [ ] Camera system (follow, bounds, transitions)
+- [x] Camera system (follow, bounds, transitions)
 - [ ] Combat (hitboxes, damage, knockback, i-frames)
 - [ ] Inventory & items
 - [ ] Dialogue system
@@ -1274,15 +1274,9 @@ AABB rectangles everywhere. This phase wires the shape system into the game.
 - **Tile map:** 16x16 pixel tiles, 2 layers (ground + overlay). Ground is terrain (grass, dirt, water, paths). Overlay renders on top of ground but under entities (flowers, puddles, shadows). Stored as arrays of integer tile IDs in TOML, row by row. Autotiling (automatic edge/corner sprite selection) is an editor feature — the file stores concrete tile IDs, the editor computes them on placement.
 - **TOML emitter:** Clean regeneration, no comment/formatting preservation. The in-game editor is the primary editing interface — comments aren't useful. Keeps the emitter dead simple.
 - **Save system:** One save = one world (all players, all state). Saves in app-local storage (not Syncthing). Persistent world — everything persists by default, respawning is explicit via rules. Save stores delta from gamedata baseline. TOML format. Auto-save on level transitions and quit. Multiple numbered slots + autosave.
+- **Camera system:** Smooth follow with lerp interpolation (`CAMERA_FOLLOW_SPEED = 10.0F`). Camera tracks player position each frame, clamped to level edges so the viewport never shows outside the level. When the level is smaller than the viewport, camera locks to the level center. `game_snap_camera()` teleports the camera on level load/transitions (no lerp). Editor camera is unaffected — still free-roaming.
 
 ## Open Questions
-
-### Camera System
-- Zelda-style screen-by-screen (snap to room boundaries) or smooth follow?
-- Bounds clamping — camera stops at level edges?
-- How does `camera_pan` interact with the follow camera?
-- Transition effect when moving between rooms/areas?
-- Zoom levels — fixed or adjustable?
 
 ### Combat
 - Melee hitbox — separate from collision box? Active only during attack frames?

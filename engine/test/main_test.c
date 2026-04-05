@@ -29,6 +29,10 @@ void test_game_update_no_input_no_movement(void);
 void test_game_player_clamps_to_bounds(void);
 void test_game_player_collision_from_blueprint(void);
 void test_game_update_resolves_obstacle_collision(void);
+void test_camera_follows_player(void);
+void test_camera_clamped_to_level_bounds(void);
+void test_camera_centers_small_level(void);
+void test_camera_snaps_on_load(void);
 
 /* level_test.c */
 void test_level_load_first(void);
@@ -114,6 +118,10 @@ int main(void)
     RUN_TEST(test_game_player_clamps_to_bounds);
     RUN_TEST(test_game_player_collision_from_blueprint);
     RUN_TEST(test_game_update_resolves_obstacle_collision);
+    RUN_TEST(test_camera_follows_player);
+    RUN_TEST(test_camera_clamped_to_level_bounds);
+    RUN_TEST(test_camera_centers_small_level);
+    RUN_TEST(test_camera_snaps_on_load);
 
     RUN_TEST(test_integration_load_gamedata);
     RUN_TEST(test_integration_load_specific_level);

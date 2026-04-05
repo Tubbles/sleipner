@@ -153,6 +153,7 @@ bool game_load_gamedata(Diag *diag, GameState *state, GamedataParams params)
                                      &state->transition);
             }
         }
+        game_snap_camera(state);
     } else {
         error_wrap(diag->error, "game_load_gamedata");
     }
@@ -176,12 +177,8 @@ const Entity *game_get_player_const(const GameState *state)
     return &state->current_level.entities.data[state->player_index];
 }
 
-static void update_player(Entity *player,
-                          const AttrSet *player_defaults,
-                          InputState input,
-                          RectU32 bounds,
-                          float delta_time,
-                          RectU32 level_size)
+static void
+update_player(Entity *player, const AttrSet *player_defaults, InputState input, float delta_time, RectU32 level_size)
 {
     player->moving = false;
 
@@ -202,9 +199,7 @@ static void update_player(Entity *player,
         }
     }
 
-    /* Clamp to the smaller of level size and viewport */
-    float clamp_width = fminf((float)bounds.width, (float)level_size.width);
-    float clamp_height = fminf((float)bounds.height, (float)level_size.height);
+    /* Clamp to level bounds */
     float half = FRAME_SIZE / 2.0F;
     if (player->position.x < half) {
         player->position.x = half;
@@ -212,11 +207,11 @@ static void update_player(Entity *player,
     if (player->position.y < half) {
         player->position.y = half;
     }
-    if (player->position.x > clamp_width - half) {
-        player->position.x = clamp_width - half;
+    if (player->position.x > (float)level_size.width - half) {
+        player->position.x = (float)level_size.width - half;
     }
-    if (player->position.y > clamp_height - half) {
-        player->position.y = clamp_height - half;
+    if (player->position.y > (float)level_size.height - half) {
+        player->position.y = (float)level_size.height - half;
     }
 
     /* Animate walk cycle */
@@ -280,6 +275,57 @@ static void resolve_player_obstacles(GameState *state, int player_index)
 
         entity_update_collision(player);
     }
+}
+
+#define CAMERA_FOLLOW_SPEED 10.0F
+
+static Vector2 camera_clamp_target(Vector2 target, RectU32 level_size, RectU32 viewport)
+{
+    float half_vw = (float)viewport.width / 2.0F;
+    float half_vh = (float)viewport.height / 2.0F;
+
+    if (level_size.width <= viewport.width) {
+        target.x = (float)level_size.width / 2.0F;
+    } else {
+        if (target.x < half_vw) {
+            target.x = half_vw;
+        }
+        if (target.x > (float)level_size.width - half_vw) {
+            target.x = (float)level_size.width - half_vw;
+        }
+    }
+
+    if (level_size.height <= viewport.height) {
+        target.y = (float)level_size.height / 2.0F;
+    } else {
+        if (target.y < half_vh) {
+            target.y = half_vh;
+        }
+        if (target.y > (float)level_size.height - half_vh) {
+            target.y = (float)level_size.height - half_vh;
+        }
+    }
+
+    return target;
+}
+
+static void camera_update_target(GameState *state, Vector2 player_position, float delta_time)
+{
+    float blend = fminf(CAMERA_FOLLOW_SPEED * delta_time, 1.0F);
+    state->camera_target.x += (player_position.x - state->camera_target.x) * blend;
+    state->camera_target.y += (player_position.y - state->camera_target.y) * blend;
+    RectU32 level_size = {(uint32_t)state->current_level.width, (uint32_t)state->current_level.height};
+    state->camera_target = camera_clamp_target(state->camera_target, level_size, state->game_bounds);
+}
+
+void game_snap_camera(GameState *state)
+{
+    const Entity *player = game_get_player_const(state);
+    Vector2 snap_position =
+        player ? player->position
+               : (Vector2){(float)state->current_level.width / 2.0F, (float)state->current_level.height / 2.0F};
+    RectU32 level_size = {(uint32_t)state->current_level.width, (uint32_t)state->current_level.height};
+    state->camera_target = camera_clamp_target(snap_position, level_size, state->game_bounds);
 }
 
 static void update_child_positions(Level *level)
@@ -422,8 +468,9 @@ void game_update(Diag *diag, GameState *state, InputState input, float delta_tim
         if (player) {
             const AttrSet *player_defaults = entity_resolve_defaults(state, player->id);
             RectU32 level_size = {(uint32_t)state->current_level.width, (uint32_t)state->current_level.height};
-            update_player(player, player_defaults, input, state->game_bounds, delta_time, level_size);
+            update_player(player, player_defaults, input, delta_time, level_size);
             resolve_player_obstacles(state, state->player_index);
+            camera_update_target(state, player->position, delta_time);
         }
     }
 
