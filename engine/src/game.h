@@ -52,11 +52,9 @@ typedef struct {
     Font ui_font;
 } AssetRegistry;
 
+/* Fields snapshotted by the undo system — all arena-backed, all reset by game_load_gamedata. */
 typedef struct {
     int player_index;
-    Arena gamedata_arena;
-    ArenaCheckpoint gamedata_base; /* offset just above persistent assets (textures, fonts) */
-    Arena scratch_arena;
     vec_bool prev_player_overlaps;  /* one entry per level entity: true if player overlapped last frame */
     vec_bool prev_solid_collisions; /* entity_count² entries: true if pair [a*count+b] overlapped last frame */
     BlueprintTable blueprints;
@@ -68,8 +66,15 @@ typedef struct {
     vec_level other_levels;
     FlagSet flags;
     AttrSet vars;
-    RectU32 game_bounds;
     Vector2 camera_target;
+} GamedataState;
+
+typedef struct {
+    GamedataState gamedata;
+    Arena gamedata_arena;
+    ArenaCheckpoint gamedata_base; /* offset just above persistent assets (textures, fonts) */
+    Arena scratch_arena;
+    RectU32 game_bounds;
     int frame;
     float elapsed;
     bool gamedata_loaded;

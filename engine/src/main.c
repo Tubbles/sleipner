@@ -442,16 +442,16 @@ static bool save_gamedata(GameState *state)
     /* Build a combined level array: current level first, then other levels.
      * Allocate on scratch arena to avoid permanent allocation. */
     SCRATCH_SCOPE(&state->scratch_arena);
-    int total_levels = 1 + state->other_levels.count;
+    int total_levels = 1 + state->gamedata.other_levels.count;
     Level *all_levels = (Level *)arena_alloc(&state->scratch_arena, sizeof(Level) * (size_t)total_levels);
-    all_levels[0] = state->current_level;
-    for (int index = 0; index < state->other_levels.count; index++) {
-        all_levels[1 + index] = state->other_levels.data[index];
+    all_levels[0] = state->gamedata.current_level;
+    for (int index = 0; index < state->gamedata.other_levels.count; index++) {
+        all_levels[1 + index] = state->gamedata.other_levels.data[index];
     }
 
     char buffer[MAX_GAMEDATA_SIZE];
-    int written =
-        toml_emit_gamedata(&state->error, buffer, (int)sizeof(buffer), &state->blueprints, all_levels, total_levels);
+    int written = toml_emit_gamedata(&state->error, buffer, (int)sizeof(buffer), &state->gamedata.blueprints,
+                                     all_levels, total_levels);
     if (written < 0) {
         error_wrap(&state->error, "save_gamedata");
         return false;
@@ -543,22 +543,23 @@ static void load_gamedata(Diag *diag, GameState *state, const char *level_name)
                                                       .texture_user_data = state});
 
     if (loaded) {
-        debug_log(diag->debug, "gamedata: %d blueprints", state->blueprints.entries.count);
-        for (int index = 0; index < state->blueprints.entries.count; index++) {
-            const Blueprint *blueprint = &state->blueprints.entries.data[index];
+        debug_log(diag->debug, "gamedata: %d blueprints", state->gamedata.blueprints.entries.count);
+        for (int index = 0; index < state->gamedata.blueprints.entries.count; index++) {
+            const Blueprint *blueprint = &state->gamedata.blueprints.entries.data[index];
             debug_log(diag->debug, "  bp[%d]: '%s' tex='%s' attrs=%d", index,
                       attr_get_string(&blueprint->attrs, "name"), attr_get_string(&blueprint->attrs, "texture"),
                       blueprint->attrs.entries.count);
         }
-        debug_log(diag->debug, "gamedata: level '%s' (%dx%d, %d entities)", state->current_level.name.ptr,
-                  state->current_level.width, state->current_level.height, state->current_level.entities.count);
-        for (int index = 0; index < state->current_level.entities.count; index++) {
-            const Entity *entity = &state->current_level.entities.data[index];
+        debug_log(diag->debug, "gamedata: level '%s' (%dx%d, %d entities)", state->gamedata.current_level.name.ptr,
+                  state->gamedata.current_level.width, state->gamedata.current_level.height,
+                  state->gamedata.current_level.entities.count);
+        for (int index = 0; index < state->gamedata.current_level.entities.count; index++) {
+            const Entity *entity = &state->gamedata.current_level.entities.data[index];
             debug_log(diag->debug, "  ent[%d]: bp='%s' pos=(%.0f,%.0f) tex=%s", index, entity->blueprint_name.ptr,
                       entity->position.x, entity->position.y, entity->texture ? "ok" : "nullptr");
         }
-        if (state->player_index >= 0) {
-            debug_log(diag->debug, "gamedata: player at entity[%d]", state->player_index);
+        if (state->gamedata.player_index >= 0) {
+            debug_log(diag->debug, "gamedata: player at entity[%d]", state->gamedata.player_index);
         } else {
             debug_log(diag->debug, "gamedata: WARNING player not found!");
         }
@@ -608,10 +609,11 @@ static void handle_transition(Diag *diag, GameState *state)
 
         /* Pre-seed overlap tracking so enter triggers don't fire for entities
          * the player already overlaps at the spawn position. */
-        for (int index = 0; index < state->current_level.entities.count && index < state->prev_player_overlaps.count;
+        for (int index = 0;
+             index < state->gamedata.current_level.entities.count && index < state->gamedata.prev_player_overlaps.count;
              index++) {
-            state->prev_player_overlaps.data[index] =
-                CheckCollisionRecs(player->collision, state->current_level.entities.data[index].collision);
+            state->gamedata.prev_player_overlaps.data[index] =
+                CheckCollisionRecs(player->collision, state->gamedata.current_level.entities.data[index].collision);
         }
     }
 }
@@ -633,14 +635,14 @@ static void draw_entities_depth_sorted(const GameState *state)
     const Entity *player = game_get_player_const(state);
     float player_sort_y = player ? player->position.y + 16 : 0;
 
-    for (int index = 0; index < state->current_level.entities.count; index++) {
-        if (index == state->player_index) {
+    for (int index = 0; index < state->gamedata.current_level.entities.count; index++) {
+        if (index == state->gamedata.player_index) {
             continue;
         }
-        float entity_sort_y = state->current_level.entities.data[index].collision.y +
-                              state->current_level.entities.data[index].collision.height;
+        float entity_sort_y = state->gamedata.current_level.entities.data[index].collision.y +
+                              state->gamedata.current_level.entities.data[index].collision.height;
         if (entity_sort_y <= player_sort_y) {
-            draw_entity(state, &state->current_level.entities.data[index]);
+            draw_entity(state, &state->gamedata.current_level.entities.data[index]);
         }
     }
 
@@ -648,19 +650,19 @@ static void draw_entities_depth_sorted(const GameState *state)
         draw_player_entity(player);
     }
 
-    for (int index = 0; index < state->current_level.entities.count; index++) {
-        if (index == state->player_index) {
+    for (int index = 0; index < state->gamedata.current_level.entities.count; index++) {
+        if (index == state->gamedata.player_index) {
             continue;
         }
-        float entity_sort_y = state->current_level.entities.data[index].collision.y +
-                              state->current_level.entities.data[index].collision.height;
+        float entity_sort_y = state->gamedata.current_level.entities.data[index].collision.y +
+                              state->gamedata.current_level.entities.data[index].collision.height;
         if (entity_sort_y > player_sort_y) {
-            draw_entity(state, &state->current_level.entities.data[index]);
+            draw_entity(state, &state->gamedata.current_level.entities.data[index]);
         }
     }
 
     if (state->debug_enabled) {
-        draw_debug_collision_boxes(&state->current_level, state->player_index);
+        draw_debug_collision_boxes(&state->gamedata.current_level, state->gamedata.player_index);
     }
 }
 
@@ -685,28 +687,28 @@ static void handle_save_input(Diag *diag, GameState *state, EditorState *editor_
 static void handle_place_input(
     Diag *diag, GameState *state, Camera2D *camera, EditorState *editor_state, InputState input, float delta_time)
 {
-    if (state->blueprints.entries.count == 0) {
+    if (state->gamedata.blueprints.entries.count == 0) {
         editor_state->sub_mode = EDITOR_SUB_BROWSE;
         return;
     }
     if (toggle_pressed((ToggleBinding){KEY_ENTER, GAMEPAD_BUTTON_RIGHT_FACE_DOWN})) {
         int bp_index = editor_state->place_blueprint_index;
-        const Blueprint *blueprint = &state->blueprints.entries.data[bp_index];
+        const Blueprint *blueprint = &state->gamedata.blueprints.entries.data[bp_index];
         Allocator alloc = allocator_arena(&state->gamedata_arena);
-        int count_before = state->current_level.entities.count;
-        if (!level_spawn_entity(diag, &state->current_level, blueprint, camera->target, &state->blueprints,
-                                texture_registry_lookup, state, &alloc)) {
+        int count_before = state->gamedata.current_level.entities.count;
+        if (!level_spawn_entity(diag, &state->gamedata.current_level, blueprint, camera->target,
+                                &state->gamedata.blueprints, texture_registry_lookup, state, &alloc)) {
             debug_log(diag->debug, "error: %s", error_get(diag->error));
             error_clear(diag->error);
         } else {
-            for (int index = count_before; index < state->current_level.entities.count; index++) {
-                Entity *spawned = &state->current_level.entities.data[index];
+            for (int index = count_before; index < state->gamedata.current_level.entities.count; index++) {
+                Entity *spawned = &state->gamedata.current_level.entities.data[index];
                 Str bp_name = {0};
                 (void)str_from_strv(&alloc, &bp_name, str_to_strv(spawned->blueprint_name));
-                (void)map_int_str_set(&state->entity_blueprints, spawned->id, bp_name, &alloc);
-                const Blueprint *spawned_bp = blueprint_find(&state->blueprints, spawned->blueprint_name.ptr);
+                (void)map_int_str_set(&state->gamedata.entity_blueprints, spawned->id, bp_name, &alloc);
+                const Blueprint *spawned_bp = blueprint_find(&state->gamedata.blueprints, spawned->blueprint_name.ptr);
                 if (spawned_bp && spawned_bp->rules.count > 0) {
-                    (void)map_entity_ruleset_set(&state->rule_table, spawned->id, spawned_bp->rules, &alloc);
+                    (void)map_entity_ruleset_set(&state->gamedata.rule_table, spawned->id, spawned_bp->rules, &alloc);
                 }
             }
         }
@@ -715,11 +717,11 @@ static void handle_place_input(
         editor_state->sub_mode = EDITOR_SUB_BROWSE;
     }
     if (toggle_pressed((ToggleBinding){KEY_UP, GAMEPAD_BUTTON_LEFT_FACE_UP})) {
-        int count = state->blueprints.entries.count;
+        int count = state->gamedata.blueprints.entries.count;
         editor_state->place_blueprint_index = (editor_state->place_blueprint_index - 1 + count) % count;
     }
     if (toggle_pressed((ToggleBinding){KEY_DOWN, GAMEPAD_BUTTON_LEFT_FACE_DOWN})) {
-        int count = state->blueprints.entries.count;
+        int count = state->gamedata.blueprints.entries.count;
         editor_state->place_blueprint_index = (editor_state->place_blueprint_index + 1) % count;
     }
     if (toggle_pressed((ToggleBinding){KEY_Q, GAMEPAD_BUTTON_LEFT_TRIGGER_1})) {
@@ -727,7 +729,7 @@ static void handle_place_input(
         editor_state->place_blueprint_index = (new_index < 0) ? 0 : new_index;
     }
     if (toggle_pressed((ToggleBinding){KEY_E, GAMEPAD_BUTTON_RIGHT_TRIGGER_1})) {
-        int count = state->blueprints.entries.count;
+        int count = state->gamedata.blueprints.entries.count;
         int new_index = editor_state->place_blueprint_index + EDITOR_PLACE_PAGE_SIZE;
         editor_state->place_blueprint_index = (new_index >= count) ? count - 1 : new_index;
     }
@@ -778,7 +780,7 @@ static void render_frame(GameState *state, RenderParams params)
     /* Gameplay camera: follows player, clamped to level bounds */
     Camera2D gameplay_camera = {
         .offset = {(float)params.game_bounds.width / 2.0F, (float)params.game_bounds.height / 2.0F},
-        .target = state->camera_target,
+        .target = state->gamedata.camera_target,
         .zoom = 1.0F,
     };
 
@@ -787,13 +789,16 @@ static void render_frame(GameState *state, RenderParams params)
     } else {
         BeginMode2D(gameplay_camera);
     }
-    const char *bg_tile =
-        state->current_level.background_tile.ptr ? state->current_level.background_tile.ptr : "grass.png";
-    RectU32 floor_bounds = {(uint32_t)state->current_level.floor_width, (uint32_t)state->current_level.floor_height};
-    draw_background_tiles(*texture_registry_lookup(bg_tile, state), floor_bounds, state->current_level.background_tint);
+    const char *bg_tile = state->gamedata.current_level.background_tile.ptr
+                              ? state->gamedata.current_level.background_tile.ptr
+                              : "grass.png";
+    RectU32 floor_bounds = {(uint32_t)state->gamedata.current_level.floor_width,
+                            (uint32_t)state->gamedata.current_level.floor_height};
+    draw_background_tiles(*texture_registry_lookup(bg_tile, state), floor_bounds,
+                          state->gamedata.current_level.background_tint);
     draw_entities_depth_sorted(state);
     if (state->editor_mode) {
-        int hover_index = find_nearest_entity(&state->current_level, params.editor_camera.target);
+        int hover_index = find_nearest_entity(&state->gamedata.current_level, params.editor_camera.target);
         draw_editor_highlights(state, &params.editor_state, hover_index);
         draw_collision_handles(state, &params.editor_state);
         draw_place_preview(state, &params.editor_state, params.editor_camera);

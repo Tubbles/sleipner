@@ -28,7 +28,7 @@ bool game_init(Diag *diag, GameState *state, RectU32 game_bounds)
     /* Callers must zero-initialize state before calling game_init.
      * We only set fields that need non-zero defaults. */
     state->game_bounds = game_bounds;
-    state->player_index = -1;
+    state->gamedata.player_index = -1;
     state->debug_enabled = true;
     if (!arena_init(diag->error, &state->gamedata_arena)) {
         error_wrap(diag->error, "game_init");
@@ -44,17 +44,17 @@ bool game_init(Diag *diag, GameState *state, RectU32 game_bounds)
 
 const AttrSet *entity_resolve_defaults(const GameState *state, int entity_id)
 {
-    const Str *name = map_int_str_get(&state->entity_blueprints, entity_id);
+    const Str *name = map_int_str_get(&state->gamedata.entity_blueprints, entity_id);
     if (!name) {
         return nullptr;
     }
-    const Blueprint *blueprint = blueprint_find(&state->blueprints, name->ptr);
+    const Blueprint *blueprint = blueprint_find(&state->gamedata.blueprints, name->ptr);
     return blueprint ? &blueprint->attrs : nullptr;
 }
 
 static int find_player_entity(const GameState *state)
 {
-    const Level *level = &state->current_level;
+    const Level *level = &state->gamedata.current_level;
     for (int index = 0; index < level->entities.count; index++) {
         const AttrSet *defaults = entity_resolve_defaults(state, level->entities.data[index].id);
         const char *behavior = attr_get_scoped_string(&level->entities.data[index].attrs, defaults, "behavior");
@@ -78,8 +78,8 @@ bool game_load_gamedata(Diag *diag, GameState *state, GamedataParams params)
     char errbuf[TOML_ERRBUF_SIZE];
     toml_table_t *root = toml_parse(buffer, errbuf, (int)sizeof(errbuf));
     arena_restore(&state->gamedata_arena, state->gamedata_base);
-    state->rule_table = (map_entity_ruleset){0};
-    state->entity_blueprints = (map_int_str){0};
+    state->gamedata.rule_table = (map_entity_ruleset){0};
+    state->gamedata.entity_blueprints = (map_int_str){0};
     if (!root) {
         error_set(diag->error, "toml_parse: %s", errbuf);
         error_wrap(diag->error, "game_load_gamedata");
@@ -87,59 +87,63 @@ bool game_load_gamedata(Diag *diag, GameState *state, GamedataParams params)
     }
 
     Allocator gamedata_alloc = allocator_arena(&state->gamedata_arena);
-    state->subroutines = vec_subroutine_new(gamedata_alloc);
-    state->timers = vec_timer_new(gamedata_alloc);
-    state->prev_player_overlaps = vec_bool_new(gamedata_alloc);
-    state->prev_solid_collisions = vec_bool_new(gamedata_alloc);
-    state->other_levels = vec_level_new(gamedata_alloc);
-    blueprints_load(diag, &state->blueprints, root, &state->gamedata_arena);
-    bool subs_ok = subroutines_parse(diag, &gamedata_alloc, &state->subroutines, root, &state->gamedata_arena);
+    state->gamedata.subroutines = vec_subroutine_new(gamedata_alloc);
+    state->gamedata.timers = vec_timer_new(gamedata_alloc);
+    state->gamedata.prev_player_overlaps = vec_bool_new(gamedata_alloc);
+    state->gamedata.prev_solid_collisions = vec_bool_new(gamedata_alloc);
+    state->gamedata.other_levels = vec_level_new(gamedata_alloc);
+    blueprints_load(diag, &state->gamedata.blueprints, root, &state->gamedata_arena);
+    bool subs_ok = subroutines_parse(diag, &gamedata_alloc, &state->gamedata.subroutines, root, &state->gamedata_arena);
     bool level_ok = false;
     if (subs_ok) {
-        level_ok = level_load(diag, &state->current_level, root, params.level_name, &state->blueprints,
-                              params.texture_lookup, params.texture_user_data, &gamedata_alloc);
+        level_ok =
+            level_load(diag, &state->gamedata.current_level, root, params.level_name, &state->gamedata.blueprints,
+                       params.texture_lookup, params.texture_user_data, &gamedata_alloc);
     }
     if (level_ok) {
-        (void)level_load_others(diag, &state->other_levels, root, state->current_level.name.ptr, &state->blueprints,
-                                params.texture_lookup, params.texture_user_data, &gamedata_alloc);
+        (void)level_load_others(diag, &state->gamedata.other_levels, root, state->gamedata.current_level.name.ptr,
+                                &state->gamedata.blueprints, params.texture_lookup, params.texture_user_data,
+                                &gamedata_alloc);
     }
 
     toml_free(root);
     state->gamedata_loaded = level_ok;
 
     if (level_ok) {
-        for (int index = 0; index < state->current_level.entities.count; index++) {
-            const Entity *entity = &state->current_level.entities.data[index];
+        for (int index = 0; index < state->gamedata.current_level.entities.count; index++) {
+            const Entity *entity = &state->gamedata.current_level.entities.data[index];
             Str bp_name = {0};
             (void)str_from_strv(&gamedata_alloc, &bp_name, str_to_strv(entity->blueprint_name));
-            (void)map_int_str_set(&state->entity_blueprints, entity->id, bp_name, &gamedata_alloc);
-            const Blueprint *blueprint = blueprint_find(&state->blueprints, entity->blueprint_name.ptr);
+            (void)map_int_str_set(&state->gamedata.entity_blueprints, entity->id, bp_name, &gamedata_alloc);
+            const Blueprint *blueprint = blueprint_find(&state->gamedata.blueprints, entity->blueprint_name.ptr);
             if (blueprint && blueprint->rules.count > 0) {
-                (void)map_entity_ruleset_set(&state->rule_table, entity->id, blueprint->rules, &gamedata_alloc);
+                (void)map_entity_ruleset_set(&state->gamedata.rule_table, entity->id, blueprint->rules,
+                                             &gamedata_alloc);
             }
         }
-        state->player_index = find_player_entity(state);
+        state->gamedata.player_index = find_player_entity(state);
 
         /* Initialize overlap tracking: one false entry per entity */
-        for (int index = 0; index < state->current_level.entities.count; index++) {
-            (void)vec_bool_push(&state->prev_player_overlaps, false);
+        for (int index = 0; index < state->gamedata.current_level.entities.count; index++) {
+            (void)vec_bool_push(&state->gamedata.prev_player_overlaps, false);
         }
 
         /* Initialize solid-pair collision tracking: entity_count² entries */
-        int entity_count = state->current_level.entities.count;
+        int entity_count = state->gamedata.current_level.entities.count;
         for (int pair_index = 0; pair_index < entity_count * entity_count; pair_index++) {
-            (void)vec_bool_push(&state->prev_solid_collisions, false);
+            (void)vec_bool_push(&state->gamedata.prev_solid_collisions, false);
         }
 
         /* Fire on_spawn for every entity now that the rule table is ready */
         {
             SCRATCH_SCOPE(&state->scratch_arena);
             Allocator scratch_alloc = allocator_arena(&state->scratch_arena);
-            int spawn_count = state->current_level.entities.count;
+            int spawn_count = state->gamedata.current_level.entities.count;
             const AttrSet **spawn_defaults =
                 (const AttrSet **)arena_alloc(&state->scratch_arena, sizeof(const AttrSet *) * (size_t)spawn_count);
             for (int index = 0; index < spawn_count; index++) {
-                spawn_defaults[index] = entity_resolve_defaults(state, state->current_level.entities.data[index].id);
+                spawn_defaults[index] =
+                    entity_resolve_defaults(state, state->gamedata.current_level.entities.data[index].id);
             }
             vec_trigger_event spawn_events = vec_trigger_event_new(scratch_alloc);
             for (int index = 0; index < spawn_count; index++) {
@@ -147,10 +151,10 @@ bool game_load_gamedata(Diag *diag, GameState *state, GamedataParams params)
                                              (TriggerEvent){.type = TRIGGER_ON_SPAWN, .entity_index = index});
             }
             if (spawn_events.count > 0) {
-                rules_evaluate_batch(diag, &gamedata_alloc, state->current_level.entities.data, spawn_count,
-                                     spawn_events.data, spawn_events.count, &state->flags, &state->vars,
-                                     &state->rule_table, &state->subroutines, &state->timers, spawn_defaults,
-                                     &state->transition);
+                rules_evaluate_batch(diag, &gamedata_alloc, state->gamedata.current_level.entities.data, spawn_count,
+                                     spawn_events.data, spawn_events.count, &state->gamedata.flags,
+                                     &state->gamedata.vars, &state->gamedata.rule_table, &state->gamedata.subroutines,
+                                     &state->gamedata.timers, spawn_defaults, &state->transition);
             }
         }
         game_snap_camera(state);
@@ -163,18 +167,20 @@ bool game_load_gamedata(Diag *diag, GameState *state, GamedataParams params)
 
 Entity *game_get_player(GameState *state)
 {
-    if (state->player_index < 0 || state->player_index >= state->current_level.entities.count) {
+    if (state->gamedata.player_index < 0 ||
+        state->gamedata.player_index >= state->gamedata.current_level.entities.count) {
         return nullptr;
     }
-    return &state->current_level.entities.data[state->player_index];
+    return &state->gamedata.current_level.entities.data[state->gamedata.player_index];
 }
 
 const Entity *game_get_player_const(const GameState *state)
 {
-    if (state->player_index < 0 || state->player_index >= state->current_level.entities.count) {
+    if (state->gamedata.player_index < 0 ||
+        state->gamedata.player_index >= state->gamedata.current_level.entities.count) {
         return nullptr;
     }
-    return &state->current_level.entities.data[state->player_index];
+    return &state->gamedata.current_level.entities.data[state->gamedata.player_index];
 }
 
 static void
@@ -231,7 +237,7 @@ update_player(Entity *player, const AttrSet *player_defaults, InputState input, 
 
 static void resolve_player_obstacles(GameState *state, int player_index)
 {
-    Level *level = &state->current_level;
+    Level *level = &state->gamedata.current_level;
     Entity *player = &level->entities.data[player_index];
     for (int index = 0; index < level->entities.count; index++) {
         const AttrSet *defaults = entity_resolve_defaults(state, level->entities.data[index].id);
@@ -312,20 +318,22 @@ static Vector2 camera_clamp_target(Vector2 target, RectU32 level_size, RectU32 v
 static void camera_update_target(GameState *state, Vector2 player_position, float delta_time)
 {
     float blend = fminf(CAMERA_FOLLOW_SPEED * delta_time, 1.0F);
-    state->camera_target.x += (player_position.x - state->camera_target.x) * blend;
-    state->camera_target.y += (player_position.y - state->camera_target.y) * blend;
-    RectU32 level_size = {(uint32_t)state->current_level.width, (uint32_t)state->current_level.height};
-    state->camera_target = camera_clamp_target(state->camera_target, level_size, state->game_bounds);
+    state->gamedata.camera_target.x += (player_position.x - state->gamedata.camera_target.x) * blend;
+    state->gamedata.camera_target.y += (player_position.y - state->gamedata.camera_target.y) * blend;
+    RectU32 level_size = {(uint32_t)state->gamedata.current_level.width,
+                          (uint32_t)state->gamedata.current_level.height};
+    state->gamedata.camera_target = camera_clamp_target(state->gamedata.camera_target, level_size, state->game_bounds);
 }
 
 void game_snap_camera(GameState *state)
 {
     const Entity *player = game_get_player_const(state);
-    Vector2 snap_position =
-        player ? player->position
-               : (Vector2){(float)state->current_level.width / 2.0F, (float)state->current_level.height / 2.0F};
-    RectU32 level_size = {(uint32_t)state->current_level.width, (uint32_t)state->current_level.height};
-    state->camera_target = camera_clamp_target(snap_position, level_size, state->game_bounds);
+    Vector2 snap_position = player ? player->position
+                                   : (Vector2){(float)state->gamedata.current_level.width / 2.0F,
+                                               (float)state->gamedata.current_level.height / 2.0F};
+    RectU32 level_size = {(uint32_t)state->gamedata.current_level.width,
+                          (uint32_t)state->gamedata.current_level.height};
+    state->gamedata.camera_target = camera_clamp_target(snap_position, level_size, state->game_bounds);
 }
 
 static void update_child_positions(Level *level)
@@ -440,20 +448,22 @@ static void collect_trigger_events(DebugState *dbg, GameState *state, InputState
 
     if (interact_edge) {
         debug_log(dbg, "Processing interact edge");
-        if (state->player_index >= 0) {
+        if (state->gamedata.player_index >= 0) {
             const Entity *player = game_get_player_const(state);
             if (player) {
-                detect_interact_targets(dbg, state, player, state->player_index, state->current_level.entities.data,
-                                        state->current_level.entities.count, out_events);
+                detect_interact_targets(dbg, state, player, state->gamedata.player_index,
+                                        state->gamedata.current_level.entities.data,
+                                        state->gamedata.current_level.entities.count, out_events);
             }
         }
     }
 
-    if (state->player_index >= 0 && state->prev_player_overlaps.count > 0) {
+    if (state->gamedata.player_index >= 0 && state->gamedata.prev_player_overlaps.count > 0) {
         const Entity *player = game_get_player_const(state);
         if (player) {
-            detect_enter_targets(state, player, state->player_index, state->current_level.entities.data,
-                                 state->current_level.entities.count, &state->prev_player_overlaps, out_events);
+            detect_enter_targets(
+                state, player, state->gamedata.player_index, state->gamedata.current_level.entities.data,
+                state->gamedata.current_level.entities.count, &state->gamedata.prev_player_overlaps, out_events);
         }
     }
 }
@@ -467,14 +477,15 @@ void game_update(Diag *diag, GameState *state, InputState input, float delta_tim
         Entity *player = game_get_player(state);
         if (player) {
             const AttrSet *player_defaults = entity_resolve_defaults(state, player->id);
-            RectU32 level_size = {(uint32_t)state->current_level.width, (uint32_t)state->current_level.height};
+            RectU32 level_size = {(uint32_t)state->gamedata.current_level.width,
+                                  (uint32_t)state->gamedata.current_level.height};
             update_player(player, player_defaults, input, delta_time, level_size);
-            resolve_player_obstacles(state, state->player_index);
+            resolve_player_obstacles(state, state->gamedata.player_index);
             camera_update_target(state, player->position, delta_time);
         }
     }
 
-    update_child_positions(&state->current_level);
+    update_child_positions(&state->gamedata.current_level);
 
     if (!state->editor_mode) {
         SCRATCH_SCOPE(&state->scratch_arena);
@@ -482,11 +493,12 @@ void game_update(Diag *diag, GameState *state, InputState input, float delta_tim
         vec_trigger_event trigger_events = vec_trigger_event_new(scratch_alloc);
 
         /* Detect new solid-entity overlaps and fire collide events on both parties */
-        detect_solid_collisions(state, &state->current_level, &state->prev_solid_collisions, &trigger_events);
+        detect_solid_collisions(state, &state->gamedata.current_level, &state->gamedata.prev_solid_collisions,
+                                &trigger_events);
 
         /* Tick timers and collect fired events */
-        for (int timer_index = state->timers.count - 1; timer_index >= 0; timer_index--) {
-            Timer *timer = &state->timers.data[timer_index];
+        for (int timer_index = state->gamedata.timers.count - 1; timer_index >= 0; timer_index--) {
+            Timer *timer = &state->gamedata.timers.data[timer_index];
             timer->remaining -= delta_time;
             if (timer->remaining > 0.0F) {
                 continue;
@@ -501,25 +513,27 @@ void game_update(Diag *diag, GameState *state, InputState input, float delta_tim
             if (timer->periodic) {
                 timer->remaining += timer->duration;
             } else {
-                state->timers.data[timer_index] = state->timers.data[state->timers.count - 1];
-                state->timers.count--;
+                state->gamedata.timers.data[timer_index] =
+                    state->gamedata.timers.data[state->gamedata.timers.count - 1];
+                state->gamedata.timers.count--;
             }
         }
 
         collect_trigger_events(diag->debug, state, input, &trigger_events);
 
         if (trigger_events.count > 0) {
-            int update_count = state->current_level.entities.count;
+            int update_count = state->gamedata.current_level.entities.count;
             const AttrSet **update_defaults =
                 (const AttrSet **)arena_alloc(&state->scratch_arena, sizeof(const AttrSet *) * (size_t)update_count);
             for (int index = 0; index < update_count; index++) {
-                update_defaults[index] = entity_resolve_defaults(state, state->current_level.entities.data[index].id);
+                update_defaults[index] =
+                    entity_resolve_defaults(state, state->gamedata.current_level.entities.data[index].id);
             }
             Allocator rule_alloc = allocator_arena(&state->gamedata_arena);
-            rules_evaluate_batch(diag, &rule_alloc, state->current_level.entities.data, update_count,
-                                 trigger_events.data, trigger_events.count, &state->flags, &state->vars,
-                                 &state->rule_table, &state->subroutines, &state->timers, update_defaults,
-                                 &state->transition);
+            rules_evaluate_batch(diag, &rule_alloc, state->gamedata.current_level.entities.data, update_count,
+                                 trigger_events.data, trigger_events.count, &state->gamedata.flags,
+                                 &state->gamedata.vars, &state->gamedata.rule_table, &state->gamedata.subroutines,
+                                 &state->gamedata.timers, update_defaults, &state->transition);
         }
     }
 }

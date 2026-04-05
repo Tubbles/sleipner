@@ -231,15 +231,15 @@ void test_editor_word_builder_total_count_no_blueprints(void)
 void test_editor_word_builder_total_count_with_blueprints(void)
 {
     GameState state = {0};
-    state.blueprints.entries.alloc = test_heap_alloc;
+    state.gamedata.blueprints.entries.alloc = test_heap_alloc;
     int base = word_builder_total_count(&state);
 
     Blueprint blueprint = make_named_blueprint("player");
-    TEST_ASSERT_TRUE(vec_blueprint_push(&state.blueprints.entries, blueprint));
+    TEST_ASSERT_TRUE(vec_blueprint_push(&state.gamedata.blueprints.entries, blueprint));
 
     TEST_ASSERT_EQUAL_INT(base + 1, word_builder_total_count(&state));
 
-    test_blueprint_table_free_local(&state.blueprints);
+    test_blueprint_table_free_local(&state.gamedata.blueprints);
 }
 
 /* ---- word_builder_item -------------------------------------------------- */
@@ -259,14 +259,14 @@ void test_editor_word_builder_item_first_builtin(void)
 void test_editor_word_builder_item_blueprint_name(void)
 {
     GameState state = {0};
-    state.blueprints.entries.alloc = test_heap_alloc;
+    state.gamedata.blueprints.entries.alloc = test_heap_alloc;
     Blueprint blueprint = make_named_blueprint("player");
-    TEST_ASSERT_TRUE(vec_blueprint_push(&state.blueprints.entries, blueprint));
+    TEST_ASSERT_TRUE(vec_blueprint_push(&state.gamedata.blueprints.entries, blueprint));
 
     int blueprint_index = 1 + WORD_BUILDER_BUILTIN_COUNT;
     TEST_ASSERT_EQUAL_STRING("player", word_builder_item(&state, blueprint_index));
 
-    test_blueprint_table_free_local(&state.blueprints);
+    test_blueprint_table_free_local(&state.gamedata.blueprints);
 }
 
 void test_editor_word_builder_item_negative_index(void)
@@ -307,11 +307,11 @@ void test_editor_total_attr_count_instance_only(void)
 void test_editor_total_attr_count_with_blueprint(void)
 {
     GameState state = {0};
-    state.blueprints.entries.alloc = test_heap_alloc;
+    state.gamedata.blueprints.entries.alloc = test_heap_alloc;
     Blueprint blueprint = {0};
     TEST_ASSERT_TRUE(attr_set_string(&test_heap_alloc, &blueprint.attrs, (AttrStringPair){"name", "test_bp"}));
     TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, &blueprint.attrs, "bp_attr", 42));
-    (void)vec_blueprint_push(&state.blueprints.entries, blueprint);
+    (void)vec_blueprint_push(&state.gamedata.blueprints.entries, blueprint);
 
     Entity entity = {0};
     entity.id = 1;
@@ -319,9 +319,9 @@ void test_editor_total_attr_count_with_blueprint(void)
     TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, &entity.attrs, "inst_attr", 10));
     Str bp_name = {0};
     TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &bp_name, "test_bp"));
-    (void)map_int_str_set(&state.entity_blueprints, entity.id, bp_name, &test_heap_alloc);
+    (void)map_int_str_set(&state.gamedata.entity_blueprints, entity.id, bp_name, &test_heap_alloc);
 
-    entity_resolve_defaults_fake.return_val = &state.blueprints.entries.data[0].attrs;
+    entity_resolve_defaults_fake.return_val = &state.gamedata.blueprints.entries.data[0].attrs;
     TEST_ASSERT_EQUAL_INT(2 + 1, total_attr_count(&state, &entity));
     entity_resolve_defaults_fake.return_val = nullptr;
 
@@ -329,8 +329,8 @@ void test_editor_total_attr_count_with_blueprint(void)
     test_attr_set_free_local(&blueprint.attrs);
     str_free(&test_heap_alloc, &entity.blueprint_name);
     str_free(&test_heap_alloc, &bp_name);
-    map_int_str_free(&state.entity_blueprints, &test_heap_alloc);
-    vec_blueprint_free(&state.blueprints.entries);
+    map_int_str_free(&state.gamedata.entity_blueprints, &test_heap_alloc);
+    vec_blueprint_free(&state.gamedata.blueprints.entries);
 }
 
 /* ---- is_blueprint_attr -------------------------------------------------- */
@@ -437,27 +437,27 @@ void test_editor_entity_outline_rect_without_collision(void)
 void test_editor_find_blueprint_by_name_found(void)
 {
     GameState state = {0};
-    state.blueprints.entries.alloc = test_heap_alloc;
+    state.gamedata.blueprints.entries.alloc = test_heap_alloc;
     Blueprint blueprint = make_named_blueprint("chest");
-    TEST_ASSERT_TRUE(vec_blueprint_push(&state.blueprints.entries, blueprint));
+    TEST_ASSERT_TRUE(vec_blueprint_push(&state.gamedata.blueprints.entries, blueprint));
 
     Blueprint *result = find_blueprint_by_name(&state, "chest");
     TEST_ASSERT_NOT_NULL(result);
     TEST_ASSERT_EQUAL_STRING("chest", attr_get_string(&result->attrs, "name"));
 
-    test_blueprint_table_free_local(&state.blueprints);
+    test_blueprint_table_free_local(&state.gamedata.blueprints);
 }
 
 void test_editor_find_blueprint_by_name_not_found(void)
 {
     GameState state = {0};
-    state.blueprints.entries.alloc = test_heap_alloc;
+    state.gamedata.blueprints.entries.alloc = test_heap_alloc;
     Blueprint blueprint = make_named_blueprint("chest");
-    TEST_ASSERT_TRUE(vec_blueprint_push(&state.blueprints.entries, blueprint));
+    TEST_ASSERT_TRUE(vec_blueprint_push(&state.gamedata.blueprints.entries, blueprint));
 
     TEST_ASSERT_NULL(find_blueprint_by_name(&state, "nonexistent"));
 
-    test_blueprint_table_free_local(&state.blueprints);
+    test_blueprint_table_free_local(&state.gamedata.blueprints);
 }
 
 void test_editor_find_blueprint_by_name_empty_table(void)
@@ -536,50 +536,50 @@ void test_editor_mark_deleted_sibling_untouched(void)
 void test_editor_apply_attr_delta_int(void)
 {
     GameState state = {0};
-    state.current_level.entities.alloc = test_heap_alloc;
+    state.gamedata.current_level.entities.alloc = test_heap_alloc;
     Entity entity = {.parent_index = -1};
     TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, &entity.attrs, "speed", 10));
-    TEST_ASSERT_TRUE(vec_entity_push(&state.current_level.entities, entity));
+    TEST_ASSERT_TRUE(vec_entity_push(&state.gamedata.current_level.entities, entity));
 
     EditorState editor_state = {.selected_entity_index = 0, .selected_attr_index = 0};
     apply_attr_delta(&state, &editor_state, 5);
 
-    Attribute *attr = &state.current_level.entities.data[0].attrs.entries.data[0];
+    Attribute *attr = &state.gamedata.current_level.entities.data[0].attrs.entries.data[0];
     TEST_ASSERT_EQUAL_INT(15, attr->value.i);
 
-    test_attr_set_free_local(&state.current_level.entities.data[0].attrs);
-    vec_entity_free(&state.current_level.entities);
+    test_attr_set_free_local(&state.gamedata.current_level.entities.data[0].attrs);
+    vec_entity_free(&state.gamedata.current_level.entities);
 }
 
 void test_editor_apply_attr_delta_float(void)
 {
     GameState state = {0};
-    state.current_level.entities.alloc = test_heap_alloc;
+    state.gamedata.current_level.entities.alloc = test_heap_alloc;
     Entity entity = {.parent_index = -1};
     TEST_ASSERT_TRUE(attr_set_float(&test_heap_alloc, &entity.attrs, "speed", 10.0F));
-    TEST_ASSERT_TRUE(vec_entity_push(&state.current_level.entities, entity));
+    TEST_ASSERT_TRUE(vec_entity_push(&state.gamedata.current_level.entities, entity));
 
     EditorState editor_state = {.selected_entity_index = 0, .selected_attr_index = 0};
     apply_attr_delta(&state, &editor_state, 3);
 
-    Attribute *attr = &state.current_level.entities.data[0].attrs.entries.data[0];
+    Attribute *attr = &state.gamedata.current_level.entities.data[0].attrs.entries.data[0];
     TEST_ASSERT_FLOAT_WITHIN(0.01F, 13.0F, attr->value.f);
 
-    test_attr_set_free_local(&state.current_level.entities.data[0].attrs);
-    vec_entity_free(&state.current_level.entities);
+    test_attr_set_free_local(&state.gamedata.current_level.entities.data[0].attrs);
+    vec_entity_free(&state.gamedata.current_level.entities);
 }
 
 void test_editor_apply_attr_delta_null_attr_no_crash(void)
 {
     GameState state = {0};
-    state.current_level.entities.alloc = test_heap_alloc;
+    state.gamedata.current_level.entities.alloc = test_heap_alloc;
     Entity entity = {.parent_index = -1};
-    TEST_ASSERT_TRUE(vec_entity_push(&state.current_level.entities, entity));
+    TEST_ASSERT_TRUE(vec_entity_push(&state.gamedata.current_level.entities, entity));
 
     EditorState editor_state = {.selected_entity_index = 0, .selected_attr_index = 99};
     apply_attr_delta(&state, &editor_state, 1);
 
-    vec_entity_free(&state.current_level.entities);
+    vec_entity_free(&state.gamedata.current_level.entities);
 }
 
 /* ---- attr_at_display_index ---------------------------------------------- */
@@ -600,10 +600,10 @@ void test_editor_attr_at_display_index_instance(void)
 void test_editor_attr_at_display_index_blueprint(void)
 {
     GameState state = {0};
-    state.blueprints.entries.alloc = test_heap_alloc;
+    state.gamedata.blueprints.entries.alloc = test_heap_alloc;
 
-    TEST_ASSERT_TRUE(vec_blueprint_push(&state.blueprints.entries, (Blueprint){0}));
-    Blueprint *blueprint = &state.blueprints.entries.data[0];
+    TEST_ASSERT_TRUE(vec_blueprint_push(&state.gamedata.blueprints.entries, (Blueprint){0}));
+    Blueprint *blueprint = &state.gamedata.blueprints.entries.data[0];
     TEST_ASSERT_TRUE(attr_set_string(&test_heap_alloc, &blueprint->attrs, (AttrStringPair){"name", "test_bp"}));
     TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, &blueprint->attrs, "bp_val", 99));
 
@@ -618,7 +618,7 @@ void test_editor_attr_at_display_index_blueprint(void)
 
     str_free(&test_heap_alloc, &entity.blueprint_name);
     test_attr_set_free_local(&entity.attrs);
-    test_blueprint_table_free_local(&state.blueprints);
+    test_blueprint_table_free_local(&state.gamedata.blueprints);
 }
 
 void test_editor_attr_at_display_index_out_of_range(void)
@@ -830,44 +830,44 @@ void test_editor_delete_entity_removes_map_entries(void)
     ErrorState err = {0};
     GameState state = {0};
     TEST_ASSERT_TRUE(arena_init(&err, &state.scratch_arena));
-    state.current_level.entities.alloc = test_heap_alloc;
-    state.entity_blueprints = (map_int_str){0};
-    state.rule_table = (map_entity_ruleset){0};
+    state.gamedata.current_level.entities.alloc = test_heap_alloc;
+    state.gamedata.entity_blueprints = (map_int_str){0};
+    state.gamedata.rule_table = (map_entity_ruleset){0};
 
     Entity entity_a = {.id = 10, .parent_index = -1};
     Entity entity_b = {.id = 20, .parent_index = -1};
-    TEST_ASSERT_TRUE(vec_entity_push(&state.current_level.entities, entity_a));
-    TEST_ASSERT_TRUE(vec_entity_push(&state.current_level.entities, entity_b));
+    TEST_ASSERT_TRUE(vec_entity_push(&state.gamedata.current_level.entities, entity_a));
+    TEST_ASSERT_TRUE(vec_entity_push(&state.gamedata.current_level.entities, entity_b));
 
     Str name_a = {0};
     Str name_b = {0};
     TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &name_a, "blueprint_a"));
     TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &name_b, "blueprint_b"));
-    TEST_ASSERT_TRUE(map_int_str_set(&state.entity_blueprints, 10, name_a, &test_heap_alloc));
-    TEST_ASSERT_TRUE(map_int_str_set(&state.entity_blueprints, 20, name_b, &test_heap_alloc));
+    TEST_ASSERT_TRUE(map_int_str_set(&state.gamedata.entity_blueprints, 10, name_a, &test_heap_alloc));
+    TEST_ASSERT_TRUE(map_int_str_set(&state.gamedata.entity_blueprints, 20, name_b, &test_heap_alloc));
 
     vec_rule rules_a = {0};
     vec_rule rules_b = {0};
-    TEST_ASSERT_TRUE(map_entity_ruleset_set(&state.rule_table, 10, rules_a, &test_heap_alloc));
-    TEST_ASSERT_TRUE(map_entity_ruleset_set(&state.rule_table, 20, rules_b, &test_heap_alloc));
+    TEST_ASSERT_TRUE(map_entity_ruleset_set(&state.gamedata.rule_table, 10, rules_a, &test_heap_alloc));
+    TEST_ASSERT_TRUE(map_entity_ruleset_set(&state.gamedata.rule_table, 20, rules_b, &test_heap_alloc));
 
     EditorState editor_state = {.selected_entity_index = 0};
     WatchList watches = {0};
-    state.player_index = -1;
+    state.gamedata.player_index = -1;
 
     delete_selected_entity(&state, &editor_state, &watches);
 
-    TEST_ASSERT_EQUAL_INT(1, state.current_level.entities.count);
-    TEST_ASSERT_NULL(map_int_str_get(&state.entity_blueprints, 10));
-    TEST_ASSERT_NOT_NULL(map_int_str_get(&state.entity_blueprints, 20));
-    TEST_ASSERT_NULL(map_entity_ruleset_get(&state.rule_table, 10));
-    TEST_ASSERT_NOT_NULL(map_entity_ruleset_get(&state.rule_table, 20));
+    TEST_ASSERT_EQUAL_INT(1, state.gamedata.current_level.entities.count);
+    TEST_ASSERT_NULL(map_int_str_get(&state.gamedata.entity_blueprints, 10));
+    TEST_ASSERT_NOT_NULL(map_int_str_get(&state.gamedata.entity_blueprints, 20));
+    TEST_ASSERT_NULL(map_entity_ruleset_get(&state.gamedata.rule_table, 10));
+    TEST_ASSERT_NOT_NULL(map_entity_ruleset_get(&state.gamedata.rule_table, 20));
 
     str_free(&test_heap_alloc, &name_a);
     str_free(&test_heap_alloc, &name_b);
-    vec_entity_free(&state.current_level.entities);
-    map_int_str_free(&state.entity_blueprints, &test_heap_alloc);
-    map_entity_ruleset_free(&state.rule_table, &test_heap_alloc);
+    vec_entity_free(&state.gamedata.current_level.entities);
+    map_int_str_free(&state.gamedata.entity_blueprints, &test_heap_alloc);
+    map_entity_ruleset_free(&state.gamedata.rule_table, &test_heap_alloc);
     arena_reset(&state.scratch_arena);
 }
 

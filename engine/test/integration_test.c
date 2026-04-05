@@ -191,10 +191,10 @@ void test_integration_load_gamedata(void)
                                      (GamedataParams){.toml_string = fixture_gamedata, .texture_lookup = dummy_lookup});
     TEST_ASSERT_TRUE(loaded);
     TEST_ASSERT_TRUE(state.gamedata_loaded);
-    TEST_ASSERT_EQUAL_STRING("field", state.current_level.name.ptr);
-    TEST_ASSERT_EQUAL_INT(3, state.current_level.entities.count);
-    TEST_ASSERT_EQUAL_INT(3, state.blueprints.entries.count);
-    TEST_ASSERT_TRUE(state.player_index >= 0);
+    TEST_ASSERT_EQUAL_STRING("field", state.gamedata.current_level.name.ptr);
+    TEST_ASSERT_EQUAL_INT(3, state.gamedata.current_level.entities.count);
+    TEST_ASSERT_EQUAL_INT(3, state.gamedata.blueprints.entries.count);
+    TEST_ASSERT_TRUE(state.gamedata.player_index >= 0);
 
     game_free(&diag, &state);
 }
@@ -209,9 +209,9 @@ void test_integration_load_specific_level(void)
         &diag, &state,
         (GamedataParams){.toml_string = fixture_gamedata, .level_name = "cave", .texture_lookup = dummy_lookup});
     TEST_ASSERT_TRUE(loaded);
-    TEST_ASSERT_EQUAL_STRING("cave", state.current_level.name.ptr);
-    TEST_ASSERT_EQUAL_INT(2, state.current_level.entities.count);
-    TEST_ASSERT_TRUE(state.player_index >= 0);
+    TEST_ASSERT_EQUAL_STRING("cave", state.gamedata.current_level.name.ptr);
+    TEST_ASSERT_EQUAL_INT(2, state.gamedata.current_level.entities.count);
+    TEST_ASSERT_TRUE(state.gamedata.player_index >= 0);
 
     game_free(&diag, &state);
 }
@@ -236,7 +236,7 @@ void test_integration_walk_and_collide(void)
     /* Player collision must not overlap the rock */
     const Entity *player = game_get_player_const(&state);
     /* Rock is entity index 1 (player is 0) */
-    Rectangle rock = state.current_level.entities.data[1].collision;
+    Rectangle rock = state.gamedata.current_level.entities.data[1].collision;
     TEST_ASSERT_TRUE(player->collision.x + player->collision.width <= rock.x + 0.1F);
 
     game_free(&diag, &state);
@@ -323,7 +323,7 @@ void test_integration_player_entity_spawns(void)
         &diag, &state, (GamedataParams){.toml_string = fixture_gamedata, .texture_lookup = dummy_lookup}));
 
     /* Player entity must exist */
-    TEST_ASSERT_TRUE(state.player_index >= 0);
+    TEST_ASSERT_TRUE(state.gamedata.player_index >= 0);
 
     const Entity *player = game_get_player_const(&state);
     TEST_ASSERT_NOT_NULL(player);
@@ -365,7 +365,7 @@ void test_integration_on_spawn_trigger_fires_on_load(void)
 
     /* beacon blueprint has on_spawn → set_flag:beacon_spawned.
      * No game_update needed — the flag must be set by game_load_gamedata. */
-    TEST_ASSERT_TRUE(flag_get(&state.flags, "beacon_spawned"));
+    TEST_ASSERT_TRUE(flag_get(&state.gamedata.flags, "beacon_spawned"));
 
     game_free(&diag, &state);
 }
@@ -379,7 +379,7 @@ void test_integration_enter_trigger_fires_on_overlap(void)
         &diag, &state, (GamedataParams){.toml_string = fixture_triggers, .texture_lookup = dummy_lookup}));
 
     /* zone_entered must not be set before the player reaches the zone */
-    TEST_ASSERT_FALSE(flag_get(&state.flags, "zone_entered"));
+    TEST_ASSERT_FALSE(flag_get(&state.gamedata.flags, "zone_entered"));
 
     /* Player at (100,100), collision [100,100,16,16]. Zone at (200,100), collision [200,100,32,32].
      * Player right edge starts at 116, zone left edge at 200. Gap = 84px.
@@ -390,7 +390,7 @@ void test_integration_enter_trigger_fires_on_overlap(void)
         game_update(&diag, &state, input, 1.0F / 60.0F);
     }
 
-    TEST_ASSERT_TRUE(flag_get(&state.flags, "zone_entered"));
+    TEST_ASSERT_TRUE(flag_get(&state.gamedata.flags, "zone_entered"));
 
     game_free(&diag, &state);
 }
@@ -447,7 +447,7 @@ void test_integration_enter_trigger_fires_only_once(void)
     }
 
     /* enter_count must be exactly 1 — edge-triggered, not level-triggered */
-    const Entity *zone = &state.current_level.entities.data[1];
+    const Entity *zone = &state.gamedata.current_level.entities.data[1];
     TEST_ASSERT_EQUAL_INT(1, (int)attr_get_scoped_float(&zone->attrs, nullptr, "enter_count", 0.0F));
 
     game_free(&diag, &state);
@@ -489,7 +489,7 @@ void test_integration_real_gamedata_loads(void)
     bool loaded =
         game_load_gamedata(&diag, &state, (GamedataParams){.toml_string = content, .texture_lookup = dummy_lookup});
     TEST_ASSERT_TRUE_MESSAGE(loaded, error_get(&state.error));
-    TEST_ASSERT_TRUE(state.player_index >= 0);
+    TEST_ASSERT_TRUE(state.gamedata.player_index >= 0);
 
     /* Run a few frames to exercise update logic (timers, overlap tracking, etc.) */
     InputState input = {0};
@@ -539,7 +539,7 @@ void test_integration_real_gamedata_all_levels_load(void)
             &diag, &state,
             (GamedataParams){.toml_string = content, .level_name = level_names[index], .texture_lookup = dummy_lookup});
         TEST_ASSERT_TRUE_MESSAGE(loaded, error_get(&state.error));
-        TEST_ASSERT_TRUE(state.player_index >= 0);
+        TEST_ASSERT_TRUE(state.gamedata.player_index >= 0);
 
         game_free(&diag, &state);
     }
@@ -558,7 +558,7 @@ void test_integration_transition_changes_level(void)
     TEST_ASSERT_TRUE(game_load_gamedata(
         &diag, &state, (GamedataParams){.toml_string = fixture_transition, .texture_lookup = dummy_lookup}));
 
-    TEST_ASSERT_EQUAL_STRING("field", state.current_level.name.ptr);
+    TEST_ASSERT_EQUAL_STRING("field", state.gamedata.current_level.name.ptr);
     TEST_ASSERT_FALSE(state.transition.pending);
 
     /* Walk right into the door trigger: player at (100,100), door at (200,100).
@@ -582,8 +582,8 @@ void test_integration_transition_changes_level(void)
                                                         .level_name = state.transition.level.ptr,
                                                         .texture_lookup = dummy_lookup});
     TEST_ASSERT_TRUE_MESSAGE(reloaded, error_get(&state.error));
-    TEST_ASSERT_EQUAL_STRING("interior", state.current_level.name.ptr);
-    TEST_ASSERT_TRUE(state.player_index >= 0);
+    TEST_ASSERT_EQUAL_STRING("interior", state.gamedata.current_level.name.ptr);
+    TEST_ASSERT_TRUE(state.gamedata.player_index >= 0);
 
     game_free(&diag, &state);
 }

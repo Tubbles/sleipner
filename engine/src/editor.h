@@ -74,7 +74,7 @@ typedef struct {
     Vector2 saved_position;
     Vector2 saved_col_offset;
     Vector2 saved_col_size;
-    int place_blueprint_index;                    /* index into state->blueprints.entries */
+    int place_blueprint_index;                    /* index into state->gamedata.blueprints.entries */
     int selected_attr_index;                      /* -1 = none; index into merged instance+blueprint list */
     float saved_attr_float;                       /* original float value saved on entering ATTR_EDIT */
     int saved_attr_int;                           /* original int value saved on entering ATTR_EDIT */

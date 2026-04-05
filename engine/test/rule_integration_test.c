@@ -166,20 +166,20 @@ void test_integration_interact_rule(void)
         (GamedataParams){.toml_string = rule_test_gamedata, .texture_lookup = rule_test_dummy_lookup}));
 
     TEST_ASSERT_TRUE(state.gamedata_loaded);
-    TEST_ASSERT_EQUAL_INT(2, state.current_level.entities.count);
+    TEST_ASSERT_EQUAL_INT(2, state.gamedata.current_level.entities.count);
 
-    const Blueprint *chest_bp = blueprint_find(&state.blueprints, "chest");
+    const Blueprint *chest_bp = blueprint_find(&state.gamedata.blueprints, "chest");
     TEST_ASSERT_NOT_NULL(chest_bp);
     TEST_ASSERT_EQUAL_INT(1, chest_bp->rules.count);
     TEST_ASSERT_EQUAL_INT(TRIGGER_INTERACT, chest_bp->rules.data[0].trigger.type);
 
-    TEST_ASSERT_FALSE(flag_get(&state.flags, "chest_opened"));
+    TEST_ASSERT_FALSE(flag_get(&state.gamedata.flags, "chest_opened"));
 
     InputState input = {0};
     input.buttons[0] = true;
     game_update(&test_diag, &state, input, 1.0F / 60.0F);
 
-    TEST_ASSERT_TRUE(flag_get(&state.flags, "chest_opened"));
+    TEST_ASSERT_TRUE(flag_get(&state.gamedata.flags, "chest_opened"));
 
     game_free(&test_diag, &state);
 }
@@ -226,17 +226,17 @@ void test_integration_condition_blocks_interact(void)
     input.buttons[0] = true;
     game_update(&test_diag, &state, input, 1.0F / 60.0F);
 
-    TEST_ASSERT_FALSE(flag_get(&state.flags, "chest_opened"));
+    TEST_ASSERT_FALSE(flag_get(&state.gamedata.flags, "chest_opened"));
 
     input.buttons[0] = false;
     game_update(&test_diag, &state, input, 1.0F / 60.0F);
 
     Allocator arena_alloc = allocator_arena(&state.gamedata_arena);
-    flag_set(&test_diag, &arena_alloc, &state.flags, "has_key");
+    flag_set(&test_diag, &arena_alloc, &state.gamedata.flags, "has_key");
     input.buttons[0] = true;
     game_update(&test_diag, &state, input, 1.0F / 60.0F);
 
-    TEST_ASSERT_TRUE(flag_get(&state.flags, "chest_opened"));
+    TEST_ASSERT_TRUE(flag_get(&state.gamedata.flags, "chest_opened"));
 
     game_free(&test_diag, &state);
 }
@@ -286,8 +286,8 @@ void test_integration_for_each_no_bind_iterates_all_entities(void)
         &test_diag, &state, (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));
 
     /* All three entities must have count = 1 */
-    for (int entity_index = 0; entity_index < state.current_level.entities.count; entity_index++) {
-        const Entity *entity = &state.current_level.entities.data[entity_index];
+    for (int entity_index = 0; entity_index < state.gamedata.current_level.entities.count; entity_index++) {
+        const Entity *entity = &state.gamedata.current_level.entities.data[entity_index];
         TEST_ASSERT_EQUAL_INT(1, (int)attr_get_scoped_float(&entity->attrs, nullptr, "count", 0.0F));
     }
 
@@ -343,10 +343,10 @@ void test_integration_for_each_condition_filter(void)
     TEST_ASSERT_TRUE(game_load_gamedata(
         &test_diag, &state, (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));
 
-    TEST_ASSERT_EQUAL_INT(3, state.current_level.entities.count);
+    TEST_ASSERT_EQUAL_INT(3, state.gamedata.current_level.entities.count);
     /* entity 1 = enemy, entity 2 = bystander */
-    const Entity *enemy = &state.current_level.entities.data[1];
-    const Entity *bystander = &state.current_level.entities.data[2];
+    const Entity *enemy = &state.gamedata.current_level.entities.data[1];
+    const Entity *bystander = &state.gamedata.current_level.entities.data[2];
     TEST_ASSERT_EQUAL_INT(1, (int)attr_get_scoped_float(&enemy->attrs, nullptr, "hit_count", 0.0F));
     TEST_ASSERT_EQUAL_INT(0, (int)attr_get_scoped_float(&bystander->attrs, nullptr, "hit_count", 0.0F));
 
@@ -397,8 +397,8 @@ void test_integration_for_each_bind_mode(void)
         &test_diag, &state, (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));
 
     /* All three entities must have tagged = 1 (bind mode still includes self) */
-    for (int entity_index = 0; entity_index < state.current_level.entities.count; entity_index++) {
-        const Entity *entity = &state.current_level.entities.data[entity_index];
+    for (int entity_index = 0; entity_index < state.gamedata.current_level.entities.count; entity_index++) {
+        const Entity *entity = &state.gamedata.current_level.entities.data[entity_index];
         TEST_ASSERT_EQUAL_INT(1, (int)attr_get_scoped_float(&entity->attrs, nullptr, "tagged", 0.0F));
     }
 
@@ -437,7 +437,7 @@ void test_integration_subroutine_call(void)
     TEST_ASSERT_TRUE(game_load_gamedata(
         &test_diag, &state, (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));
 
-    TEST_ASSERT_TRUE(flag_get(&state.flags, "visited"));
+    TEST_ASSERT_TRUE(flag_get(&state.gamedata.flags, "visited"));
 
     game_free(&test_diag, &state);
 }
@@ -473,7 +473,7 @@ void test_integration_subroutine_inherits_self(void)
         &test_diag, &state, (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));
 
     /* Called twice -- count must be 2 */
-    const Entity *counter = &state.current_level.entities.data[0];
+    const Entity *counter = &state.gamedata.current_level.entities.data[0];
     TEST_ASSERT_EQUAL_INT(2, (int)attr_get_scoped_float(&counter->attrs, nullptr, "count", 0.0F));
 
     game_free(&test_diag, &state);
@@ -506,7 +506,7 @@ void test_integration_subroutine_missing_is_soft_fail(void)
         &test_diag, &state, (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));
 
     /* count must be 1 -- add_attr ran after the failed call: */
-    const Entity *thing = &state.current_level.entities.data[0];
+    const Entity *thing = &state.gamedata.current_level.entities.data[0];
     TEST_ASSERT_EQUAL_INT(1, (int)attr_get_scoped_float(&thing->attrs, nullptr, "count", 0.0F));
 
     game_free(&test_diag, &state);
@@ -546,13 +546,13 @@ void test_integration_timer_oneshot_fires_once(void)
         &test_diag, &state, (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));
 
     /* 1 timer created, none fired yet */
-    TEST_ASSERT_EQUAL_INT(1, state.timers.count);
-    const Entity *thing = &state.current_level.entities.data[0];
+    TEST_ASSERT_EQUAL_INT(1, state.gamedata.timers.count);
+    const Entity *thing = &state.gamedata.current_level.entities.data[0];
     TEST_ASSERT_EQUAL_INT(0, (int)attr_get_scoped_float(&thing->attrs, nullptr, "fired_count", 0.0F));
 
     /* Advance past duration -- timer fires once */
     game_update(&test_diag, &state, (InputState){0}, 0.6F);
-    TEST_ASSERT_EQUAL_INT(0, state.timers.count);
+    TEST_ASSERT_EQUAL_INT(0, state.gamedata.timers.count);
     TEST_ASSERT_EQUAL_INT(1, (int)attr_get_scoped_float(&thing->attrs, nullptr, "fired_count", 0.0F));
 
     /* Second tick -- no timer left, count stays at 1 */
@@ -594,13 +594,13 @@ void test_integration_timer_periodic_fires_repeatedly(void)
 
     /* Advance 0.6 s -- one fire */
     game_update(&test_diag, &state, (InputState){0}, 0.6F);
-    const Entity *thing = &state.current_level.entities.data[0];
+    const Entity *thing = &state.gamedata.current_level.entities.data[0];
     TEST_ASSERT_EQUAL_INT(1, (int)attr_get_scoped_float(&thing->attrs, nullptr, "pulse_count", 0.0F));
 
     /* Advance another 0.6 s -- second fire; timer still alive */
     game_update(&test_diag, &state, (InputState){0}, 0.6F);
     TEST_ASSERT_EQUAL_INT(2, (int)attr_get_scoped_float(&thing->attrs, nullptr, "pulse_count", 0.0F));
-    TEST_ASSERT_EQUAL_INT(1, state.timers.count);
+    TEST_ASSERT_EQUAL_INT(1, state.gamedata.timers.count);
 
     game_free(&test_diag, &state);
 }
@@ -640,28 +640,28 @@ void test_integration_timer_destroy_cancels(void)
     TEST_ASSERT_TRUE(game_load_gamedata(
         &test_diag, &state, (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));
 
-    TEST_ASSERT_EQUAL_INT(1, state.timers.count);
+    TEST_ASSERT_EQUAL_INT(1, state.gamedata.timers.count);
 
     /* Fire cancel event -- timer removed */
     TriggerEvent cancel = {.type = TRIGGER_EVENT, .entity_index = -1};
     Allocator heap_alloc = allocator_heap();
     (void)str_from_cstr(&heap_alloc, &cancel.argument, "cancel");
-    int cancel_count = state.current_level.entities.count;
+    int cancel_count = state.gamedata.current_level.entities.count;
     const AttrSet *cancel_defaults[64];
     for (int index = 0; index < cancel_count; index++) {
-        cancel_defaults[index] = entity_resolve_defaults(&state, state.current_level.entities.data[index].id);
+        cancel_defaults[index] = entity_resolve_defaults(&state, state.gamedata.current_level.entities.data[index].id);
     }
     Allocator rule_alloc = allocator_arena(&state.gamedata_arena);
-    rules_evaluate_batch(&test_diag, &rule_alloc, state.current_level.entities.data, cancel_count, &cancel, 1,
-                         &state.flags, &state.vars, &state.rule_table, &state.subroutines, &state.timers,
-                         cancel_defaults, &state.transition);
+    rules_evaluate_batch(&test_diag, &rule_alloc, state.gamedata.current_level.entities.data, cancel_count, &cancel, 1,
+                         &state.gamedata.flags, &state.gamedata.vars, &state.gamedata.rule_table,
+                         &state.gamedata.subroutines, &state.gamedata.timers, cancel_defaults, &state.transition);
     str_free(&heap_alloc, &cancel.argument);
 
-    TEST_ASSERT_EQUAL_INT(0, state.timers.count);
+    TEST_ASSERT_EQUAL_INT(0, state.gamedata.timers.count);
 
     /* Advance past duration -- no fire */
     game_update(&test_diag, &state, (InputState){0}, 0.6F);
-    const Entity *thing = &state.current_level.entities.data[0];
+    const Entity *thing = &state.gamedata.current_level.entities.data[0];
     TEST_ASSERT_EQUAL_INT(0, (int)attr_get_scoped_float(&thing->attrs, nullptr, "fired_count", 0.0F));
 
     game_free(&test_diag, &state);
@@ -699,9 +699,9 @@ void test_integration_on_destroy_fires(void)
         &test_diag, &state, (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));
 
     /* Entity must be inactive and the on_destroy flag must be set */
-    const Entity *thing = &state.current_level.entities.data[0];
+    const Entity *thing = &state.gamedata.current_level.entities.data[0];
     TEST_ASSERT_FALSE(attr_get_bool(&thing->attrs, "active", true));
-    TEST_ASSERT_TRUE(flag_get(&state.flags, "thing_destroyed"));
+    TEST_ASSERT_TRUE(flag_get(&state.gamedata.flags, "thing_destroyed"));
 
     game_free(&test_diag, &state);
 }
@@ -739,7 +739,7 @@ void test_integration_defeat_fires_when_health_drops_to_zero(void)
     TEST_ASSERT_TRUE(game_load_gamedata(
         &test_diag, &state, (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));
 
-    TEST_ASSERT_TRUE(flag_get(&state.flags, "enemy_defeated"));
+    TEST_ASSERT_TRUE(flag_get(&state.gamedata.flags, "enemy_defeated"));
 
     game_free(&test_diag, &state);
 }
@@ -785,11 +785,11 @@ void test_integration_collide_fires_on_overlap(void)
         &test_diag, &state, (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));
 
     /* No collide event yet -- prev_solid_collisions initialised to false */
-    TEST_ASSERT_FALSE(flag_get(&state.flags, "rock_hit"));
+    TEST_ASSERT_FALSE(flag_get(&state.gamedata.flags, "rock_hit"));
 
     /* First update -- overlap detected for the first time -> fire */
     game_update(&test_diag, &state, (InputState){0}, 0.016F);
-    TEST_ASSERT_TRUE(flag_get(&state.flags, "rock_hit"));
+    TEST_ASSERT_TRUE(flag_get(&state.gamedata.flags, "rock_hit"));
 
     game_free(&test_diag, &state);
 }

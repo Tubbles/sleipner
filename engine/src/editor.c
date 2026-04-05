@@ -137,13 +137,14 @@ static Rectangle entity_outline_rect(const GameState *state, const Entity *entit
 
 void draw_editor_highlights(const GameState *state, const EditorState *editor_state, int hover_entity_index)
 {
-    if (hover_entity_index >= 0 && hover_entity_index < state->current_level.entities.count) {
-        DrawRectangleLinesEx(entity_outline_rect(state, &state->current_level.entities.data[hover_entity_index]), 1.0F,
-                             YELLOW);
+    if (hover_entity_index >= 0 && hover_entity_index < state->gamedata.current_level.entities.count) {
+        DrawRectangleLinesEx(
+            entity_outline_rect(state, &state->gamedata.current_level.entities.data[hover_entity_index]), 1.0F, YELLOW);
     }
     int sel = editor_state->selected_entity_index;
-    if (sel >= 0 && sel < state->current_level.entities.count) {
-        DrawRectangleLinesEx(entity_outline_rect(state, &state->current_level.entities.data[sel]), 2.0F, WHITE);
+    if (sel >= 0 && sel < state->gamedata.current_level.entities.count) {
+        DrawRectangleLinesEx(entity_outline_rect(state, &state->gamedata.current_level.entities.data[sel]), 2.0F,
+                             WHITE);
     }
 }
 
@@ -177,11 +178,11 @@ draw_attr_section(Font font, const AttrSet *set, int panel_x, int *y_offset, int
 void draw_editor_panel(ScreenSize screen, const GameState *state, const EditorState *editor_state)
 {
     int sel = editor_state->selected_entity_index;
-    if (sel < 0 || sel >= state->current_level.entities.count) {
+    if (sel < 0 || sel >= state->gamedata.current_level.entities.count) {
         return;
     }
     Font font = state->assets.ui_font;
-    const Entity *entity = &state->current_level.entities.data[sel];
+    const Entity *entity = &state->gamedata.current_level.entities.data[sel];
     int panel_x = screen.width - EDITOR_PANEL_WIDTH;
     int y_offset = 0;
     DrawRectangle(panel_x, 0, EDITOR_PANEL_WIDTH, screen.height, debug_bg_color);
@@ -217,11 +218,11 @@ void draw_watch_overlay(ScreenSize screen, const GameState *state, const WatchLi
     int y_offset = 0;
     for (int index = 0; index < watches->count; index++) {
         int entity_index = watches->entity_indices[index];
-        if (entity_index >= state->current_level.entities.count) {
+        if (entity_index >= state->gamedata.current_level.entities.count) {
             y_offset += EDITOR_PANEL_LINE_HEIGHT * 2;
             continue;
         }
-        const Entity *entity = &state->current_level.entities.data[entity_index];
+        const Entity *entity = &state->gamedata.current_level.entities.data[entity_index];
         draw_ui_text(
             state->assets.ui_font,
             TextFormat("[%s] pos:%.0f,%.0f", entity->blueprint_name.ptr, entity->position.x, entity->position.y),
@@ -240,8 +241,8 @@ void draw_watch_overlay(ScreenSize screen, const GameState *state, const WatchLi
 
 static Blueprint *find_blueprint_by_name(GameState *state, const char *name)
 {
-    for (int index = 0; index < state->blueprints.entries.count; index++) {
-        Blueprint *blueprint = &state->blueprints.entries.data[index];
+    for (int index = 0; index < state->gamedata.blueprints.entries.count; index++) {
+        Blueprint *blueprint = &state->gamedata.blueprints.entries.data[index];
         const char *blueprint_name = attr_get_string(&blueprint->attrs, "name");
         if (blueprint_name != nullptr && strcmp(blueprint_name, name) == 0) {
             return blueprint;
@@ -313,8 +314,8 @@ static int read_held_dir(void)
 static void propagate_collision_to_entities(GameState *state, const Blueprint *blueprint)
 {
     const char *blueprint_name = attr_get_string(&blueprint->attrs, "name");
-    for (int index = 0; index < state->current_level.entities.count; index++) {
-        Entity *entity = &state->current_level.entities.data[index];
+    for (int index = 0; index < state->gamedata.current_level.entities.count; index++) {
+        Entity *entity = &state->gamedata.current_level.entities.data[index];
         if (strcmp(entity->blueprint_name.ptr, blueprint_name) == 0) {
             entity->collision_offset = blueprint_get_collision_offset(blueprint);
             entity->collision_size = blueprint_get_collision_size(blueprint);
@@ -329,10 +330,10 @@ void draw_collision_handles(const GameState *state, const EditorState *editor_st
         return;
     }
     int sel = editor_state->selected_entity_index;
-    if (sel < 0 || sel >= state->current_level.entities.count) {
+    if (sel < 0 || sel >= state->gamedata.current_level.entities.count) {
         return;
     }
-    Rectangle col = state->current_level.entities.data[sel].collision;
+    Rectangle col = state->gamedata.current_level.entities.data[sel].collision;
     DrawRectangleLinesEx(col, 2.0F, handle_color);
     int half = EDITOR_HANDLE_SIZE / 2;
     DrawRectangle((int)col.x - half, (int)col.y - half, EDITOR_HANDLE_SIZE, EDITOR_HANDLE_SIZE, handle_color);
@@ -347,12 +348,12 @@ void draw_collision_handles(const GameState *state, const EditorState *editor_st
 static int find_place_blueprint_index(const GameState *state, const EditorState *editor_state)
 {
     int sel = editor_state->selected_entity_index;
-    if (sel < 0 || sel >= state->current_level.entities.count) {
+    if (sel < 0 || sel >= state->gamedata.current_level.entities.count) {
         return 0;
     }
-    const char *name = state->current_level.entities.data[sel].blueprint_name.ptr;
-    for (int index = 0; index < state->blueprints.entries.count; index++) {
-        const char *bp_name = attr_get_string(&state->blueprints.entries.data[index].attrs, "name");
+    const char *name = state->gamedata.current_level.entities.data[sel].blueprint_name.ptr;
+    for (int index = 0; index < state->gamedata.blueprints.entries.count; index++) {
+        const char *bp_name = attr_get_string(&state->gamedata.blueprints.entries.data[index].attrs, "name");
         if (bp_name && strcmp(bp_name, name) == 0) {
             return index;
         }
@@ -370,7 +371,7 @@ void draw_place_panel(ScreenSize screen, const GameState *state, const EditorSta
     if (editor_state->sub_mode != EDITOR_SUB_PLACE) {
         return;
     }
-    int count = state->blueprints.entries.count;
+    int count = state->gamedata.blueprints.entries.count;
     if (count == 0) {
         return;
     }
@@ -399,7 +400,7 @@ void draw_place_panel(ScreenSize screen, const GameState *state, const EditorSta
         end = count;
     }
     for (int index = scroll; index < end; index++) {
-        const char *name = attr_get_string(&state->blueprints.entries.data[index].attrs, "name");
+        const char *name = attr_get_string(&state->gamedata.blueprints.entries.data[index].attrs, "name");
         bool selected = (index == bp_index);
         Color color = selected ? WHITE : debug_text_color;
         draw_ui_text(font, TextFormat("%s %s", selected ? ">" : " ", name ? name : "?"), panel_x + DEBUG_MARGIN,
@@ -413,10 +414,10 @@ void draw_place_preview(const GameState *state, const EditorState *editor_state,
     if (editor_state->sub_mode != EDITOR_SUB_PLACE) {
         return;
     }
-    if (state->blueprints.entries.count == 0) {
+    if (state->gamedata.blueprints.entries.count == 0) {
         return;
     }
-    const Blueprint *blueprint = &state->blueprints.entries.data[editor_state->place_blueprint_index];
+    const Blueprint *blueprint = &state->gamedata.blueprints.entries.data[editor_state->place_blueprint_index];
 
     const char *texture_name = attr_get_string(&blueprint->attrs, "texture");
     if (texture_name) {
@@ -465,21 +466,21 @@ static void delete_selected_entity(GameState *state, EditorState *editor_state, 
     if (sel < 0) {
         return;
     }
-    if (state->current_level.entities.data[sel].parent_index >= 0) {
+    if (state->gamedata.current_level.entities.data[sel].parent_index >= 0) {
         return;
     }
-    int count = state->current_level.entities.count;
+    int count = state->gamedata.current_level.entities.count;
     SCRATCH_SCOPE(&state->scratch_arena);
     bool *is_deleted = arena_alloc(&state->scratch_arena, (size_t)count * sizeof(bool));
     int *new_index_map = arena_alloc(&state->scratch_arena, (size_t)count * sizeof(int));
     memset(is_deleted, 0, (size_t)count * sizeof(bool));
     is_deleted[sel] = true;
-    mark_deleted_descendants(&state->current_level, is_deleted, count);
+    mark_deleted_descendants(&state->gamedata.current_level, is_deleted, count);
     for (int index = 0; index < count; index++) {
         if (is_deleted[index]) {
-            int entity_id = state->current_level.entities.data[index].id;
-            map_int_str_remove(&state->entity_blueprints, entity_id);
-            map_entity_ruleset_remove(&state->rule_table, entity_id);
+            int entity_id = state->gamedata.current_level.entities.data[index].id;
+            map_int_str_remove(&state->gamedata.entity_blueprints, entity_id);
+            map_entity_ruleset_remove(&state->gamedata.rule_table, entity_id);
         }
     }
     int new_count = 0;
@@ -492,21 +493,21 @@ static void delete_selected_entity(GameState *state, EditorState *editor_state, 
     }
     for (int index = 0; index < count; index++) {
         if (!is_deleted[index]) {
-            int parent = state->current_level.entities.data[index].parent_index;
+            int parent = state->gamedata.current_level.entities.data[index].parent_index;
             if (parent >= 0) {
-                state->current_level.entities.data[index].parent_index = new_index_map[parent];
+                state->gamedata.current_level.entities.data[index].parent_index = new_index_map[parent];
             }
         }
     }
     int write = 0;
     for (int index = 0; index < count; index++) {
         if (!is_deleted[index]) {
-            state->current_level.entities.data[write++] = state->current_level.entities.data[index];
+            state->gamedata.current_level.entities.data[write++] = state->gamedata.current_level.entities.data[index];
         }
     }
-    state->current_level.entities.count = write;
-    if (state->player_index >= 0) {
-        state->player_index = new_index_map[state->player_index];
+    state->gamedata.current_level.entities.count = write;
+    if (state->gamedata.player_index >= 0) {
+        state->gamedata.player_index = new_index_map[state->gamedata.player_index];
     }
     int new_watch_count = 0;
     for (int watch_index = 0; watch_index < watches->count; watch_index++) {
@@ -523,11 +524,11 @@ static void handle_browse_select(GameState *state, Camera2D *camera, EditorState
 {
     int sel = editor_state->selected_entity_index;
     if (sel < 0) {
-        editor_state->selected_entity_index = find_nearest_entity(&state->current_level, camera->target);
+        editor_state->selected_entity_index = find_nearest_entity(&state->gamedata.current_level, camera->target);
         editor_state->selected_attr_index = -1;
         return;
     }
-    Entity *entity = &state->current_level.entities.data[sel];
+    Entity *entity = &state->gamedata.current_level.entities.data[sel];
     int attr_idx = editor_state->selected_attr_index;
     if (attr_idx < 0) {
         return;
@@ -576,10 +577,10 @@ static void handle_browse_cancel(EditorState *editor_state)
 static void handle_browse_attr_navigate(const GameState *state, EditorState *editor_state, int direction)
 {
     int sel = editor_state->selected_entity_index;
-    if (sel < 0 || sel >= state->current_level.entities.count) {
+    if (sel < 0 || sel >= state->gamedata.current_level.entities.count) {
         return;
     }
-    const Entity *entity = &state->current_level.entities.data[sel];
+    const Entity *entity = &state->gamedata.current_level.entities.data[sel];
     int total = total_attr_count(state, entity);
     if (total <= 0) {
         return;
@@ -599,16 +600,16 @@ static void dispatch_radial_confirm(GameState *state, EditorState *editor_state,
     if (editor_state->radial_context == RADIAL_CTX_TOOLS) {
         int sel = editor_state->selected_entity_index;
         if (confirmed == 0 && sel >= 0) { /* Grab */
-            editor_state->saved_position = state->current_level.entities.data[sel].position;
+            editor_state->saved_position = state->gamedata.current_level.entities.data[sel].position;
             editor_state->sub_mode = EDITOR_SUB_DRAG;
         } else if (confirmed == 1) { /* Place */
-            if (state->blueprints.entries.count > 0) {
+            if (state->gamedata.blueprints.entries.count > 0) {
                 editor_state->place_blueprint_index = find_place_blueprint_index(state, editor_state);
                 editor_state->sub_mode = EDITOR_SUB_PLACE;
             }
         } else if (confirmed == 2 && sel >= 0) { /* Handles */
-            editor_state->saved_col_offset = state->current_level.entities.data[sel].collision_offset;
-            editor_state->saved_col_size = state->current_level.entities.data[sel].collision_size;
+            editor_state->saved_col_offset = state->gamedata.current_level.entities.data[sel].collision_offset;
+            editor_state->saved_col_size = state->gamedata.current_level.entities.data[sel].collision_size;
             editor_state->sub_mode = EDITOR_SUB_HANDLES;
         } else if (confirmed == 3) { /* Delete */
             delete_selected_entity(state, editor_state, watches);
@@ -669,7 +670,7 @@ void handle_browse_input(GameState *state,
         delete_selected_entity(state, editor_state, watches);
     }
     if (toggle_pressed((ToggleBinding){KEY_P, GAMEPAD_BUTTON_RIGHT_TRIGGER_1})) {
-        if (state->blueprints.entries.count > 0) {
+        if (state->gamedata.blueprints.entries.count > 0) {
             editor_state->place_blueprint_index = find_place_blueprint_index(state, editor_state);
             editor_state->sub_mode = EDITOR_SUB_PLACE;
         }
@@ -683,10 +684,10 @@ void handle_mode_transitions(const GameState *state, EditorState *editor_state)
         return;
     }
     int sel = editor_state->selected_entity_index;
-    if (sel < 0 || sel >= state->current_level.entities.count) {
+    if (sel < 0 || sel >= state->gamedata.current_level.entities.count) {
         return;
     }
-    const Entity *entity = &state->current_level.entities.data[sel];
+    const Entity *entity = &state->gamedata.current_level.entities.data[sel];
     if (toggle_pressed((ToggleBinding){KEY_G, GAMEPAD_BUTTON_LEFT_THUMB})) {
         editor_state->saved_position = entity->position;
         editor_state->sub_mode = EDITOR_SUB_DRAG;
@@ -701,10 +702,10 @@ void handle_mode_transitions(const GameState *state, EditorState *editor_state)
 void handle_drag_input(GameState *state, EditorState *editor_state, InputState input, float delta_time)
 {
     int sel = editor_state->selected_entity_index;
-    if (sel < 0 || sel >= state->current_level.entities.count) {
+    if (sel < 0 || sel >= state->gamedata.current_level.entities.count) {
         return;
     }
-    Entity *entity = &state->current_level.entities.data[sel];
+    Entity *entity = &state->gamedata.current_level.entities.data[sel];
     if (toggle_pressed((ToggleBinding){KEY_ENTER, GAMEPAD_BUTTON_RIGHT_FACE_DOWN})) {
         editor_state->sub_mode = EDITOR_SUB_BROWSE;
         return;
@@ -723,10 +724,10 @@ void handle_drag_input(GameState *state, EditorState *editor_state, InputState i
 void handle_handle_input(GameState *state, EditorState *editor_state, InputState input, float delta_time)
 {
     int sel = editor_state->selected_entity_index;
-    if (sel < 0 || sel >= state->current_level.entities.count) {
+    if (sel < 0 || sel >= state->gamedata.current_level.entities.count) {
         return;
     }
-    Entity *entity = &state->current_level.entities.data[sel];
+    Entity *entity = &state->gamedata.current_level.entities.data[sel];
     if (toggle_pressed((ToggleBinding){KEY_ENTER, GAMEPAD_BUTTON_RIGHT_FACE_DOWN})) {
         Blueprint *blueprint = find_blueprint_by_name(state, entity->blueprint_name.ptr);
         if (blueprint != nullptr) {
@@ -765,7 +766,7 @@ static void apply_attr_delta(GameState *state, EditorState *editor_state, int de
 {
     int sel = editor_state->selected_entity_index;
     int attr_idx = editor_state->selected_attr_index;
-    Entity *entity = &state->current_level.entities.data[sel];
+    Entity *entity = &state->gamedata.current_level.entities.data[sel];
     Attribute *attr = attr_at_display_index(state, entity, attr_idx);
     if (!attr) {
         return;
@@ -788,7 +789,7 @@ void handle_attr_edit_input(GameState *state, EditorState *editor_state, float d
         editor_state->sub_mode = EDITOR_SUB_BROWSE;
         return;
     }
-    Entity *entity = &state->current_level.entities.data[sel];
+    Entity *entity = &state->gamedata.current_level.entities.data[sel];
     if (toggle_pressed((ToggleBinding){KEY_ENTER, GAMEPAD_BUTTON_RIGHT_FACE_DOWN})) {
         if (is_blueprint_attr(entity, attr_idx)) {
             Blueprint *blueprint = find_blueprint_by_name(state, entity->blueprint_name.ptr);
@@ -928,7 +929,7 @@ static const char *const word_builder_builtin[] = {
 
 static int word_builder_total_count(const GameState *state)
 {
-    return 1 + WORD_BUILDER_BUILTIN_COUNT + state->blueprints.entries.count;
+    return 1 + WORD_BUILDER_BUILTIN_COUNT + state->gamedata.blueprints.entries.count;
 }
 
 static const char *word_builder_item(const GameState *state, int index)
@@ -941,8 +942,8 @@ static const char *word_builder_item(const GameState *state, int index)
         return word_builder_builtin[builtin_index];
     }
     int blueprint_index = builtin_index - WORD_BUILDER_BUILTIN_COUNT;
-    if (blueprint_index < state->blueprints.entries.count) {
-        const char *name = attr_get_string(&state->blueprints.entries.data[blueprint_index].attrs, "name");
+    if (blueprint_index < state->gamedata.blueprints.entries.count) {
+        const char *name = attr_get_string(&state->gamedata.blueprints.entries.data[blueprint_index].attrs, "name");
         return name ? name : "?";
     }
     return "";
@@ -1031,7 +1032,7 @@ static void word_builder_confirm(Diag *diag, GameState *state, EditorState *edit
     if (sel < 0 || attr_idx < 0) {
         return;
     }
-    Entity *entity = &state->current_level.entities.data[sel];
+    Entity *entity = &state->gamedata.current_level.entities.data[sel];
     Attribute *attr = attr_at_display_index(state, entity, attr_idx);
     if (!attr) {
         return;

@@ -65,7 +65,7 @@ void test_game_init_defaults(void)
 
     TEST_ASSERT_EQUAL_INT(320, state.game_bounds.width);
     TEST_ASSERT_EQUAL_INT(240, state.game_bounds.height);
-    TEST_ASSERT_EQUAL_INT(-1, state.player_index);
+    TEST_ASSERT_EQUAL_INT(-1, state.gamedata.player_index);
     TEST_ASSERT_EQUAL_INT(0, state.frame);
     TEST_ASSERT_FALSE(state.gamedata_loaded);
     TEST_ASSERT_TRUE(state.debug_enabled);
@@ -286,7 +286,7 @@ void test_camera_follows_player(void)
     TEST_ASSERT_TRUE(game_load_gamedata(
         &diag, &state, (GamedataParams){.toml_string = camera_large_level, .texture_lookup = dummy_lookup}));
 
-    float initial_x = state.camera_target.x;
+    float initial_x = state.gamedata.camera_target.x;
 
     InputState input = {0};
     input.left_stick.x = 1.0F;
@@ -295,7 +295,7 @@ void test_camera_follows_player(void)
         game_update(&diag, &state, input, 1.0F / 60.0F);
     }
 
-    TEST_ASSERT_TRUE(state.camera_target.x > initial_x);
+    TEST_ASSERT_TRUE(state.gamedata.camera_target.x > initial_x);
 
     game_free(&diag, &state);
 }
@@ -320,8 +320,8 @@ void test_camera_clamped_to_level_bounds(void)
     /* Camera must not exceed level_width - viewport_width/2 on X */
     float max_camera_x = 640.0F - 320.0F / 2.0F;
     float max_camera_y = 480.0F - 240.0F / 2.0F;
-    TEST_ASSERT_FLOAT_WITHIN(1.0F, max_camera_x, state.camera_target.x);
-    TEST_ASSERT_FLOAT_WITHIN(1.0F, max_camera_y, state.camera_target.y);
+    TEST_ASSERT_FLOAT_WITHIN(1.0F, max_camera_x, state.gamedata.camera_target.x);
+    TEST_ASSERT_FLOAT_WITHIN(1.0F, max_camera_y, state.gamedata.camera_target.y);
 
     game_free(&diag, &state);
 }
@@ -343,8 +343,8 @@ void test_camera_centers_small_level(void)
     }
 
     /* Level is 160x128, smaller than viewport 320x240 — camera locks to level center */
-    TEST_ASSERT_FLOAT_WITHIN(0.1F, 80.0F, state.camera_target.x);
-    TEST_ASSERT_FLOAT_WITHIN(0.1F, 64.0F, state.camera_target.y);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 80.0F, state.gamedata.camera_target.x);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 64.0F, state.gamedata.camera_target.y);
 
     game_free(&diag, &state);
 }
@@ -358,8 +358,8 @@ void test_camera_snaps_on_load(void)
         &diag, &state, (GamedataParams){.toml_string = camera_large_level, .texture_lookup = dummy_lookup}));
 
     /* Player at (320, 240), camera should snap there immediately (clamped) */
-    TEST_ASSERT_FLOAT_WITHIN(0.1F, 320.0F, state.camera_target.x);
-    TEST_ASSERT_FLOAT_WITHIN(0.1F, 240.0F, state.camera_target.y);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 320.0F, state.gamedata.camera_target.x);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 240.0F, state.gamedata.camera_target.y);
 
     game_free(&diag, &state);
 }
