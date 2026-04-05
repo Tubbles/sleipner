@@ -12,7 +12,9 @@
 #include "game.h"
 #include "input.h"
 #include "level.h"
+#include "map.h"
 #include "rect.h"
+#include "rule.h"
 
 #include <math.h>
 
@@ -473,6 +475,13 @@ static void delete_selected_entity(GameState *state, EditorState *editor_state, 
     memset(is_deleted, 0, (size_t)count * sizeof(bool));
     is_deleted[sel] = true;
     mark_deleted_descendants(&state->current_level, is_deleted, count);
+    for (int index = 0; index < count; index++) {
+        if (is_deleted[index]) {
+            int entity_id = state->current_level.entities.data[index].id;
+            map_int_str_remove(&state->entity_blueprints, entity_id);
+            map_entity_ruleset_remove(&state->rule_table, entity_id);
+        }
+    }
     int new_count = 0;
     for (int index = 0; index < count; index++) {
         if (is_deleted[index]) {

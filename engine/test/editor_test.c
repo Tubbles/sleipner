@@ -55,6 +55,7 @@ void debug_log(DebugState *dbg, const char *format, ...)
  * these vecs, never pushes. */
 VEC_IMPL(blueprint_child, BlueprintChild)
 VEC_IMPL(blueprint, Blueprint)
+MAP_IMPL(entity_ruleset, int, vec_rule, map_hash_int, map_eq_int)
 
 #include "test_heap_alloc.h"
 
@@ -822,6 +823,54 @@ void test_editor_word_builder_nav_page_down(void)
     TEST_ASSERT_EQUAL_INT(WORD_BUILDER_PAGE_SIZE, editor_state.word_builder_scroll);
 }
 
+/* ---- delete_selected_entity --------------------------------------------- */
+
+void test_editor_delete_entity_removes_map_entries(void)
+{
+    ErrorState err = {0};
+    GameState state = {0};
+    TEST_ASSERT_TRUE(arena_init(&err, &state.scratch_arena));
+    state.current_level.entities.alloc = test_heap_alloc;
+    state.entity_blueprints = (map_int_str){0};
+    state.rule_table = (map_entity_ruleset){0};
+
+    Entity entity_a = {.id = 10, .parent_index = -1};
+    Entity entity_b = {.id = 20, .parent_index = -1};
+    TEST_ASSERT_TRUE(vec_entity_push(&state.current_level.entities, entity_a));
+    TEST_ASSERT_TRUE(vec_entity_push(&state.current_level.entities, entity_b));
+
+    Str name_a = {0};
+    Str name_b = {0};
+    TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &name_a, "blueprint_a"));
+    TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &name_b, "blueprint_b"));
+    TEST_ASSERT_TRUE(map_int_str_set(&state.entity_blueprints, 10, name_a, &test_heap_alloc));
+    TEST_ASSERT_TRUE(map_int_str_set(&state.entity_blueprints, 20, name_b, &test_heap_alloc));
+
+    vec_rule rules_a = {0};
+    vec_rule rules_b = {0};
+    TEST_ASSERT_TRUE(map_entity_ruleset_set(&state.rule_table, 10, rules_a, &test_heap_alloc));
+    TEST_ASSERT_TRUE(map_entity_ruleset_set(&state.rule_table, 20, rules_b, &test_heap_alloc));
+
+    EditorState editor_state = {.selected_entity_index = 0};
+    WatchList watches = {0};
+    state.player_index = -1;
+
+    delete_selected_entity(&state, &editor_state, &watches);
+
+    TEST_ASSERT_EQUAL_INT(1, state.current_level.entities.count);
+    TEST_ASSERT_NULL(map_int_str_get(&state.entity_blueprints, 10));
+    TEST_ASSERT_NOT_NULL(map_int_str_get(&state.entity_blueprints, 20));
+    TEST_ASSERT_NULL(map_entity_ruleset_get(&state.rule_table, 10));
+    TEST_ASSERT_NOT_NULL(map_entity_ruleset_get(&state.rule_table, 20));
+
+    str_free(&test_heap_alloc, &name_a);
+    str_free(&test_heap_alloc, &name_b);
+    vec_entity_free(&state.current_level.entities);
+    map_int_str_free(&state.entity_blueprints, &test_heap_alloc);
+    map_entity_ruleset_free(&state.rule_table, &test_heap_alloc);
+    arena_reset(&state.scratch_arena);
+}
+
 int main(void)
 {
     test_helpers_init();
@@ -889,6 +938,7 @@ int main(void)
     RUN_TEST(test_editor_word_builder_nav_down_clamped);
     RUN_TEST(test_editor_word_builder_nav_page_up);
     RUN_TEST(test_editor_word_builder_nav_page_down);
+    RUN_TEST(test_editor_delete_entity_removes_map_entries);
 
     return UNITY_END();
 }
