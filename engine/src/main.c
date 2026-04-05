@@ -13,7 +13,9 @@
 #include "game.h"
 #include "input.h"
 #include "level.h"
+#include "map.h"
 #include "rect.h"
+#include "rule.h"
 #include "str.h"
 
 #include "toml_emitter.h"
