@@ -666,20 +666,15 @@ static void draw_entities_depth_sorted(const GameState *state)
     }
 }
 
-static void handle_save_input(Diag *diag, GameState *state, EditorState *editor_state, WatchList *watches)
+static void handle_save_input(Diag *diag, GameState *state)
 {
     if (toggle_pressed((ToggleBinding){KEY_F9, GAMEPAD_BUTTON_RIGHT_FACE_UP})) {
         if (!save_gamedata(state)) {
             debug_log(diag->debug, "save error: %s", error_get(diag->error));
             error_clear(diag->error);
         } else {
-            load_gamedata(diag, state, nullptr);
-            *editor_state = (EditorState){.selected_entity_index = -1,
-                                          .sub_mode = EDITOR_SUB_BROWSE,
-                                          .selected_attr_index = -1,
-                                          .radial_confirmed = -1,
-                                          .radial_selected = -1};
-            *watches = (WatchList){0};
+            state->gamedata_mtime = GetFileModTime(GAMEDATA_PATH);
+            debug_log(diag->debug, "gamedata saved");
         }
     }
 }
@@ -744,7 +739,7 @@ static void handle_editor_input(Diag *diag,
                                 InputState input,
                                 float delta_time)
 {
-    handle_save_input(diag, state, editor_state, watches);
+    handle_save_input(diag, state);
     handle_mode_transitions(state, editor_state);
     if (editor_state->sub_mode == EDITOR_SUB_DRAG) {
         handle_drag_input(state, editor_state, input, delta_time);
