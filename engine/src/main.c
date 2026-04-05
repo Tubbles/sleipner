@@ -690,10 +690,22 @@ static void handle_place_input(
         int bp_index = editor_state->place_blueprint_index;
         const Blueprint *blueprint = &state->blueprints.entries.data[bp_index];
         Allocator alloc = allocator_arena(&state->gamedata_arena);
+        int count_before = state->current_level.entities.count;
         if (!level_spawn_entity(diag, &state->current_level, blueprint, camera->target, &state->blueprints,
                                 texture_registry_lookup, state, &alloc)) {
             debug_log(diag->debug, "error: %s", error_get(diag->error));
             error_clear(diag->error);
+        } else {
+            for (int index = count_before; index < state->current_level.entities.count; index++) {
+                Entity *spawned = &state->current_level.entities.data[index];
+                Str bp_name = {0};
+                (void)str_from_strv(&alloc, &bp_name, str_to_strv(spawned->blueprint_name));
+                (void)map_int_str_set(&state->entity_blueprints, spawned->id, bp_name, &alloc);
+                const Blueprint *spawned_bp = blueprint_find(&state->blueprints, spawned->blueprint_name.ptr);
+                if (spawned_bp && spawned_bp->rules.count > 0) {
+                    (void)map_entity_ruleset_set(&state->rule_table, spawned->id, spawned_bp->rules, &alloc);
+                }
+            }
         }
     }
     if (toggle_pressed((ToggleBinding){KEY_ESCAPE, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT})) {

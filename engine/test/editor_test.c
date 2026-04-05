@@ -23,6 +23,7 @@ FAKE_VOID_FUNC(DrawLine, int, int, int, int, Color);
 FAKE_VOID_FUNC(DrawRectangle, int, int, int, int, Color);
 FAKE_VOID_FUNC(DrawTextEx, Font, const char *, Vector2, float, float, Color);
 FAKE_VOID_FUNC(DrawRectangleLinesEx, Rectangle, float, Color);
+FAKE_VOID_FUNC(DrawTextureRec, Texture2D, Rectangle, Vector2, Color);
 FAKE_VOID_FUNC(DrawCircle, int, int, float, Color);
 FAKE_VOID_FUNC(DrawRing, Vector2, float, float, float, float, int, Color);
 FAKE_VALUE_FUNC(Vector2, MeasureTextEx, Font, const char *, float, float);

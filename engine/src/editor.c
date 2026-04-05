@@ -26,6 +26,7 @@ const Color debug_log_color = {180, 210, 180, 255};
 const Color debug_bg_color = {20, 25, 35, DEBUG_BG_ALPHA};
 
 static const Color handle_color = {0, 255, 255, 255};            /* cyan: collision handles */
+static const int place_preview_alpha = 128;                      /* alpha for texture ghost during placement */
 static const Color place_ghost_color = {100, 255, 100, 180};     /* semi-transparent green: place preview */
 static const Color radial_highlight_color = {255, 200, 50, 200}; /* amber: selected radial sector */
 
@@ -414,6 +415,24 @@ void draw_place_preview(const GameState *state, const EditorState *editor_state,
         return;
     }
     const Blueprint *blueprint = &state->blueprints.entries.data[editor_state->place_blueprint_index];
+
+    const char *texture_name = attr_get_string(&blueprint->attrs, "texture");
+    if (texture_name) {
+        for (int index = 0; index < state->assets.textures.count; index++) {
+            if (strcmp(state->assets.textures.data[index].filename, texture_name) == 0) {
+                Rectangle source = {
+                    attr_get_float(&blueprint->attrs, "src_x", 0.0F),
+                    attr_get_float(&blueprint->attrs, "src_y", 0.0F),
+                    attr_get_float(&blueprint->attrs, "src_w", 0.0F),
+                    attr_get_float(&blueprint->attrs, "src_h", 0.0F),
+                };
+                Color ghost_tint = {255, 255, 255, (unsigned char)place_preview_alpha};
+                DrawTextureRec(state->assets.textures.data[index].texture, source, camera.target, ghost_tint);
+                break;
+            }
+        }
+    }
+
     Vector2 offset = blueprint_get_collision_offset(blueprint);
     Vector2 size = blueprint_get_collision_size(blueprint);
     Rectangle ghost = {camera.target.x + offset.x, camera.target.y + offset.y, size.x, size.y};
