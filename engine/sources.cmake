@@ -35,7 +35,6 @@ set(ENGINE_SOURCE_FILES
     strv.c
     toml_emitter.c
     toml_str.c
-    touch.c
     vec.c
 )
 

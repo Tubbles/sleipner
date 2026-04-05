@@ -16,7 +16,6 @@
 #include "rect.h"
 #include "str.h"
 
-#include "touch.h"
 #include "toml_emitter.h"
 
 #include "error.h"
@@ -382,10 +381,6 @@ static void draw_font_preview(GameState *state)
     }
 }
 
-#define TOUCH_BUTTON_X_FRAC 0.90F
-#define TOUCH_BUTTON_SIZE_FRAC 0.10F
-#define TOUCH_STICK_RADIUS_DIV 16
-
 #define MAX_GAMEDATA_SIZE (256UL * 1024)
 #define MAX_PATH_LEN 512
 #define COPY_BUFFER_SIZE 4096
@@ -516,37 +511,6 @@ static char *read_file_text(GameState *state, const char *path, Arena *arena)
     (void)fclose(file);
     debug_log(&state->debug, "gamedata: read %zu bytes from %s", bytes_read, path);
     return buffer;
-}
-
-static float clamp_unit(float value)
-{
-    if (value < -1.0F) {
-        return -1.0F;
-    }
-    if (value > 1.0F) {
-        return 1.0F;
-    }
-    return value;
-}
-
-static InputState apply_touch_input(InputState input, TouchState *touch_state, GameState *state)
-{
-    Rectangle button_rect = {(float)state->screen_width * TOUCH_BUTTON_X_FRAC, 0.0F,
-                             (float)state->screen_width * TOUCH_BUTTON_SIZE_FRAC,
-                             (float)state->screen_width * TOUCH_BUTTON_SIZE_FRAC};
-    touch_update(touch_state, button_rect);
-    if (touch_state->debug_button_triggered) {
-        state->debug_enabled = !state->debug_enabled;
-        debug_log(&state->debug, "debug %s (touch, frame %d)", (int)state->debug_enabled ? "ON" : "OFF", state->frame);
-    }
-    Vector2 stick = touch_get_stick(touch_state, (float)state->screen_width / (float)TOUCH_STICK_RADIUS_DIV);
-    if (stick.x != 0.0F) {
-        input.left_stick.x = clamp_unit(input.left_stick.x + stick.x);
-    }
-    if (stick.y != 0.0F) {
-        input.left_stick.y = clamp_unit(input.left_stick.y + stick.y);
-    }
-    return input;
 }
 
 static void load_gamedata(Diag *diag, GameState *state, const char *level_name)
@@ -941,7 +905,6 @@ int main(void)
 
     int prev_gamepads = -1;
     bool font_preview_enabled = false;
-    TouchState touch_state = {0};
     Camera2D editor_camera = {
         .offset = {(float)game_bounds.width / 2.0F, (float)game_bounds.height / 2.0F},
         .target = {(float)game_bounds.width / 2.0F, (float)game_bounds.height / 2.0F},
@@ -996,7 +959,6 @@ int main(void)
         }
 
         InputState input = read_all_input();
-        input = apply_touch_input(input, &touch_state, state);
 
         /* Handle editor-only actions: save, entity browse, and camera pan */
         if (state->editor_mode) {
