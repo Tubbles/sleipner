@@ -18,6 +18,7 @@
 #include "toml.h"
 
 #include <math.h>
+#include <stdint.h>
 #include <string.h>
 
 #define TOML_ERRBUF_SIZE 200
