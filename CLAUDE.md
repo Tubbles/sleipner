@@ -306,6 +306,7 @@ Android requires APK updates to be signed with the same key as the original inst
 - Push freely without asking, but never use `git push --force` or any force-push variant.
 - **Keep all documentation up to date.** When changing behavior, update CLAUDE.md and code comments in the same commit. Stale docs are worse than no docs.
 - **Run `./ci.sh format` before committing.** Always auto-format code before creating commits to avoid CI failures from clang-format violations. The formatter handles line wrapping, indentation, and other style rules automatically.
+- **Run `./ci.sh lint` before committing.** Always run the linter before creating commits. The most common lint failure is `misc-include-cleaner` — if you use a type or function, its providing header must be directly included, not reached transitively. Fix lint errors before committing; do not push code that fails lint.
 
 ## Claude Code Guidelines
 
