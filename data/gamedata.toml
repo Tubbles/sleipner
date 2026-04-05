@@ -59,7 +59,7 @@ solid = false
 
 [[blueprint.rule]]
 trigger = "enter"
-actions = ["transition:house_interior,32,42"]
+actions = ["transition:house_interior,80,96"]
 
 [[blueprint]]
 name = "fence_v"
@@ -163,23 +163,23 @@ actions = ["transition:overworld,78,135"]
 
 [[level]]
 name = "house_interior"
-size = [64, 72]
-floor_size = [64, 56]
+size = [160, 128]
+floor_size = [160, 112]
 background_tile = "floor.png"
 background_tint = [180, 160, 140]
 
 [[level.entity]]
 blueprint = "player"
-pos = [32, 42]
+pos = [80, 96]
 
 [[level.entity]]
 blueprint = "chest"
-pos = [6, 6]
+pos = [16, 16]
 
 [[level.entity]]
 blueprint = "chest"
-pos = [42, 6]
+pos = [128, 16]
 
 [[level.entity]]
 blueprint = "exit_door"
-pos = [22, 58]
+pos = [70, 100]

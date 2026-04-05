@@ -175,8 +175,12 @@ const Entity *game_get_player_const(const GameState *state)
     return &state->current_level.entities.data[state->player_index];
 }
 
-static void
-update_player(Entity *player, const AttrSet *player_defaults, InputState input, float delta_time, RectU32 bounds)
+static void update_player(Entity *player,
+                          const AttrSet *player_defaults,
+                          InputState input,
+                          RectU32 bounds,
+                          float delta_time,
+                          RectU32 level_size)
 {
     player->moving = false;
 
@@ -197,7 +201,9 @@ update_player(Entity *player, const AttrSet *player_defaults, InputState input, 
         }
     }
 
-    /* Clamp to game bounds */
+    /* Clamp to the smaller of level size and viewport */
+    float clamp_width = fminf((float)bounds.width, (float)level_size.width);
+    float clamp_height = fminf((float)bounds.height, (float)level_size.height);
     float half = FRAME_SIZE / 2.0F;
     if (player->position.x < half) {
         player->position.x = half;
@@ -205,11 +211,11 @@ update_player(Entity *player, const AttrSet *player_defaults, InputState input, 
     if (player->position.y < half) {
         player->position.y = half;
     }
-    if (player->position.x > (float)bounds.width - half) {
-        player->position.x = (float)bounds.width - half;
+    if (player->position.x > clamp_width - half) {
+        player->position.x = clamp_width - half;
     }
-    if (player->position.y > (float)bounds.height - half) {
-        player->position.y = (float)bounds.height - half;
+    if (player->position.y > clamp_height - half) {
+        player->position.y = clamp_height - half;
     }
 
     /* Animate walk cycle */
@@ -414,7 +420,8 @@ void game_update(Diag *diag, GameState *state, InputState input, float delta_tim
         Entity *player = game_get_player(state);
         if (player) {
             const AttrSet *player_defaults = entity_resolve_defaults(state, player->id);
-            update_player(player, player_defaults, input, delta_time, state->game_bounds);
+            RectU32 level_size = {(uint32_t)state->current_level.width, (uint32_t)state->current_level.height};
+            update_player(player, player_defaults, input, state->game_bounds, delta_time, level_size);
             resolve_player_obstacles(state, state->player_index);
         }
     }
