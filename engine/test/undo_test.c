@@ -1,7 +1,6 @@
 #include "unity.h"
 
 #include "arena.h"
-#include "editor.h"
 #include "error.h"
 #include "game.h"
 #include "strv.h"
@@ -53,9 +52,7 @@ void test_undo_new_entry_and_step_back(void)
     TEST_ASSERT_EQUAL_INT(99, *value);
 
     /* Step back — should restore the value. */
-    EditorState editor = {0};
-    WatchList watches = {0};
-    undo_history_step_back(&history, &state, &editor, &watches);
+    undo_history_step_back(&history, &state);
 
     /* The arena contents were restored — the pointer still points at the same arena address. */
     TEST_ASSERT_EQUAL_INT(42, *value);
@@ -81,13 +78,11 @@ void test_undo_step_forward(void)
     undo_history_new_entry(&history, &state, strv_from_cstr("B"));
 
     /* Step back to A. */
-    EditorState editor = {0};
-    WatchList watches = {0};
-    undo_history_step_back(&history, &state, &editor, &watches);
+    undo_history_step_back(&history, &state);
     TEST_ASSERT_EQUAL_INT(10, *value);
 
     /* Step forward to B. */
-    undo_history_step_forward(&history, &state, &editor, &watches);
+    undo_history_step_forward(&history, &state);
     TEST_ASSERT_EQUAL_INT(20, *value);
 
     undo_history_free(&history);
@@ -111,16 +106,14 @@ void test_undo_truncate_on_new_edit(void)
     undo_history_new_entry(&history, &state, strv_from_cstr("B"));
 
     /* Step back to A. */
-    EditorState editor = {0};
-    WatchList watches = {0};
-    undo_history_step_back(&history, &state, &editor, &watches);
+    undo_history_step_back(&history, &state);
 
     /* New edit C: value = 3 — should truncate B. */
     *value = 3;
     undo_history_new_entry(&history, &state, strv_from_cstr("C"));
 
     /* Redo should be impossible — B was truncated. */
-    undo_history_step_forward(&history, &state, &editor, &watches);
+    undo_history_step_forward(&history, &state);
     TEST_ASSERT_EQUAL_INT(3, *value); /* Still C, not B */
 
     undo_history_free(&history);
@@ -146,9 +139,7 @@ void test_undo_clear(void)
     TEST_ASSERT_EQUAL_INT(-1, history.current_position);
 
     /* Step back should be a no-op. */
-    EditorState editor = {0};
-    WatchList watches = {0};
-    undo_history_step_back(&history, &state, &editor, &watches);
+    undo_history_step_back(&history, &state);
     TEST_ASSERT_NULL(history.current);
 
     undo_history_free(&history);
@@ -181,9 +172,7 @@ void test_undo_dirty_tracking(void)
     TEST_ASSERT_TRUE(undo_history_is_dirty(&history));
 
     /* Undo back to saved position clears dirty. */
-    EditorState editor = {0};
-    WatchList watches = {0};
-    undo_history_step_back(&history, &state, &editor, &watches);
+    undo_history_step_back(&history, &state);
     TEST_ASSERT_FALSE(undo_history_is_dirty(&history));
 
     undo_history_free(&history);
@@ -259,9 +248,7 @@ void test_undo_discard_preserves_previous(void)
     TEST_ASSERT_TRUE(strv_eq_cstr(undo_history_description(&history), "A"));
 
     /* Step back from A should be a no-op (A is the first entry). */
-    EditorState editor = {0};
-    WatchList watches = {0};
-    undo_history_step_back(&history, &state, &editor, &watches);
+    undo_history_step_back(&history, &state);
     TEST_ASSERT_EQUAL_INT(0, history.current_position);
 
     undo_history_free(&history);
@@ -287,9 +274,7 @@ void test_undo_dirty_invalidated_by_truncation(void)
     TEST_ASSERT_FALSE(undo_history_is_dirty(&history));
 
     /* Undo to A. */
-    EditorState editor = {0};
-    WatchList watches = {0};
-    undo_history_step_back(&history, &state, &editor, &watches);
+    undo_history_step_back(&history, &state);
 
     /* New edit C — truncates B (where we saved). */
     *value = 3;
@@ -299,7 +284,7 @@ void test_undo_dirty_invalidated_by_truncation(void)
     TEST_ASSERT_TRUE(undo_history_is_dirty(&history));
 
     /* Even undoing back to A shouldn't clear dirty. */
-    undo_history_step_back(&history, &state, &editor, &watches);
+    undo_history_step_back(&history, &state);
     TEST_ASSERT_TRUE(undo_history_is_dirty(&history));
 
     undo_history_free(&history);

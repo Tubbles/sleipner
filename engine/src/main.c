@@ -17,6 +17,8 @@
 #include "rect.h"
 #include "rule.h"
 #include "str.h"
+#include "strv.h"
+#include "undo.h"
 
 #include "toml_emitter.h"
 
@@ -587,11 +589,12 @@ static bool poll_hot_reload(Diag *diag, GameState *state)
     return false;
 }
 
-static void handle_transition(Diag *diag, GameState *state)
+static void handle_transition(Diag *diag, GameState *state, UndoHistory *undo_history)
 {
     if (!state->transition.pending) {
         return;
     }
+    undo_history_clear(undo_history);
     state->transition.pending = false;
     float spawn_x = state->transition.x;
     float spawn_y = state->transition.y;
@@ -618,9 +621,11 @@ static void handle_transition(Diag *diag, GameState *state)
     }
 }
 
-static void handle_hot_reload(Diag *diag, GameState *state, EditorState *editor_state, WatchList *watches)
+static void handle_hot_reload(
+    Diag *diag, GameState *state, EditorState *editor_state, WatchList *watches, UndoHistory *undo_history)
 {
     if (poll_hot_reload(diag, state)) {
+        undo_history_clear(undo_history);
         *editor_state = (EditorState){.selected_entity_index = -1,
                                       .sub_mode = EDITOR_SUB_BROWSE,
                                       .selected_attr_index = -1,
@@ -666,7 +671,7 @@ static void draw_entities_depth_sorted(const GameState *state)
     }
 }
 
-static void handle_save_input(Diag *diag, GameState *state)
+static void handle_save_input(Diag *diag, GameState *state, UndoHistory *undo_history)
 {
     if (toggle_pressed((ToggleBinding){KEY_F9, GAMEPAD_BUTTON_RIGHT_FACE_UP})) {
         if (!save_gamedata(state)) {
@@ -674,13 +679,19 @@ static void handle_save_input(Diag *diag, GameState *state)
             error_clear(diag->error);
         } else {
             state->gamedata_mtime = GetFileModTime(GAMEDATA_PATH);
+            undo_history_mark_saved(undo_history);
             debug_log(diag->debug, "gamedata saved");
         }
     }
 }
 
-static void handle_place_input(
-    Diag *diag, GameState *state, Camera2D *camera, EditorState *editor_state, InputState input, float delta_time)
+static void handle_place_input(Diag *diag,
+                               GameState *state,
+                               Camera2D *camera,
+                               EditorState *editor_state,
+                               UndoHistory *undo_history,
+                               InputState input,
+                               float delta_time)
 {
     if (state->gamedata.blueprints.entries.count == 0) {
         editor_state->sub_mode = EDITOR_SUB_BROWSE;
@@ -690,11 +701,13 @@ static void handle_place_input(
         int bp_index = editor_state->place_blueprint_index;
         const Blueprint *blueprint = &state->gamedata.blueprints.entries.data[bp_index];
         Allocator alloc = allocator_arena(&state->gamedata_arena);
+        undo_history_new_entry(undo_history, state, strv_from_cstr("Place entity"));
         int count_before = state->gamedata.current_level.entities.count;
         if (!level_spawn_entity(diag, &state->gamedata.current_level, blueprint, camera->target,
                                 &state->gamedata.blueprints, texture_registry_lookup, state, &alloc)) {
             debug_log(diag->debug, "error: %s", error_get(diag->error));
             error_clear(diag->error);
+            undo_history_discard(undo_history);
         } else {
             for (int index = count_before; index < state->gamedata.current_level.entities.count; index++) {
                 Entity *spawned = &state->gamedata.current_level.entities.data[index];
@@ -736,25 +749,26 @@ static void handle_editor_input(Diag *diag,
                                 Camera2D *camera,
                                 EditorState *editor_state,
                                 WatchList *watches,
+                                UndoHistory *undo_history,
                                 InputState input,
                                 float delta_time)
 {
-    handle_save_input(diag, state);
-    handle_mode_transitions(state, editor_state);
+    handle_save_input(diag, state, undo_history);
+    handle_mode_transitions(state, editor_state, undo_history);
     if (editor_state->sub_mode == EDITOR_SUB_DRAG) {
-        handle_drag_input(state, editor_state, input, delta_time);
+        handle_drag_input(state, editor_state, undo_history, input, delta_time);
     } else if (editor_state->sub_mode == EDITOR_SUB_HANDLES) {
-        handle_handle_input(state, editor_state, input, delta_time);
+        handle_handle_input(state, editor_state, undo_history, input, delta_time);
     } else if (editor_state->sub_mode == EDITOR_SUB_PLACE) {
-        handle_place_input(diag, state, camera, editor_state, input, delta_time);
+        handle_place_input(diag, state, camera, editor_state, undo_history, input, delta_time);
     } else if (editor_state->sub_mode == EDITOR_SUB_ATTR_EDIT) {
-        handle_attr_edit_input(state, editor_state, delta_time);
+        handle_attr_edit_input(state, editor_state, undo_history, delta_time);
     } else if (editor_state->sub_mode == EDITOR_SUB_RADIAL) {
         handle_radial_input(editor_state, input);
     } else if (editor_state->sub_mode == EDITOR_SUB_WORD_BUILDER) {
-        handle_word_builder_input(diag, state, editor_state);
+        handle_word_builder_input(diag, state, editor_state, undo_history);
     } else {
-        handle_browse_input(state, camera, editor_state, watches, input, delta_time);
+        handle_browse_input(state, camera, editor_state, watches, undo_history, input, delta_time);
     }
 }
 
@@ -828,6 +842,21 @@ static void render_frame(GameState *state, RenderParams params)
     draw_radial_picker(screen, &params.editor_state, state->assets.ui_font);
     draw_hints_bar(state->editor_mode, &params.editor_state, screen, state->assets.ui_font);
     EndDrawing();
+}
+
+static void handle_global_toggles(GameState *state, bool *font_preview_enabled)
+{
+    if (IsKeyPressed(KEY_F3) || (!state->editor_mode && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_MIDDLE_LEFT))) {
+        state->debug_enabled = !state->debug_enabled;
+        debug_log(&state->debug, "debug %s (frame %d)", (int)state->debug_enabled ? "ON" : "OFF", state->frame);
+    }
+    if (toggle_pressed((ToggleBinding){KEY_F4, GAMEPAD_BUTTON_RIGHT_THUMB})) {
+        *font_preview_enabled = !*font_preview_enabled;
+    }
+    if (toggle_pressed((ToggleBinding){KEY_F5, GAMEPAD_BUTTON_MIDDLE_RIGHT})) {
+        state->editor_mode = !state->editor_mode;
+        debug_log(&state->debug, "editor %s (frame %d)", (int)state->editor_mode ? "ON" : "OFF", state->frame);
+    }
 }
 
 int main(void)
@@ -931,6 +960,12 @@ int main(void)
                                 .radial_confirmed = -1,
                                 .radial_selected = -1};
     WatchList watches = {0};
+    UndoHistory undo_history = {0};
+    if (!undo_history_init(&state->error, &undo_history)) {
+        debug_log(&state->debug, "error: %s", error_get(&state->error));
+        error_clear(&state->error);
+        return 1;
+    }
 
     debug_log(&state->debug, "gamedata path: %s", GAMEDATA_PATH);
     debug_log(&state->debug, "screen %dx%d  game %ux%u  scale %d", state->screen_width, state->screen_height,
@@ -946,26 +981,10 @@ int main(void)
 
         /* Hot-reload: poll mtime and reload if gamedata changed */
         if (state->frame % HOT_RELOAD_POLL_FRAMES == 0) {
-            handle_hot_reload(diag, state, &editor_state, &watches);
+            handle_hot_reload(diag, state, &editor_state, &watches, &undo_history);
         }
 
-        /* Toggle debug overlay: F3 or gamepad Select (Select is also used by radial picker,
-         * but only in editor mode — so allow it when editor is off) */
-        if (IsKeyPressed(KEY_F3) || (!state->editor_mode && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_MIDDLE_LEFT))) {
-            state->debug_enabled = !state->debug_enabled;
-            debug_log(&state->debug, "debug %s (frame %d)", (int)state->debug_enabled ? "ON" : "OFF", state->frame);
-        }
-
-        /* Toggle font preview: F4 or gamepad Right Thumb */
-        if (toggle_pressed((ToggleBinding){KEY_F4, GAMEPAD_BUTTON_RIGHT_THUMB})) {
-            font_preview_enabled = !font_preview_enabled;
-        }
-
-        /* Toggle editor mode: F5 or gamepad Start */
-        if (toggle_pressed((ToggleBinding){KEY_F5, GAMEPAD_BUTTON_MIDDLE_RIGHT})) {
-            state->editor_mode = !state->editor_mode;
-            debug_log(&state->debug, "editor %s (frame %d)", (int)state->editor_mode ? "ON" : "OFF", state->frame);
-        }
+        handle_global_toggles(state, &font_preview_enabled);
 
         log_gamepad_changes(state, &prev_gamepads, state->frame);
 
@@ -977,13 +996,13 @@ int main(void)
 
         /* Handle editor-only actions: save, entity browse, and camera pan */
         if (state->editor_mode) {
-            handle_editor_input(diag, state, &editor_camera, &editor_state, &watches, input, delta_time);
+            handle_editor_input(diag, state, &editor_camera, &editor_state, &watches, &undo_history, input, delta_time);
         }
 
         /* Update (pure logic — no rendering) */
         game_update(diag, state, input, delta_time);
 
-        handle_transition(diag, state);
+        handle_transition(diag, state, &undo_history);
 
         render_frame(state, (RenderParams){
                                 .target = target,
@@ -998,6 +1017,7 @@ int main(void)
 quit:
     debug_log(&state->debug, "exiting game loop (frame=%d t=%.1fs)", state->frame, state->elapsed);
 
+    undo_history_free(&undo_history);
     UnloadMusicStream(bgm);
     UnloadRenderTexture(target);
     unload_textures(state);

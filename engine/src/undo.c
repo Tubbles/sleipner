@@ -1,7 +1,6 @@
 #include "undo.h"
 
 #include "arena.h"
-#include "editor.h"
 #include "error.h"
 #include "game.h"
 #include "strv.h"
@@ -63,7 +62,7 @@ void undo_history_new_entry(UndoHistory *history, GameState *state, Strv descrip
     history->current_position++;
 }
 
-static void restore_entry(UndoEntry *entry, GameState *state, EditorState *editor, WatchList *watches)
+static void restore_entry(UndoEntry *entry, GameState *state)
 {
     /* Restore gamedata arena contents. */
     if (entry->arena_data_size > 0) {
@@ -74,14 +73,9 @@ static void restore_entry(UndoEntry *entry, GameState *state, EditorState *edito
 
     /* Restore the GamedataState struct. */
     state->gamedata = entry->gamedata_copy;
-
-    /* Reset editor indices — they reference into gamedata that just changed. */
-    editor->selected_entity_index = -1;
-    editor->selected_attr_index = -1;
-    watches->count = 0;
 }
 
-void undo_history_step_back(UndoHistory *history, GameState *state, EditorState *editor, WatchList *watches)
+void undo_history_step_back(UndoHistory *history, GameState *state)
 {
     if (!history->current) {
         return;
@@ -90,17 +84,17 @@ void undo_history_step_back(UndoHistory *history, GameState *state, EditorState 
         history->current = history->current->prev;
         history->current_position--;
     }
-    restore_entry(history->current, state, editor, watches);
+    restore_entry(history->current, state);
 }
 
-void undo_history_step_forward(UndoHistory *history, GameState *state, EditorState *editor, WatchList *watches)
+void undo_history_step_forward(UndoHistory *history, GameState *state)
 {
     if (!history->current || !history->current->next) {
         return;
     }
     history->current = history->current->next;
     history->current_position++;
-    restore_entry(history->current, state, editor, watches);
+    restore_entry(history->current, state);
 }
 
 void undo_history_discard(UndoHistory *history)

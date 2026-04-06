@@ -43,6 +43,12 @@ FAKE_VALUE_FUNC(Vector2, blueprint_get_collision_size, const Blueprint *);
 /* game function fakes — entity_resolve_defaults is defined in game.c */
 FAKE_VALUE_FUNC(const AttrSet *, entity_resolve_defaults, const GameState *, int);
 
+/* undo function fakes — editor.c calls these but we don't include undo.c */
+FAKE_VOID_FUNC(undo_history_new_entry, UndoHistory *, GameState *, Strv);
+FAKE_VOID_FUNC(undo_history_step_back, UndoHistory *, GameState *);
+FAKE_VOID_FUNC(undo_history_step_forward, UndoHistory *, GameState *);
+FAKE_VOID_FUNC(undo_history_discard, UndoHistory *);
+
 /* debug_log stub — cannot use FAKE_VOID_FUNC_VARARG due to __attribute__((format)) conflict */
 void debug_log(DebugState *dbg, const char *format, ...)
 {
