@@ -71,6 +71,17 @@ void test_toml_emit_custom_attrs(void);
 void test_toml_emit_health(void);
 void test_toml_emit_rules(void);
 
+/* undo_test.c */
+void test_undo_new_entry_and_step_back(void);
+void test_undo_step_forward(void);
+void test_undo_truncate_on_new_edit(void);
+void test_undo_clear(void);
+void test_undo_dirty_tracking(void);
+void test_undo_description(void);
+void test_undo_discard(void);
+void test_undo_discard_preserves_previous(void);
+void test_undo_dirty_invalidated_by_truncation(void);
+
 /* rule_integration_test.c */
 void test_rules_parse_from_toml(void);
 void test_rules_parse_no_rules(void);
@@ -163,6 +174,16 @@ int main(void)
     RUN_TEST(test_integration_on_destroy_fires);
     RUN_TEST(test_integration_defeat_fires_when_health_drops_to_zero);
     RUN_TEST(test_integration_collide_fires_on_overlap);
+
+    RUN_TEST(test_undo_new_entry_and_step_back);
+    RUN_TEST(test_undo_step_forward);
+    RUN_TEST(test_undo_truncate_on_new_edit);
+    RUN_TEST(test_undo_clear);
+    RUN_TEST(test_undo_dirty_tracking);
+    RUN_TEST(test_undo_description);
+    RUN_TEST(test_undo_discard);
+    RUN_TEST(test_undo_discard_preserves_previous);
+    RUN_TEST(test_undo_dirty_invalidated_by_truncation);
 
     RUN_TEST(test_toml_emit_blueprints);
     RUN_TEST(test_toml_emit_level_with_entities);

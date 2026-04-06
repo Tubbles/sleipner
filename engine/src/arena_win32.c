@@ -72,6 +72,16 @@ size_t arena_used(const Arena *arena)
     return arena->offset;
 }
 
+size_t arena_used_since(const Arena *arena, ArenaCheckpoint checkpoint)
+{
+    return arena->offset - checkpoint;
+}
+
+void *arena_ptr_at(const Arena *arena, ArenaCheckpoint checkpoint)
+{
+    return arena->buffer + checkpoint;
+}
+
 ArenaCheckpoint arena_save(const Arena *arena)
 {
     return arena->offset;

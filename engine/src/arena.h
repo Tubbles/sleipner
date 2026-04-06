@@ -64,6 +64,12 @@ void arena_free(Arena *arena);
 /* Returns the number of bytes currently used. */
 size_t arena_used(const Arena *arena);
 
+/* Returns the number of bytes allocated since the given checkpoint. */
+size_t arena_used_since(const Arena *arena, ArenaCheckpoint checkpoint);
+
+/* Returns a pointer to the arena memory at the given checkpoint offset. */
+void *arena_ptr_at(const Arena *arena, ArenaCheckpoint checkpoint);
+
 /* Reallocate an existing arena allocation.
  * If ptr is nullptr, behaves like arena_alloc.
  * If new_size <= old size (read from header), returns ptr unchanged.

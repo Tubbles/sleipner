@@ -36,6 +36,7 @@ add_executable(engine_tests
     level_test.c
     toml_emitter_test.c
     rule_integration_test.c
+    undo_test.c
 )
 target_compile_definitions(engine_tests PRIVATE _GNU_SOURCE
     GAMEDATA_PATH="${CMAKE_SOURCE_DIR}/data/gamedata.toml")
