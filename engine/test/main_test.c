@@ -81,6 +81,9 @@ void test_undo_description(void);
 void test_undo_discard(void);
 void test_undo_discard_preserves_previous(void);
 void test_undo_dirty_invalidated_by_truncation(void);
+void test_undo_entity_spawn_and_undo(void);
+void test_undo_entity_move_and_undo(void);
+void test_undo_attribute_change_and_undo(void);
 
 /* rule_integration_test.c */
 void test_rules_parse_from_toml(void);
@@ -184,6 +187,9 @@ int main(void)
     RUN_TEST(test_undo_discard);
     RUN_TEST(test_undo_discard_preserves_previous);
     RUN_TEST(test_undo_dirty_invalidated_by_truncation);
+    RUN_TEST(test_undo_entity_spawn_and_undo);
+    RUN_TEST(test_undo_entity_move_and_undo);
+    RUN_TEST(test_undo_attribute_change_and_undo);
 
     RUN_TEST(test_toml_emit_blueprints);
     RUN_TEST(test_toml_emit_level_with_entities);

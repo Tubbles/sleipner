@@ -122,7 +122,7 @@ void handle_browse_input(GameState *state,
                          float delta_time);
 void draw_place_panel(ScreenSize screen, const GameState *state, const EditorState *editor_state);
 void draw_place_preview(const GameState *state, const EditorState *editor_state, Camera2D camera);
-void handle_mode_transitions(GameState *state, EditorState *editor_state, UndoHistory *undo_history);
+void handle_mode_transitions(GameState *state, EditorState *editor_state);
 void handle_drag_input(
     GameState *state, EditorState *editor_state, UndoHistory *undo_history, InputState input, float delta_time);
 void handle_handle_input(

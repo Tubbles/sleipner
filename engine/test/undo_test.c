@@ -1,8 +1,11 @@
 #include "unity.h"
 
 #include "arena.h"
+#include "attribute.h"
+#include "entity.h"
 #include "error.h"
 #include "game.h"
+#include "level.h"
 #include "strv.h"
 #include "undo.h"
 
@@ -291,4 +294,155 @@ void test_undo_dirty_invalidated_by_truncation(void)
 
     undo_history_free(&history);
     teardown_state(&state);
+}
+
+/* --- Integration tests: undo with real gamedata --- */
+
+static const char *fixture_undo = "[[blueprint]]\n"
+                                  "name = \"player\"\n"
+                                  "texture = \"player.png\"\n"
+                                  "src = [0, 0, 32, 32]\n"
+                                  "collision_offset = [0, 0]\n"
+                                  "collision_size = [16, 16]\n"
+                                  "behavior = \"player\"\n"
+                                  "speed = 80\n"
+                                  "\n"
+                                  "[[blueprint]]\n"
+                                  "name = \"rock\"\n"
+                                  "texture = \"rock.png\"\n"
+                                  "src = [0, 0, 16, 16]\n"
+                                  "collision_offset = [0, 0]\n"
+                                  "collision_size = [16, 16]\n"
+                                  "\n"
+                                  "[[level]]\n"
+                                  "name = \"field\"\n"
+                                  "size = [320, 240]\n"
+                                  "\n"
+                                  "[[level.entity]]\n"
+                                  "blueprint = \"player\"\n"
+                                  "pos = [160, 120]\n"
+                                  "\n"
+                                  "[[level.entity]]\n"
+                                  "blueprint = \"rock\"\n"
+                                  "pos = [200, 120]\n";
+
+static Texture2D dummy_texture;
+
+static Texture2D *dummy_lookup(const char *texture_name, void *user_data)
+{
+    (void)texture_name;
+    (void)user_data;
+    return &dummy_texture;
+}
+
+void test_undo_entity_spawn_and_undo(void)
+{
+    GameState state = {0};
+    Diag diag = {&state.error, &state.debug};
+    TEST_ASSERT_TRUE(game_init(&diag, &state, (RectU32){320, 240}));
+    TEST_ASSERT_TRUE(game_load_gamedata(&diag, &state,
+                                        (GamedataParams){.toml_string = fixture_undo, .texture_lookup = dummy_lookup}));
+    TEST_ASSERT_EQUAL_INT(2, state.gamedata.current_level.entities.count);
+
+    UndoHistory history = {0};
+    TEST_ASSERT_TRUE(undo_history_init(&state.error, &history));
+
+    /* Baseline snapshot (push-after model: entries capture completed states). */
+    undo_history_new_entry(&history, &state.gamedata, &state.gamedata_arena, state.gamedata_base,
+                           strv_from_cstr("Initial"));
+
+    /* Spawn a rock at (50, 50), then snapshot the post-spawn state. */
+    const Blueprint *rock = blueprint_find(&state.gamedata.blueprints, "rock");
+    TEST_ASSERT_NOT_NULL(rock);
+    Allocator alloc = allocator_arena(&state.gamedata_arena);
+    TEST_ASSERT_TRUE(level_spawn_entity(&diag, &state.gamedata.current_level, rock, (Vector2){50, 50},
+                                        &state.gamedata.blueprints, dummy_lookup, nullptr, &alloc));
+    TEST_ASSERT_EQUAL_INT(3, state.gamedata.current_level.entities.count);
+    undo_history_new_entry(&history, &state.gamedata, &state.gamedata_arena, state.gamedata_base,
+                           strv_from_cstr("Place entity"));
+
+    /* Undo spawn — should restore to 2 entities (baseline). */
+    undo_history_step_back(&history, &state.gamedata, &state.gamedata_arena, state.gamedata_base);
+    TEST_ASSERT_EQUAL_INT(2, state.gamedata.current_level.entities.count);
+
+    /* Redo — should restore to 3 entities. */
+    undo_history_step_forward(&history, &state.gamedata, &state.gamedata_arena, state.gamedata_base);
+    TEST_ASSERT_EQUAL_INT(3, state.gamedata.current_level.entities.count);
+
+    undo_history_free(&history);
+    game_free(&diag, &state);
+}
+
+void test_undo_entity_move_and_undo(void)
+{
+    GameState state = {0};
+    Diag diag = {&state.error, &state.debug};
+    TEST_ASSERT_TRUE(game_init(&diag, &state, (RectU32){320, 240}));
+    TEST_ASSERT_TRUE(game_load_gamedata(&diag, &state,
+                                        (GamedataParams){.toml_string = fixture_undo, .texture_lookup = dummy_lookup}));
+
+    UndoHistory history = {0};
+    TEST_ASSERT_TRUE(undo_history_init(&state.error, &history));
+
+    /* Baseline. */
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 200.0F, state.gamedata.current_level.entities.data[1].position.x);
+    undo_history_new_entry(&history, &state.gamedata, &state.gamedata_arena, state.gamedata_base,
+                           strv_from_cstr("Initial"));
+
+    /* Move rock to (50, 50), then snapshot post-move state. */
+    state.gamedata.current_level.entities.data[1].position = (Vector2){50, 50};
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 50.0F, state.gamedata.current_level.entities.data[1].position.x);
+    undo_history_new_entry(&history, &state.gamedata, &state.gamedata_arena, state.gamedata_base,
+                           strv_from_cstr("Move entity"));
+
+    /* Undo — should restore original position (baseline). */
+    undo_history_step_back(&history, &state.gamedata, &state.gamedata_arena, state.gamedata_base);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 200.0F, state.gamedata.current_level.entities.data[1].position.x);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 120.0F, state.gamedata.current_level.entities.data[1].position.y);
+
+    /* Redo — should restore moved position. */
+    undo_history_step_forward(&history, &state.gamedata, &state.gamedata_arena, state.gamedata_base);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 50.0F, state.gamedata.current_level.entities.data[1].position.x);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 50.0F, state.gamedata.current_level.entities.data[1].position.y);
+
+    undo_history_free(&history);
+    game_free(&diag, &state);
+}
+
+void test_undo_attribute_change_and_undo(void)
+{
+    GameState state = {0};
+    Diag diag = {&state.error, &state.debug};
+    TEST_ASSERT_TRUE(game_init(&diag, &state, (RectU32){320, 240}));
+    TEST_ASSERT_TRUE(game_load_gamedata(&diag, &state,
+                                        (GamedataParams){.toml_string = fixture_undo, .texture_lookup = dummy_lookup}));
+
+    UndoHistory history = {0};
+    TEST_ASSERT_TRUE(undo_history_init(&state.error, &history));
+
+    /* Baseline. */
+    Entity *player = &state.gamedata.current_level.entities.data[0];
+    const AttrSet *defaults = entity_resolve_defaults(&state, player->id);
+    float original_speed = attr_get_scoped_float(&player->attrs, defaults, "speed", 0.0F);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 80.0F, original_speed);
+    undo_history_new_entry(&history, &state.gamedata, &state.gamedata_arena, state.gamedata_base,
+                           strv_from_cstr("Initial"));
+
+    /* Override speed, then snapshot post-edit state. */
+    Allocator alloc = allocator_arena(&state.gamedata_arena);
+    TEST_ASSERT_TRUE(attr_set_float(&alloc, &player->attrs, "speed", 200.0F));
+    float modified_speed = attr_get_scoped_float(&player->attrs, defaults, "speed", 0.0F);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 200.0F, modified_speed);
+    undo_history_new_entry(&history, &state.gamedata, &state.gamedata_arena, state.gamedata_base,
+                           strv_from_cstr("Edit attribute"));
+
+    /* Undo — should restore original state (baseline, no instance override). */
+    undo_history_step_back(&history, &state.gamedata, &state.gamedata_arena, state.gamedata_base);
+    player = &state.gamedata.current_level.entities.data[0];
+    defaults = entity_resolve_defaults(&state, player->id);
+    float restored_speed = attr_get_scoped_float(&player->attrs, defaults, "speed", 0.0F);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 80.0F, restored_speed);
+
+    undo_history_free(&history);
+    game_free(&diag, &state);
 }

@@ -619,6 +619,8 @@ static void handle_transition(Diag *diag, GameState *state, UndoHistory *undo_hi
                 CheckCollisionRecs(player->collision, state->gamedata.current_level.entities.data[index].collision);
         }
     }
+    undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
+                           strv_from_cstr("Level loaded"));
 }
 
 static void handle_hot_reload(
@@ -626,6 +628,8 @@ static void handle_hot_reload(
 {
     if (poll_hot_reload(diag, state)) {
         undo_history_clear(undo_history);
+        undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
+                               strv_from_cstr("Reload"));
         *editor_state = (EditorState){.selected_entity_index = -1,
                                       .sub_mode = EDITOR_SUB_BROWSE,
                                       .selected_attr_index = -1,
@@ -701,14 +705,11 @@ static void handle_place_input(Diag *diag,
         int bp_index = editor_state->place_blueprint_index;
         const Blueprint *blueprint = &state->gamedata.blueprints.entries.data[bp_index];
         Allocator alloc = allocator_arena(&state->gamedata_arena);
-        undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
-                               strv_from_cstr("Place entity"));
         int count_before = state->gamedata.current_level.entities.count;
         if (!level_spawn_entity(diag, &state->gamedata.current_level, blueprint, camera->target,
                                 &state->gamedata.blueprints, texture_registry_lookup, state, &alloc)) {
             debug_log(diag->debug, "error: %s", error_get(diag->error));
             error_clear(diag->error);
-            undo_history_discard(undo_history);
         } else {
             for (int index = count_before; index < state->gamedata.current_level.entities.count; index++) {
                 Entity *spawned = &state->gamedata.current_level.entities.data[index];
@@ -720,6 +721,8 @@ static void handle_place_input(Diag *diag,
                     (void)map_entity_ruleset_set(&state->gamedata.rule_table, spawned->id, spawned_bp->rules, &alloc);
                 }
             }
+            undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
+                                   strv_from_cstr("Place entity"));
         }
     }
     if (toggle_pressed((ToggleBinding){KEY_ESCAPE, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT})) {
@@ -755,7 +758,7 @@ static void handle_editor_input(Diag *diag,
                                 float delta_time)
 {
     handle_save_input(diag, state, undo_history);
-    handle_mode_transitions(state, editor_state, undo_history);
+    handle_mode_transitions(state, editor_state);
     if (editor_state->sub_mode == EDITOR_SUB_DRAG) {
         handle_drag_input(state, editor_state, undo_history, input, delta_time);
     } else if (editor_state->sub_mode == EDITOR_SUB_HANDLES) {
@@ -978,6 +981,8 @@ int main(void)
     debug_log(&state->debug, "GetScreen %dx%d  GetRender %dx%d", GetScreenWidth(), GetScreenHeight(), GetRenderWidth(),
               GetRenderHeight());
     load_gamedata(diag, state, nullptr);
+    undo_history_new_entry(&undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
+                           strv_from_cstr("Initial"));
 
     while (!WindowShouldClose()) {
         float delta_time = GetFrameTime();
