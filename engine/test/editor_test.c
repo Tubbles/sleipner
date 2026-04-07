@@ -1089,6 +1089,108 @@ void test_fuzzy_finder_build_items_collects_flag_names(void)
     arena_reset(&state.gamedata_arena);
 }
 
+/* ---- keyboard_type_char ------------------------------------------------- */
+
+void test_keyboard_type_char_appends(void)
+{
+    EditorState editor_state = {0};
+    keyboard_type_char(&editor_state, 'a');
+    TEST_ASSERT_EQUAL_STRING("a", editor_state.word_builder_buf);
+    TEST_ASSERT_EQUAL_INT(1, editor_state.word_builder_len);
+}
+
+void test_keyboard_type_char_multiple(void)
+{
+    EditorState editor_state = {0};
+    keyboard_type_char(&editor_state, 'a');
+    keyboard_type_char(&editor_state, 'b');
+    keyboard_type_char(&editor_state, 'c');
+    TEST_ASSERT_EQUAL_STRING("abc", editor_state.word_builder_buf);
+    TEST_ASSERT_EQUAL_INT(3, editor_state.word_builder_len);
+}
+
+void test_keyboard_type_char_overflow_noop(void)
+{
+    EditorState editor_state = {0};
+    memset(editor_state.word_builder_buf, 'x', WORD_BUILDER_BUF_SIZE - 1);
+    editor_state.word_builder_buf[WORD_BUILDER_BUF_SIZE - 1] = '\0';
+    editor_state.word_builder_len = WORD_BUILDER_BUF_SIZE - 1;
+
+    keyboard_type_char(&editor_state, 'z');
+
+    TEST_ASSERT_EQUAL_INT(WORD_BUILDER_BUF_SIZE - 1, editor_state.word_builder_len);
+}
+
+/* ---- keyboard_backspace ------------------------------------------------- */
+
+void test_keyboard_backspace_removes_last(void)
+{
+    EditorState editor_state = {0};
+    keyboard_type_char(&editor_state, 'a');
+    keyboard_type_char(&editor_state, 'b');
+    keyboard_type_char(&editor_state, 'c');
+    keyboard_backspace(&editor_state);
+    TEST_ASSERT_EQUAL_STRING("ab", editor_state.word_builder_buf);
+    TEST_ASSERT_EQUAL_INT(2, editor_state.word_builder_len);
+}
+
+void test_keyboard_backspace_empty_noop(void)
+{
+    EditorState editor_state = {0};
+    keyboard_backspace(&editor_state);
+    TEST_ASSERT_EQUAL_STRING("", editor_state.word_builder_buf);
+    TEST_ASSERT_EQUAL_INT(0, editor_state.word_builder_len);
+}
+
+/* ---- keyboard data integrity -------------------------------------------- */
+
+void test_keyboard_group_sizes_consistent(void)
+{
+    for (int group = 0; group < KEYBOARD_GROUP_COUNT; group++) {
+        int actual_size = 0;
+        for (int character = 0; character < KEYBOARD_MAX_CHARS_PER_GROUP; character++) {
+            if (keyboard_groups[group][character] != '\0') {
+                actual_size++;
+            }
+        }
+        TEST_ASSERT_EQUAL_INT(keyboard_group_sizes[group], actual_size);
+    }
+}
+
+void test_keyboard_all_lowercase_alpha_present(void)
+{
+    for (int code = 'a'; code <= 'z'; code++) {
+        char letter = (char)code;
+        bool found = false;
+        for (int group = 0; group < KEYBOARD_GROUP_COUNT && !found; group++) {
+            for (int character = 0; character < keyboard_group_sizes[group]; character++) {
+                if (keyboard_groups[group][character] == letter) {
+                    found = true;
+                    break;
+                }
+            }
+        }
+        TEST_ASSERT_TRUE_MESSAGE(found, TextFormat("letter '%c' not found in any keyboard group", letter));
+    }
+}
+
+void test_keyboard_all_digits_present(void)
+{
+    for (int code = '0'; code <= '9'; code++) {
+        char digit = (char)code;
+        bool found = false;
+        for (int group = 0; group < KEYBOARD_GROUP_COUNT && !found; group++) {
+            for (int character = 0; character < keyboard_group_sizes[group]; character++) {
+                if (keyboard_groups[group][character] == digit) {
+                    found = true;
+                    break;
+                }
+            }
+        }
+        TEST_ASSERT_TRUE_MESSAGE(found, TextFormat("digit '%c' not found in any keyboard group", digit));
+    }
+}
+
 /* ---- delete_selected_entity --------------------------------------------- */
 
 void test_editor_delete_entity_removes_map_entries(void)
@@ -1222,6 +1324,14 @@ int main(void)
     RUN_TEST(test_fuzzy_finder_build_items_sorts_alphabetically);
     RUN_TEST(test_fuzzy_finder_build_items_collects_entity_tags);
     RUN_TEST(test_fuzzy_finder_build_items_collects_flag_names);
+    RUN_TEST(test_keyboard_type_char_appends);
+    RUN_TEST(test_keyboard_type_char_multiple);
+    RUN_TEST(test_keyboard_type_char_overflow_noop);
+    RUN_TEST(test_keyboard_backspace_removes_last);
+    RUN_TEST(test_keyboard_backspace_empty_noop);
+    RUN_TEST(test_keyboard_group_sizes_consistent);
+    RUN_TEST(test_keyboard_all_lowercase_alpha_present);
+    RUN_TEST(test_keyboard_all_digits_present);
 
     return UNITY_END();
 }

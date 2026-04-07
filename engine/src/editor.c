@@ -86,7 +86,10 @@ void draw_hints_bar(bool editor_mode, const EditorState *editor_state, bool is_d
         } else if (editor_state->sub_mode == EDITOR_SUB_RADIAL) {
             hints = "Stick: Pick tool  |  A/Ent: Confirm  |  B/Esc: Cancel";
         } else if (editor_state->sub_mode == EDITOR_SUB_WORD_BUILDER) {
-            hints = "A/Ent: Pick / Done  |  B/Esc: Undo / Cancel  |  Up/Down: Scroll  |  L1/Q: PgUp  |  R1/E: PgDn";
+            hints =
+                "A/Ent: Pick / Done  |  B/Esc: Undo / Cancel  |  X/Del: Keyboard  |  Up/Dn: Scroll  |  L1/Q R1/E: Pg";
+        } else if (editor_state->sub_mode == EDITOR_SUB_GAMEPAD_KB) {
+            hints = "Stick: Pick  |  A/Ent: Select  |  B/Esc: Back / Backspace  |  X/Del: Exit to Words";
         } else if (editor_state->sub_mode == EDITOR_SUB_FUZZY_FINDER) {
             hints = "A/Ent: Pick / New  |  B/Esc: Cancel  |  Up/Dn: Scroll  |  L1/Q: PgUp  |  R1/E: PgDn";
         } else {
@@ -1047,7 +1050,7 @@ static void word_builder_pop(EditorState *editor_state)
 
 void draw_word_builder_panel(ScreenSize screen, const GameState *state, const EditorState *editor_state)
 {
-    if (editor_state->sub_mode != EDITOR_SUB_WORD_BUILDER) {
+    if (editor_state->sub_mode != EDITOR_SUB_WORD_BUILDER && editor_state->sub_mode != EDITOR_SUB_GAMEPAD_KB) {
         return;
     }
     int panel_x = screen.width - EDITOR_PANEL_WIDTH;
@@ -1150,6 +1153,12 @@ void handle_word_builder_input(Diag *diag, GameState *state, EditorState *editor
         } else {
             word_builder_append(editor_state, word_builder_item(state, editor_state->word_builder_scroll));
         }
+    }
+    if (toggle_pressed((ToggleBinding){KEY_DELETE, GAMEPAD_BUTTON_RIGHT_FACE_LEFT})) {
+        editor_state->keyboard_group = -1;
+        editor_state->keyboard_selected = -1;
+        editor_state->sub_mode = EDITOR_SUB_GAMEPAD_KB;
+        return;
     }
     if (toggle_pressed((ToggleBinding){KEY_ESCAPE, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT})) {
         if (editor_state->word_builder_len > 0) {
@@ -1413,5 +1422,145 @@ void handle_fuzzy_finder_input(Diag *diag, GameState *state, EditorState *editor
     }
     if (toggle_pressed((ToggleBinding){KEY_ESCAPE, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT})) {
         editor_state->sub_mode = EDITOR_SUB_BROWSE;
+    }
+}
+
+/* --- Gamepad keyboard (two-level radial character picker) --- */
+
+static const char keyboard_groups[KEYBOARD_GROUP_COUNT][KEYBOARD_MAX_CHARS_PER_GROUP] = {
+    {'a', 'e', 'i', 'o', 'u'},   /* vowels */
+    {'t', 'n', 's', 'r', '\0'},  /* common 1 */
+    {'l', 'd', 'h', 'c', '\0'},  /* common 2 */
+    {'m', 'p', 'f', 'g', '\0'},  /* medium */
+    {'b', 'w', 'v', 'k', '\0'},  /* less common */
+    {'j', 'x', 'y', 'z', 'q'},   /* rare */
+    {'0', '1', '2', '3', '4'},   /* digits low */
+    {'5', '6', '7', '8', '9'},   /* digits high */
+    {'_', '-', '.', '\0', '\0'}, /* punctuation */
+};
+
+static const int keyboard_group_sizes[KEYBOARD_GROUP_COUNT] = {5, 4, 4, 4, 4, 5, 5, 5, 3};
+
+static const char *const keyboard_group_labels[KEYBOARD_GROUP_COUNT] = {
+    "aeiou", "tnsr", "ldhc", "mpfg", "bwvk", "jxyzq", "01234", "56789", "_-.",
+};
+
+static void keyboard_type_char(EditorState *editor_state, char character)
+{
+    if (editor_state->word_builder_len >= WORD_BUILDER_BUF_SIZE - 1) {
+        return;
+    }
+    editor_state->word_builder_buf[editor_state->word_builder_len] = character;
+    editor_state->word_builder_len++;
+    editor_state->word_builder_buf[editor_state->word_builder_len] = '\0';
+}
+
+static void keyboard_backspace(EditorState *editor_state)
+{
+    if (editor_state->word_builder_len <= 0) {
+        return;
+    }
+    editor_state->word_builder_len--;
+    editor_state->word_builder_buf[editor_state->word_builder_len] = '\0';
+}
+
+static int keyboard_item_count(const EditorState *editor_state)
+{
+    if (editor_state->keyboard_group < 0) {
+        return KEYBOARD_GROUP_COUNT;
+    }
+    return keyboard_group_sizes[editor_state->keyboard_group];
+}
+
+static const char *keyboard_item_label(const EditorState *editor_state, int index)
+{
+    if (editor_state->keyboard_group < 0) {
+        if (index >= 0 && index < KEYBOARD_GROUP_COUNT) {
+            return keyboard_group_labels[index];
+        }
+        return "";
+    }
+    int group = editor_state->keyboard_group;
+    if (index >= 0 && index < keyboard_group_sizes[group]) {
+        return TextFormat("%c", keyboard_groups[group][index]);
+    }
+    return "";
+}
+
+void draw_gamepad_kb(ScreenSize screen, const EditorState *editor_state, Font ui_font)
+{
+    if (editor_state->sub_mode != EDITOR_SUB_GAMEPAD_KB) {
+        return;
+    }
+    int center_x = screen.width / 2;
+    int center_y = screen.height / 2;
+    DrawCircle(center_x, center_y, RADIAL_OUTER_RADIUS + RADIAL_BG_PADDING, debug_bg_color);
+    int total = keyboard_item_count(editor_state);
+    float sector_deg = RADIAL_FULL_CIRCLE_DEG / (float)total;
+    for (int index = 0; index < total; index++) {
+        float start = ((float)index * sector_deg) - RADIAL_NORTH_OFFSET_DEG;
+        float end = start + sector_deg;
+        bool selected = (index == editor_state->keyboard_selected);
+        Color sector_color = selected ? radial_highlight_color
+                                      : (Color){radial_highlight_color.r, radial_highlight_color.g,
+                                                radial_highlight_color.b, radial_highlight_color.a / 2};
+        DrawRing((Vector2){(float)center_x, (float)center_y}, RADIAL_INNER_RADIUS, RADIAL_OUTER_RADIUS, start, end, 16,
+                 sector_color);
+        float mid_deg = start + (sector_deg / 2.0F);
+        float mid_rad = mid_deg * RADIAL_DEG_TO_RAD;
+        float label_radius = (RADIAL_INNER_RADIUS + RADIAL_OUTER_RADIUS) / 2.0F;
+        int label_x = center_x + (int)(cosf(mid_rad) * label_radius);
+        int label_y = center_y + (int)(sinf(mid_rad) * label_radius);
+        const char *label = keyboard_item_label(editor_state, index);
+        int text_width = measure_ui_text(ui_font, label, RADIAL_FONT_SIZE);
+        draw_ui_text(ui_font, label, label_x - (text_width / 2), label_y - (RADIAL_FONT_SIZE / 2), RADIAL_FONT_SIZE,
+                     sector_color);
+    }
+    DrawCircle(center_x, center_y, RADIAL_INNER_RADIUS, debug_bg_color);
+
+    /* Buffer status line above the radial */
+    const char *buffer_text = TextFormat("> %s|", editor_state->word_builder_buf);
+    int buffer_width = measure_ui_text(ui_font, buffer_text, TOAST_FONT_SIZE);
+    int buffer_y = center_y - (int)RADIAL_OUTER_RADIUS - TOAST_FONT_SIZE - (int)RADIAL_BG_PADDING;
+    draw_ui_text(ui_font, buffer_text, center_x - (buffer_width / 2), buffer_y, TOAST_FONT_SIZE, WHITE);
+
+    /* Group indicator below the radial (level 2 only) */
+    if (editor_state->keyboard_group >= 0) {
+        const char *group_text = TextFormat("[ %s ]", keyboard_group_labels[editor_state->keyboard_group]);
+        int group_width = measure_ui_text(ui_font, group_text, RADIAL_FONT_SIZE);
+        int group_y = center_y + (int)RADIAL_OUTER_RADIUS + (int)RADIAL_BG_PADDING;
+        draw_ui_text(ui_font, group_text, center_x - (group_width / 2), group_y, RADIAL_FONT_SIZE, debug_text_color);
+    }
+}
+
+void handle_gamepad_kb_input(EditorState *editor_state, InputState input)
+{
+    int total = keyboard_item_count(editor_state);
+    editor_state->keyboard_selected = radial_sector_from_stick(input.left_stick, total);
+    if (toggle_pressed((ToggleBinding){KEY_ENTER, GAMEPAD_BUTTON_RIGHT_FACE_DOWN})) {
+        if (editor_state->keyboard_selected >= 0) {
+            if (editor_state->keyboard_group < 0) {
+                editor_state->keyboard_group = editor_state->keyboard_selected;
+                editor_state->keyboard_selected = -1;
+            } else {
+                int group = editor_state->keyboard_group;
+                int selected = editor_state->keyboard_selected;
+                keyboard_type_char(editor_state, keyboard_groups[group][selected]);
+                editor_state->keyboard_group = -1;
+                editor_state->keyboard_selected = -1;
+            }
+        }
+    }
+    if (toggle_pressed((ToggleBinding){KEY_ESCAPE, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT})) {
+        if (editor_state->keyboard_group >= 0) {
+            editor_state->keyboard_group = -1;
+        } else if (editor_state->word_builder_len > 0) {
+            keyboard_backspace(editor_state);
+        } else {
+            editor_state->sub_mode = EDITOR_SUB_WORD_BUILDER;
+        }
+    }
+    if (toggle_pressed((ToggleBinding){KEY_DELETE, GAMEPAD_BUTTON_RIGHT_FACE_LEFT})) {
+        editor_state->sub_mode = EDITOR_SUB_WORD_BUILDER;
     }
 }

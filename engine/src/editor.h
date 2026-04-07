@@ -46,6 +46,8 @@ typedef struct {
 #define WORD_BUILDER_BUF_SIZE 256        /* max length of word builder output */
 #define WORD_BUILDER_PAGE_SIZE 5         /* page-jump size for L1/R1 in word builder */
 #define FUZZY_FINDER_PAGE_SIZE 5         /* page-jump size for L1/R1 in name picker */
+#define KEYBOARD_GROUP_COUNT 9           /* number of character groups in gamepad keyboard */
+#define KEYBOARD_MAX_CHARS_PER_GROUP 5   /* max characters in any single group */
 #define TOAST_DURATION 2.0F              /* seconds before toast fades out */
 #define TOAST_FADE_TIME 0.5F             /* seconds of fade-out at the end */
 #define TOAST_FONT_SIZE 28               /* toast text font size */
@@ -73,6 +75,7 @@ typedef enum {
     EDITOR_SUB_RADIAL,       /* generic N-item radial picker overlay */
     EDITOR_SUB_WORD_BUILDER, /* string attribute editing via vocabulary picker */
     EDITOR_SUB_FUZZY_FINDER, /* name picker for existing gamedata names */
+    EDITOR_SUB_GAMEPAD_KB,   /* two-level radial character picker */
 } EditorSubMode;
 
 typedef struct {
@@ -101,6 +104,8 @@ typedef struct {
     int fuzzy_finder_scroll;                      /* selected index (0 = "[ NEW... ]") */
     const char **fuzzy_finder_items;              /* sorted unique name pointers (gamedata_arena) */
     int fuzzy_finder_item_count;                  /* number of names (excludes the NEW sentinel) */
+    int keyboard_group;                           /* -1 = level 1 (group select), 0..8 = level 2 (char select) */
+    int keyboard_selected;                        /* radial sector highlighted by stick (-1 = dead zone) */
 } EditorState;
 
 typedef struct {
@@ -139,3 +144,5 @@ void handle_word_builder_input(Diag *diag, GameState *state, EditorState *editor
 void draw_word_builder_panel(ScreenSize screen, const GameState *state, const EditorState *editor_state);
 void handle_fuzzy_finder_input(Diag *diag, GameState *state, EditorState *editor_state, UndoHistory *undo_history);
 void draw_fuzzy_finder_panel(ScreenSize screen, const GameState *state, const EditorState *editor_state);
+void handle_gamepad_kb_input(EditorState *editor_state, InputState input);
+void draw_gamepad_kb(ScreenSize screen, const EditorState *editor_state, Font ui_font);

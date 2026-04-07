@@ -773,6 +773,8 @@ static void handle_editor_input(Diag *diag,
         handle_word_builder_input(diag, state, editor_state, undo_history);
     } else if (editor_state->sub_mode == EDITOR_SUB_FUZZY_FINDER) {
         handle_fuzzy_finder_input(diag, state, editor_state, undo_history);
+    } else if (editor_state->sub_mode == EDITOR_SUB_GAMEPAD_KB) {
+        handle_gamepad_kb_input(editor_state, input);
     } else {
         handle_browse_input(state, camera, editor_state, watches, undo_history, input, delta_time);
     }
@@ -839,7 +841,8 @@ static void render_frame(GameState *state, RenderParams params)
     if (state->editor_mode) {
         if (params.editor_state.sub_mode == EDITOR_SUB_PLACE) {
             draw_place_panel(screen, state, &params.editor_state);
-        } else if (params.editor_state.sub_mode == EDITOR_SUB_WORD_BUILDER) {
+        } else if (params.editor_state.sub_mode == EDITOR_SUB_WORD_BUILDER ||
+                   params.editor_state.sub_mode == EDITOR_SUB_GAMEPAD_KB) {
             draw_word_builder_panel(screen, state, &params.editor_state);
         } else if (params.editor_state.sub_mode == EDITOR_SUB_FUZZY_FINDER) {
             draw_fuzzy_finder_panel(screen, state, &params.editor_state);
@@ -849,6 +852,7 @@ static void render_frame(GameState *state, RenderParams params)
     }
     draw_watch_overlay(screen, state, params.watches);
     draw_radial_picker(screen, &params.editor_state, state->assets.ui_font);
+    draw_gamepad_kb(screen, &params.editor_state, state->assets.ui_font);
     if (state->editor_mode) {
         draw_toast(&params.editor_state, screen, state->assets.ui_font);
     }
