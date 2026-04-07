@@ -61,5 +61,3 @@
 ## misc
 
 - do the same stored-allocator change for map and Str types (parallels vec work)
-- write in a mandstory read up of how str, strv, vec and map works into CLAUDE,
-  so that agents are immediately knowledgable of these types

@@ -56,6 +56,83 @@ conan build .
 - **Prefer `vec` over fixed-size arrays with `MAX_*` constants.** Whenever you need a dynamic collection, reach for a `vec` type backed by the appropriate arena — not a `Type array[MAX_SOMETHING]` with a companion count. Fixed-size arrays are only justified for truly fixed-size data (e.g. a 4-button input state). If you find yourself defining a `MAX_*` constant to size a buffer, stop and ask whether a `vec` fits instead.
 - **No opaque cross-module forward declarations.** Never use `struct Foo;` or `typedef struct Foo Foo;` in a header to avoid including the header that defines `Foo`. This hides circular dependencies and obscures the include hierarchy. If a circular dependency appears, fix the architecture — extract a common lower-level definition, use dependency injection, or split the type — rather than hiding the cycle with an opaque pointer. There is no clang-tidy check for this; enforcement is via the cppcheck addon `tools/cppcheck/no_forward_decl.py` (run via `./ci.sh cppcheck`). Use `// cppcheck-suppress noForwardDecl-noForwardDecl` for known exceptions. Exceptions: self-referential structs within the same file (e.g. `struct Node { struct Node *next; }`) are necessary and fine.
 
+## Core Types: Str, Strv, vec, map
+
+The project has its own string and container types. **Never use raw `char[]` buffers, `malloc`-backed arrays, or hand-rolled hash tables** — use these instead. Full API in the headers listed below.
+
+### Strv — non-owning string view (`engine/src/strv.h`)
+
+A `{const char *ptr, size_t len}` pair. Does not own memory, does not require null-termination (though `strv_from_cstr` produces views of null-terminated strings). Use for read-only string references, function parameters, and temporaries.
+
+```c
+Strv view = strv_from_cstr("hello");        /* view of a string literal */
+Strv view = str_to_strv(some_str);          /* view into an owning Str */
+bool match = strv_eq_cstr(view, "hello");   /* compare with C string */
+Strv token = strv_split(&remaining, ':');   /* split and advance */
+```
+
+`Strv` is safe to store in structs when the backing memory outlives the view (e.g. string literals, arena-backed `Str` data). Be careful with views into scratch arena — they die at `SCRATCH_SCOPE` exit.
+
+### Str — owning, growable string (`engine/src/str.h`)
+
+A `{char *ptr, size_t len, size_t cap}` triple. Always null-terminated. All mutating functions take an `Allocator *` — in engine code, always `allocator_arena(arena)`.
+
+```c
+Str name = {0};
+str_from_cstr(&alloc, &name, "player");     /* allocate + copy */
+str_append_cstr(&alloc, &name, "_idle");    /* grow: "player_idle" */
+Strv view = str_to_strv(name);              /* borrow as view */
+str_free(&alloc, &name);                    /* only needed for heap alloc; arena reclaims on rewind */
+```
+
+In arena-backed code, `str_free` is a no-op (arena reclaims memory on rewind). It exists for test code using heap allocators.
+
+### vec — typed dynamic array (`engine/src/vec.h`)
+
+Code-generated via `VEC_DECL` / `VEC_IMPL` macros. Each `vec_<name>` stores `{data, count, capacity, alloc}` — the allocator is stored at creation time and used by all subsequent pushes.
+
+```c
+/* Declare in header (after element type is defined): */
+VEC_DECL(enemy, Enemy)
+
+/* Implement in exactly one .c file: */
+VEC_IMPL(enemy, Enemy)
+
+/* Usage: */
+Allocator alloc = allocator_arena(&state->gamedata_arena);
+vec_enemy enemies = vec_enemy_new(alloc);   /* empty vec, allocator stored */
+vec_enemy_push(&enemies, some_enemy);       /* push element, grows as needed */
+Enemy *first = &enemies.data[0];            /* direct access via .data[index] */
+enemies.count;                              /* number of elements */
+vec_enemy_clear(&enemies);                  /* reset count to 0, keep allocation */
+```
+
+Primitive types (`vec_int`, `vec_bool`, `vec_float`, etc.) are pre-declared — just include `vec.h`.
+
+**Critical rule:** never hold a `&vec.data[i]` pointer across a push — reallocation invalidates it. Re-derive after any push.
+
+### map — typed hash map (`engine/src/map.h`)
+
+Code-generated via `MAP_DECL` / `MAP_IMPL` macros. Open-addressing, power-of-2 capacity, 75% load factor, tombstone deletion. All mutating functions take an `Allocator *` parameter.
+
+```c
+/* Declare in header: */
+MAP_DECL(str_int, Str, int)
+
+/* Implement in one .c file (provide hash and equality functions): */
+MAP_IMPL(str_int, Str, int, my_str_hash, my_str_eq)
+
+/* Usage: */
+map_str_int scores = {0};                                /* zero-init is valid empty map */
+map_str_int_set(&scores, key, 42, &alloc);               /* insert or update */
+const int *value = map_str_int_get(&scores, key);        /* returns nullptr if missing */
+map_str_int_remove(&scores, key);                        /* tombstone deletion */
+```
+
+Int-keyed maps (`map_int_bool`, `map_int_int`, `map_int_str`, etc.) are pre-declared with built-in hash/eq — just include `map.h`.
+
+**Critical rule:** `map_get` returns a pointer into the bucket array. Any `map_set` that triggers a rehash invalidates all previously returned pointers. Always call `map_get` immediately before use.
+
 ## Arena Architecture
 
 **ALL engine memory is arena-backed. Using `malloc`, `realloc`, or `free` anywhere in engine code is strictly forbidden — no exceptions, no workarounds, no "just this once".** The only permitted exemptions are: (1) the `NULL`-allocator fallback path inside the allocator infrastructure itself, and (2) `free(datum.u.s)` calls for TOML vendor string datums (a vendor limitation). If you find yourself reaching for `malloc`, the architecture is wrong — restructure to pass an arena allocator instead.
