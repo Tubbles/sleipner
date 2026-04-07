@@ -41,7 +41,3 @@ conan build .
 - **Linting:** clang-tidy with strict checks (all checks enabled, warnings as errors)
 - **Formatting:** clang-format (LLVM-based style)
 - **Testing:** Unity (ThrowTheSwitch) + fff.h (Fake Function Framework)
-
-## Future Improvements
-
-*   **Context Slicing (Sub-Contexting):** The engine currently passes a monolithic `EngineContext` pointer through almost all subsystems to avoid static state. While header-level circular dependencies are prevented via opaque pointers (`struct EngineContext;`), this "God Object" approach logically couples subsystems to the entire game state. A future architectural pass should slice this context, passing only specific interfaces (e.g., `ErrorState*` or `DebugState*`) to subsystems that don't need access to the full `GameState` or asset registries.

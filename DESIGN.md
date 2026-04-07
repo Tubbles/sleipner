@@ -632,32 +632,20 @@ All game data — blueprints, levels, tile palettes — lives in a **single file
 
 - **Git-friendly:** Plain text, line-oriented, diffs show meaningful changes.
 - **Live-editable:** The game reads/writes this file at runtime.
-- **Synced:** Hard-linked into the Syncthing directory so both git and Syncthing see the same inode.
-
-Why a single file: hard links only work on files, not directories. A single file lets us hard-link it into the Syncthing share so edits from either side (phone or dev machine) are instantly visible to both git and Syncthing without symlink indirection.
+- **Synced:** Kept in sync with the Syncthing copy via explicit `cp`.
 
 ### Syncthing Pipeline
 
-```
-  Phone (editor)                       Dev machine (git)
-  ──────────────                       ─────────────────
-  Edit in-game, save                   Edit by hand or via Claude
-        ↓                                    ↓
-  ~/Sync/sleipner/gamedata.toml  ←→     data/gamedata.toml
-  (hard link to same inode             (hard link to same inode
-   on dev machine)                      in Syncthing share)
-                                             ↓
-                                       git commit & push
-```
+Two separate copies exist — hard links do not work because Syncthing's atomic write
+(temp file + rename) breaks them:
 
-**Setup:** `ln data/gamedata.toml ~/Sync/sleipner/gamedata.toml`
+- **Repo:** `data/gamedata.toml` — versioned in git, read by the desktop game.
+- **Syncthing:** `~/Sync/sleipner/gamedata.toml` — synced to Android, read by the Android game.
+
+Kept in sync by explicit copy (see CLAUDE.md "Gamedata Sync Workflow" for the full procedure).
 
 **Desktop path:** Game reads `data/gamedata.toml` (relative to binary / repo root).
-**Android path:** Game reads from Syncthing folder (e.g. `/storage/emulated/0/Sync/sleipner/gamedata.toml`).
-
-Both sides edit the same file. Syncthing syncs to the phone. Git versions the repo copy. The hard link means they are the same file on the dev machine — no copy step needed.
-
-Note: hard links break when either side does a delete+recreate instead of in-place write. Syncthing and most text editors preserve inodes on save, but this is worth keeping in mind.
+**Android path:** Game reads from Syncthing folder (`/storage/emulated/0/Sync/sleipner/gamedata.toml`).
 
 ### Game Data Format (TOML)
 
@@ -744,74 +732,6 @@ pos = [320, 180]
 - The editor modifies in-memory state and writes the entire file back on save via a TOML serializer (tomlc99 is read-only, so we write a simple emitter ourselves).
 - Hot-reload: optionally watch the file's mtime and reload when it changes (useful when editing on phone while running on desktop, or vice versa).
 
-## Module Dependencies
-
-The engine is structured as an acyclic dependency graph. Lower-level modules (arena, alloc,
-strings) know nothing about the game; higher-level modules (game, editor) compose them. No
-circular includes exist — cycles are broken by the patterns described in "Cross-Module
-Dependencies" below.
-
-### Header dependency graph
-
-Foundation modules (`alloc`, `arena`, `vec`, `str`, `map`, `error`, `debug`, `rect`, `strv`,
-`assets`) and vendor libraries (`raylib`, `toml`) are used pervasively and omitted from the
-graph to reduce noise. Only domain-level and structural dependencies are shown.
-
-```mermaid
-graph LR
-    subgraph Graphics
-        render --> particle
-        render --> shape
-        collision
-    end
-
-    subgraph Input/Output
-        input
-        touch
-        audio
-        toml_str
-        toml_emitter --> blueprint
-        toml_emitter --> level
-    end
-
-    subgraph Game Domain
-        entity --> attribute
-        rule --> entity
-        blueprint --> attribute
-        blueprint --> rule
-        level --> blueprint
-        level --> entity
-    end
-
-    subgraph Integration
-        game --> blueprint
-        game --> level
-        game --> rule
-        game --> input
-        engine_context --> game
-        engine_context --> audio
-        editor --> engine_context
-        editor --> game
-        editor --> input
-        editor --> level
-    end
-```
-
-### `struct EngineContext` forward declaration spread
-
-13 headers forward-declare `struct EngineContext;` to accept an `EngineContext *` parameter
-without including `engine_context.h` (which sits at the top of the dependency tree):
-
-```
-alloc.h, arena.h, audio.h, blueprint.h, collision.h, debug.h,
-error.h, game.h, input.h, level.h, rule.h, vec.h, map.h
-```
-
-This is the single remaining architectural violation of the "no opaque cross-module forward
-declarations" rule. The fix is to decompose `EngineContext` — extract the pieces each module
-actually needs (error context, log sink, arena pointers) into lightweight structs that live
-at the foundation level. See TODO.md for the plan.
-
 ## Memory Architecture
 
 All engine memory is arena-backed — no `malloc`/`free` anywhere except tomlc99 vendor internals and the allocator infrastructure's `NULL` fallback. The two arenas in `GameState` have distinct lifetimes, and data is loaded incrementally in layers.
@@ -864,110 +784,7 @@ scratch_arena:
   [checkpoint .. top)     per-scope temporaries (rewound at SCRATCH_SCOPE exit)
 ```
 
-### Runtime Arena (planned)
-
-Currently all entity instance data lives in `gamedata_arena` alongside blueprints and
-rules. This means hot-reloading gamedata wipes all runtime state (entity positions, HP
-overrides, spawned entities, editor changes). To support hot-reload with preserved runtime
-state, the plan is to split into two data arenas:
-
-- **`gamedata_arena`** — the "definition" layer. Blueprints, rules, level templates —
-  everything parsed from `gamedata.toml`. Wiped and re-parsed on reload.
-- **`runtime_arena`** — the "instance" layer. Live entities, attribute overrides,
-  spawned/deleted markers, editor mutations. Survives reloads for the lifetime of the
-  game session.
-
-**All cross-object references are by ID or name, never by pointer.** This applies to
-both runtime→gamedata and runtime→runtime references. An entity holds its blueprint as a
-name string, not a `Blueprint *`. An entity refers to its parent by entity ID, not an
-`Entity *`. Attribute access is by name string. This rule exists for two reasons:
-
-1. **Hot-reload safety.** Reloading gamedata changes all gamedata addresses. String
-   lookups naturally re-resolve against the fresh data — no migration needed.
-2. **Vec growth safety.** Within the runtime arena, vec growth can orphan old backing
-   arrays (bump + leak). Any `Entity *` or `Attribute *` cached across a vec push becomes
-   stale. ID/name lookups are always re-derived from the current vec state.
-
-Pointers returned by lookups are valid within the current scope — derive, use, discard.
-Never store a cross-object pointer in a struct field or hold it across a call that might
-grow a vec or reload gamedata. Direct vec indexing within a function (e.g.
-`level->entities.data[i]`) is fine — the rule targets stored pointers that outlive their
-validity, not scoped access into your own data.
-
-Reloading gamedata becomes:
-
-1. `arena_restore(gamedata_arena, gamedata_base)` + re-parse `gamedata.toml`.
-2. Done. The runtime arena is untouched. String/ID lookups naturally re-resolve.
-
-No migration, no snapshot/reconcile. The only cost is string/ID-based lookups at object
-boundaries. If profiling shows these are hot, cache the resolved pointer with
-invalidation on reload or vec growth — the cache is a performance optimization, not a
-correctness requirement.
-
-**Editor implications.** Edits to instance attributes (move an entity, change its HP) go
-into the runtime arena. Edits to blueprint attributes (change collision size for all
-entities of a type) go into gamedata and get written back to TOML. The two concerns never
-share memory.
-
-```
-gamedata_arena (after runtime arena split):
-  [0 .. gamedata_base)    textures + fonts (survive all reloads)
-  [gamedata_base .. top)  blueprints, rules, level templates (rewound on reload)
-
-runtime_arena:
-  [0 .. top)              live entities, instance attrs, spawned state (survives reloads)
-
-scratch_arena:
-  [checkpoint .. top)     per-scope temporaries (rewound at SCRATCH_SCOPE exit)
-```
-
-#### Lookup functions for cross-object references
-
-Cross-object references (entity→blueprint, entity→parent, etc.) must go through dedicated
-lookup functions that translate an ID or name into a pointer. Examples:
-
-- `blueprint_by_name(state, "chest")` → `Blueprint *`
-- `entity_by_id(level, 42)` → `Entity *`
-- `attr_get_int(attrs, "hp")` → `int`
-
-The returned pointer is valid within the current scope — use it and discard it. Never
-store it in a struct field or hold it across a call that might mutate the backing data.
-
-**Direct vec indexing within a scope is fine.** Accessing `level->entities.data[i]` to
-work with an element you already have an index for is normal — it's a direct access into
-your own data, not a cross-object reference. The rule targets *stored pointers that
-outlive their validity*, not how you access elements within a function.
-
-This buys two things:
-
-1. **Single point of optimization.** If profiling shows a lookup is hot, add caching
-   inside the lookup function itself — callers don't change. A generation counter on the
-   backing vec lets the function serve a cached pointer when the generation matches and
-   re-derive when it doesn't.
-2. **Single point of invalidation.** Only the lookup function knows about the cache, so
-   only the lookup function needs invalidation logic. No scattered caches across
-   subsystems, no observer pattern, no central registry.
-
-**Cache state lives on the container, not the caller.** The lookup function already
-receives the container struct (`Level *`, `GameState *`). If caching is added later, the
-cache (generation counter, resolved-pointer table) becomes a field on that container
-struct. The lookup function has access to both the data and the cache through the pointer
-it already receives — call sites don't change and don't need to know caching exists.
-
-```c
-// No cache — works today:
-Entity *entity = entity_by_id(&level, 42);
-
-// Cache added later inside Level — exact same call site:
-Entity *entity = entity_by_id(&level, 42);
-```
-
-The recommendation is to ship without caching — make the lookup functions fast (hash maps
-for name→index, flat arrays for ID→entity) and only add the generation-counter cache if
-profiling proves a specific lookup is a bottleneck. The architecture supports bolting it
-on later without changing any call site.
-
-#### Entity–blueprint connection
+### Entity–blueprint connection
 
 An entity is an instance of a blueprint. The blueprint defines default attribute values; the
 entity holds runtime overrides. Attribute lookup is a two-level operation: check instance
@@ -1361,17 +1178,12 @@ AABB rectangles everywhere. This phase wires the shape system into the game.
 ## Resolved Decisions
 
 - **Data format:** TOML via tomlc99 (vendored in `engine/vendor/tomlc99/`). Single file `data/gamedata.toml`.
-- **Sync mechanism:** Two separate copies — `data/gamedata.toml` in the repo (versioned, read by desktop game) and `~/Sync/sleipner/gamedata.toml` (Syncthing-managed, read by Android game). Kept in sync by explicit copy with backup (see CLAUDE.md "Gamedata Sync Workflow"). Hard links do not work because Syncthing's atomic write (temp + rename) breaks them.
 - **Safe save:** Write to temp file, rename onto the original. Atomic on same filesystem. Prevents corrupt partial writes from Syncthing races.
-- **Android data path:** `/storage/emulated/0/Sync/sleipner/gamedata.toml` (hardcoded). Desktop: `data/gamedata.toml` (repo-relative).
 - **Release distribution:** Load `gamedata.toml` from filesystem at runtime on both platforms.
 - **Engine grows organically.** Don't build engine features speculatively — add them when the game needs them.
-- **Undo system:** Snapshot-based, push-after model. After each editor operation completes, snapshot the entire in-memory gamedata and push onto a history stack. An initial baseline entry is pushed at load time. Undo = move cursor to previous entry and restore. Redo = move forward and restore. Simple, every operation is automatically undoable, no need to define inverse operations. Gamedata is small enough that even 100+ snapshots are negligible memory. If gamedata ever grows to megabytes, migrate to command pattern — undo is internal to the editor so refactoring is cheap.
-- **Memory allocation:** Two arenas in `GameState` — `gamedata_arena` for persistent data (assets at the bottom, gamedata above a checkpoint) and `scratch_arena` for per-scope temporaries. Hot-reload rewinds `gamedata_arena` to `gamedata_base` via `arena_restore`, preserving the asset registry. No `malloc`/`free` in engine code. See Memory Architecture section for the full lifecycle.
 - **Hot-reload:** Poll mtime on `gamedata.toml` (~once per second) in play mode — auto-reload when the file changes (Syncthing edits from phone appear live). In editor mode, no auto-reload — reload is explicit only, to avoid blowing away unsaved in-memory changes.
 - **Tile map:** 16x16 pixel tiles, 2 layers (ground + overlay). Ground is terrain (grass, dirt, water, paths). Overlay renders on top of ground but under entities (flowers, puddles, shadows). Stored as arrays of integer tile IDs in TOML, row by row. Autotiling (automatic edge/corner sprite selection) is an editor feature — the file stores concrete tile IDs, the editor computes them on placement.
 - **TOML emitter:** Clean regeneration, no comment/formatting preservation. The in-game editor is the primary editing interface — comments aren't useful. Keeps the emitter dead simple.
-- **Save system:** One save = one world (all players, all state). Saves in app-local storage (not Syncthing). Persistent world — everything persists by default, respawning is explicit via rules. Save stores delta from gamedata baseline. TOML format. Auto-save on level transitions and quit. Multiple numbered slots + autosave.
 - **Camera system:** Smooth follow with lerp interpolation (`CAMERA_FOLLOW_SPEED = 10.0F`). Camera tracks player position each frame, clamped to level edges so the viewport never shows outside the level. When the level is smaller than the viewport, camera locks to the level center. `game_snap_camera()` teleports the camera on level load/transitions (no lerp). Editor camera is unaffected — still free-roaming.
 
 ## Open Questions

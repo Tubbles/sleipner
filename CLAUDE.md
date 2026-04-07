@@ -308,8 +308,6 @@ Android requires APK updates to be signed with the same key as the original inst
 - **Reset state on initialization.** Be vigilant about resetting counters, registries, and state arrays during game initialization. Failure to reset can cause bugs across game restarts (e.g., the font preview bug where fonts appeared twice because `font_preview_count` wasn't reset). Audit initialization code when adding new stateful features.
 
 - **Minimize static data.** Strive for zero static variables. Use explicit state passing and holder structs instead. Global state should not exist, not even for logging, error handling, or registries. Any state must live in a holder struct (like `GameState`, `ErrorState`, or `DebugState`) that is explicitly passed to functions that need it. If you find yourself reaching for a `static` variable or a global array, restructure the architecture to pass a context pointer instead.
-
-- **Prefer pure functions.** Functions should take inputs and return outputs without relying on or modifying static state. Use holder structs to group related data and pass them explicitly rather than using global variables.
 - **One subsystem at a time.** Implement features incrementally, one subsystem at a time. Get it working, tested, and integrated before moving to the next. Don't build multiple half-finished subsystems in parallel.
 
 ## Git Workflow
