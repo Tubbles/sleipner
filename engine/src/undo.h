@@ -2,7 +2,7 @@
 
 #include "arena.h"
 #include "error.h"
-#include "game.h"
+#include "gamedata.h"
 #include "strv.h"
 
 #include <stdbool.h>
