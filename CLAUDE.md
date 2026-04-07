@@ -127,7 +127,7 @@ the struct copy.
 - All `GamedataState` pointers must point into `gamedata_arena`. Heap/stack pointers become dangling after undo restore.
 - New arena-backed fields belong in `GamedataState`, not `GameState`. Fields outside the sub-struct are not snapshotted.
 - Any code path calling `game_load_gamedata` must also call `undo_history_clear` — hot-reload and level transitions invalidate all snapshots.
-- Snapshot before mutating. Multi-frame ops push at mode entry, discard on cancel. Single-frame ops push inline before the mutation.
+- Snapshot after mutating (push-after model). Multi-frame ops push at confirm. Single-frame ops push inline after the mutation. A baseline entry is pushed at game load, hot-reload, and level transition.
 - `EditorState` is not snapshotted — don't store undo-critical data there.
 
 See DESIGN.md § "Undo System" for the full architecture and safety rules.

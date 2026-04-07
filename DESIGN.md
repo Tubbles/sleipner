@@ -1171,15 +1171,17 @@ the fixed struct followed by the variable-length arena snapshot. A new edit afte
 truncates the redo tail by rewinding the undo arena to the current entry's end, reclaiming
 memory.
 
-### Snapshot Timing
+### Snapshot Timing (push-after model)
 
-Two categories, each with different timing:
+Entries capture **completed states**, not pre-mutation states. An initial baseline entry
+is pushed after game load / hot-reload / level transition. This gives undo a "before any
+edits" state to restore to.
 
-**Multi-frame operations** (drag, handles, attr_edit, word_builder) push at mode entry
-(state is clean, no mutation yet). On confirm: the entry stays. On cancel: call
-`undo_history_discard` which moves the cursor back, making the entry unreachable.
+**Multi-frame operations** (drag, handles, attr_edit, word_builder) push at confirm (after
+the mutation is complete). Cancel restores from `EditorState` saved values — no undo entry
+is involved.
 
-**Single-frame operations** (toggle, delete, spawn) push immediately before the mutation.
+**Single-frame operations** (toggle, delete, spawn) push immediately after the mutation.
 
 ### Controls and UI
 
@@ -1190,8 +1192,9 @@ Two categories, each with different timing:
 
 ### Lifecycle Integration
 
-- After hot-reload (`poll_hot_reload` returns true): `undo_history_clear` + fresh baseline
-- After level transition: `undo_history_clear`
+- After hot-reload (`poll_hot_reload` returns true): `undo_history_clear` + baseline `new_entry`
+- After level transition: `undo_history_clear` + baseline `new_entry`
+- After initial `load_gamedata`: baseline `new_entry`
 - After successful save: `undo_history_mark_saved`
 
 ### Undo Safety Rules
@@ -1216,8 +1219,8 @@ Rules that prevent memory corruption when modifying the codebase:
 5. **Any code path calling `game_load_gamedata` must also call `undo_history_clear`.** Hot-
    reload and level transitions invalidate all snapshots.
 
-6. **Snapshot before mutating.** Multi-frame ops call `undo_history_new_entry` at mode
-   entry. Single-frame ops call it inline before the mutation.
+6. **Snapshot after mutating.** Multi-frame ops call `undo_history_new_entry` at confirm.
+   Single-frame ops call it inline after the mutation. A baseline entry is pushed at load.
 
 7. **`EditorState` is NOT snapshotted.** Don't store undo-critical data there.
 
@@ -1363,7 +1366,7 @@ AABB rectangles everywhere. This phase wires the shape system into the game.
 - **Android data path:** `/storage/emulated/0/Sync/sleipner/gamedata.toml` (hardcoded). Desktop: `data/gamedata.toml` (repo-relative).
 - **Release distribution:** Load `gamedata.toml` from filesystem at runtime on both platforms.
 - **Engine grows organically.** Don't build engine features speculatively — add them when the game needs them.
-- **Undo system:** Snapshot-based. Before each editor operation, snapshot the entire in-memory gamedata and push onto a history stack. Undo = pop and restore. Simple, every operation is automatically undoable, no need to define inverse operations. Gamedata is small enough that even 100+ snapshots are negligible memory. If gamedata ever grows to megabytes, migrate to command pattern — undo is internal to the editor so refactoring is cheap.
+- **Undo system:** Snapshot-based, push-after model. After each editor operation completes, snapshot the entire in-memory gamedata and push onto a history stack. An initial baseline entry is pushed at load time. Undo = move cursor to previous entry and restore. Redo = move forward and restore. Simple, every operation is automatically undoable, no need to define inverse operations. Gamedata is small enough that even 100+ snapshots are negligible memory. If gamedata ever grows to megabytes, migrate to command pattern — undo is internal to the editor so refactoring is cheap.
 - **Memory allocation:** Two arenas in `GameState` — `gamedata_arena` for persistent data (assets at the bottom, gamedata above a checkpoint) and `scratch_arena` for per-scope temporaries. Hot-reload rewinds `gamedata_arena` to `gamedata_base` via `arena_restore`, preserving the asset registry. No `malloc`/`free` in engine code. See Memory Architecture section for the full lifecycle.
 - **Hot-reload:** Poll mtime on `gamedata.toml` (~once per second) in play mode — auto-reload when the file changes (Syncthing edits from phone appear live). In editor mode, no auto-reload — reload is explicit only, to avoid blowing away unsaved in-memory changes.
 - **Tile map:** 16x16 pixel tiles, 2 layers (ground + overlay). Ground is terrain (grass, dirt, water, paths). Overlay renders on top of ground but under entities (flowers, puddles, shadows). Stored as arrays of integer tile IDs in TOML, row by row. Autotiling (automatic edge/corner sprite selection) is an editor feature — the file stores concrete tile IDs, the editor computes them on placement.
