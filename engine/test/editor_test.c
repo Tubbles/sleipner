@@ -1239,6 +1239,167 @@ void test_editor_delete_entity_removes_map_entries(void)
     arena_reset(&state.scratch_arena);
 }
 
+/* ---- Attribute editor: add / remove / type change ----------------------- */
+
+void test_attr_add_by_name_creates_int_attr(void)
+{
+    ErrorState err_state = {0};
+    DebugState dbg_state = {0};
+    Diag diag = {.error = &err_state, .debug = &dbg_state};
+    GameState state = {0};
+    TEST_ASSERT_TRUE(arena_init(&err_state, &state.gamedata_arena));
+    state.gamedata.current_level.entities.alloc = allocator_arena(&state.gamedata_arena);
+    Entity entity = {.id = 1};
+    TEST_ASSERT_TRUE(vec_entity_push(&state.gamedata.current_level.entities, entity));
+    EditorState editor_state = {.selected_entity_index = 0};
+
+    TEST_ASSERT_TRUE(add_attr_by_name(&diag, &state, &editor_state, "new_attr"));
+
+    Entity *result = &state.gamedata.current_level.entities.data[0];
+    TEST_ASSERT_EQUAL_INT(1, result->attrs.entries.count);
+    TEST_ASSERT_EQUAL_STRING("new_attr", result->attrs.entries.data[0].name.ptr);
+    TEST_ASSERT_EQUAL_INT(ATTR_INT, result->attrs.entries.data[0].type);
+    TEST_ASSERT_EQUAL_INT(0, result->attrs.entries.data[0].value.i);
+
+    arena_reset(&state.gamedata_arena);
+}
+
+void test_attr_add_by_name_duplicate_returns_false(void)
+{
+    ErrorState err_state = {0};
+    DebugState dbg_state = {0};
+    Diag diag = {.error = &err_state, .debug = &dbg_state};
+    GameState state = {0};
+    TEST_ASSERT_TRUE(arena_init(&err_state, &state.gamedata_arena));
+    state.gamedata.current_level.entities.alloc = allocator_arena(&state.gamedata_arena);
+    Allocator alloc = allocator_arena(&state.gamedata_arena);
+    Entity entity = {.id = 1};
+    TEST_ASSERT_TRUE(attr_set_int(&alloc, &entity.attrs, "existing", 42));
+    TEST_ASSERT_TRUE(vec_entity_push(&state.gamedata.current_level.entities, entity));
+    EditorState editor_state = {.selected_entity_index = 0};
+
+    TEST_ASSERT_FALSE(add_attr_by_name(&diag, &state, &editor_state, "existing"));
+
+    arena_reset(&state.gamedata_arena);
+}
+
+void test_attr_remove_instance_attr(void)
+{
+    Entity entity = {0};
+    TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, &entity.attrs, "speed", 10));
+    TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, &entity.attrs, "health", 5));
+
+    attr_remove(&test_heap_alloc, &entity.attrs, "speed");
+
+    TEST_ASSERT_EQUAL_INT(1, entity.attrs.entries.count);
+    TEST_ASSERT_EQUAL_STRING("health", entity.attrs.entries.data[0].name.ptr);
+
+    test_attr_set_free_local(&entity.attrs);
+}
+
+void test_attr_type_change_int_to_float(void)
+{
+    Attribute attr = {.type = ATTR_INT, .value = {.i = 42}};
+    Allocator alloc = test_heap_alloc;
+    AttrConvertedValues values = attr_extract_values(&attr, &alloc);
+    attr_apply_converted(&attr, ATTR_FLOAT, values, &alloc);
+
+    TEST_ASSERT_EQUAL_INT(ATTR_FLOAT, attr.type);
+    TEST_ASSERT_FLOAT_WITHIN(0.01F, 42.0F, attr.value.f);
+}
+
+void test_attr_type_change_float_to_int(void)
+{
+    Attribute attr = {.type = ATTR_FLOAT, .value = {.f = 3.7F}};
+    Allocator alloc = test_heap_alloc;
+    AttrConvertedValues values = attr_extract_values(&attr, &alloc);
+    attr_apply_converted(&attr, ATTR_INT, values, &alloc);
+
+    TEST_ASSERT_EQUAL_INT(ATTR_INT, attr.type);
+    TEST_ASSERT_EQUAL_INT(3, attr.value.i);
+}
+
+void test_attr_type_change_int_to_bool_nonzero(void)
+{
+    Attribute attr = {.type = ATTR_INT, .value = {.i = 5}};
+    Allocator alloc = test_heap_alloc;
+    AttrConvertedValues values = attr_extract_values(&attr, &alloc);
+    attr_apply_converted(&attr, ATTR_BOOL, values, &alloc);
+
+    TEST_ASSERT_EQUAL_INT(ATTR_BOOL, attr.type);
+    TEST_ASSERT_TRUE(attr.value.b);
+}
+
+void test_attr_type_change_int_to_bool_zero(void)
+{
+    Attribute attr = {.type = ATTR_INT, .value = {.i = 0}};
+    Allocator alloc = test_heap_alloc;
+    AttrConvertedValues values = attr_extract_values(&attr, &alloc);
+    attr_apply_converted(&attr, ATTR_BOOL, values, &alloc);
+
+    TEST_ASSERT_EQUAL_INT(ATTR_BOOL, attr.type);
+    TEST_ASSERT_FALSE(attr.value.b);
+}
+
+void test_attr_type_change_string_to_int(void)
+{
+    Str test_str = {0};
+    TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &test_str, "42"));
+    Attribute attr = {.type = ATTR_STRING, .value = {.str = test_str}};
+    AttrConvertedValues values = attr_extract_values(&attr, &test_heap_alloc);
+    attr_apply_converted(&attr, ATTR_INT, values, &test_heap_alloc);
+
+    TEST_ASSERT_EQUAL_INT(ATTR_INT, attr.type);
+    TEST_ASSERT_EQUAL_INT(42, attr.value.i);
+}
+
+void test_attr_type_radial_order_matches_enum(void)
+{
+    TEST_ASSERT_EQUAL_INT(ATTR_FLOAT, attr_type_radial_order[0]);
+    TEST_ASSERT_EQUAL_INT(ATTR_INT, attr_type_radial_order[1]);
+    TEST_ASSERT_EQUAL_INT(ATTR_BOOL, attr_type_radial_order[2]);
+    TEST_ASSERT_EQUAL_INT(ATTR_STRING, attr_type_radial_order[3]);
+}
+
+void test_attr_radial_label_float(void)
+{
+    EditorState editor_state = {.radial_context = RADIAL_CTX_ATTR_TYPE};
+    TEST_ASSERT_EQUAL_STRING("Float", radial_label(&editor_state, 0));
+}
+
+void test_attr_radial_label_string(void)
+{
+    EditorState editor_state = {.radial_context = RADIAL_CTX_ATTR_TYPE};
+    TEST_ASSERT_EQUAL_STRING("String", radial_label(&editor_state, 3));
+}
+
+void test_diff_view_override_detection(void)
+{
+    AttrSet instance = {0};
+    AttrSet blueprint = {0};
+    TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, &instance, "speed", 20));
+    TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, &blueprint, "speed", 10));
+
+    const Attribute *found = attr_get(&blueprint, "speed");
+    TEST_ASSERT_NOT_NULL(found);
+
+    test_attr_set_free_local(&instance);
+    test_attr_set_free_local(&blueprint);
+}
+
+void test_diff_view_custom_detection(void)
+{
+    AttrSet instance = {0};
+    AttrSet blueprint = {0};
+    TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, &instance, "custom_flag", 1));
+    TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, &blueprint, "speed", 10));
+
+    TEST_ASSERT_NULL(attr_get(&blueprint, "custom_flag"));
+
+    test_attr_set_free_local(&instance);
+    test_attr_set_free_local(&blueprint);
+}
+
 int main(void)
 {
     test_helpers_init();
@@ -1332,6 +1493,19 @@ int main(void)
     RUN_TEST(test_keyboard_group_sizes_consistent);
     RUN_TEST(test_keyboard_all_lowercase_alpha_present);
     RUN_TEST(test_keyboard_all_digits_present);
+    RUN_TEST(test_attr_add_by_name_creates_int_attr);
+    RUN_TEST(test_attr_add_by_name_duplicate_returns_false);
+    RUN_TEST(test_attr_remove_instance_attr);
+    RUN_TEST(test_attr_type_change_int_to_float);
+    RUN_TEST(test_attr_type_change_float_to_int);
+    RUN_TEST(test_attr_type_change_int_to_bool_nonzero);
+    RUN_TEST(test_attr_type_change_int_to_bool_zero);
+    RUN_TEST(test_attr_type_change_string_to_int);
+    RUN_TEST(test_attr_type_radial_order_matches_enum);
+    RUN_TEST(test_attr_radial_label_float);
+    RUN_TEST(test_attr_radial_label_string);
+    RUN_TEST(test_diff_view_override_detection);
+    RUN_TEST(test_diff_view_custom_detection);
 
     return UNITY_END();
 }

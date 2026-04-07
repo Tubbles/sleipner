@@ -63,7 +63,8 @@ typedef struct {
 } ToggleBinding;
 
 typedef enum {
-    RADIAL_CTX_TOOLS, /* Grab / Place / Handles / Delete — 4 items */
+    RADIAL_CTX_TOOLS,     /* Grab / Place / Handles / Delete — 4 items */
+    RADIAL_CTX_ATTR_TYPE, /* Float / Int / Bool / String — 4 items */
 } RadialContext;
 
 typedef enum {
@@ -106,6 +107,7 @@ typedef struct {
     int fuzzy_finder_item_count;                  /* number of names (excludes the NEW sentinel) */
     int keyboard_group;                           /* -1 = level 1 (group select), 0..8 = level 2 (char select) */
     int keyboard_selected;                        /* radial sector highlighted by stick (-1 = dead zone) */
+    bool adding_attr;                             /* true when fuzzy finder is open for adding a new attribute */
 } EditorState;
 
 typedef struct {

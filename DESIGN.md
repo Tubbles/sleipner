@@ -1122,7 +1122,7 @@ Rules that prevent memory corruption when modifying the codebase:
 - [x] Fuzzy finder for existing names
 - [x] Value adjuster with auto-repeat and ±100 step (hold for acceleration)
 - [x] Gamepad keyboard (last resort)
-- [ ] Attribute editor (built-in + custom, with diff view)
+- [x] Attribute editor (built-in + custom, with diff view)
 - [ ] Child entity editor (composition, tags)
 - [x] Undo (snapshot-based, arena memcpy)
 - [x] Attribute watcher (pin to debug overlay, live values during play)

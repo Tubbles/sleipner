@@ -16,6 +16,7 @@
 #include "map.h"
 #include "rect.h"
 #include "rule.h"
+#include "str.h"
 #include "strv.h"
 #include "undo.h"
 
@@ -27,6 +28,8 @@
 #endif
 #include <string.h>
 
+#define RADIX_DECIMAL 10
+
 const Color debug_text_color = {200, 220, 240, 255};
 const Color debug_log_color = {180, 210, 180, 255};
 const Color debug_bg_color = {20, 25, 35, DEBUG_BG_ALPHA};
@@ -35,6 +38,9 @@ static const Color handle_color = {0, 255, 255, 255};            /* cyan: collis
 static const int place_preview_alpha = 128;                      /* alpha for texture ghost during placement */
 static const Color place_ghost_color = {100, 255, 100, 180};     /* semi-transparent green: place preview */
 static const Color radial_highlight_color = {255, 200, 50, 200}; /* amber: selected radial sector */
+static const Color attr_override_color = {255, 200, 50, 255};    /* amber: overrides blueprint default */
+static const Color attr_custom_color = {100, 220, 100, 255};     /* green: instance-only attribute */
+static const Color attr_dimmed_color = {120, 130, 140, 255};     /* gray: overridden by instance */
 
 static void draw_ui_text(Font font, const char *text, int pos_x, int pos_y, int font_size, Color color)
 {
@@ -94,7 +100,7 @@ void draw_hints_bar(bool editor_mode, const EditorState *editor_state, bool is_d
             hints = "A/Ent: Pick / New  |  B/Esc: Cancel  |  Up/Dn: Scroll  |  L1/Q: PgUp  |  R1/E: PgDn";
         } else {
             hints = "F5: Play  |  F9/Y: Save  |  Tab/Sel: Tools  |  A/Ent: Sel  |  B/Esc: Desel  |  Up/Down: Attr  |  "
-                    "Shift/L2: Watch  |  Del/X: Delete  |  G/L3: Grab  |  H/L1: Handles  |  P/R1: Place  |  Stick: Pan";
+                    "Del/X: Del/Rm  |  ]/R2: Type  |  Shift/L2: Watch  |  P/R1: Place  |  Stick: Pan";
         }
     } else {
         hints = "F5: Editor  |  F3: Debug  |  F4: Fonts";
@@ -194,14 +200,32 @@ static const char *attr_display_value(const Attribute *attr)
     return "";
 }
 
-static void
-draw_attr_section(Font font, const AttrSet *set, int panel_x, int *y_offset, int base_index, int selected_attr_index)
+static int total_attr_count(const GameState *state, const Entity *entity);
+
+static void draw_attr_section(Font font,
+                              const AttrSet *set,
+                              bool is_instance_section,
+                              const AttrSet *other_set,
+                              int panel_x,
+                              int *y_offset,
+                              int base_index,
+                              int selected_attr_index)
 {
     for (int index = 0; index < set->entries.count; index++) {
         const Attribute *attr = &set->entries.data[index];
-        Color text_color = (base_index + index == selected_attr_index) ? WHITE : debug_text_color;
-        draw_ui_text(font, TextFormat("  %s: %s", attr->name.ptr, attr_display_value(attr)), panel_x + DEBUG_MARGIN,
-                     *y_offset, EDITOR_PANEL_FONT_SIZE, text_color);
+        bool selected = (base_index + index == selected_attr_index);
+        bool exists_in_other = other_set && attr_get(other_set, attr->name.ptr);
+        const char *prefix = "  ";
+        Color base_color = debug_text_color;
+        if (is_instance_section) {
+            prefix = exists_in_other ? "> " : "+ ";
+            base_color = exists_in_other ? attr_override_color : attr_custom_color;
+        } else if (exists_in_other) {
+            base_color = attr_dimmed_color;
+        }
+        Color text_color = selected ? WHITE : base_color;
+        draw_ui_text(font, TextFormat("%s%s: %s", prefix, attr->name.ptr, attr_display_value(attr)),
+                     panel_x + DEBUG_MARGIN, *y_offset, EDITOR_PANEL_FONT_SIZE, text_color);
         *y_offset += EDITOR_PANEL_LINE_HEIGHT;
     }
 }
@@ -227,14 +251,18 @@ void draw_editor_panel(ScreenSize screen, const GameState *state, const EditorSt
     draw_ui_text(font, "--- instance ---", panel_x + DEBUG_MARGIN, y_offset, EDITOR_PANEL_FONT_SIZE, debug_text_color);
     y_offset += EDITOR_PANEL_LINE_HEIGHT;
     int sel_attr = editor_state->selected_attr_index;
-    draw_attr_section(font, &entity->attrs, panel_x, &y_offset, 0, sel_attr);
     const AttrSet *defaults = entity_resolve_defaults(state, entity->id);
+    draw_attr_section(font, &entity->attrs, true, defaults, panel_x, &y_offset, 0, sel_attr);
+    int sentinel_index = total_attr_count(state, entity);
+    Color sentinel_color = (sel_attr == sentinel_index) ? WHITE : attr_custom_color;
+    draw_ui_text(font, "  [ + ADD ]", panel_x + DEBUG_MARGIN, y_offset, EDITOR_PANEL_FONT_SIZE, sentinel_color);
+    y_offset += EDITOR_PANEL_LINE_HEIGHT;
     if (defaults) {
         draw_ui_text(font, "--- blueprint ---", panel_x + DEBUG_MARGIN, y_offset, EDITOR_PANEL_FONT_SIZE,
                      debug_text_color);
         y_offset += EDITOR_PANEL_LINE_HEIGHT;
         int blueprint_base = entity->attrs.entries.count;
-        draw_attr_section(font, defaults, panel_x, &y_offset, blueprint_base, sel_attr);
+        draw_attr_section(font, defaults, false, &entity->attrs, panel_x, &y_offset, blueprint_base, sel_attr);
     }
 }
 
@@ -567,6 +595,14 @@ handle_browse_select(GameState *state, Camera2D *camera, EditorState *editor_sta
     if (attr_idx < 0) {
         return;
     }
+    int sentinel_index = total_attr_count(state, entity);
+    if (attr_idx == sentinel_index) {
+        fuzzy_finder_build_items(state, editor_state);
+        editor_state->fuzzy_finder_scroll = 0;
+        editor_state->adding_attr = true;
+        editor_state->sub_mode = EDITOR_SUB_FUZZY_FINDER;
+        return;
+    }
     Attribute *attr = attr_at_display_index(state, entity, attr_idx);
     if (!attr) {
         return;
@@ -610,8 +646,8 @@ static void handle_browse_attr_navigate(const GameState *state, EditorState *edi
         return;
     }
     const Entity *entity = &state->gamedata.current_level.entities.data[sel];
-    int total = total_attr_count(state, entity);
-    if (total <= 0) {
+    int total = total_attr_count(state, entity) + 1; /* +1 for [ + ADD ] sentinel */
+    if (total <= 1) {
         return;
     }
     int current = editor_state->selected_attr_index;
@@ -620,6 +656,94 @@ static void handle_browse_attr_navigate(const GameState *state, EditorState *edi
     } else {
         editor_state->selected_attr_index = (current + direction + total) % total;
     }
+}
+
+static const AttrType attr_type_radial_order[] = {ATTR_FLOAT, ATTR_INT, ATTR_BOOL, ATTR_STRING};
+
+typedef struct {
+    float as_float;
+    int as_int;
+    bool as_bool;
+} AttrConvertedValues;
+
+static AttrConvertedValues attr_extract_values(const Attribute *attr, Allocator *alloc)
+{
+    AttrConvertedValues result = {0};
+    switch (attr->type) {
+    case ATTR_FLOAT:
+        result.as_float = attr->value.f;
+        result.as_int = (int)attr->value.f;
+        result.as_bool = attr->value.f != 0.0F;
+        break;
+    case ATTR_INT:
+        result.as_float = (float)attr->value.i;
+        result.as_int = attr->value.i;
+        result.as_bool = attr->value.i != 0;
+        break;
+    case ATTR_BOOL:
+        result.as_float = attr->value.b ? 1.0F : 0.0F;
+        result.as_int = attr->value.b ? 1 : 0;
+        result.as_bool = attr->value.b;
+        break;
+    case ATTR_STRING: {
+        const char *text = (attr->value.str.ptr && attr->value.str.ptr[0] != '\0') ? attr->value.str.ptr : "0";
+        result.as_float = (float)strtod(text, nullptr);
+        result.as_int = (int)strtol(text, nullptr, RADIX_DECIMAL);
+        result.as_bool = attr->value.str.len > 0;
+        Str freed = attr->value.str;
+        str_free(alloc, &freed);
+        break;
+    }
+    }
+    return result;
+}
+
+static void attr_apply_converted(Attribute *attr, AttrType target_type, AttrConvertedValues values, Allocator *alloc)
+{
+    if (target_type == ATTR_STRING) {
+        const char *formatted = "";
+        if (attr->type == ATTR_FLOAT) {
+            formatted = TextFormat("%.2f", (double)values.as_float);
+        } else if (attr->type == ATTR_INT) {
+            formatted = TextFormat("%d", values.as_int);
+        } else if (attr->type == ATTR_BOOL) {
+            formatted = values.as_bool ? "true" : "false";
+        }
+        Str new_str = {0};
+        (void)str_from_cstr(alloc, &new_str, formatted);
+        attr->value.str = new_str;
+    } else if (target_type == ATTR_FLOAT) {
+        attr->value.f = values.as_float;
+    } else if (target_type == ATTR_INT) {
+        attr->value.i = values.as_int;
+    } else if (target_type == ATTR_BOOL) {
+        attr->value.b = values.as_bool;
+    }
+    attr->type = target_type;
+}
+
+static void
+dispatch_attr_type_change(GameState *state, EditorState *editor_state, int confirmed, UndoHistory *undo_history)
+{
+    int sel = editor_state->selected_entity_index;
+    int attr_idx = editor_state->selected_attr_index;
+    if (sel < 0 || attr_idx < 0 || confirmed < 0 || confirmed >= 4) {
+        return;
+    }
+    Entity *entity = &state->gamedata.current_level.entities.data[sel];
+    Attribute *attr = attr_at_display_index(state, entity, attr_idx);
+    if (!attr) {
+        return;
+    }
+    AttrType target_type = attr_type_radial_order[confirmed];
+    if (attr->type == target_type) {
+        return;
+    }
+    Allocator alloc = allocator_arena(&state->gamedata_arena);
+    AttrConvertedValues values = attr_extract_values(attr, &alloc);
+    attr_apply_converted(attr, target_type, values, &alloc);
+    undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
+                           strv_from_cstr("Change attr type"));
 }
 
 static void
@@ -646,6 +770,8 @@ dispatch_radial_confirm(GameState *state, EditorState *editor_state, WatchList *
             undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
                                    strv_from_cstr("Delete entity"));
         }
+    } else if (editor_state->radial_context == RADIAL_CTX_ATTR_TYPE) {
+        dispatch_attr_type_change(state, editor_state, confirmed, undo_history);
     }
 }
 
@@ -711,14 +837,40 @@ void handle_browse_input(GameState *state,
         toggle_watch(editor_state, watches);
     }
     if (toggle_pressed((ToggleBinding){KEY_DELETE, GAMEPAD_BUTTON_RIGHT_FACE_LEFT})) {
-        delete_selected_entity(state, editor_state, watches);
-        undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
-                               strv_from_cstr("Delete entity"));
+        int del_sel = editor_state->selected_entity_index;
+        int del_attr = editor_state->selected_attr_index;
+        int del_sentinel =
+            (del_sel >= 0) ? total_attr_count(state, &state->gamedata.current_level.entities.data[del_sel]) : -1;
+        if (del_sel >= 0 && del_attr >= 0 && del_attr < del_sentinel &&
+            !is_blueprint_attr(&state->gamedata.current_level.entities.data[del_sel], del_attr)) {
+            Entity *del_entity = &state->gamedata.current_level.entities.data[del_sel];
+            Attribute *del_target = &del_entity->attrs.entries.data[del_attr];
+            Allocator alloc = allocator_arena(&state->gamedata_arena);
+            attr_remove(&alloc, &del_entity->attrs, del_target->name.ptr);
+            editor_state->selected_attr_index = -1;
+            undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
+                                   strv_from_cstr("Remove attribute"));
+        } else if (del_attr < 0 ||
+                   (del_attr < del_sentinel &&
+                    is_blueprint_attr(&state->gamedata.current_level.entities.data[del_sel], del_attr))) {
+            delete_selected_entity(state, editor_state, watches);
+            undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
+                                   strv_from_cstr("Delete entity"));
+        }
     }
     if (toggle_pressed((ToggleBinding){KEY_P, GAMEPAD_BUTTON_RIGHT_TRIGGER_1})) {
         if (state->gamedata.blueprints.entries.count > 0) {
             editor_state->place_blueprint_index = find_place_blueprint_index(state, editor_state);
             editor_state->sub_mode = EDITOR_SUB_PLACE;
+        }
+    }
+    if (toggle_pressed((ToggleBinding){KEY_RIGHT_BRACKET, GAMEPAD_BUTTON_RIGHT_TRIGGER_2})) {
+        if (editor_state->selected_attr_index >= 0) {
+            editor_state->radial_selected = -1;
+            editor_state->radial_confirmed = -1;
+            editor_state->radial_item_count = 4;
+            editor_state->radial_context = RADIAL_CTX_ATTR_TYPE;
+            editor_state->sub_mode = EDITOR_SUB_RADIAL;
         }
     }
     if (toggle_pressed((ToggleBinding){KEY_LEFT, GAMEPAD_BUTTON_LEFT_FACE_LEFT})) {
@@ -928,9 +1080,14 @@ static int radial_sector_from_stick(Vector2 stick, int item_count)
 static const char *radial_label(const EditorState *editor_state, int index)
 {
     if (editor_state->radial_context == RADIAL_CTX_TOOLS) {
-        static const char *tools[] = {"Grab", "Place", "Handles", "Delete"};
+        static const char *const tools[] = {"Grab", "Place", "Handles", "Delete"};
         if (index >= 0 && index < 4) {
             return tools[index];
+        }
+    } else if (editor_state->radial_context == RADIAL_CTX_ATTR_TYPE) {
+        static const char *const types[] = {"Float", "Int", "Bool", "String"};
+        if (index >= 0 && index < 4) {
+            return types[index];
         }
     }
     return "";
@@ -1091,6 +1248,25 @@ void draw_word_builder_panel(ScreenSize screen, const GameState *state, const Ed
     }
 }
 
+static bool add_attr_by_name(Diag *diag, GameState *state, EditorState *editor_state, const char *name)
+{
+    int sel = editor_state->selected_entity_index;
+    if (sel < 0 || !name || name[0] == '\0') {
+        return false;
+    }
+    Entity *entity = &state->gamedata.current_level.entities.data[sel];
+    if (attr_get(&entity->attrs, name)) {
+        return false;
+    }
+    Allocator alloc = allocator_arena(&state->gamedata_arena);
+    if (!attr_set_int(&alloc, &entity->attrs, name, 0)) {
+        debug_log(diag->debug, "add attr: attr_set_int failed: %s", error_get(diag->error));
+        error_clear(diag->error);
+        return false;
+    }
+    return true;
+}
+
 static void word_builder_confirm(Diag *diag, GameState *state, EditorState *editor_state)
 {
     int sel = editor_state->selected_entity_index;
@@ -1145,7 +1321,13 @@ void handle_word_builder_input(Diag *diag, GameState *state, EditorState *editor
     int total = word_builder_total_count(state);
     word_builder_navigate(editor_state, total);
     if (toggle_pressed((ToggleBinding){KEY_ENTER, GAMEPAD_BUTTON_RIGHT_FACE_DOWN})) {
-        if (editor_state->word_builder_scroll == 0) {
+        if (editor_state->word_builder_scroll == 0 && editor_state->adding_attr) {
+            add_attr_by_name(diag, state, editor_state, editor_state->word_builder_buf);
+            undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
+                                   strv_from_cstr("Add attribute"));
+            editor_state->adding_attr = false;
+            editor_state->sub_mode = EDITOR_SUB_BROWSE;
+        } else if (editor_state->word_builder_scroll == 0) {
             word_builder_confirm(diag, state, editor_state);
             undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
                                    strv_from_cstr("Edit string"));
@@ -1164,6 +1346,7 @@ void handle_word_builder_input(Diag *diag, GameState *state, EditorState *editor
         if (editor_state->word_builder_len > 0) {
             word_builder_pop(editor_state);
         } else {
+            editor_state->adding_attr = false;
             editor_state->sub_mode = EDITOR_SUB_BROWSE;
         }
     }
@@ -1411,7 +1594,18 @@ void handle_fuzzy_finder_input(Diag *diag, GameState *state, EditorState *editor
     int total = fuzzy_finder_total_count(editor_state);
     fuzzy_finder_navigate(editor_state, total);
     if (toggle_pressed((ToggleBinding){KEY_ENTER, GAMEPAD_BUTTON_RIGHT_FACE_DOWN})) {
-        if (editor_state->fuzzy_finder_scroll == 0) {
+        if (editor_state->adding_attr) {
+            if (editor_state->fuzzy_finder_scroll == 0) {
+                fuzzy_finder_enter_word_builder(state, editor_state);
+            } else {
+                const char *chosen = fuzzy_finder_item(editor_state, editor_state->fuzzy_finder_scroll);
+                add_attr_by_name(diag, state, editor_state, chosen);
+                undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
+                                       strv_from_cstr("Add attribute"));
+                editor_state->adding_attr = false;
+                editor_state->sub_mode = EDITOR_SUB_BROWSE;
+            }
+        } else if (editor_state->fuzzy_finder_scroll == 0) {
             fuzzy_finder_enter_word_builder(state, editor_state);
         } else {
             fuzzy_finder_confirm(diag, state, editor_state);
@@ -1421,6 +1615,7 @@ void handle_fuzzy_finder_input(Diag *diag, GameState *state, EditorState *editor
         }
     }
     if (toggle_pressed((ToggleBinding){KEY_ESCAPE, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT})) {
+        editor_state->adding_attr = false;
         editor_state->sub_mode = EDITOR_SUB_BROWSE;
     }
 }
