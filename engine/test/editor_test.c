@@ -48,6 +48,7 @@ FAKE_VOID_FUNC(undo_history_new_entry, UndoHistory *, GamedataState *, Arena *, 
 FAKE_VOID_FUNC(undo_history_step_back, UndoHistory *, GamedataState *, Arena *, ArenaCheckpoint);
 FAKE_VOID_FUNC(undo_history_step_forward, UndoHistory *, GamedataState *, Arena *, ArenaCheckpoint);
 FAKE_VOID_FUNC(undo_history_discard, UndoHistory *);
+FAKE_VALUE_FUNC(Strv, undo_history_description, const UndoHistory *);
 
 /* debug_log stub — cannot use FAKE_VOID_FUNC_VARARG due to __attribute__((format)) conflict */
 void debug_log(DebugState *dbg, const char *format, ...)

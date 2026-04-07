@@ -66,7 +66,7 @@ void draw_editor_crosshair(RectU32 game_bounds)
     DrawLine(center_x, center_y - EDITOR_CROSSHAIR_HALF, center_x, center_y + EDITOR_CROSSHAIR_HALF, WHITE);
 }
 
-void draw_hints_bar(bool editor_mode, const EditorState *editor_state, ScreenSize screen, Font ui_font)
+void draw_hints_bar(bool editor_mode, const EditorState *editor_state, bool is_dirty, ScreenSize screen, Font ui_font)
 {
     int bar_y = screen.height - HINTS_BAR_HEIGHT;
     DrawRectangle(0, bar_y, screen.width, HINTS_BAR_HEIGHT, debug_bg_color);
@@ -94,6 +94,28 @@ void draw_hints_bar(bool editor_mode, const EditorState *editor_state, ScreenSiz
     }
     int text_y = bar_y + ((HINTS_BAR_HEIGHT - HINTS_FONT_SIZE) / 2);
     draw_ui_text(ui_font, hints, DEBUG_MARGIN, text_y, HINTS_FONT_SIZE, debug_text_color);
+    if (editor_mode && is_dirty) {
+        const char *dirty_label = "[*]";
+        int dirty_width = measure_ui_text(ui_font, dirty_label, HINTS_FONT_SIZE);
+        draw_ui_text(ui_font, dirty_label, screen.width - dirty_width - DEBUG_MARGIN, text_y, HINTS_FONT_SIZE, WHITE);
+    }
+}
+
+void draw_toast(const EditorState *editor_state, ScreenSize screen, Font ui_font)
+{
+    if (editor_state->toast_timer <= 0.0F || editor_state->toast_text.len == 0) {
+        return;
+    }
+    float alpha = (editor_state->toast_timer < TOAST_FADE_TIME) ? (editor_state->toast_timer / TOAST_FADE_TIME) : 1.0F;
+    unsigned char alpha_byte = (unsigned char)(alpha * ALPHA_MAX);
+    const char *text = TextFormat("%.*s", (int)editor_state->toast_text.len, editor_state->toast_text.ptr);
+    int text_width = measure_ui_text(ui_font, text, TOAST_FONT_SIZE);
+    int pos_x = (screen.width - text_width) / 2;
+    int pos_y = DEBUG_MARGIN;
+    DrawRectangle(pos_x - DEBUG_MARGIN, pos_y, text_width + (DEBUG_MARGIN * 2), TOAST_FONT_SIZE + DEBUG_MARGIN,
+                  (Color){debug_bg_color.r, debug_bg_color.g, debug_bg_color.b, alpha_byte});
+    draw_ui_text(ui_font, text, pos_x, pos_y, TOAST_FONT_SIZE,
+                 (Color){debug_text_color.r, debug_text_color.g, debug_text_color.b, alpha_byte});
 }
 
 int find_nearest_entity(const Level *level, Vector2 cursor_world)
@@ -710,10 +732,14 @@ void handle_browse_input(GameState *state,
     if (toggle_pressed((ToggleBinding){KEY_LEFT, GAMEPAD_BUTTON_LEFT_FACE_LEFT})) {
         undo_history_step_back(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base);
         reset_editor_selection(editor_state, watches);
+        editor_state->toast_text = undo_history_description(undo_history);
+        editor_state->toast_timer = TOAST_DURATION;
     }
     if (toggle_pressed((ToggleBinding){KEY_RIGHT, GAMEPAD_BUTTON_LEFT_FACE_RIGHT})) {
         undo_history_step_forward(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base);
         reset_editor_selection(editor_state, watches);
+        editor_state->toast_text = undo_history_description(undo_history);
+        editor_state->toast_timer = TOAST_DURATION;
     }
     update_editor_camera(camera, input, delta_time);
 }

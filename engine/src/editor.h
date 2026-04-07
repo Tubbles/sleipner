@@ -45,6 +45,10 @@ typedef struct {
 #define RADIAL_DEG_TO_RAD 0.01745329252F /* multiplier to convert degrees to radians */
 #define WORD_BUILDER_BUF_SIZE 256        /* max length of word builder output */
 #define WORD_BUILDER_PAGE_SIZE 5         /* page-jump size for L1/R1 in word builder */
+#define TOAST_DURATION 2.0F              /* seconds before toast fades out */
+#define TOAST_FADE_TIME 0.5F             /* seconds of fade-out at the end */
+#define TOAST_FONT_SIZE 28               /* toast text font size */
+#define ALPHA_MAX 255.0F                 /* max alpha value for color byte conversion */
 
 extern const Color debug_text_color;
 extern const Color debug_bg_color;
@@ -90,6 +94,8 @@ typedef struct {
     int word_builder_scroll;                      /* scroll index in vocabulary list (0 = DONE) */
     int word_builder_len;                         /* current built string length */
     char word_builder_buf[WORD_BUILDER_BUF_SIZE]; /* current built string (null-terminated) */
+    float toast_timer;                            /* seconds remaining for toast display */
+    Strv toast_text;                              /* current toast message (non-owning, points into undo arena) */
 } EditorState;
 
 typedef struct {
@@ -100,7 +106,8 @@ typedef struct {
 bool toggle_pressed(ToggleBinding binding);
 void update_editor_camera(Camera2D *camera, InputState input, float delta_time);
 void draw_editor_crosshair(RectU32 game_bounds);
-void draw_hints_bar(bool editor_mode, const EditorState *editor_state, ScreenSize screen, Font ui_font);
+void draw_hints_bar(bool editor_mode, const EditorState *editor_state, bool is_dirty, ScreenSize screen, Font ui_font);
+void draw_toast(const EditorState *editor_state, ScreenSize screen, Font ui_font);
 int find_nearest_entity(const Level *level, Vector2 cursor_world);
 void draw_editor_highlights(const GameState *state, const EditorState *editor_state, int hover_entity_index);
 void draw_editor_panel(ScreenSize screen, const GameState *state, const EditorState *editor_state);

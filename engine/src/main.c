@@ -778,6 +778,7 @@ typedef struct {
     RectU32 game_bounds;
     Camera2D editor_camera;
     bool font_preview_enabled;
+    bool is_dirty;
     EditorState editor_state;
     const WatchList *watches;
 } RenderParams;
@@ -841,7 +842,10 @@ static void render_frame(GameState *state, RenderParams params)
     }
     draw_watch_overlay(screen, state, params.watches);
     draw_radial_picker(screen, &params.editor_state, state->assets.ui_font);
-    draw_hints_bar(state->editor_mode, &params.editor_state, screen, state->assets.ui_font);
+    if (state->editor_mode) {
+        draw_toast(&params.editor_state, screen, state->assets.ui_font);
+    }
+    draw_hints_bar(state->editor_mode, &params.editor_state, params.is_dirty, screen, state->assets.ui_font);
     EndDrawing();
 }
 
@@ -998,6 +1002,9 @@ int main(void)
         /* Handle editor-only actions: save, entity browse, and camera pan */
         if (state->editor_mode) {
             handle_editor_input(diag, state, &editor_camera, &editor_state, &watches, &undo_history, input, delta_time);
+            if (editor_state.toast_timer > 0.0F) {
+                editor_state.toast_timer -= delta_time;
+            }
         }
 
         /* Update (pure logic — no rendering) */
@@ -1010,6 +1017,7 @@ int main(void)
                                 .game_bounds = game_bounds,
                                 .editor_camera = editor_camera,
                                 .font_preview_enabled = font_preview_enabled,
+                                .is_dirty = undo_history_is_dirty(&undo_history),
                                 .editor_state = editor_state,
                                 .watches = &watches,
                             });
