@@ -1132,6 +1132,101 @@ Growth of a group vec when it is not the topmost arena allocation leaks the old 
 This is bounded (one leaked backing per growth event) and reclaimed on level reload via
 `arena_restore`.
 
+## Undo System
+
+The editor uses snapshot-based undo/redo. Each editor operation is undoable via a full
+gamedata snapshot — no inverse operations needed. The system is implemented in `undo.h` /
+`undo.c`.
+
+### Architecture
+
+**Snapshot model.** Each `UndoEntry` captures three things:
+
+1. **`GamedataState` struct copy** — `memcpy` of the typed struct. Captures vec/map headers
+   (data pointer, count, capacity), ints, Vector2, etc.
+2. **Arena contents copy** — `memcpy` of the gamedata arena bytes from `gamedata_base` to
+   the current offset. This is the actual entity data, attribute values, strings, rules —
+   everything editor operations can mutate in place.
+3. **`arena_data_size`** — bytes of arena content stored. On restore, the arena checkpoint
+   is derived: `gamedata_base + arena_data_size`.
+
+**Why arena contents must be copied.** Editor operations like drag and attribute edit modify
+data in place within the arena — the vec `.data` pointers don't change, but the bytes at
+those addresses do. Without copying the arena contents, restoring the `GamedataState` struct
+headers alone would leave mutated bytes in the arena.
+
+**Restore** (undo/redo):
+1. `memcpy` saved arena bytes back to `arena_ptr_at(&gamedata_arena, gamedata_base)`
+2. `arena_restore(&gamedata_arena, gamedata_base + entry->arena_data_size)`
+3. `*gamedata = entry->gamedata_copy`
+
+All vec/map `.data` pointers in the restored struct point into the arena at the same offsets
+where the original bytes have been restored — everything is consistent.
+
+### Storage
+
+A dedicated undo arena (mmap, same as gamedata/scratch) holds a doubly-linked list of
+`UndoEntry` nodes. Each entry is allocated as `sizeof(UndoEntry) + arena_data_size` bytes —
+the fixed struct followed by the variable-length arena snapshot. A new edit after undo
+truncates the redo tail by rewinding the undo arena to the current entry's end, reclaiming
+memory.
+
+### Snapshot Timing
+
+Two categories, each with different timing:
+
+**Multi-frame operations** (drag, handles, attr_edit, word_builder) push at mode entry
+(state is clean, no mutation yet). On confirm: the entry stays. On cancel: call
+`undo_history_discard` which moves the cursor back, making the entry unreachable.
+
+**Single-frame operations** (toggle, delete, spawn) push immediately before the mutation.
+
+### Controls and UI
+
+- D-pad left = undo, D-pad right = redo (editor BROWSE mode only)
+- Toast at top-center shows the operation description (e.g. "Undo: Move entity"), fades
+  after 2 seconds
+- `[*]` dirty indicator in the hints bar when the current state differs from the last save
+
+### Lifecycle Integration
+
+- After hot-reload (`poll_hot_reload` returns true): `undo_history_clear` + fresh baseline
+- After level transition: `undo_history_clear`
+- After successful save: `undo_history_mark_saved`
+
+### Undo Safety Rules
+
+Rules that prevent memory corruption when modifying the codebase:
+
+1. **All `GamedataState` pointers must point into `gamedata_arena`.** Undo restores both
+   the struct AND the arena contents — any pointer to heap, scratch, or stack becomes
+   dangling after restore. This is the universal safety rule; all pointers (vec `.data`, map
+   internals, `Str` data) are safe because their target bytes are restored along with the
+   struct.
+
+2. **Never add `malloc`/heap fields to types inside `GamedataState`.** Use `Str`
+   (arena-backed), `vec`/`map` with `allocator_arena`.
+
+3. **`Entity.texture` pointers point below `gamedata_base` and survive all rewinds.** New
+   asset types must also load below `gamedata_base`.
+
+4. **New arena-backed fields belong in `GamedataState`.** Fields outside the sub-struct are
+   NOT snapshotted by undo.
+
+5. **Any code path calling `game_load_gamedata` must also call `undo_history_clear`.** Hot-
+   reload and level transitions invalidate all snapshots.
+
+6. **Snapshot before mutating.** Multi-frame ops call `undo_history_new_entry` at mode
+   entry. Single-frame ops call it inline before the mutation.
+
+7. **`EditorState` is NOT snapshotted.** Don't store undo-critical data there.
+
+8. **`game_update` mutations are gated by `!editor_mode`.** Don't add editor-mode mutations
+   to `game_update`.
+
+9. **Vec growth invalidates pointers.** Never hold a pointer across a push — doubly
+   critical for undo since snapshots capture `.data` pointers.
+
 ## Roadmap
 
 ### Phase 1 — Foundation (DONE)
@@ -1209,7 +1304,7 @@ This is bounded (one leaked backing per growth event) and reclaimed on level rel
 - [ ] Gamepad keyboard (last resort)
 - [ ] Attribute editor (built-in + custom, with diff view)
 - [ ] Child entity editor (composition, tags)
-- [ ] Undo (snapshot-based, arena memcpy)
+- [x] Undo (snapshot-based, arena memcpy)
 - [x] Attribute watcher (pin to debug overlay, live values during play)
 
 ### Phase 6 — Multiplayer

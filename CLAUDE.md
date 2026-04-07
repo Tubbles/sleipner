@@ -115,6 +115,23 @@ protocol — map keys defined at load time (no runtime rehash), vec contents gro
 DESIGN.md § "Vec Growth and Pointer Stability" for the full analysis and the named entity group
 store design.
 
+### Undo system
+
+The editor uses snapshot-based undo. `UndoHistory` (in `undo.h`) maintains a doubly-linked
+list of `UndoEntry` nodes in a dedicated undo arena. Each entry stores a typed
+`GamedataState` copy and the raw `gamedata_arena` bytes from `gamedata_base` to the current
+offset. Restore = memcpy arena bytes back + `arena_restore` to the saved checkpoint + assign
+the struct copy.
+
+**Key rules for codebase changes:**
+- All `GamedataState` pointers must point into `gamedata_arena`. Heap/stack pointers become dangling after undo restore.
+- New arena-backed fields belong in `GamedataState`, not `GameState`. Fields outside the sub-struct are not snapshotted.
+- Any code path calling `game_load_gamedata` must also call `undo_history_clear` — hot-reload and level transitions invalidate all snapshots.
+- Snapshot before mutating. Multi-frame ops push at mode entry, discard on cancel. Single-frame ops push inline before the mutation.
+- `EditorState` is not snapshotted — don't store undo-critical data there.
+
+See DESIGN.md § "Undo System" for the full architecture and safety rules.
+
 ## Testing Strategy
 
 Two levels of testing, both run in CI:
