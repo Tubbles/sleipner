@@ -44,9 +44,9 @@ FAKE_VALUE_FUNC(Vector2, blueprint_get_collision_size, const Blueprint *);
 FAKE_VALUE_FUNC(const AttrSet *, entity_resolve_defaults, const GameState *, int);
 
 /* undo function fakes — editor.c calls these but we don't include undo.c */
-FAKE_VOID_FUNC(undo_history_new_entry, UndoHistory *, GameState *, Strv);
-FAKE_VOID_FUNC(undo_history_step_back, UndoHistory *, GameState *);
-FAKE_VOID_FUNC(undo_history_step_forward, UndoHistory *, GameState *);
+FAKE_VOID_FUNC(undo_history_new_entry, UndoHistory *, GamedataState *, Arena *, ArenaCheckpoint, Strv);
+FAKE_VOID_FUNC(undo_history_step_back, UndoHistory *, GamedataState *, Arena *, ArenaCheckpoint);
+FAKE_VOID_FUNC(undo_history_step_forward, UndoHistory *, GamedataState *, Arena *, ArenaCheckpoint);
 FAKE_VOID_FUNC(undo_history_discard, UndoHistory *);
 
 /* debug_log stub — cannot use FAKE_VOID_FUNC_VARARG due to __attribute__((format)) conflict */

@@ -29,17 +29,27 @@ typedef struct {
 /* Initialize the undo arena. */
 [[nodiscard]] bool undo_history_init(ErrorState *err, UndoHistory *history);
 
-/* Snapshot the current game state into a new undo entry.
+/* Snapshot the current gamedata into a new undo entry.
  * Truncates any redo entries after the current position. */
-void undo_history_new_entry(UndoHistory *history, GameState *state, Strv description);
+void undo_history_new_entry(UndoHistory *history,
+                            GamedataState *gamedata,
+                            Arena *gamedata_arena,
+                            ArenaCheckpoint gamedata_base,
+                            Strv description);
 
 /* Restore the previous state (undo). No-op if at the beginning.
  * Caller is responsible for resetting any editor indices after this call. */
-void undo_history_step_back(UndoHistory *history, GameState *state);
+void undo_history_step_back(UndoHistory *history,
+                            GamedataState *gamedata,
+                            Arena *gamedata_arena,
+                            ArenaCheckpoint gamedata_base);
 
 /* Restore the next state (redo). No-op if at the end.
  * Caller is responsible for resetting any editor indices after this call. */
-void undo_history_step_forward(UndoHistory *history, GameState *state);
+void undo_history_step_forward(UndoHistory *history,
+                               GamedataState *gamedata,
+                               Arena *gamedata_arena,
+                               ArenaCheckpoint gamedata_base);
 
 /* Remove the most recent entry without restoring. No-op if current is nullptr.
  * Called on cancel of multi-frame operations. */

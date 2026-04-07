@@ -541,7 +541,8 @@ handle_browse_select(GameState *state, Camera2D *camera, EditorState *editor_sta
         return;
     }
     if (attr->type == ATTR_BOOL) {
-        undo_history_new_entry(undo_history, state, strv_from_cstr("Toggle attribute"));
+        undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
+                               strv_from_cstr("Toggle attribute"));
         attr->value.b = !attr->value.b;
         if (is_blueprint_attr(entity, attr_idx)) {
             Blueprint *blueprint = find_blueprint_by_name(state, entity->blueprint_name.ptr);
@@ -550,15 +551,18 @@ handle_browse_select(GameState *state, Camera2D *camera, EditorState *editor_sta
             }
         }
     } else if (attr->type == ATTR_INT) {
-        undo_history_new_entry(undo_history, state, strv_from_cstr("Edit attribute"));
+        undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
+                               strv_from_cstr("Edit attribute"));
         editor_state->saved_attr_int = attr->value.i;
         editor_state->sub_mode = EDITOR_SUB_ATTR_EDIT;
     } else if (attr->type == ATTR_FLOAT) {
-        undo_history_new_entry(undo_history, state, strv_from_cstr("Edit attribute"));
+        undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
+                               strv_from_cstr("Edit attribute"));
         editor_state->saved_attr_float = attr->value.f;
         editor_state->sub_mode = EDITOR_SUB_ATTR_EDIT;
     } else if (attr->type == ATTR_STRING) {
-        undo_history_new_entry(undo_history, state, strv_from_cstr("Edit string"));
+        undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
+                               strv_from_cstr("Edit string"));
         const char *existing = attr->value.str.ptr ? attr->value.str.ptr : "";
         int existing_len = (int)strlen(existing);
         if (existing_len >= WORD_BUILDER_BUF_SIZE) {
@@ -608,7 +612,8 @@ dispatch_radial_confirm(GameState *state, EditorState *editor_state, WatchList *
     if (editor_state->radial_context == RADIAL_CTX_TOOLS) {
         int sel = editor_state->selected_entity_index;
         if (confirmed == 0 && sel >= 0) { /* Grab */
-            undo_history_new_entry(undo_history, state, strv_from_cstr("Move entity"));
+            undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
+                                   strv_from_cstr("Move entity"));
             editor_state->saved_position = state->gamedata.current_level.entities.data[sel].position;
             editor_state->sub_mode = EDITOR_SUB_DRAG;
         } else if (confirmed == 1) { /* Place */
@@ -617,12 +622,14 @@ dispatch_radial_confirm(GameState *state, EditorState *editor_state, WatchList *
                 editor_state->sub_mode = EDITOR_SUB_PLACE;
             }
         } else if (confirmed == 2 && sel >= 0) { /* Handles */
-            undo_history_new_entry(undo_history, state, strv_from_cstr("Resize collision"));
+            undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
+                                   strv_from_cstr("Resize collision"));
             editor_state->saved_col_offset = state->gamedata.current_level.entities.data[sel].collision_offset;
             editor_state->saved_col_size = state->gamedata.current_level.entities.data[sel].collision_size;
             editor_state->sub_mode = EDITOR_SUB_HANDLES;
         } else if (confirmed == 3) { /* Delete */
-            undo_history_new_entry(undo_history, state, strv_from_cstr("Delete entity"));
+            undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
+                                   strv_from_cstr("Delete entity"));
             delete_selected_entity(state, editor_state, watches);
         }
     }
@@ -690,7 +697,8 @@ void handle_browse_input(GameState *state,
         toggle_watch(editor_state, watches);
     }
     if (toggle_pressed((ToggleBinding){KEY_DELETE, GAMEPAD_BUTTON_RIGHT_FACE_LEFT})) {
-        undo_history_new_entry(undo_history, state, strv_from_cstr("Delete entity"));
+        undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
+                               strv_from_cstr("Delete entity"));
         delete_selected_entity(state, editor_state, watches);
     }
     if (toggle_pressed((ToggleBinding){KEY_P, GAMEPAD_BUTTON_RIGHT_TRIGGER_1})) {
@@ -700,11 +708,11 @@ void handle_browse_input(GameState *state,
         }
     }
     if (toggle_pressed((ToggleBinding){KEY_LEFT, GAMEPAD_BUTTON_LEFT_FACE_LEFT})) {
-        undo_history_step_back(undo_history, state);
+        undo_history_step_back(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base);
         reset_editor_selection(editor_state, watches);
     }
     if (toggle_pressed((ToggleBinding){KEY_RIGHT, GAMEPAD_BUTTON_LEFT_FACE_RIGHT})) {
-        undo_history_step_forward(undo_history, state);
+        undo_history_step_forward(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base);
         reset_editor_selection(editor_state, watches);
     }
     update_editor_camera(camera, input, delta_time);
@@ -721,12 +729,14 @@ void handle_mode_transitions(GameState *state, EditorState *editor_state, UndoHi
     }
     const Entity *entity = &state->gamedata.current_level.entities.data[sel];
     if (toggle_pressed((ToggleBinding){KEY_G, GAMEPAD_BUTTON_LEFT_THUMB})) {
-        undo_history_new_entry(undo_history, state, strv_from_cstr("Move entity"));
+        undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
+                               strv_from_cstr("Move entity"));
         editor_state->saved_position = entity->position;
         editor_state->sub_mode = EDITOR_SUB_DRAG;
     }
     if (toggle_pressed((ToggleBinding){KEY_H, GAMEPAD_BUTTON_LEFT_TRIGGER_1})) {
-        undo_history_new_entry(undo_history, state, strv_from_cstr("Resize collision"));
+        undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
+                               strv_from_cstr("Resize collision"));
         editor_state->saved_col_offset = entity->collision_offset;
         editor_state->saved_col_size = entity->collision_size;
         editor_state->sub_mode = EDITOR_SUB_HANDLES;

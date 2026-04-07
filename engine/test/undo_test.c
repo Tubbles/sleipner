@@ -45,14 +45,15 @@ void test_undo_new_entry_and_step_back(void)
 
     /* Allocate a value and take a snapshot. */
     int *value = alloc_dummy_value(&state, 42);
-    undo_history_new_entry(&history, &state, strv_from_cstr("Set value"));
+    undo_history_new_entry(&history, &state.gamedata, &state.gamedata_arena, state.gamedata_base,
+                           strv_from_cstr("Set value"));
 
     /* Modify the value after the snapshot. */
     *value = 99;
     TEST_ASSERT_EQUAL_INT(99, *value);
 
     /* Step back — should restore the value. */
-    undo_history_step_back(&history, &state);
+    undo_history_step_back(&history, &state.gamedata, &state.gamedata_arena, state.gamedata_base);
 
     /* The arena contents were restored — the pointer still points at the same arena address. */
     TEST_ASSERT_EQUAL_INT(42, *value);
@@ -71,18 +72,18 @@ void test_undo_step_forward(void)
 
     /* Snapshot A: value = 10 */
     int *value = alloc_dummy_value(&state, 10);
-    undo_history_new_entry(&history, &state, strv_from_cstr("A"));
+    undo_history_new_entry(&history, &state.gamedata, &state.gamedata_arena, state.gamedata_base, strv_from_cstr("A"));
 
     /* Modify to 20 and snapshot B. */
     *value = 20;
-    undo_history_new_entry(&history, &state, strv_from_cstr("B"));
+    undo_history_new_entry(&history, &state.gamedata, &state.gamedata_arena, state.gamedata_base, strv_from_cstr("B"));
 
     /* Step back to A. */
-    undo_history_step_back(&history, &state);
+    undo_history_step_back(&history, &state.gamedata, &state.gamedata_arena, state.gamedata_base);
     TEST_ASSERT_EQUAL_INT(10, *value);
 
     /* Step forward to B. */
-    undo_history_step_forward(&history, &state);
+    undo_history_step_forward(&history, &state.gamedata, &state.gamedata_arena, state.gamedata_base);
     TEST_ASSERT_EQUAL_INT(20, *value);
 
     undo_history_free(&history);
@@ -99,21 +100,21 @@ void test_undo_truncate_on_new_edit(void)
 
     /* Snapshot A: value = 1 */
     int *value = alloc_dummy_value(&state, 1);
-    undo_history_new_entry(&history, &state, strv_from_cstr("A"));
+    undo_history_new_entry(&history, &state.gamedata, &state.gamedata_arena, state.gamedata_base, strv_from_cstr("A"));
 
     /* Snapshot B: value = 2 */
     *value = 2;
-    undo_history_new_entry(&history, &state, strv_from_cstr("B"));
+    undo_history_new_entry(&history, &state.gamedata, &state.gamedata_arena, state.gamedata_base, strv_from_cstr("B"));
 
     /* Step back to A. */
-    undo_history_step_back(&history, &state);
+    undo_history_step_back(&history, &state.gamedata, &state.gamedata_arena, state.gamedata_base);
 
     /* New edit C: value = 3 — should truncate B. */
     *value = 3;
-    undo_history_new_entry(&history, &state, strv_from_cstr("C"));
+    undo_history_new_entry(&history, &state.gamedata, &state.gamedata_arena, state.gamedata_base, strv_from_cstr("C"));
 
     /* Redo should be impossible — B was truncated. */
-    undo_history_step_forward(&history, &state);
+    undo_history_step_forward(&history, &state.gamedata, &state.gamedata_arena, state.gamedata_base);
     TEST_ASSERT_EQUAL_INT(3, *value); /* Still C, not B */
 
     undo_history_free(&history);
@@ -129,7 +130,7 @@ void test_undo_clear(void)
     TEST_ASSERT_TRUE(undo_history_init(&err, &history));
 
     alloc_dummy_value(&state, 42);
-    undo_history_new_entry(&history, &state, strv_from_cstr("A"));
+    undo_history_new_entry(&history, &state.gamedata, &state.gamedata_arena, state.gamedata_base, strv_from_cstr("A"));
 
     TEST_ASSERT_EQUAL_INT(0, history.current_position);
 
@@ -139,7 +140,7 @@ void test_undo_clear(void)
     TEST_ASSERT_EQUAL_INT(-1, history.current_position);
 
     /* Step back should be a no-op. */
-    undo_history_step_back(&history, &state);
+    undo_history_step_back(&history, &state.gamedata, &state.gamedata_arena, state.gamedata_base);
     TEST_ASSERT_NULL(history.current);
 
     undo_history_free(&history);
@@ -159,7 +160,7 @@ void test_undo_dirty_tracking(void)
 
     /* Edit makes it dirty. */
     int *value = alloc_dummy_value(&state, 42);
-    undo_history_new_entry(&history, &state, strv_from_cstr("A"));
+    undo_history_new_entry(&history, &state.gamedata, &state.gamedata_arena, state.gamedata_base, strv_from_cstr("A"));
     TEST_ASSERT_TRUE(undo_history_is_dirty(&history));
 
     /* Save clears dirty. */
@@ -168,11 +169,11 @@ void test_undo_dirty_tracking(void)
 
     /* Another edit makes it dirty again (mutate the existing allocation in-place). */
     *value = 99;
-    undo_history_new_entry(&history, &state, strv_from_cstr("B"));
+    undo_history_new_entry(&history, &state.gamedata, &state.gamedata_arena, state.gamedata_base, strv_from_cstr("B"));
     TEST_ASSERT_TRUE(undo_history_is_dirty(&history));
 
     /* Undo back to saved position clears dirty. */
-    undo_history_step_back(&history, &state);
+    undo_history_step_back(&history, &state.gamedata, &state.gamedata_arena, state.gamedata_base);
     TEST_ASSERT_FALSE(undo_history_is_dirty(&history));
 
     undo_history_free(&history);
@@ -193,7 +194,8 @@ void test_undo_description(void)
 
     /* After push — description matches. */
     alloc_dummy_value(&state, 42);
-    undo_history_new_entry(&history, &state, strv_from_cstr("Move entity"));
+    undo_history_new_entry(&history, &state.gamedata, &state.gamedata_arena, state.gamedata_base,
+                           strv_from_cstr("Move entity"));
     Strv desc = undo_history_description(&history);
     TEST_ASSERT_TRUE(strv_eq_cstr(desc, "Move entity"));
 
@@ -210,7 +212,7 @@ void test_undo_discard(void)
     TEST_ASSERT_TRUE(undo_history_init(&err, &history));
 
     alloc_dummy_value(&state, 42);
-    undo_history_new_entry(&history, &state, strv_from_cstr("A"));
+    undo_history_new_entry(&history, &state.gamedata, &state.gamedata_arena, state.gamedata_base, strv_from_cstr("A"));
     TEST_ASSERT_EQUAL_INT(0, history.current_position);
 
     /* Discard removes the entry. */
@@ -236,11 +238,11 @@ void test_undo_discard_preserves_previous(void)
 
     /* Snapshot A. */
     int *value = alloc_dummy_value(&state, 10);
-    undo_history_new_entry(&history, &state, strv_from_cstr("A"));
+    undo_history_new_entry(&history, &state.gamedata, &state.gamedata_arena, state.gamedata_base, strv_from_cstr("A"));
 
     /* Snapshot B. */
     *value = 20;
-    undo_history_new_entry(&history, &state, strv_from_cstr("B"));
+    undo_history_new_entry(&history, &state.gamedata, &state.gamedata_arena, state.gamedata_base, strv_from_cstr("B"));
 
     /* Discard B — cursor should be at A. */
     undo_history_discard(&history);
@@ -248,7 +250,7 @@ void test_undo_discard_preserves_previous(void)
     TEST_ASSERT_TRUE(strv_eq_cstr(undo_history_description(&history), "A"));
 
     /* Step back from A should be a no-op (A is the first entry). */
-    undo_history_step_back(&history, &state);
+    undo_history_step_back(&history, &state.gamedata, &state.gamedata_arena, state.gamedata_base);
     TEST_ASSERT_EQUAL_INT(0, history.current_position);
 
     undo_history_free(&history);
@@ -266,25 +268,25 @@ void test_undo_dirty_invalidated_by_truncation(void)
     /* A → B → save at B → undo to A → new edit C.
      * B is truncated, saved_position should be invalidated. */
     int *value = alloc_dummy_value(&state, 1);
-    undo_history_new_entry(&history, &state, strv_from_cstr("A"));
+    undo_history_new_entry(&history, &state.gamedata, &state.gamedata_arena, state.gamedata_base, strv_from_cstr("A"));
 
     *value = 2;
-    undo_history_new_entry(&history, &state, strv_from_cstr("B"));
+    undo_history_new_entry(&history, &state.gamedata, &state.gamedata_arena, state.gamedata_base, strv_from_cstr("B"));
     undo_history_mark_saved(&history);
     TEST_ASSERT_FALSE(undo_history_is_dirty(&history));
 
     /* Undo to A. */
-    undo_history_step_back(&history, &state);
+    undo_history_step_back(&history, &state.gamedata, &state.gamedata_arena, state.gamedata_base);
 
     /* New edit C — truncates B (where we saved). */
     *value = 3;
-    undo_history_new_entry(&history, &state, strv_from_cstr("C"));
+    undo_history_new_entry(&history, &state.gamedata, &state.gamedata_arena, state.gamedata_base, strv_from_cstr("C"));
 
     /* Should be permanently dirty — saved state is gone. */
     TEST_ASSERT_TRUE(undo_history_is_dirty(&history));
 
     /* Even undoing back to A shouldn't clear dirty. */
-    undo_history_step_back(&history, &state);
+    undo_history_step_back(&history, &state.gamedata, &state.gamedata_arena, state.gamedata_base);
     TEST_ASSERT_TRUE(undo_history_is_dirty(&history));
 
     undo_history_free(&history);

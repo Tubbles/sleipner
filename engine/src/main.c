@@ -701,7 +701,8 @@ static void handle_place_input(Diag *diag,
         int bp_index = editor_state->place_blueprint_index;
         const Blueprint *blueprint = &state->gamedata.blueprints.entries.data[bp_index];
         Allocator alloc = allocator_arena(&state->gamedata_arena);
-        undo_history_new_entry(undo_history, state, strv_from_cstr("Place entity"));
+        undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
+                               strv_from_cstr("Place entity"));
         int count_before = state->gamedata.current_level.entities.count;
         if (!level_spawn_entity(diag, &state->gamedata.current_level, blueprint, camera->target,
                                 &state->gamedata.blueprints, texture_registry_lookup, state, &alloc)) {

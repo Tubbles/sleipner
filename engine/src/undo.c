@@ -19,9 +19,13 @@ bool undo_history_init(ErrorState *err, UndoHistory *history)
     return arena_init(err, &history->arena);
 }
 
-void undo_history_new_entry(UndoHistory *history, GameState *state, Strv description)
+void undo_history_new_entry(UndoHistory *history,
+                            GamedataState *gamedata,
+                            Arena *gamedata_arena,
+                            ArenaCheckpoint gamedata_base,
+                            Strv description)
 {
-    size_t arena_data_size = arena_used_since(&state->gamedata_arena, state->gamedata_base);
+    size_t arena_data_size = arena_used_since(gamedata_arena, gamedata_base);
 
     /* Truncate redo entries: if current is not the last entry, rewind the undo arena
      * to just past current's trailing data — everything after is overwritten. */
@@ -45,11 +49,11 @@ void undo_history_new_entry(UndoHistory *history, GameState *state, Strv descrip
 
     entry->arena_data_size = arena_data_size;
     entry->description = description;
-    entry->gamedata_copy = state->gamedata;
+    entry->gamedata_copy = *gamedata;
 
     /* Copy gamedata arena contents into the trailing data slot. */
     if (arena_data_size > 0) {
-        memcpy(undo_arena_data(entry), arena_ptr_at(&state->gamedata_arena, state->gamedata_base), arena_data_size);
+        memcpy(undo_arena_data(entry), arena_ptr_at(gamedata_arena, gamedata_base), arena_data_size);
     }
 
     /* Link into the doubly-linked list. */
@@ -62,20 +66,23 @@ void undo_history_new_entry(UndoHistory *history, GameState *state, Strv descrip
     history->current_position++;
 }
 
-static void restore_entry(UndoEntry *entry, GameState *state)
+static void
+restore_entry(UndoEntry *entry, GamedataState *gamedata, Arena *gamedata_arena, ArenaCheckpoint gamedata_base)
 {
     /* Restore gamedata arena contents. */
     if (entry->arena_data_size > 0) {
-        memcpy(arena_ptr_at(&state->gamedata_arena, state->gamedata_base), undo_arena_data(entry),
-               entry->arena_data_size);
+        memcpy(arena_ptr_at(gamedata_arena, gamedata_base), undo_arena_data(entry), entry->arena_data_size);
     }
-    arena_restore(&state->gamedata_arena, state->gamedata_base + entry->arena_data_size);
+    arena_restore(gamedata_arena, gamedata_base + entry->arena_data_size);
 
     /* Restore the GamedataState struct. */
-    state->gamedata = entry->gamedata_copy;
+    *gamedata = entry->gamedata_copy;
 }
 
-void undo_history_step_back(UndoHistory *history, GameState *state)
+void undo_history_step_back(UndoHistory *history,
+                            GamedataState *gamedata,
+                            Arena *gamedata_arena,
+                            ArenaCheckpoint gamedata_base)
 {
     if (!history->current) {
         return;
@@ -84,17 +91,20 @@ void undo_history_step_back(UndoHistory *history, GameState *state)
         history->current = history->current->prev;
         history->current_position--;
     }
-    restore_entry(history->current, state);
+    restore_entry(history->current, gamedata, gamedata_arena, gamedata_base);
 }
 
-void undo_history_step_forward(UndoHistory *history, GameState *state)
+void undo_history_step_forward(UndoHistory *history,
+                               GamedataState *gamedata,
+                               Arena *gamedata_arena,
+                               ArenaCheckpoint gamedata_base)
 {
     if (!history->current || !history->current->next) {
         return;
     }
     history->current = history->current->next;
     history->current_position++;
-    restore_entry(history->current, state);
+    restore_entry(history->current, gamedata, gamedata_arena, gamedata_base);
 }
 
 void undo_history_discard(UndoHistory *history)
