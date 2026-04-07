@@ -10,6 +10,7 @@
 #include "error.h"
 #include "entity.h"
 #include "game.h"
+#include "gamedata.h"
 #include "input.h"
 #include "level.h"
 #include "map.h"
@@ -19,6 +20,7 @@
 #include "undo.h"
 
 #include <math.h>
+#include <stdlib.h>
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -85,6 +87,8 @@ void draw_hints_bar(bool editor_mode, const EditorState *editor_state, bool is_d
             hints = "Stick: Pick tool  |  A/Ent: Confirm  |  B/Esc: Cancel";
         } else if (editor_state->sub_mode == EDITOR_SUB_WORD_BUILDER) {
             hints = "A/Ent: Pick / Done  |  B/Esc: Undo / Cancel  |  Up/Down: Scroll  |  L1/Q: PgUp  |  R1/E: PgDn";
+        } else if (editor_state->sub_mode == EDITOR_SUB_FUZZY_FINDER) {
+            hints = "A/Ent: Pick / New  |  B/Esc: Cancel  |  Up/Dn: Scroll  |  L1/Q: PgUp  |  R1/E: PgDn";
         } else {
             hints = "F5: Play  |  F9/Y: Save  |  Tab/Sel: Tools  |  A/Ent: Sel  |  B/Esc: Desel  |  Up/Down: Attr  |  "
                     "Shift/L2: Watch  |  Del/X: Delete  |  G/L3: Grab  |  H/L1: Handles  |  P/R1: Place  |  Stick: Pan";
@@ -544,6 +548,8 @@ static void delete_selected_entity(GameState *state, EditorState *editor_state, 
     editor_state->selected_entity_index = -1;
 }
 
+static void fuzzy_finder_build_items(GameState *state, EditorState *editor_state);
+
 static void
 handle_browse_select(GameState *state, Camera2D *camera, EditorState *editor_state, UndoHistory *undo_history)
 {
@@ -579,16 +585,9 @@ handle_browse_select(GameState *state, Camera2D *camera, EditorState *editor_sta
         editor_state->saved_attr_float = attr->value.f;
         editor_state->sub_mode = EDITOR_SUB_ATTR_EDIT;
     } else if (attr->type == ATTR_STRING) {
-        const char *existing = attr->value.str.ptr ? attr->value.str.ptr : "";
-        int existing_len = (int)strlen(existing);
-        if (existing_len >= WORD_BUILDER_BUF_SIZE) {
-            existing_len = WORD_BUILDER_BUF_SIZE - 1;
-        }
-        memcpy(editor_state->word_builder_buf, existing, (size_t)existing_len);
-        editor_state->word_builder_buf[existing_len] = '\0';
-        editor_state->word_builder_len = existing_len;
-        editor_state->word_builder_scroll = 0;
-        editor_state->sub_mode = EDITOR_SUB_WORD_BUILDER;
+        fuzzy_finder_build_items(state, editor_state);
+        editor_state->fuzzy_finder_scroll = 0;
+        editor_state->sub_mode = EDITOR_SUB_FUZZY_FINDER;
     }
 }
 
@@ -1158,5 +1157,261 @@ void handle_word_builder_input(Diag *diag, GameState *state, EditorState *editor
         } else {
             editor_state->sub_mode = EDITOR_SUB_BROWSE;
         }
+    }
+}
+
+/* --- Fuzzy finder (name picker) --- */
+
+static int compare_cstr_ptrs(const void *lhs, const void *rhs)
+{
+    return strcmp(*(const char *const *)lhs, *(const char *const *)rhs);
+}
+
+static bool fuzzy_finder_contains(const char **items, int count, const char *name)
+{
+    for (int index = 0; index < count; index++) {
+        if (strcmp(items[index], name) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static void fuzzy_finder_try_add(const char **items, int *count, const char *name)
+{
+    if (name && name[0] != '\0' && !fuzzy_finder_contains(items, *count, name)) {
+        items[(*count)++] = name;
+    }
+}
+
+static void fuzzy_finder_collect_blueprint_names(const GamedataState *gamedata, const char **items, int *count)
+{
+    for (int index = 0; index < gamedata->blueprints.entries.count; index++) {
+        fuzzy_finder_try_add(items, count, attr_get_string(&gamedata->blueprints.entries.data[index].attrs, "name"));
+    }
+}
+
+static void fuzzy_finder_collect_flag_names(const GamedataState *gamedata, const char **items, int *count)
+{
+    for (int index = 0; index < gamedata->flags.names.count; index++) {
+        fuzzy_finder_try_add(items, count, gamedata->flags.names.data[index].name.ptr);
+    }
+}
+
+static void fuzzy_finder_collect_level_names(const GamedataState *gamedata, const char **items, int *count)
+{
+    fuzzy_finder_try_add(items, count, gamedata->current_level.name.ptr);
+    for (int index = 0; index < gamedata->other_levels.count; index++) {
+        fuzzy_finder_try_add(items, count, gamedata->other_levels.data[index].name.ptr);
+    }
+}
+
+static void fuzzy_finder_collect_entity_tags(const GamedataState *gamedata, const char **items, int *count)
+{
+    for (int index = 0; index < gamedata->current_level.entities.count; index++) {
+        fuzzy_finder_try_add(items, count, gamedata->current_level.entities.data[index].tag.ptr);
+    }
+}
+
+static void fuzzy_finder_collect_attr_names_from_set(const AttrSet *attrs, const char **items, int *count)
+{
+    for (int index = 0; index < attrs->entries.count; index++) {
+        fuzzy_finder_try_add(items, count, attrs->entries.data[index].name.ptr);
+    }
+}
+
+static void fuzzy_finder_collect_all_attr_names(const GamedataState *gamedata, const char **items, int *count)
+{
+    for (int index = 0; index < gamedata->blueprints.entries.count; index++) {
+        fuzzy_finder_collect_attr_names_from_set(&gamedata->blueprints.entries.data[index].attrs, items, count);
+    }
+    for (int index = 0; index < gamedata->current_level.entities.count; index++) {
+        fuzzy_finder_collect_attr_names_from_set(&gamedata->current_level.entities.data[index].attrs, items, count);
+    }
+}
+
+static int fuzzy_finder_max_item_count(const GamedataState *gamedata)
+{
+    int max_count = gamedata->blueprints.entries.count + gamedata->flags.names.count + 1 +
+                    gamedata->other_levels.count + gamedata->current_level.entities.count;
+    for (int index = 0; index < gamedata->blueprints.entries.count; index++) {
+        max_count += gamedata->blueprints.entries.data[index].attrs.entries.count;
+    }
+    for (int index = 0; index < gamedata->current_level.entities.count; index++) {
+        max_count += gamedata->current_level.entities.data[index].attrs.entries.count;
+    }
+    return max_count;
+}
+
+static void fuzzy_finder_build_items(GameState *state, EditorState *editor_state)
+{
+    int max_count = fuzzy_finder_max_item_count(&state->gamedata);
+    const char **items = (const char **)arena_alloc(&state->gamedata_arena, sizeof(const char *) * (size_t)max_count);
+    if (!items) {
+        editor_state->fuzzy_finder_items = nullptr;
+        editor_state->fuzzy_finder_item_count = 0;
+        return;
+    }
+    int count = 0;
+
+    fuzzy_finder_collect_blueprint_names(&state->gamedata, items, &count);
+    fuzzy_finder_collect_flag_names(&state->gamedata, items, &count);
+    fuzzy_finder_collect_level_names(&state->gamedata, items, &count);
+    fuzzy_finder_collect_entity_tags(&state->gamedata, items, &count);
+    fuzzy_finder_collect_all_attr_names(&state->gamedata, items, &count);
+
+    qsort((void *)items, (size_t)count, sizeof(const char *), compare_cstr_ptrs);
+
+    editor_state->fuzzy_finder_items = items;
+    editor_state->fuzzy_finder_item_count = count;
+}
+
+static const char *fuzzy_finder_item(const EditorState *editor_state, int index)
+{
+    if (index <= 0) {
+        return "[ NEW... ]";
+    }
+    int item_index = index - 1;
+    if (item_index < editor_state->fuzzy_finder_item_count) {
+        return editor_state->fuzzy_finder_items[item_index];
+    }
+    return "";
+}
+
+static int fuzzy_finder_total_count(const EditorState *editor_state)
+{
+    return 1 + editor_state->fuzzy_finder_item_count;
+}
+
+void draw_fuzzy_finder_panel(ScreenSize screen, const GameState *state, const EditorState *editor_state)
+{
+    if (editor_state->sub_mode != EDITOR_SUB_FUZZY_FINDER) {
+        return;
+    }
+    int panel_x = screen.width - EDITOR_PANEL_WIDTH;
+    DrawRectangle(panel_x, 0, EDITOR_PANEL_WIDTH, screen.height, debug_bg_color);
+    int y_offset = 0;
+    Font font = state->assets.ui_font;
+    draw_ui_text(font, TextFormat("[ Name Picker ] (%d)", editor_state->fuzzy_finder_item_count),
+                 panel_x + DEBUG_MARGIN, y_offset, EDITOR_PANEL_FONT_SIZE, debug_text_color);
+    y_offset += EDITOR_PANEL_LINE_HEIGHT * 2;
+
+    int total = fuzzy_finder_total_count(editor_state);
+    int scroll = editor_state->fuzzy_finder_scroll;
+    int visible = place_visible_count(screen.height);
+    int scroll_offset = scroll - (visible / 2);
+    if (scroll_offset < 0) {
+        scroll_offset = 0;
+    }
+    int max_scroll = total - visible;
+    if (max_scroll < 0) {
+        max_scroll = 0;
+    }
+    if (scroll_offset > max_scroll) {
+        scroll_offset = max_scroll;
+    }
+    int end = scroll_offset + visible;
+    if (end > total) {
+        end = total;
+    }
+    for (int index = scroll_offset; index < end; index++) {
+        const char *item = fuzzy_finder_item(editor_state, index);
+        bool selected = (index == scroll);
+        Color color = selected ? WHITE : debug_text_color;
+        draw_ui_text(font, TextFormat("%s %s", selected ? ">" : " ", item), panel_x + DEBUG_MARGIN, y_offset,
+                     EDITOR_PANEL_FONT_SIZE, color);
+        y_offset += EDITOR_PANEL_LINE_HEIGHT;
+    }
+}
+
+static void fuzzy_finder_navigate(EditorState *editor_state, int total)
+{
+    if (toggle_pressed((ToggleBinding){KEY_UP, GAMEPAD_BUTTON_LEFT_FACE_UP})) {
+        if (editor_state->fuzzy_finder_scroll > 0) {
+            editor_state->fuzzy_finder_scroll--;
+        }
+    }
+    if (toggle_pressed((ToggleBinding){KEY_DOWN, GAMEPAD_BUTTON_LEFT_FACE_DOWN})) {
+        if (editor_state->fuzzy_finder_scroll < total - 1) {
+            editor_state->fuzzy_finder_scroll++;
+        }
+    }
+    if (toggle_pressed((ToggleBinding){KEY_Q, GAMEPAD_BUTTON_LEFT_TRIGGER_1})) {
+        int new_scroll = editor_state->fuzzy_finder_scroll - FUZZY_FINDER_PAGE_SIZE;
+        editor_state->fuzzy_finder_scroll = (new_scroll < 0) ? 0 : new_scroll;
+    }
+    if (toggle_pressed((ToggleBinding){KEY_E, GAMEPAD_BUTTON_RIGHT_TRIGGER_1})) {
+        int new_scroll = editor_state->fuzzy_finder_scroll + FUZZY_FINDER_PAGE_SIZE;
+        editor_state->fuzzy_finder_scroll = (new_scroll >= total) ? total - 1 : new_scroll;
+    }
+}
+
+static void fuzzy_finder_enter_word_builder(GameState *state, EditorState *editor_state)
+{
+    int sel = editor_state->selected_entity_index;
+    int attr_idx = editor_state->selected_attr_index;
+    const char *existing = "";
+    if (sel >= 0 && attr_idx >= 0) {
+        Entity *entity = &state->gamedata.current_level.entities.data[sel];
+        const Attribute *attr = attr_at_display_index(state, entity, attr_idx);
+        if (attr && attr->type == ATTR_STRING && attr->value.str.ptr) {
+            existing = attr->value.str.ptr;
+        }
+    }
+    int existing_len = (int)strlen(existing);
+    if (existing_len >= WORD_BUILDER_BUF_SIZE) {
+        existing_len = WORD_BUILDER_BUF_SIZE - 1;
+    }
+    memcpy(editor_state->word_builder_buf, existing, (size_t)existing_len);
+    editor_state->word_builder_buf[existing_len] = '\0';
+    editor_state->word_builder_len = existing_len;
+    editor_state->word_builder_scroll = 0;
+    editor_state->sub_mode = EDITOR_SUB_WORD_BUILDER;
+}
+
+static void fuzzy_finder_confirm(Diag *diag, GameState *state, EditorState *editor_state)
+{
+    int sel = editor_state->selected_entity_index;
+    int attr_idx = editor_state->selected_attr_index;
+    if (sel < 0 || attr_idx < 0) {
+        return;
+    }
+    const char *chosen = fuzzy_finder_item(editor_state, editor_state->fuzzy_finder_scroll);
+    Entity *entity = &state->gamedata.current_level.entities.data[sel];
+    Attribute *attr = attr_at_display_index(state, entity, attr_idx);
+    if (!attr) {
+        return;
+    }
+    AttrSet *target = &entity->attrs;
+    if (is_blueprint_attr(entity, attr_idx)) {
+        Blueprint *blueprint = find_blueprint_by_name(state, entity->blueprint_name.ptr);
+        if (blueprint) {
+            target = &blueprint->attrs;
+        }
+    }
+    Allocator alloc = allocator_arena(&state->gamedata_arena);
+    AttrStringPair pair = {attr->name.ptr, chosen};
+    if (!attr_set_string(&alloc, target, pair)) {
+        debug_log(diag->debug, "fuzzy finder: attr_set_string failed: %s", error_get(diag->error));
+        error_clear(diag->error);
+    }
+}
+
+void handle_fuzzy_finder_input(Diag *diag, GameState *state, EditorState *editor_state, UndoHistory *undo_history)
+{
+    int total = fuzzy_finder_total_count(editor_state);
+    fuzzy_finder_navigate(editor_state, total);
+    if (toggle_pressed((ToggleBinding){KEY_ENTER, GAMEPAD_BUTTON_RIGHT_FACE_DOWN})) {
+        if (editor_state->fuzzy_finder_scroll == 0) {
+            fuzzy_finder_enter_word_builder(state, editor_state);
+        } else {
+            fuzzy_finder_confirm(diag, state, editor_state);
+            undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
+                                   strv_from_cstr("Pick name"));
+            editor_state->sub_mode = EDITOR_SUB_BROWSE;
+        }
+    }
+    if (toggle_pressed((ToggleBinding){KEY_ESCAPE, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT})) {
+        editor_state->sub_mode = EDITOR_SUB_BROWSE;
     }
 }

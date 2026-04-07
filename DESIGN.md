@@ -1119,7 +1119,7 @@ Rules that prevent memory corruption when modifying the codebase:
 - [x] Radial picker widget (generic N-item; Tab/Select opens tool picker)
 - [x] Scroll picker widget
 - [x] Word builder (seeded vocabulary + blueprint names; builds underscore-separated strings)
-- [ ] Fuzzy finder for existing names
+- [x] Fuzzy finder for existing names
 - [x] Value adjuster with auto-repeat and ±100 step (hold for acceleration)
 - [ ] Gamepad keyboard (last resort)
 - [ ] Attribute editor (built-in + custom, with diff view)

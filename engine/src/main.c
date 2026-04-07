@@ -771,6 +771,8 @@ static void handle_editor_input(Diag *diag,
         handle_radial_input(editor_state, input);
     } else if (editor_state->sub_mode == EDITOR_SUB_WORD_BUILDER) {
         handle_word_builder_input(diag, state, editor_state, undo_history);
+    } else if (editor_state->sub_mode == EDITOR_SUB_FUZZY_FINDER) {
+        handle_fuzzy_finder_input(diag, state, editor_state, undo_history);
     } else {
         handle_browse_input(state, camera, editor_state, watches, undo_history, input, delta_time);
     }
@@ -839,6 +841,8 @@ static void render_frame(GameState *state, RenderParams params)
             draw_place_panel(screen, state, &params.editor_state);
         } else if (params.editor_state.sub_mode == EDITOR_SUB_WORD_BUILDER) {
             draw_word_builder_panel(screen, state, &params.editor_state);
+        } else if (params.editor_state.sub_mode == EDITOR_SUB_FUZZY_FINDER) {
+            draw_fuzzy_finder_panel(screen, state, &params.editor_state);
         } else {
             draw_editor_panel(screen, state, &params.editor_state);
         }

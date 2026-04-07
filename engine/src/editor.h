@@ -45,6 +45,7 @@ typedef struct {
 #define RADIAL_DEG_TO_RAD 0.01745329252F /* multiplier to convert degrees to radians */
 #define WORD_BUILDER_BUF_SIZE 256        /* max length of word builder output */
 #define WORD_BUILDER_PAGE_SIZE 5         /* page-jump size for L1/R1 in word builder */
+#define FUZZY_FINDER_PAGE_SIZE 5         /* page-jump size for L1/R1 in name picker */
 #define TOAST_DURATION 2.0F              /* seconds before toast fades out */
 #define TOAST_FADE_TIME 0.5F             /* seconds of fade-out at the end */
 #define TOAST_FONT_SIZE 28               /* toast text font size */
@@ -71,6 +72,7 @@ typedef enum {
     EDITOR_SUB_ATTR_EDIT,    /* numeric/bool value adjustment */
     EDITOR_SUB_RADIAL,       /* generic N-item radial picker overlay */
     EDITOR_SUB_WORD_BUILDER, /* string attribute editing via vocabulary picker */
+    EDITOR_SUB_FUZZY_FINDER, /* name picker for existing gamedata names */
 } EditorSubMode;
 
 typedef struct {
@@ -96,6 +98,9 @@ typedef struct {
     char word_builder_buf[WORD_BUILDER_BUF_SIZE]; /* current built string (null-terminated) */
     float toast_timer;                            /* seconds remaining for toast display */
     Strv toast_text;                              /* current toast message (non-owning, points into undo arena) */
+    int fuzzy_finder_scroll;                      /* selected index (0 = "[ NEW... ]") */
+    const char **fuzzy_finder_items;              /* sorted unique name pointers (gamedata_arena) */
+    int fuzzy_finder_item_count;                  /* number of names (excludes the NEW sentinel) */
 } EditorState;
 
 typedef struct {
@@ -132,3 +137,5 @@ void draw_radial_picker(ScreenSize screen, const EditorState *editor_state, Font
 void handle_radial_input(EditorState *editor_state, InputState input);
 void handle_word_builder_input(Diag *diag, GameState *state, EditorState *editor_state, UndoHistory *undo_history);
 void draw_word_builder_panel(ScreenSize screen, const GameState *state, const EditorState *editor_state);
+void handle_fuzzy_finder_input(Diag *diag, GameState *state, EditorState *editor_state, UndoHistory *undo_history);
+void draw_fuzzy_finder_panel(ScreenSize screen, const GameState *state, const EditorState *editor_state);
