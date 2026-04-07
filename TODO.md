@@ -17,7 +17,7 @@
 
 ## Architecture audit findings
 
-- **Editor test coverage — Phase 3** — 80 unit tests (63 pure-logic + 17
+- **Editor test coverage — Phase 3** — 88 unit tests (71 pure-logic + 17
   mocked-input via fff.h). Still missing: integration tests for full editor
   workflows (select → edit → confirm), draw function testing.
 - **`TriggerEventQueue` uses fixed array** — `rule.h` defines
