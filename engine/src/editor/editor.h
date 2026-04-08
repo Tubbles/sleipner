@@ -30,6 +30,7 @@ typedef struct {
 #define EDITOR_HANDLE_SPEED 60.0F        /* px/s for collision offset/size editing */
 #define EDITOR_ATTR_LARGE_STEP 10        /* ±10 step for attribute value adjuster (bumpers/brackets) */
 #define EDITOR_ATTR_HUGE_STEP 100        /* ±100 step for value adjuster (L2/R2 / PgDn/PgUp) */
+#define EDITOR_TOOLS_ITEM_COUNT 5        /* items in the RADIAL_CTX_TOOLS picker */
 #define EDITOR_PLACE_PAGE_SIZE 5         /* blueprint page-jump size for L1/R1 in scroll picker */
 #define ATTR_REPEAT_DELAY 0.4F           /* seconds before auto-repeat starts on hold */
 #define ATTR_REPEAT_PERIOD 0.1F          /* initial repeat interval (10 Hz) */
@@ -63,7 +64,12 @@ typedef struct {
 } ToggleBinding;
 
 typedef enum {
-    RADIAL_CTX_TOOLS,       /* Grab / Place / Handles / Delete — 4 items */
+    EDITOR_TOP_SCENE,     /* default: entity-focused editing */
+    EDITOR_TOP_BLUEPRINT, /* blueprint-focused editing */
+} EditorTopMode;
+
+typedef enum {
+    RADIAL_CTX_TOOLS,       /* Grab / Place / Handles / Delete / Blueprints — 5 items */
     RADIAL_CTX_ATTR_TYPE,   /* Float / Int / Bool / String — 4 items */
     RADIAL_CTX_CHILD_PROPS, /* Tag / Offset X / Offset Y — 3 items */
 } RadialContext;
@@ -81,6 +87,7 @@ typedef enum {
 } EditorSubMode;
 
 typedef struct {
+    EditorTopMode top_mode;
     int selected_entity_index; /* -1 = nothing selected */
     EditorSubMode sub_mode;
     Vector2 saved_position;
@@ -115,6 +122,11 @@ typedef struct {
     int child_edit_axis;                          /* 0=x, 1=y — which offset axis */
     int child_edit_index;                         /* which child in blueprint->children is being edited */
     bool adding_child;                            /* true when fuzzy finder is open for adding a blueprint child */
+    int blueprint_list_scroll;                    /* scroll position in blueprint list view */
+    int selected_blueprint_index;                 /* -1 = list view; >=0 = detail view */
+    int blueprint_attr_index;                     /* -1 = none; index into blueprint attrs (detail view) */
+    int blueprint_tree_index;                     /* -1 = not in tree; >=0 = child/ADD CHILD row */
+    bool adding_blueprint_attr;                   /* fuzzy finder is adding a blueprint-level attr */
 } EditorState;
 
 typedef struct {
@@ -160,3 +172,9 @@ void handle_fuzzy_finder_input(Diag *diag,
 void draw_fuzzy_finder_panel(ScreenSize screen, const GameState *state, const EditorState *editor_state);
 void handle_gamepad_kb_input(EditorState *editor_state, InputState input);
 void draw_gamepad_kb(ScreenSize screen, const EditorState *editor_state, Font ui_font);
+void handle_blueprint_browse_input(GameState *state,
+                                   EditorState *editor_state,
+                                   UndoHistory *undo_history,
+                                   InputState input);
+void draw_blueprint_list_panel(ScreenSize screen, const GameState *state, const EditorState *editor_state);
+void draw_blueprint_detail_panel(ScreenSize screen, const GameState *state, const EditorState *editor_state);

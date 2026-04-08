@@ -160,10 +160,16 @@ void test_editor_radial_label_delete(void)
     TEST_ASSERT_EQUAL_STRING("Delete", radial_label(&editor_state, 3));
 }
 
+void test_editor_radial_label_blueprints(void)
+{
+    EditorState editor_state = {.radial_context = RADIAL_CTX_TOOLS};
+    TEST_ASSERT_EQUAL_STRING("Blueprints", radial_label(&editor_state, 4));
+}
+
 void test_editor_radial_label_out_of_bounds(void)
 {
     EditorState editor_state = {.radial_context = RADIAL_CTX_TOOLS};
-    TEST_ASSERT_EQUAL_STRING("", radial_label(&editor_state, 4));
+    TEST_ASSERT_EQUAL_STRING("", radial_label(&editor_state, EDITOR_TOOLS_ITEM_COUNT));
 }
 
 void test_attr_radial_label_float(void)
@@ -937,6 +943,7 @@ int main(void)
     RUN_TEST(test_editor_radial_stick_left_four_items);
     RUN_TEST(test_editor_radial_label_grab);
     RUN_TEST(test_editor_radial_label_delete);
+    RUN_TEST(test_editor_radial_label_blueprints);
     RUN_TEST(test_editor_radial_label_out_of_bounds);
     RUN_TEST(test_attr_radial_label_float);
     RUN_TEST(test_attr_radial_label_string);

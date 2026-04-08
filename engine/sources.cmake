@@ -21,6 +21,7 @@ set(ENGINE_SOURCE_FILES
     collision.c
     debug.c
     editor/attr.c
+    editor/blueprint.c
     editor/child.c
     editor/core.c
     editor/draw.c

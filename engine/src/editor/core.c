@@ -426,6 +426,13 @@ dispatch_radial_confirm(GameState *state, EditorState *editor_state, WatchList *
             delete_selected_entity(state, editor_state, watches);
             undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
                                    strv_from_cstr("Delete entity"));
+        } else if (confirmed == 4) { /* Blueprints */
+            editor_state->top_mode = EDITOR_TOP_BLUEPRINT;
+            editor_state->selected_blueprint_index = -1;
+            editor_state->blueprint_list_scroll = 0;
+            editor_state->blueprint_attr_index = -1;
+            editor_state->blueprint_tree_index = -1;
+            editor_state->selected_entity_index = -1;
         }
     } else if (editor_state->radial_context == RADIAL_CTX_ATTR_TYPE) {
         dispatch_attr_type_change(state, editor_state, confirmed, undo_history);
@@ -451,7 +458,7 @@ void handle_browse_input(GameState *state,
     if (toggle_pressed((ToggleBinding){KEY_TAB, GAMEPAD_BUTTON_MIDDLE_LEFT})) {
         editor_state->radial_selected = -1;
         editor_state->radial_confirmed = -1;
-        editor_state->radial_item_count = 4;
+        editor_state->radial_item_count = EDITOR_TOOLS_ITEM_COUNT;
         editor_state->radial_context = RADIAL_CTX_TOOLS;
         editor_state->sub_mode = EDITOR_SUB_RADIAL;
         return;

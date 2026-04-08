@@ -69,6 +69,12 @@ void draw_hints_bar(bool editor_mode, const EditorState *editor_state, bool is_d
             hints = "Stick: Pick  |  A/Ent: Select  |  B/Esc: Back / Backspace  |  X/Del: Exit to Words";
         } else if (editor_state->sub_mode == EDITOR_SUB_FUZZY_FINDER) {
             hints = "A/Ent: Pick / New  |  B/Esc: Cancel  |  Up/Dn: Scroll  |  L1/Q: PgUp  |  R1/E: PgDn";
+        } else if (editor_state->top_mode == EDITOR_TOP_BLUEPRINT) {
+            if (editor_state->selected_blueprint_index >= 0) {
+                hints = "F9/Y: Save  |  A: Edit  |  B: Back  |  Up/Down: Nav  |  X: Del/Rm  |  ]/R2: Type/Props";
+            } else {
+                hints = "F9/Y: Save  |  A: Select  |  B/Esc: Exit  |  Up/Down: Scroll";
+            }
         } else {
             hints = "F5: Play  |  F9/Y: Save  |  Tab/Sel: Tools  |  A: Sel/Drill  |  B: Desel  |  Up/Down: Nav  |  "
                     "X: Del/Rm  |  ]/R2: Type/Props  |  L2: Watch  |  P/R1: Place  |  Stick: Pan";
@@ -394,4 +400,95 @@ void draw_place_preview(const GameState *state, const EditorState *editor_state,
     Vector2 size = blueprint_get_collision_size(blueprint);
     Rectangle ghost = {camera.target.x + offset.x, camera.target.y + offset.y, size.x, size.y};
     DrawRectangleLinesEx(ghost, 2.0F, place_ghost_color);
+}
+
+void draw_blueprint_list_panel(ScreenSize screen, const GameState *state, const EditorState *editor_state)
+{
+    int count = state->gamedata.blueprints.entries.count;
+    int panel_x = screen.width - EDITOR_PANEL_WIDTH;
+    DrawRectangle(panel_x, 0, EDITOR_PANEL_WIDTH, screen.height, debug_bg_color);
+    Font font = state->assets.ui_font;
+    int y_offset = 0;
+    draw_ui_text(font, "[ Blueprint Mode ]", panel_x + DEBUG_MARGIN, y_offset, EDITOR_PANEL_FONT_SIZE, debug_text_color);
+    y_offset += EDITOR_PANEL_LINE_HEIGHT;
+
+    if (count == 0) {
+        draw_ui_text(font, "  (no blueprints)", panel_x + DEBUG_MARGIN, y_offset, EDITOR_PANEL_FONT_SIZE,
+                     debug_text_color);
+        return;
+    }
+
+    int visible = place_visible_count(screen.height);
+    int scroll = editor_state->blueprint_list_scroll - (visible / 2);
+    if (scroll < 0) {
+        scroll = 0;
+    }
+    int max_scroll = count - visible;
+    if (max_scroll < 0) {
+        max_scroll = 0;
+    }
+    if (scroll > max_scroll) {
+        scroll = max_scroll;
+    }
+    int end = scroll + visible;
+    if (end > count) {
+        end = count;
+    }
+    for (int index = scroll; index < end; index++) {
+        const Blueprint *blueprint = &state->gamedata.blueprints.entries.data[index];
+        const char *name = attr_get_string(&blueprint->attrs, "name");
+        bool selected = (index == editor_state->blueprint_list_scroll);
+        Color color = selected ? WHITE : debug_text_color;
+        draw_ui_text(font,
+                     TextFormat("%s %s  (%da %dc %dr)", selected ? ">" : " ", name ? name : "?",
+                                blueprint->attrs.entries.count, blueprint->children.count, blueprint->rules.count),
+                     panel_x + DEBUG_MARGIN, y_offset, EDITOR_PANEL_FONT_SIZE, color);
+        y_offset += EDITOR_PANEL_LINE_HEIGHT;
+    }
+}
+
+void draw_blueprint_detail_panel(ScreenSize screen, const GameState *state, const EditorState *editor_state)
+{
+    int bp_idx = editor_state->selected_blueprint_index;
+    if (bp_idx < 0 || bp_idx >= state->gamedata.blueprints.entries.count) {
+        return;
+    }
+    const Blueprint *blueprint = &state->gamedata.blueprints.entries.data[bp_idx];
+    const char *name = attr_get_string(&blueprint->attrs, "name");
+    Font font = state->assets.ui_font;
+    int panel_x = screen.width - EDITOR_PANEL_WIDTH;
+    DrawRectangle(panel_x, 0, EDITOR_PANEL_WIDTH, screen.height, debug_bg_color);
+    int y_offset = 0;
+    draw_ui_text(font, TextFormat("[ %s ]", name ? name : "?"), panel_x + DEBUG_MARGIN, y_offset,
+                 EDITOR_PANEL_FONT_SIZE, debug_text_color);
+    y_offset += EDITOR_PANEL_LINE_HEIGHT;
+
+    /* Tree section: children + ADD CHILD */
+    int tree_idx = editor_state->blueprint_tree_index;
+    int tree_row = 0;
+    draw_ui_text(font, "--- children ---", panel_x + DEBUG_MARGIN, y_offset, EDITOR_PANEL_FONT_SIZE, debug_text_color);
+    y_offset += EDITOR_PANEL_LINE_HEIGHT;
+    for (int child_idx = 0; child_idx < blueprint->children.count; child_idx++) {
+        const BlueprintChild *child = &blueprint->children.data[child_idx];
+        Color child_color = (tree_idx == tree_row) ? WHITE : debug_text_color;
+        const char *tag_str = (child->tag.len > 0) ? child->tag.ptr : "";
+        draw_ui_text(font,
+                     TextFormat("  [%s]  \"%s\"  (%.0f, %.0f)", child->blueprint_name.ptr, tag_str, child->offset.x,
+                                child->offset.y),
+                     panel_x + DEBUG_MARGIN, y_offset, EDITOR_PANEL_FONT_SIZE, child_color);
+        y_offset += EDITOR_PANEL_LINE_HEIGHT;
+        tree_row++;
+    }
+    Color add_child_color = (tree_idx == tree_row) ? WHITE : attr_custom_color;
+    draw_ui_text(font, "  [ + ADD CHILD ]", panel_x + DEBUG_MARGIN, y_offset, EDITOR_PANEL_FONT_SIZE, add_child_color);
+    y_offset += EDITOR_PANEL_LINE_HEIGHT * 2;
+
+    /* Attr section */
+    draw_ui_text(font, "--- attributes ---", panel_x + DEBUG_MARGIN, y_offset, EDITOR_PANEL_FONT_SIZE,
+                 debug_text_color);
+    y_offset += EDITOR_PANEL_LINE_HEIGHT;
+    int sel_attr = editor_state->blueprint_attr_index;
+    draw_attr_section(font, &blueprint->attrs, true, nullptr, panel_x, &y_offset, 0, sel_attr);
+    Color sentinel_color = (sel_attr == blueprint->attrs.entries.count) ? WHITE : attr_custom_color;
+    draw_ui_text(font, "  [ + ADD ]", panel_x + DEBUG_MARGIN, y_offset, EDITOR_PANEL_FONT_SIZE, sentinel_color);
 }

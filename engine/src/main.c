@@ -630,11 +630,15 @@ static void handle_hot_reload(
         undo_history_clear(undo_history);
         undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
                                strv_from_cstr("Reload"));
-        *editor_state = (EditorState){.selected_entity_index = -1,
+        *editor_state = (EditorState){.top_mode = EDITOR_TOP_SCENE,
+                                      .selected_entity_index = -1,
                                       .sub_mode = EDITOR_SUB_BROWSE,
                                       .selected_attr_index = -1,
                                       .radial_confirmed = -1,
-                                      .radial_selected = -1};
+                                      .radial_selected = -1,
+                                      .selected_blueprint_index = -1,
+                                      .blueprint_attr_index = -1,
+                                      .blueprint_tree_index = -1};
         *watches = (WatchList){0};
     }
 }
@@ -775,6 +779,8 @@ static void handle_editor_input(Diag *diag,
         handle_fuzzy_finder_input(diag, state, editor_state, undo_history, texture_registry_lookup, state);
     } else if (editor_state->sub_mode == EDITOR_SUB_GAMEPAD_KB) {
         handle_gamepad_kb_input(editor_state, input);
+    } else if (editor_state->top_mode == EDITOR_TOP_BLUEPRINT) {
+        handle_blueprint_browse_input(state, editor_state, undo_history, input);
     } else {
         handle_browse_input(state, camera, editor_state, watches, undo_history, input, delta_time);
     }
@@ -846,6 +852,12 @@ static void render_frame(GameState *state, RenderParams params)
             draw_word_builder_panel(screen, state, &params.editor_state);
         } else if (params.editor_state.sub_mode == EDITOR_SUB_FUZZY_FINDER) {
             draw_fuzzy_finder_panel(screen, state, &params.editor_state);
+        } else if (params.editor_state.top_mode == EDITOR_TOP_BLUEPRINT) {
+            if (params.editor_state.selected_blueprint_index >= 0) {
+                draw_blueprint_detail_panel(screen, state, &params.editor_state);
+            } else {
+                draw_blueprint_list_panel(screen, state, &params.editor_state);
+            }
         } else {
             draw_editor_panel(screen, state, &params.editor_state);
         }
@@ -970,11 +982,15 @@ int main(void)
         .target = {(float)game_bounds.width / 2.0F, (float)game_bounds.height / 2.0F},
         .zoom = 1.0F,
     };
-    EditorState editor_state = {.selected_entity_index = -1,
+    EditorState editor_state = {.top_mode = EDITOR_TOP_SCENE,
+                                .selected_entity_index = -1,
                                 .sub_mode = EDITOR_SUB_BROWSE,
                                 .selected_attr_index = -1,
                                 .radial_confirmed = -1,
-                                .radial_selected = -1};
+                                .radial_selected = -1,
+                                .selected_blueprint_index = -1,
+                                .blueprint_attr_index = -1,
+                                .blueprint_tree_index = -1};
     WatchList watches = {0};
     UndoHistory undo_history = {0};
     if (!undo_history_init(&state->error, &undo_history)) {
