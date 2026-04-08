@@ -1,6 +1,8 @@
 #include "internal.h"
 
 #include "alloc.h"
+#include "arena.h"
+#include "map.h"
 #include "str.h"
 #include "strv.h"
 
@@ -273,6 +275,85 @@ void duplicate_blueprint(GameState *state, EditorState *editor_state, UndoHistor
 
 /* --- Blueprint list view --- */
 
+/* --- Delete blueprint --- */
+
+static void remove_entities_by_blueprint(GameState *state, const char *bp_name)
+{
+    Level *level = &state->gamedata.current_level;
+    int entity_count = level->entities.count;
+    if (entity_count == 0) {
+        return;
+    }
+    SCRATCH_SCOPE(&state->scratch_arena);
+    bool *is_deleted = arena_alloc(&state->scratch_arena, (size_t)entity_count * sizeof(bool));
+    memset(is_deleted, 0, (size_t)entity_count * sizeof(bool));
+
+    for (int index = 0; index < entity_count; index++) {
+        if (strcmp(level->entities.data[index].blueprint_name.ptr, bp_name) == 0) {
+            is_deleted[index] = true;
+        }
+    }
+    mark_deleted_descendants(level, is_deleted, entity_count);
+
+    for (int index = 0; index < entity_count; index++) {
+        if (is_deleted[index]) {
+            int entity_id = level->entities.data[index].id;
+            map_int_str_remove(&state->gamedata.entity_blueprints, entity_id);
+            map_entity_ruleset_remove(&state->gamedata.rule_table, entity_id);
+        }
+    }
+    int *new_index_map = arena_alloc(&state->scratch_arena, (size_t)entity_count * sizeof(int));
+    int new_count = 0;
+    for (int index = 0; index < entity_count; index++) {
+        new_index_map[index] = is_deleted[index] ? -1 : new_count++;
+    }
+    for (int index = 0; index < entity_count; index++) {
+        if (!is_deleted[index] && level->entities.data[index].parent_index >= 0) {
+            level->entities.data[index].parent_index = new_index_map[level->entities.data[index].parent_index];
+        }
+    }
+    int write = 0;
+    for (int index = 0; index < entity_count; index++) {
+        if (!is_deleted[index]) {
+            level->entities.data[write++] = level->entities.data[index];
+        }
+    }
+    level->entities.count = write;
+    if (state->gamedata.player_index >= 0) {
+        state->gamedata.player_index = new_index_map[state->gamedata.player_index];
+    }
+}
+
+static void delete_blueprint(GameState *state, EditorState *editor_state, UndoHistory *undo_history)
+{
+    int bp_scroll = editor_state->blueprint_list_scroll;
+    int count = state->gamedata.blueprints.entries.count;
+    if (bp_scroll < 0 || bp_scroll >= count) {
+        return;
+    }
+    const char *bp_name = attr_get_string(&state->gamedata.blueprints.entries.data[bp_scroll].attrs, "name");
+    if (!bp_name) {
+        return;
+    }
+
+    remove_entities_by_blueprint(state, bp_name);
+
+    /* Remove blueprint from vec (swap with last) */
+    int last = count - 1;
+    if (bp_scroll < last) {
+        state->gamedata.blueprints.entries.data[bp_scroll] = state->gamedata.blueprints.entries.data[last];
+    }
+    state->gamedata.blueprints.entries.count--;
+
+    /* Fix scroll */
+    if (editor_state->blueprint_list_scroll >= state->gamedata.blueprints.entries.count) {
+        editor_state->blueprint_list_scroll = state->gamedata.blueprints.entries.count;
+    }
+
+    undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
+                           strv_from_cstr("Delete blueprint"));
+}
+
 static void enter_word_builder_empty(EditorState *editor_state)
 {
     editor_state->word_builder_len = 0;
@@ -281,7 +362,8 @@ static void enter_word_builder_empty(EditorState *editor_state)
     editor_state->sub_mode = EDITOR_SUB_WORD_BUILDER;
 }
 
-static void handle_blueprint_list_input(GameState *state, EditorState *editor_state, InputState input)
+static void
+handle_blueprint_list_input(GameState *state, EditorState *editor_state, UndoHistory *undo_history, InputState input)
 {
     (void)input;
 
@@ -311,6 +393,11 @@ static void handle_blueprint_list_input(GameState *state, EditorState *editor_st
             editor_state->selected_blueprint_index = editor_state->blueprint_list_scroll;
             editor_state->blueprint_attr_index = -1;
             editor_state->blueprint_tree_index = -1;
+        }
+    }
+    if (toggle_pressed((ToggleBinding){KEY_DELETE, GAMEPAD_BUTTON_RIGHT_FACE_LEFT})) {
+        if (editor_state->blueprint_list_scroll < count) {
+            delete_blueprint(state, editor_state, undo_history);
         }
     }
 }
@@ -381,7 +468,7 @@ void handle_blueprint_browse_input(GameState *state,
                                    InputState input)
 {
     if (editor_state->selected_blueprint_index < 0) {
-        handle_blueprint_list_input(state, editor_state, input);
+        handle_blueprint_list_input(state, editor_state, undo_history, input);
     } else {
         handle_blueprint_detail_input(state, editor_state, undo_history, input);
     }
