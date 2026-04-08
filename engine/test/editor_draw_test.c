@@ -193,6 +193,52 @@ void test_diff_view_custom_detection(void)
     test_attr_set_free_local(&blueprint);
 }
 
+/* ---- get_source_rect ---------------------------------------------------- */
+
+void test_get_source_rect_from_instance(void)
+{
+    AttrSet instance = {0};
+    TEST_ASSERT_TRUE(attr_set_float(&test_heap_alloc, &instance, "src_x", 10.0F));
+    TEST_ASSERT_TRUE(attr_set_float(&test_heap_alloc, &instance, "src_y", 20.0F));
+    TEST_ASSERT_TRUE(attr_set_float(&test_heap_alloc, &instance, "src_w", 32.0F));
+    TEST_ASSERT_TRUE(attr_set_float(&test_heap_alloc, &instance, "src_h", 48.0F));
+
+    Rectangle rect = get_source_rect(&instance, nullptr);
+    TEST_ASSERT_EQUAL_FLOAT(10.0F, rect.x);
+    TEST_ASSERT_EQUAL_FLOAT(20.0F, rect.y);
+    TEST_ASSERT_EQUAL_FLOAT(32.0F, rect.width);
+    TEST_ASSERT_EQUAL_FLOAT(48.0F, rect.height);
+
+    test_attr_set_free_local(&instance);
+}
+
+void test_get_source_rect_from_defaults(void)
+{
+    AttrSet instance = {0};
+    AttrSet defaults = {0};
+    TEST_ASSERT_TRUE(attr_set_float(&test_heap_alloc, &defaults, "src_x", 5.0F));
+    TEST_ASSERT_TRUE(attr_set_float(&test_heap_alloc, &defaults, "src_w", 16.0F));
+
+    Rectangle rect = get_source_rect(&instance, &defaults);
+    TEST_ASSERT_EQUAL_FLOAT(5.0F, rect.x);
+    TEST_ASSERT_EQUAL_FLOAT(0.0F, rect.y);
+    TEST_ASSERT_EQUAL_FLOAT(16.0F, rect.width);
+    TEST_ASSERT_EQUAL_FLOAT(0.0F, rect.height);
+
+    test_attr_set_free_local(&instance);
+    test_attr_set_free_local(&defaults);
+}
+
+void test_get_source_rect_zero_when_missing(void)
+{
+    AttrSet instance = {0};
+    Rectangle rect = get_source_rect(&instance, nullptr);
+    TEST_ASSERT_EQUAL_FLOAT(0.0F, rect.x);
+    TEST_ASSERT_EQUAL_FLOAT(0.0F, rect.y);
+    TEST_ASSERT_EQUAL_FLOAT(0.0F, rect.width);
+    TEST_ASSERT_EQUAL_FLOAT(0.0F, rect.height);
+}
+
 int main(void)
 {
     test_helpers_init();
@@ -209,6 +255,9 @@ int main(void)
     RUN_TEST(test_editor_entity_outline_rect_without_collision);
     RUN_TEST(test_diff_view_override_detection);
     RUN_TEST(test_diff_view_custom_detection);
+    RUN_TEST(test_get_source_rect_from_instance);
+    RUN_TEST(test_get_source_rect_from_defaults);
+    RUN_TEST(test_get_source_rect_zero_when_missing);
 
     return UNITY_END();
 }

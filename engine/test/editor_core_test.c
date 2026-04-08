@@ -504,6 +504,88 @@ void test_navigate_attr_to_tree_boundary(void)
     arena_free(&state.gamedata_arena);
 }
 
+/* ---- find_place_blueprint_index ----------------------------------------- */
+
+void test_find_place_blueprint_index_found(void)
+{
+    GameState state = {0};
+    state.gamedata.current_level.entities.alloc = test_heap_alloc;
+    Entity entity = {.parent_index = -1};
+    (void)str_from_cstr(&test_heap_alloc, &entity.blueprint_name, "chest");
+    (void)vec_entity_push(&state.gamedata.current_level.entities, entity);
+
+    state.gamedata.blueprints.entries.alloc = test_heap_alloc;
+    (void)vec_blueprint_push(&state.gamedata.blueprints.entries, make_named_blueprint("tree"));
+    (void)vec_blueprint_push(&state.gamedata.blueprints.entries, make_named_blueprint("chest"));
+
+    EditorState editor_state = {.selected_entity_index = 0};
+    TEST_ASSERT_EQUAL_INT(1, find_place_blueprint_index(&state, &editor_state));
+
+    str_free(&test_heap_alloc, &entity.blueprint_name);
+    vec_entity_free(&state.gamedata.current_level.entities);
+    test_blueprint_table_free_local(&state.gamedata.blueprints);
+}
+
+void test_find_place_blueprint_index_not_found(void)
+{
+    GameState state = {0};
+    state.gamedata.current_level.entities.alloc = test_heap_alloc;
+    Entity entity = {.parent_index = -1};
+    (void)str_from_cstr(&test_heap_alloc, &entity.blueprint_name, "unknown");
+    (void)vec_entity_push(&state.gamedata.current_level.entities, entity);
+
+    state.gamedata.blueprints.entries.alloc = test_heap_alloc;
+    (void)vec_blueprint_push(&state.gamedata.blueprints.entries, make_named_blueprint("tree"));
+
+    EditorState editor_state = {.selected_entity_index = 0};
+    TEST_ASSERT_EQUAL_INT(0, find_place_blueprint_index(&state, &editor_state));
+
+    str_free(&test_heap_alloc, &entity.blueprint_name);
+    vec_entity_free(&state.gamedata.current_level.entities);
+    test_blueprint_table_free_local(&state.gamedata.blueprints);
+}
+
+void test_find_place_blueprint_index_no_selection(void)
+{
+    GameState state = {0};
+    EditorState editor_state = {.selected_entity_index = -1};
+    TEST_ASSERT_EQUAL_INT(0, find_place_blueprint_index(&state, &editor_state));
+}
+
+/* ---- reset_editor_selection --------------------------------------------- */
+
+void test_reset_editor_selection_clears_state(void)
+{
+    EditorState editor_state = {
+        .selected_entity_index = 5,
+        .selected_attr_index = 3,
+        .selected_tree_index = 2,
+    };
+    WatchList watches = {.count = 2, .entity_indices = {10, 20}};
+
+    reset_editor_selection(&editor_state, &watches);
+
+    TEST_ASSERT_EQUAL_INT(-1, editor_state.selected_entity_index);
+    TEST_ASSERT_EQUAL_INT(-1, editor_state.selected_attr_index);
+    TEST_ASSERT_EQUAL_INT(-1, editor_state.selected_tree_index);
+    TEST_ASSERT_EQUAL_INT(0, watches.count);
+}
+
+/* ---- toggle_watch ------------------------------------------------------- */
+
+void test_toggle_watch_adds_and_removes(void)
+{
+    EditorState editor_state = {.selected_entity_index = 7};
+    WatchList watches = {0};
+
+    toggle_watch(&editor_state, &watches);
+    TEST_ASSERT_EQUAL_INT(1, watches.count);
+    TEST_ASSERT_EQUAL_INT(7, watches.entity_indices[0]);
+
+    toggle_watch(&editor_state, &watches);
+    TEST_ASSERT_EQUAL_INT(0, watches.count);
+}
+
 int main(void)
 {
     test_helpers_init();
@@ -534,6 +616,11 @@ int main(void)
     RUN_TEST(test_editor_delete_entity_removes_map_entries);
     RUN_TEST(test_navigate_tree_to_attr_boundary);
     RUN_TEST(test_navigate_attr_to_tree_boundary);
+    RUN_TEST(test_find_place_blueprint_index_found);
+    RUN_TEST(test_find_place_blueprint_index_not_found);
+    RUN_TEST(test_find_place_blueprint_index_no_selection);
+    RUN_TEST(test_reset_editor_selection_clears_state);
+    RUN_TEST(test_toggle_watch_adds_and_removes);
 
     return UNITY_END();
 }

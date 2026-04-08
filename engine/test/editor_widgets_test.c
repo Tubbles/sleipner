@@ -791,6 +791,140 @@ void test_keyboard_all_digits_present(void)
     }
 }
 
+/* ---- compare_cstr_ptrs -------------------------------------------------- */
+
+void test_compare_cstr_ptrs_ordering(void)
+{
+    const char *items[] = {"cherry", "apple", "banana"};
+    qsort((void *)items, 3, sizeof(const char *), compare_cstr_ptrs);
+    TEST_ASSERT_EQUAL_STRING("apple", items[0]);
+    TEST_ASSERT_EQUAL_STRING("banana", items[1]);
+    TEST_ASSERT_EQUAL_STRING("cherry", items[2]);
+}
+
+/* ---- fuzzy_finder_try_add ----------------------------------------------- */
+
+void test_fuzzy_finder_try_add_new_item(void)
+{
+    const char *items[8] = {0};
+    int count = 0;
+    fuzzy_finder_try_add(items, &count, "hello");
+    TEST_ASSERT_EQUAL_INT(1, count);
+    TEST_ASSERT_EQUAL_STRING("hello", items[0]);
+}
+
+void test_fuzzy_finder_try_add_duplicate(void)
+{
+    const char *items[8] = {0};
+    int count = 0;
+    fuzzy_finder_try_add(items, &count, "hello");
+    fuzzy_finder_try_add(items, &count, "hello");
+    TEST_ASSERT_EQUAL_INT(1, count);
+}
+
+/* ---- fuzzy_finder_max_item_count ---------------------------------------- */
+
+void test_fuzzy_finder_max_item_count_sums_all(void)
+{
+    GamedataState gamedata = {0};
+    gamedata.blueprints.entries.alloc = test_heap_alloc;
+    Blueprint blueprint = {0};
+    TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, &blueprint.attrs, "speed", 10));
+    TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, &blueprint.attrs, "health", 5));
+    (void)vec_blueprint_push(&gamedata.blueprints.entries, blueprint);
+
+    gamedata.current_level.entities.alloc = test_heap_alloc;
+    Entity entity = {0};
+    TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, &entity.attrs, "x", 1));
+    (void)vec_entity_push(&gamedata.current_level.entities, entity);
+
+    int result = fuzzy_finder_max_item_count(&gamedata);
+    /* 1 blueprint + 0 flags + 1 (current level) + 0 other levels + 1 entity + 2 bp attrs + 1 entity attr = 6 */
+    TEST_ASSERT_EQUAL_INT(6, result);
+
+    attr_set_free(&test_heap_alloc, &blueprint.attrs);
+    vec_blueprint_free(&gamedata.blueprints.entries);
+    attr_set_free(&test_heap_alloc, &entity.attrs);
+    vec_entity_free(&gamedata.current_level.entities);
+}
+
+/* ---- word_builder_confirm ----------------------------------------------- */
+
+void test_word_builder_confirm_sets_string_value(void)
+{
+    ErrorState err = {0};
+    GameState state = {0};
+    TEST_ASSERT_TRUE(arena_init(&err, &state.gamedata_arena));
+    Allocator alloc = allocator_arena(&state.gamedata_arena);
+
+    state.gamedata.current_level.entities = vec_entity_new(alloc);
+    Entity entity = {.parent_index = -1};
+    (void)str_from_cstr(&alloc, &entity.blueprint_name, "npc");
+    Attribute attr = {.type = ATTR_STRING, .value = {.str = {0}}};
+    (void)str_from_cstr(&test_heap_alloc, &attr.name, "greeting");
+    (void)str_from_cstr(&alloc, &attr.value.str, "old");
+    entity.attrs.entries.alloc = alloc;
+    (void)vec_attribute_push(&entity.attrs.entries, attr);
+    (void)vec_entity_push(&state.gamedata.current_level.entities, entity);
+
+    attr_at_display_index_fake.return_val = &state.gamedata.current_level.entities.data[0].attrs.entries.data[0];
+    is_blueprint_attr_fake.return_val = false;
+
+    EditorState editor_state = {.selected_entity_index = 0, .selected_attr_index = 0};
+    strcpy(editor_state.word_builder_buf, "hello");
+    editor_state.word_builder_len = 5;
+    Diag diag = {.error = &err};
+
+    word_builder_confirm(&diag, &state, &editor_state);
+
+    Attribute *updated = &state.gamedata.current_level.entities.data[0].attrs.entries.data[0];
+    TEST_ASSERT_EQUAL_STRING("hello", updated->value.str.ptr);
+
+    str_free(&test_heap_alloc, &updated->name);
+    arena_free(&state.gamedata_arena);
+}
+
+/* ---- fuzzy_finder_confirm ----------------------------------------------- */
+
+void test_fuzzy_finder_confirm_sets_string_value(void)
+{
+    ErrorState err = {0};
+    GameState state = {0};
+    TEST_ASSERT_TRUE(arena_init(&err, &state.gamedata_arena));
+    Allocator alloc = allocator_arena(&state.gamedata_arena);
+
+    state.gamedata.current_level.entities = vec_entity_new(alloc);
+    Entity entity = {.parent_index = -1};
+    (void)str_from_cstr(&alloc, &entity.blueprint_name, "npc");
+    Attribute attr = {.type = ATTR_STRING, .value = {.str = {0}}};
+    (void)str_from_cstr(&test_heap_alloc, &attr.name, "target");
+    (void)str_from_cstr(&alloc, &attr.value.str, "old");
+    entity.attrs.entries.alloc = alloc;
+    (void)vec_attribute_push(&entity.attrs.entries, attr);
+    (void)vec_entity_push(&state.gamedata.current_level.entities, entity);
+
+    attr_at_display_index_fake.return_val = &state.gamedata.current_level.entities.data[0].attrs.entries.data[0];
+    is_blueprint_attr_fake.return_val = false;
+
+    const char *items[] = {"chosen_name"};
+    EditorState editor_state = {
+        .selected_entity_index = 0,
+        .selected_attr_index = 0,
+        .fuzzy_finder_scroll = 1,
+        .fuzzy_finder_items = items,
+        .fuzzy_finder_item_count = 1,
+    };
+    Diag diag = {.error = &err};
+
+    fuzzy_finder_confirm(&diag, &state, &editor_state);
+
+    Attribute *updated = &state.gamedata.current_level.entities.data[0].attrs.entries.data[0];
+    TEST_ASSERT_EQUAL_STRING("chosen_name", updated->value.str.ptr);
+
+    str_free(&test_heap_alloc, &updated->name);
+    arena_free(&state.gamedata_arena);
+}
+
 int main(void)
 {
     test_helpers_init();
@@ -854,6 +988,13 @@ int main(void)
     RUN_TEST(test_keyboard_group_sizes_consistent);
     RUN_TEST(test_keyboard_all_lowercase_alpha_present);
     RUN_TEST(test_keyboard_all_digits_present);
+
+    RUN_TEST(test_compare_cstr_ptrs_ordering);
+    RUN_TEST(test_fuzzy_finder_try_add_new_item);
+    RUN_TEST(test_fuzzy_finder_try_add_duplicate);
+    RUN_TEST(test_fuzzy_finder_max_item_count_sums_all);
+    RUN_TEST(test_word_builder_confirm_sets_string_value);
+    RUN_TEST(test_fuzzy_finder_confirm_sets_string_value);
 
     return UNITY_END();
 }
