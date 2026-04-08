@@ -61,3 +61,5 @@
 ## misc
 
 - do the same stored-allocator change for map and Str types (parallels vec work)
+- increase font size for all texts to at least 32, which is the smallest legible
+  on an android phone

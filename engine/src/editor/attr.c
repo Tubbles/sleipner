@@ -115,15 +115,35 @@ static void attr_apply_converted(Attribute *attr, AttrType target_type, AttrConv
     attr->type = target_type;
 }
 
-void dispatch_attr_type_change(GameState *state, EditorState *editor_state, int confirmed, UndoHistory *undo_history)
+static Attribute *active_edit_attr(GameState *state, const EditorState *editor_state)
 {
+    if (editor_state->top_mode == EDITOR_TOP_BLUEPRINT) {
+        int bp_idx = editor_state->selected_blueprint_index;
+        int attr_idx = editor_state->blueprint_attr_index;
+        if (bp_idx < 0 || bp_idx >= state->gamedata.blueprints.entries.count || attr_idx < 0) {
+            return nullptr;
+        }
+        Blueprint *blueprint = &state->gamedata.blueprints.entries.data[bp_idx];
+        if (attr_idx >= blueprint->attrs.entries.count) {
+            return nullptr;
+        }
+        return &blueprint->attrs.entries.data[attr_idx];
+    }
     int sel = editor_state->selected_entity_index;
     int attr_idx = editor_state->selected_attr_index;
-    if (sel < 0 || attr_idx < 0 || confirmed < 0 || confirmed >= 4) {
-        return;
+    if (sel < 0 || sel >= state->gamedata.current_level.entities.count || attr_idx < 0) {
+        return nullptr;
     }
     Entity *entity = &state->gamedata.current_level.entities.data[sel];
-    Attribute *attr = attr_at_display_index(state, entity, attr_idx);
+    return attr_at_display_index(state, entity, attr_idx);
+}
+
+void dispatch_attr_type_change(GameState *state, EditorState *editor_state, int confirmed, UndoHistory *undo_history)
+{
+    if (confirmed < 0 || confirmed >= 4) {
+        return;
+    }
+    Attribute *attr = active_edit_attr(state, editor_state);
     if (!attr) {
         return;
     }
@@ -134,10 +154,21 @@ void dispatch_attr_type_change(GameState *state, EditorState *editor_state, int 
     Allocator alloc = allocator_arena(&state->gamedata_arena);
     AttrConvertedValues values = attr_extract_values(attr, &alloc);
     attr_apply_converted(attr, target_type, values, &alloc);
-    if (is_blueprint_attr(entity, attr_idx)) {
-        Blueprint *blueprint = find_blueprint_by_name(state, entity->blueprint_name.ptr);
-        if (blueprint) {
-            propagate_collision_to_entities(state, blueprint);
+    if (editor_state->top_mode == EDITOR_TOP_BLUEPRINT) {
+        int bp_idx = editor_state->selected_blueprint_index;
+        if (bp_idx >= 0 && bp_idx < state->gamedata.blueprints.entries.count) {
+            propagate_collision_to_entities(state, &state->gamedata.blueprints.entries.data[bp_idx]);
+        }
+    } else {
+        int sel = editor_state->selected_entity_index;
+        if (sel >= 0 && sel < state->gamedata.current_level.entities.count) {
+            Entity *entity = &state->gamedata.current_level.entities.data[sel];
+            if (is_blueprint_attr(entity, editor_state->selected_attr_index)) {
+                Blueprint *blueprint = find_blueprint_by_name(state, entity->blueprint_name.ptr);
+                if (blueprint) {
+                    propagate_collision_to_entities(state, blueprint);
+                }
+            }
         }
     }
     undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
@@ -233,10 +264,7 @@ confirm_child_offset_edit(GameState *state, EditorState *editor_state, UndoHisto
 
 static void apply_attr_delta(GameState *state, EditorState *editor_state, int delta)
 {
-    int sel = editor_state->selected_entity_index;
-    int attr_idx = editor_state->selected_attr_index;
-    Entity *entity = &state->gamedata.current_level.entities.data[sel];
-    Attribute *attr = attr_at_display_index(state, entity, attr_idx);
+    Attribute *attr = active_edit_attr(state, editor_state);
     if (!attr) {
         return;
     }
@@ -298,49 +326,55 @@ handle_child_offset_edit(GameState *state, EditorState *editor_state, UndoHistor
     }
 }
 
+static void attr_edit_confirm(GameState *state, EditorState *editor_state, UndoHistory *undo_history)
+{
+    if (editor_state->top_mode == EDITOR_TOP_BLUEPRINT) {
+        int bp_idx = editor_state->selected_blueprint_index;
+        if (bp_idx >= 0 && bp_idx < state->gamedata.blueprints.entries.count) {
+            propagate_collision_to_entities(state, &state->gamedata.blueprints.entries.data[bp_idx]);
+        }
+    } else {
+        int sel = editor_state->selected_entity_index;
+        int attr_idx = editor_state->selected_attr_index;
+        if (sel >= 0 && sel < state->gamedata.current_level.entities.count) {
+            Entity *entity = &state->gamedata.current_level.entities.data[sel];
+            if (is_blueprint_attr(entity, attr_idx)) {
+                Blueprint *blueprint = find_blueprint_by_name(state, entity->blueprint_name.ptr);
+                if (blueprint) {
+                    propagate_collision_to_entities(state, blueprint);
+                }
+            }
+        }
+    }
+    undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
+                           strv_from_cstr("Edit attribute"));
+    reset_attr_hold(editor_state);
+    editor_state->sub_mode = EDITOR_SUB_BROWSE;
+}
+
 void handle_attr_edit_input(GameState *state, EditorState *editor_state, UndoHistory *undo_history, float delta_time)
 {
     if (editor_state->editing_child_offset) {
         handle_child_offset_edit(state, editor_state, undo_history, delta_time);
         return;
     }
-    int sel = editor_state->selected_entity_index;
-    int attr_idx = editor_state->selected_attr_index;
-    if (sel < 0 || attr_idx < 0) {
-        editor_state->attr_hold_total = 0.0F;
-        editor_state->attr_hold_subtick = 0.0F;
-        editor_state->attr_hold_dir = 0;
+    Attribute *current_attr = active_edit_attr(state, editor_state);
+    if (!current_attr) {
+        reset_attr_hold(editor_state);
         editor_state->sub_mode = EDITOR_SUB_BROWSE;
         return;
     }
-    Entity *entity = &state->gamedata.current_level.entities.data[sel];
     if (toggle_pressed((ToggleBinding){KEY_ENTER, GAMEPAD_BUTTON_RIGHT_FACE_DOWN})) {
-        if (is_blueprint_attr(entity, attr_idx)) {
-            Blueprint *blueprint = find_blueprint_by_name(state, entity->blueprint_name.ptr);
-            if (blueprint) {
-                propagate_collision_to_entities(state, blueprint);
-            }
-        }
-        undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
-                               strv_from_cstr("Edit attribute"));
-        editor_state->attr_hold_total = 0.0F;
-        editor_state->attr_hold_subtick = 0.0F;
-        editor_state->attr_hold_dir = 0;
-        editor_state->sub_mode = EDITOR_SUB_BROWSE;
+        attr_edit_confirm(state, editor_state, undo_history);
         return;
     }
     if (toggle_pressed((ToggleBinding){KEY_ESCAPE, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT})) {
-        Attribute *attr = attr_at_display_index(state, entity, attr_idx);
-        if (attr) {
-            if (attr->type == ATTR_INT) {
-                attr->value.i = editor_state->saved_attr_int;
-            } else if (attr->type == ATTR_FLOAT) {
-                attr->value.f = editor_state->saved_attr_float;
-            }
+        if (current_attr->type == ATTR_INT) {
+            current_attr->value.i = editor_state->saved_attr_int;
+        } else if (current_attr->type == ATTR_FLOAT) {
+            current_attr->value.f = editor_state->saved_attr_float;
         }
-        editor_state->attr_hold_total = 0.0F;
-        editor_state->attr_hold_subtick = 0.0F;
-        editor_state->attr_hold_dir = 0;
+        reset_attr_hold(editor_state);
         editor_state->sub_mode = EDITOR_SUB_BROWSE;
         return;
     }

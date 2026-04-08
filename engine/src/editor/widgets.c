@@ -205,16 +205,28 @@ void draw_word_builder_panel(ScreenSize screen, const GameState *state, const Ed
 
 static bool add_attr_by_name(Diag *diag, GameState *state, EditorState *editor_state, const char *name)
 {
-    int sel = editor_state->selected_entity_index;
-    if (sel < 0 || !name || name[0] == '\0') {
+    if (!name || name[0] == '\0') {
         return false;
     }
-    Entity *entity = &state->gamedata.current_level.entities.data[sel];
-    if (attr_get(&entity->attrs, name)) {
+    AttrSet *target = nullptr;
+    if (editor_state->adding_blueprint_attr) {
+        int bp_idx = editor_state->selected_blueprint_index;
+        if (bp_idx < 0 || bp_idx >= state->gamedata.blueprints.entries.count) {
+            return false;
+        }
+        target = &state->gamedata.blueprints.entries.data[bp_idx].attrs;
+    } else {
+        int sel = editor_state->selected_entity_index;
+        if (sel < 0) {
+            return false;
+        }
+        target = &state->gamedata.current_level.entities.data[sel].attrs;
+    }
+    if (attr_get(target, name)) {
         return false;
     }
     Allocator alloc = allocator_arena(&state->gamedata_arena);
-    if (!attr_set_int(&alloc, &entity->attrs, name, 0)) {
+    if (!attr_set_int(&alloc, target, name, 0)) {
         debug_log(diag->debug, "add attr: attr_set_int failed: %s", error_get(diag->error));
         error_clear(diag->error);
         return false;
@@ -224,21 +236,37 @@ static bool add_attr_by_name(Diag *diag, GameState *state, EditorState *editor_s
 
 static void word_builder_confirm(Diag *diag, GameState *state, EditorState *editor_state)
 {
-    int sel = editor_state->selected_entity_index;
-    int attr_idx = editor_state->selected_attr_index;
-    if (sel < 0 || attr_idx < 0) {
-        return;
-    }
-    Entity *entity = &state->gamedata.current_level.entities.data[sel];
-    Attribute *attr = attr_at_display_index(state, entity, attr_idx);
-    if (!attr) {
-        return;
-    }
-    AttrSet *target = &entity->attrs;
-    if (is_blueprint_attr(entity, attr_idx)) {
-        Blueprint *blueprint = find_blueprint_by_name(state, entity->blueprint_name.ptr);
-        if (blueprint) {
-            target = &blueprint->attrs;
+    Attribute *attr = nullptr;
+    AttrSet *target = nullptr;
+    if (editor_state->top_mode == EDITOR_TOP_BLUEPRINT) {
+        int bp_idx = editor_state->selected_blueprint_index;
+        int attr_idx = editor_state->blueprint_attr_index;
+        if (bp_idx < 0 || attr_idx < 0) {
+            return;
+        }
+        Blueprint *blueprint = &state->gamedata.blueprints.entries.data[bp_idx];
+        if (attr_idx >= blueprint->attrs.entries.count) {
+            return;
+        }
+        attr = &blueprint->attrs.entries.data[attr_idx];
+        target = &blueprint->attrs;
+    } else {
+        int sel = editor_state->selected_entity_index;
+        int attr_idx = editor_state->selected_attr_index;
+        if (sel < 0 || attr_idx < 0) {
+            return;
+        }
+        Entity *entity = &state->gamedata.current_level.entities.data[sel];
+        attr = attr_at_display_index(state, entity, attr_idx);
+        if (!attr) {
+            return;
+        }
+        target = &entity->attrs;
+        if (is_blueprint_attr(entity, attr_idx)) {
+            Blueprint *blueprint = find_blueprint_by_name(state, entity->blueprint_name.ptr);
+            if (blueprint) {
+                target = &blueprint->attrs;
+            }
         }
     }
     Allocator alloc = allocator_arena(&state->gamedata_arena);
@@ -279,11 +307,13 @@ void handle_word_builder_input(Diag *diag, GameState *state, EditorState *editor
         if (editor_state->word_builder_scroll == 0 && editor_state->editing_child_tag) {
             confirm_child_tag_edit(diag, state, editor_state, undo_history);
             editor_state->sub_mode = EDITOR_SUB_BROWSE;
-        } else if (editor_state->word_builder_scroll == 0 && editor_state->adding_attr) {
+        } else if (editor_state->word_builder_scroll == 0 &&
+                   (editor_state->adding_attr || editor_state->adding_blueprint_attr)) {
             add_attr_by_name(diag, state, editor_state, editor_state->word_builder_buf);
             undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
                                    strv_from_cstr("Add attribute"));
             editor_state->adding_attr = false;
+            editor_state->adding_blueprint_attr = false;
             editor_state->sub_mode = EDITOR_SUB_BROWSE;
         } else if (editor_state->word_builder_scroll == 0) {
             word_builder_confirm(diag, state, editor_state);
@@ -305,6 +335,7 @@ void handle_word_builder_input(Diag *diag, GameState *state, EditorState *editor
             word_builder_pop(editor_state);
         } else {
             editor_state->adding_attr = false;
+            editor_state->adding_blueprint_attr = false;
             editor_state->editing_child_tag = false;
             editor_state->sub_mode = EDITOR_SUB_BROWSE;
         }
@@ -522,24 +553,40 @@ static void fuzzy_finder_enter_word_builder(GameState *state, EditorState *edito
 
 static void fuzzy_finder_confirm(Diag *diag, GameState *state, EditorState *editor_state)
 {
-    int sel = editor_state->selected_entity_index;
-    int attr_idx = editor_state->selected_attr_index;
-    if (sel < 0 || attr_idx < 0) {
-        return;
-    }
-    const char *chosen = fuzzy_finder_item(editor_state, editor_state->fuzzy_finder_scroll);
-    Entity *entity = &state->gamedata.current_level.entities.data[sel];
-    Attribute *attr = attr_at_display_index(state, entity, attr_idx);
-    if (!attr) {
-        return;
-    }
-    AttrSet *target = &entity->attrs;
-    if (is_blueprint_attr(entity, attr_idx)) {
-        Blueprint *blueprint = find_blueprint_by_name(state, entity->blueprint_name.ptr);
-        if (blueprint) {
-            target = &blueprint->attrs;
+    Attribute *attr = nullptr;
+    AttrSet *target = nullptr;
+    if (editor_state->top_mode == EDITOR_TOP_BLUEPRINT) {
+        int bp_idx = editor_state->selected_blueprint_index;
+        int attr_idx = editor_state->blueprint_attr_index;
+        if (bp_idx < 0 || attr_idx < 0) {
+            return;
+        }
+        Blueprint *blueprint = &state->gamedata.blueprints.entries.data[bp_idx];
+        if (attr_idx >= blueprint->attrs.entries.count) {
+            return;
+        }
+        attr = &blueprint->attrs.entries.data[attr_idx];
+        target = &blueprint->attrs;
+    } else {
+        int sel = editor_state->selected_entity_index;
+        int attr_idx = editor_state->selected_attr_index;
+        if (sel < 0 || attr_idx < 0) {
+            return;
+        }
+        Entity *entity = &state->gamedata.current_level.entities.data[sel];
+        attr = attr_at_display_index(state, entity, attr_idx);
+        if (!attr) {
+            return;
+        }
+        target = &entity->attrs;
+        if (is_blueprint_attr(entity, attr_idx)) {
+            Blueprint *blueprint = find_blueprint_by_name(state, entity->blueprint_name.ptr);
+            if (blueprint) {
+                target = &blueprint->attrs;
+            }
         }
     }
+    const char *chosen = fuzzy_finder_item(editor_state, editor_state->fuzzy_finder_scroll);
     Allocator alloc = allocator_arena(&state->gamedata_arena);
     AttrStringPair pair = {attr->name.ptr, chosen};
     if (!attr_set_string(&alloc, target, pair)) {
@@ -567,7 +614,7 @@ void handle_fuzzy_finder_input(Diag *diag,
                 editor_state->adding_child = false;
                 editor_state->sub_mode = EDITOR_SUB_BROWSE;
             }
-        } else if (editor_state->adding_attr) {
+        } else if (editor_state->adding_attr || editor_state->adding_blueprint_attr) {
             if (editor_state->fuzzy_finder_scroll == 0) {
                 fuzzy_finder_enter_word_builder(state, editor_state);
             } else {
@@ -576,6 +623,7 @@ void handle_fuzzy_finder_input(Diag *diag,
                 undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
                                        strv_from_cstr("Add attribute"));
                 editor_state->adding_attr = false;
+                editor_state->adding_blueprint_attr = false;
                 editor_state->sub_mode = EDITOR_SUB_BROWSE;
             }
         } else if (editor_state->fuzzy_finder_scroll == 0) {
@@ -590,6 +638,7 @@ void handle_fuzzy_finder_input(Diag *diag,
     if (toggle_pressed((ToggleBinding){KEY_ESCAPE, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT})) {
         editor_state->adding_attr = false;
         editor_state->adding_child = false;
+        editor_state->adding_blueprint_attr = false;
         editor_state->sub_mode = EDITOR_SUB_BROWSE;
     }
 }
