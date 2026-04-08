@@ -43,6 +43,21 @@ FAKE_VALUE_FUNC(Vector2, blueprint_get_collision_size, const Blueprint *);
 /* game function fakes — entity_resolve_defaults is defined in game.c */
 FAKE_VALUE_FUNC(const AttrSet *, entity_resolve_defaults, const GameState *, int);
 
+/* blueprint function fakes — blueprint_find is defined in blueprint.c */
+FAKE_VALUE_FUNC(const Blueprint *, blueprint_find, const BlueprintTable *, const char *);
+
+/* level function fakes — level_spawn_single_child is defined in level.c */
+FAKE_VALUE_FUNC(bool,
+                level_spawn_single_child,
+                Diag *,
+                Level *,
+                int,
+                const BlueprintChild *,
+                const BlueprintTable *,
+                TextureLookupFn,
+                void *,
+                Allocator *);
+
 /* undo function fakes — editor.c calls these but we don't include undo.c */
 FAKE_VOID_FUNC(undo_history_new_entry, UndoHistory *, GamedataState *, Arena *, ArenaCheckpoint, Strv);
 FAKE_VOID_FUNC(undo_history_step_back, UndoHistory *, GamedataState *, Arena *, ArenaCheckpoint);
@@ -1400,6 +1415,144 @@ void test_diff_view_custom_detection(void)
     test_attr_set_free_local(&blueprint);
 }
 
+/* ---- Tree section helpers ------------------------------------------------ */
+
+void test_tree_section_total_root_no_children(void)
+{
+    Entity entity = {.parent_index = -1};
+    Blueprint blueprint = {.children = {0}};
+    TEST_ASSERT_EQUAL_INT(1, tree_section_total(&entity, &blueprint));
+}
+
+void test_tree_section_total_root_with_children(void)
+{
+    Entity entity = {.parent_index = -1};
+    BlueprintChild children[2] = {0};
+    Blueprint blueprint = {.children = {.data = children, .count = 2}};
+    TEST_ASSERT_EQUAL_INT(3, tree_section_total(&entity, &blueprint));
+}
+
+void test_tree_section_total_child_entity(void)
+{
+    Entity entity = {.parent_index = 0};
+    Blueprint blueprint = {.children = {0}};
+    TEST_ASSERT_EQUAL_INT(2, tree_section_total(&entity, &blueprint));
+}
+
+void test_tree_is_parent_row_true(void)
+{
+    Entity entity = {.parent_index = 0};
+    TEST_ASSERT_TRUE(tree_is_parent_row(&entity, 0));
+}
+
+void test_tree_is_parent_row_false(void)
+{
+    Entity entity = {.parent_index = -1};
+    TEST_ASSERT_FALSE(tree_is_parent_row(&entity, 0));
+}
+
+void test_tree_child_index_mapping(void)
+{
+    Entity root = {.parent_index = -1};
+    TEST_ASSERT_EQUAL_INT(0, tree_child_index(&root, 0));
+    TEST_ASSERT_EQUAL_INT(1, tree_child_index(&root, 1));
+
+    Entity child = {.parent_index = 0};
+    TEST_ASSERT_EQUAL_INT(-1, tree_child_index(&child, 0));
+    TEST_ASSERT_EQUAL_INT(0, tree_child_index(&child, 1));
+}
+
+void test_tree_is_add_child_sentinel(void)
+{
+    Entity entity = {.parent_index = -1};
+    BlueprintChild children[2] = {0};
+    Blueprint blueprint = {.children = {.data = children, .count = 2}};
+    TEST_ASSERT_FALSE(tree_is_add_child_row(&entity, &blueprint, 0));
+    TEST_ASSERT_FALSE(tree_is_add_child_row(&entity, &blueprint, 1));
+    TEST_ASSERT_TRUE(tree_is_add_child_row(&entity, &blueprint, 2));
+}
+
+void test_navigate_tree_to_attr_boundary(void)
+{
+    GameState state = {0};
+    ErrorState err = {0};
+    TEST_ASSERT_TRUE(arena_init(&err, &state.gamedata_arena));
+    Allocator alloc = allocator_arena(&state.gamedata_arena);
+
+    Entity entity = {0};
+    entity.parent_index = -1;
+    (void)str_from_cstr(&alloc, &entity.blueprint_name, "wagon");
+    state.gamedata.current_level.entities = vec_entity_new(alloc);
+    (void)vec_entity_push(&state.gamedata.current_level.entities, entity);
+
+    Blueprint wagon = make_named_blueprint("wagon");
+    state.gamedata.blueprints.entries = vec_blueprint_new(test_heap_alloc);
+    (void)vec_blueprint_push(&state.gamedata.blueprints.entries, wagon);
+
+    blueprint_find_fake.return_val = &state.gamedata.blueprints.entries.data[0];
+
+    EditorState editor_state = {0};
+    editor_state.selected_entity_index = 0;
+    editor_state.selected_tree_index = 0;
+    editor_state.selected_attr_index = -1;
+
+    handle_browse_navigate(&state, &editor_state, 1);
+
+    TEST_ASSERT_EQUAL_INT(-1, editor_state.selected_tree_index);
+    TEST_ASSERT_EQUAL_INT(0, editor_state.selected_attr_index);
+
+    test_blueprint_table_free_local(&state.gamedata.blueprints);
+    arena_free(&state.gamedata_arena);
+}
+
+void test_navigate_attr_to_tree_boundary(void)
+{
+    GameState state = {0};
+    ErrorState err = {0};
+    TEST_ASSERT_TRUE(arena_init(&err, &state.gamedata_arena));
+    Allocator alloc = allocator_arena(&state.gamedata_arena);
+
+    Entity entity = {0};
+    entity.parent_index = -1;
+    (void)str_from_cstr(&alloc, &entity.blueprint_name, "wagon");
+    state.gamedata.current_level.entities = vec_entity_new(alloc);
+    (void)vec_entity_push(&state.gamedata.current_level.entities, entity);
+
+    Blueprint wagon = make_named_blueprint("wagon");
+    state.gamedata.blueprints.entries = vec_blueprint_new(test_heap_alloc);
+    (void)vec_blueprint_push(&state.gamedata.blueprints.entries, wagon);
+
+    blueprint_find_fake.return_val = &state.gamedata.blueprints.entries.data[0];
+
+    EditorState editor_state = {0};
+    editor_state.selected_entity_index = 0;
+    editor_state.selected_tree_index = -1;
+    editor_state.selected_attr_index = 0;
+
+    handle_browse_navigate(&state, &editor_state, -1);
+
+    TEST_ASSERT_EQUAL_INT(0, editor_state.selected_tree_index);
+    TEST_ASSERT_EQUAL_INT(-1, editor_state.selected_attr_index);
+
+    test_blueprint_table_free_local(&state.gamedata.blueprints);
+    arena_free(&state.gamedata_arena);
+}
+
+void test_child_radial_label_tag(void)
+{
+    EditorState editor_state = {0};
+    editor_state.radial_context = RADIAL_CTX_CHILD_PROPS;
+    TEST_ASSERT_EQUAL_STRING("Tag", radial_label(&editor_state, 0));
+}
+
+void test_child_radial_label_offset(void)
+{
+    EditorState editor_state = {0};
+    editor_state.radial_context = RADIAL_CTX_CHILD_PROPS;
+    TEST_ASSERT_EQUAL_STRING("Offset X", radial_label(&editor_state, 1));
+    TEST_ASSERT_EQUAL_STRING("Offset Y", radial_label(&editor_state, 2));
+}
+
 int main(void)
 {
     test_helpers_init();
@@ -1506,6 +1659,17 @@ int main(void)
     RUN_TEST(test_attr_radial_label_string);
     RUN_TEST(test_diff_view_override_detection);
     RUN_TEST(test_diff_view_custom_detection);
+    RUN_TEST(test_tree_section_total_root_no_children);
+    RUN_TEST(test_tree_section_total_root_with_children);
+    RUN_TEST(test_tree_section_total_child_entity);
+    RUN_TEST(test_tree_is_parent_row_true);
+    RUN_TEST(test_tree_is_parent_row_false);
+    RUN_TEST(test_tree_child_index_mapping);
+    RUN_TEST(test_tree_is_add_child_sentinel);
+    RUN_TEST(test_navigate_tree_to_attr_boundary);
+    RUN_TEST(test_navigate_attr_to_tree_boundary);
+    RUN_TEST(test_child_radial_label_tag);
+    RUN_TEST(test_child_radial_label_offset);
 
     return UNITY_END();
 }

@@ -63,8 +63,9 @@ typedef struct {
 } ToggleBinding;
 
 typedef enum {
-    RADIAL_CTX_TOOLS,     /* Grab / Place / Handles / Delete — 4 items */
-    RADIAL_CTX_ATTR_TYPE, /* Float / Int / Bool / String — 4 items */
+    RADIAL_CTX_TOOLS,       /* Grab / Place / Handles / Delete — 4 items */
+    RADIAL_CTX_ATTR_TYPE,   /* Float / Int / Bool / String — 4 items */
+    RADIAL_CTX_CHILD_PROPS, /* Tag / Offset X / Offset Y — 3 items */
 } RadialContext;
 
 typedef enum {
@@ -108,6 +109,12 @@ typedef struct {
     int keyboard_group;                           /* -1 = level 1 (group select), 0..8 = level 2 (char select) */
     int keyboard_selected;                        /* radial sector highlighted by stick (-1 = dead zone) */
     bool adding_attr;                             /* true when fuzzy finder is open for adding a new attribute */
+    int selected_tree_index;                      /* -1 = not in tree section; >=0 = parent/child/ADD CHILD */
+    bool editing_child_tag;                       /* word builder is editing a blueprint child tag */
+    bool editing_child_offset;                    /* attr_edit is editing a blueprint child offset */
+    int child_edit_axis;                          /* 0=x, 1=y — which offset axis */
+    int child_edit_index;                         /* which child in blueprint->children is being edited */
+    bool adding_child;                            /* true when fuzzy finder is open for adding a blueprint child */
 } EditorState;
 
 typedef struct {
@@ -144,7 +151,12 @@ void draw_radial_picker(ScreenSize screen, const EditorState *editor_state, Font
 void handle_radial_input(EditorState *editor_state, InputState input);
 void handle_word_builder_input(Diag *diag, GameState *state, EditorState *editor_state, UndoHistory *undo_history);
 void draw_word_builder_panel(ScreenSize screen, const GameState *state, const EditorState *editor_state);
-void handle_fuzzy_finder_input(Diag *diag, GameState *state, EditorState *editor_state, UndoHistory *undo_history);
+void handle_fuzzy_finder_input(Diag *diag,
+                               GameState *state,
+                               EditorState *editor_state,
+                               UndoHistory *undo_history,
+                               TextureLookupFn texture_lookup,
+                               void *texture_user_data);
 void draw_fuzzy_finder_panel(ScreenSize screen, const GameState *state, const EditorState *editor_state);
 void handle_gamepad_kb_input(EditorState *editor_state, InputState input);
 void draw_gamepad_kb(ScreenSize screen, const EditorState *editor_state, Font ui_font);

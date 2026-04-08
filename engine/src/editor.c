@@ -99,8 +99,8 @@ void draw_hints_bar(bool editor_mode, const EditorState *editor_state, bool is_d
         } else if (editor_state->sub_mode == EDITOR_SUB_FUZZY_FINDER) {
             hints = "A/Ent: Pick / New  |  B/Esc: Cancel  |  Up/Dn: Scroll  |  L1/Q: PgUp  |  R1/E: PgDn";
         } else {
-            hints = "F5: Play  |  F9/Y: Save  |  Tab/Sel: Tools  |  A/Ent: Sel  |  B/Esc: Desel  |  Up/Down: Attr  |  "
-                    "Del/X: Del/Rm  |  ]/R2: Type  |  Shift/L2: Watch  |  P/R1: Place  |  Stick: Pan";
+            hints = "F5: Play  |  F9/Y: Save  |  Tab/Sel: Tools  |  A: Sel/Drill  |  B: Desel  |  Up/Down: Nav  |  "
+                    "X: Del/Rm  |  ]/R2: Type/Props  |  L2: Watch  |  P/R1: Place  |  Stick: Pan";
         }
     } else {
         hints = "F5: Editor  |  F3: Debug  |  F4: Fonts";
@@ -247,7 +247,39 @@ void draw_editor_panel(ScreenSize screen, const GameState *state, const EditorSt
     y_offset += EDITOR_PANEL_LINE_HEIGHT;
     draw_ui_text(font, TextFormat("pos: %.1f %.1f", entity->position.x, entity->position.y), panel_x + DEBUG_MARGIN,
                  y_offset, EDITOR_PANEL_FONT_SIZE, debug_text_color);
+    y_offset += EDITOR_PANEL_LINE_HEIGHT;
+
+    /* --- Tree section: parent row + children + ADD CHILD --- */
+    const Blueprint *panel_blueprint = blueprint_find(&state->gamedata.blueprints, entity->blueprint_name.ptr);
+    int tree_idx = editor_state->selected_tree_index;
+    int tree_row = 0;
+    if (entity->parent_index >= 0) {
+        const Entity *parent = &state->gamedata.current_level.entities.data[entity->parent_index];
+        Color parent_color = (tree_idx == tree_row) ? WHITE : debug_text_color;
+        draw_ui_text(font, TextFormat("  ^ parent: %s (id: %d)", parent->blueprint_name.ptr, parent->id),
+                     panel_x + DEBUG_MARGIN, y_offset, EDITOR_PANEL_FONT_SIZE, parent_color);
+        y_offset += EDITOR_PANEL_LINE_HEIGHT;
+        tree_row++;
+    }
+    draw_ui_text(font, "--- children ---", panel_x + DEBUG_MARGIN, y_offset, EDITOR_PANEL_FONT_SIZE, debug_text_color);
+    y_offset += EDITOR_PANEL_LINE_HEIGHT;
+    if (panel_blueprint) {
+        for (int child_idx = 0; child_idx < panel_blueprint->children.count; child_idx++) {
+            const BlueprintChild *child = &panel_blueprint->children.data[child_idx];
+            Color child_color = (tree_idx == tree_row) ? WHITE : debug_text_color;
+            const char *tag_str = (child->tag.len > 0) ? child->tag.ptr : "";
+            draw_ui_text(font,
+                         TextFormat("  [%s]  \"%s\"  (%.0f, %.0f)", child->blueprint_name.ptr, tag_str, child->offset.x,
+                                    child->offset.y),
+                         panel_x + DEBUG_MARGIN, y_offset, EDITOR_PANEL_FONT_SIZE, child_color);
+            y_offset += EDITOR_PANEL_LINE_HEIGHT;
+            tree_row++;
+        }
+    }
+    Color add_child_color = (tree_idx == tree_row) ? WHITE : attr_custom_color;
+    draw_ui_text(font, "  [ + ADD CHILD ]", panel_x + DEBUG_MARGIN, y_offset, EDITOR_PANEL_FONT_SIZE, add_child_color);
     y_offset += EDITOR_PANEL_LINE_HEIGHT * 2;
+
     draw_ui_text(font, "--- instance ---", panel_x + DEBUG_MARGIN, y_offset, EDITOR_PANEL_FONT_SIZE, debug_text_color);
     y_offset += EDITOR_PANEL_LINE_HEIGHT;
     int sel_attr = editor_state->selected_attr_index;
@@ -339,6 +371,57 @@ static Attribute *attr_at_display_index(GameState *state, Entity *entity, int at
 static bool is_blueprint_attr(const Entity *entity, int attr_index)
 {
     return attr_index >= entity->attrs.entries.count;
+}
+
+/* --- Tree section helpers (parent/child/ADD CHILD navigation) --- */
+
+static int tree_section_total(const Entity *entity, const Blueprint *blueprint)
+{
+    int parent_row_exists = (entity->parent_index >= 0) ? 1 : 0;
+    int child_count = blueprint ? blueprint->children.count : 0;
+    return parent_row_exists + child_count + 1; /* +1 for ADD CHILD sentinel */
+}
+
+static bool tree_is_parent_row(const Entity *entity, int tree_index)
+{
+    return entity->parent_index >= 0 && tree_index == 0;
+}
+
+static bool tree_is_add_child_row(const Entity *entity, const Blueprint *blueprint, int tree_index)
+{
+    return tree_index == tree_section_total(entity, blueprint) - 1;
+}
+
+/* Returns the index into blueprint->children for a child row, or -1 if not a child row. */
+static int tree_child_index(const Entity *entity, int tree_index)
+{
+    int parent_row_exists = (entity->parent_index >= 0) ? 1 : 0;
+    int child_index = tree_index - parent_row_exists;
+    if (child_index < 0) {
+        return -1;
+    }
+    return child_index;
+}
+
+/* Find the entity index of a child matching parent + blueprint_name + tag. Returns -1 if not found. */
+static int find_child_entity(const Level *level, int parent_index, const char *blueprint_name, const char *tag)
+{
+    for (int index = 0; index < level->entities.count; index++) {
+        const Entity *entity = &level->entities.data[index];
+        if (entity->parent_index != parent_index) {
+            continue;
+        }
+        if (strcmp(entity->blueprint_name.ptr, blueprint_name) != 0) {
+            continue;
+        }
+        if (tag[0] == '\0' && entity->tag.len == 0) {
+            return index;
+        }
+        if (entity->tag.len > 0 && strcmp(entity->tag.ptr, tag) == 0) {
+            return index;
+        }
+    }
+    return -1;
 }
 
 static int read_value_delta(void)
@@ -581,6 +664,47 @@ static void delete_selected_entity(GameState *state, EditorState *editor_state, 
 
 static void fuzzy_finder_build_items(GameState *state, EditorState *editor_state);
 
+static void select_entity_and_pan(EditorState *editor_state, Camera2D *camera, const Level *level, int entity_index)
+{
+    editor_state->selected_entity_index = entity_index;
+    editor_state->selected_tree_index = -1;
+    editor_state->selected_attr_index = -1;
+    camera->target = level->entities.data[entity_index].position;
+}
+
+static void handle_tree_select(GameState *state, Camera2D *camera, EditorState *editor_state)
+{
+    int sel = editor_state->selected_entity_index;
+    const Entity *entity = &state->gamedata.current_level.entities.data[sel];
+    int tree_idx = editor_state->selected_tree_index;
+    const Blueprint *blueprint = blueprint_find(&state->gamedata.blueprints, entity->blueprint_name.ptr);
+
+    if (tree_is_parent_row(entity, tree_idx)) {
+        select_entity_and_pan(editor_state, camera, &state->gamedata.current_level, entity->parent_index);
+        return;
+    }
+    if (tree_is_add_child_row(entity, blueprint, tree_idx)) {
+        fuzzy_finder_build_items(state, editor_state);
+        editor_state->fuzzy_finder_scroll = 0;
+        editor_state->adding_child = true;
+        editor_state->sub_mode = EDITOR_SUB_FUZZY_FINDER;
+        return;
+    }
+    if (!blueprint) {
+        return;
+    }
+    int child_idx = tree_child_index(entity, tree_idx);
+    if (child_idx < 0 || child_idx >= blueprint->children.count) {
+        return;
+    }
+    const BlueprintChild *child = &blueprint->children.data[child_idx];
+    const char *tag = child->tag.len > 0 ? child->tag.ptr : "";
+    int child_entity_idx = find_child_entity(&state->gamedata.current_level, sel, child->blueprint_name.ptr, tag);
+    if (child_entity_idx >= 0) {
+        select_entity_and_pan(editor_state, camera, &state->gamedata.current_level, child_entity_idx);
+    }
+}
+
 static void
 handle_browse_select(GameState *state, Camera2D *camera, EditorState *editor_state, UndoHistory *undo_history)
 {
@@ -588,9 +712,16 @@ handle_browse_select(GameState *state, Camera2D *camera, EditorState *editor_sta
     if (sel < 0) {
         editor_state->selected_entity_index = find_nearest_entity(&state->gamedata.current_level, camera->target);
         editor_state->selected_attr_index = -1;
+        editor_state->selected_tree_index = -1;
         return;
     }
     Entity *entity = &state->gamedata.current_level.entities.data[sel];
+
+    if (editor_state->selected_tree_index >= 0) {
+        handle_tree_select(state, camera, editor_state);
+        return;
+    }
+
     int attr_idx = editor_state->selected_attr_index;
     if (attr_idx < 0) {
         return;
@@ -634,27 +765,59 @@ static void handle_browse_cancel(EditorState *editor_state)
 {
     if (editor_state->selected_attr_index >= 0) {
         editor_state->selected_attr_index = -1;
+    } else if (editor_state->selected_tree_index >= 0) {
+        editor_state->selected_tree_index = -1;
     } else {
         editor_state->selected_entity_index = -1;
     }
 }
 
-static void handle_browse_attr_navigate(const GameState *state, EditorState *editor_state, int direction)
+static void handle_browse_navigate(const GameState *state, EditorState *editor_state, int direction)
 {
     int sel = editor_state->selected_entity_index;
     if (sel < 0 || sel >= state->gamedata.current_level.entities.count) {
         return;
     }
     const Entity *entity = &state->gamedata.current_level.entities.data[sel];
-    int total = total_attr_count(state, entity) + 1; /* +1 for [ + ADD ] sentinel */
-    if (total <= 1) {
-        return;
-    }
-    int current = editor_state->selected_attr_index;
-    if (current < 0) {
-        editor_state->selected_attr_index = (direction > 0) ? 0 : total - 1;
+    const Blueprint *blueprint = blueprint_find(&state->gamedata.blueprints, entity->blueprint_name.ptr);
+    int tree_total = tree_section_total(entity, blueprint);
+    int attr_total = total_attr_count(state, entity) + 1; /* +1 for [ + ADD ] sentinel */
+
+    if (editor_state->selected_tree_index >= 0) {
+        /* Currently in tree section */
+        int next = editor_state->selected_tree_index + direction;
+        if (next < 0) {
+            /* Wrap up from tree top → attr section bottom */
+            editor_state->selected_tree_index = -1;
+            editor_state->selected_attr_index = attr_total - 1;
+        } else if (next >= tree_total) {
+            /* Wrap down from tree bottom → attr section top */
+            editor_state->selected_tree_index = -1;
+            editor_state->selected_attr_index = 0;
+        } else {
+            editor_state->selected_tree_index = next;
+        }
+    } else if (editor_state->selected_attr_index >= 0) {
+        /* Currently in attr section */
+        int next = editor_state->selected_attr_index + direction;
+        if (next < 0) {
+            /* Wrap up from attr top → tree section bottom */
+            editor_state->selected_attr_index = -1;
+            editor_state->selected_tree_index = tree_total - 1;
+        } else if (next >= attr_total) {
+            /* Wrap down from attr bottom → tree section top */
+            editor_state->selected_attr_index = -1;
+            editor_state->selected_tree_index = 0;
+        } else {
+            editor_state->selected_attr_index = next;
+        }
     } else {
-        editor_state->selected_attr_index = (current + direction + total) % total;
+        /* Nothing selected — enter tree section */
+        if (direction > 0) {
+            editor_state->selected_tree_index = 0;
+        } else {
+            editor_state->selected_tree_index = tree_total - 1;
+        }
     }
 }
 
@@ -746,6 +909,132 @@ dispatch_attr_type_change(GameState *state, EditorState *editor_state, int confi
                            strv_from_cstr("Change attr type"));
 }
 
+/* --- Targeted propagation helpers for blueprint child edits --- */
+
+static void propagate_child_tag(GameState *state, const Blueprint *blueprint, int child_idx, const char *old_tag)
+{
+    const char *bp_name = attr_get_string(&blueprint->attrs, "name");
+    const BlueprintChild *child = &blueprint->children.data[child_idx];
+    for (int index = 0; index < state->gamedata.current_level.entities.count; index++) {
+        Entity *entity = &state->gamedata.current_level.entities.data[index];
+        if (strcmp(entity->blueprint_name.ptr, bp_name) != 0) {
+            continue;
+        }
+        int child_entity = find_child_entity(&state->gamedata.current_level, index, child->blueprint_name.ptr, old_tag);
+        if (child_entity >= 0) {
+            Allocator alloc = allocator_arena(&state->gamedata_arena);
+            (void)str_from_cstr(&alloc, &state->gamedata.current_level.entities.data[child_entity].tag, child->tag.ptr);
+        }
+    }
+}
+
+static void propagate_child_offset(GameState *state, const Blueprint *blueprint, int child_idx)
+{
+    const char *bp_name = attr_get_string(&blueprint->attrs, "name");
+    const BlueprintChild *child = &blueprint->children.data[child_idx];
+    const char *tag = child->tag.len > 0 ? child->tag.ptr : "";
+    for (int index = 0; index < state->gamedata.current_level.entities.count; index++) {
+        Entity *entity = &state->gamedata.current_level.entities.data[index];
+        if (strcmp(entity->blueprint_name.ptr, bp_name) != 0) {
+            continue;
+        }
+        int child_entity = find_child_entity(&state->gamedata.current_level, index, child->blueprint_name.ptr, tag);
+        if (child_entity >= 0) {
+            Entity *child_ent = &state->gamedata.current_level.entities.data[child_entity];
+            child_ent->offset = child->offset;
+            child_ent->position = (Vector2){entity->position.x + child->offset.x, entity->position.y + child->offset.y};
+            entity_update_collision(child_ent);
+        }
+    }
+}
+
+static void dispatch_child_props(GameState *state, EditorState *editor_state, int confirmed)
+{
+    int sel = editor_state->selected_entity_index;
+    if (sel < 0 || confirmed < 0) {
+        return;
+    }
+    Entity *entity = &state->gamedata.current_level.entities.data[sel];
+    Blueprint *blueprint = find_blueprint_by_name(state, entity->blueprint_name.ptr);
+    if (!blueprint || editor_state->child_edit_index < 0 ||
+        editor_state->child_edit_index >= blueprint->children.count) {
+        return;
+    }
+    BlueprintChild *child = &blueprint->children.data[editor_state->child_edit_index];
+    if (confirmed == 0) { /* Tag */
+        editor_state->word_builder_len = 0;
+        editor_state->word_builder_buf[0] = '\0';
+        if (child->tag.len > 0 && child->tag.len < WORD_BUILDER_BUF_SIZE) {
+            memcpy(editor_state->word_builder_buf, child->tag.ptr, child->tag.len);
+            editor_state->word_builder_buf[child->tag.len] = '\0';
+            editor_state->word_builder_len = (int)child->tag.len;
+        }
+        editor_state->word_builder_scroll = 0;
+        editor_state->editing_child_tag = true;
+        editor_state->sub_mode = EDITOR_SUB_WORD_BUILDER;
+    } else if (confirmed == 1) { /* Offset X */
+        editor_state->saved_attr_int = (int)child->offset.x;
+        editor_state->editing_child_offset = true;
+        editor_state->child_edit_axis = 0;
+        editor_state->sub_mode = EDITOR_SUB_ATTR_EDIT;
+    } else if (confirmed == 2) { /* Offset Y */
+        editor_state->saved_attr_int = (int)child->offset.y;
+        editor_state->editing_child_offset = true;
+        editor_state->child_edit_axis = 1;
+        editor_state->sub_mode = EDITOR_SUB_ATTR_EDIT;
+    }
+}
+
+static void confirm_child_tag_edit(Diag *diag, GameState *state, EditorState *editor_state, UndoHistory *undo_history)
+{
+    (void)diag;
+    int sel = editor_state->selected_entity_index;
+    if (sel < 0) {
+        return;
+    }
+    Entity *entity = &state->gamedata.current_level.entities.data[sel];
+    Blueprint *blueprint = find_blueprint_by_name(state, entity->blueprint_name.ptr);
+    int child_idx = editor_state->child_edit_index;
+    if (!blueprint || child_idx < 0 || child_idx >= blueprint->children.count) {
+        editor_state->editing_child_tag = false;
+        return;
+    }
+    BlueprintChild *child = &blueprint->children.data[child_idx];
+    const char *old_tag = child->tag.len > 0 ? child->tag.ptr : "";
+    Allocator alloc = allocator_arena(&state->gamedata_arena);
+    (void)str_from_cstr(&alloc, &child->tag, editor_state->word_builder_buf);
+    propagate_child_tag(state, blueprint, child_idx, old_tag);
+    undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
+                           strv_from_cstr("Edit child tag"));
+    editor_state->editing_child_tag = false;
+}
+
+static void
+confirm_child_offset_edit(GameState *state, EditorState *editor_state, UndoHistory *undo_history, int new_value)
+{
+    int sel = editor_state->selected_entity_index;
+    if (sel < 0) {
+        return;
+    }
+    Entity *entity = &state->gamedata.current_level.entities.data[sel];
+    Blueprint *blueprint = find_blueprint_by_name(state, entity->blueprint_name.ptr);
+    int child_idx = editor_state->child_edit_index;
+    if (!blueprint || child_idx < 0 || child_idx >= blueprint->children.count) {
+        editor_state->editing_child_offset = false;
+        return;
+    }
+    BlueprintChild *child = &blueprint->children.data[child_idx];
+    if (editor_state->child_edit_axis == 0) {
+        child->offset.x = (float)new_value;
+    } else {
+        child->offset.y = (float)new_value;
+    }
+    propagate_child_offset(state, blueprint, child_idx);
+    undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
+                           strv_from_cstr("Edit child offset"));
+    editor_state->editing_child_offset = false;
+}
+
 static void
 dispatch_radial_confirm(GameState *state, EditorState *editor_state, WatchList *watches, UndoHistory *undo_history)
 {
@@ -772,6 +1061,8 @@ dispatch_radial_confirm(GameState *state, EditorState *editor_state, WatchList *
         }
     } else if (editor_state->radial_context == RADIAL_CTX_ATTR_TYPE) {
         dispatch_attr_type_change(state, editor_state, confirmed, undo_history);
+    } else if (editor_state->radial_context == RADIAL_CTX_CHILD_PROPS) {
+        dispatch_child_props(state, editor_state, confirmed);
     }
 }
 
@@ -794,10 +1085,182 @@ static void toggle_watch(EditorState *editor_state, WatchList *watches)
     }
 }
 
+typedef struct {
+    const char *blueprint_name;
+    const char *tag;
+} ChildMatch;
+
+static void propagate_child_remove(GameState *state, EditorState *editor_state, const char *bp_name, ChildMatch match)
+{
+    Level *level = &state->gamedata.current_level;
+    int count = level->entities.count;
+    SCRATCH_SCOPE(&state->scratch_arena);
+    bool *is_deleted = arena_alloc(&state->scratch_arena, (size_t)count * sizeof(bool));
+    memset(is_deleted, 0, (size_t)count * sizeof(bool));
+
+    for (int index = 0; index < count; index++) {
+        const Entity *entity = &level->entities.data[index];
+        if (strcmp(entity->blueprint_name.ptr, bp_name) != 0) {
+            continue;
+        }
+        int child_entity = find_child_entity(level, index, match.blueprint_name, match.tag);
+        if (child_entity >= 0) {
+            is_deleted[child_entity] = true;
+        }
+    }
+    mark_deleted_descendants(level, is_deleted, count);
+
+    for (int index = 0; index < count; index++) {
+        if (is_deleted[index]) {
+            int entity_id = level->entities.data[index].id;
+            map_int_str_remove(&state->gamedata.entity_blueprints, entity_id);
+            map_entity_ruleset_remove(&state->gamedata.rule_table, entity_id);
+        }
+    }
+    int *new_index_map = arena_alloc(&state->scratch_arena, (size_t)count * sizeof(int));
+    int new_count = 0;
+    for (int index = 0; index < count; index++) {
+        new_index_map[index] = is_deleted[index] ? -1 : new_count++;
+    }
+    for (int index = 0; index < count; index++) {
+        if (!is_deleted[index]) {
+            int parent = level->entities.data[index].parent_index;
+            if (parent >= 0) {
+                level->entities.data[index].parent_index = new_index_map[parent];
+            }
+        }
+    }
+    int write = 0;
+    for (int index = 0; index < count; index++) {
+        if (!is_deleted[index]) {
+            level->entities.data[write++] = level->entities.data[index];
+        }
+    }
+    level->entities.count = write;
+    if (state->gamedata.player_index >= 0) {
+        state->gamedata.player_index = new_index_map[state->gamedata.player_index];
+    }
+    editor_state->selected_tree_index = -1;
+}
+
+static void
+remove_blueprint_child(GameState *state, EditorState *editor_state, UndoHistory *undo_history, int child_idx)
+{
+    int sel = editor_state->selected_entity_index;
+    Entity *entity = &state->gamedata.current_level.entities.data[sel];
+    Blueprint *blueprint = find_blueprint_by_name(state, entity->blueprint_name.ptr);
+    if (!blueprint || child_idx < 0 || child_idx >= blueprint->children.count) {
+        return;
+    }
+    const char *bp_name = attr_get_string(&blueprint->attrs, "name");
+    ChildMatch match = {
+        .blueprint_name = blueprint->children.data[child_idx].blueprint_name.ptr,
+        .tag = blueprint->children.data[child_idx].tag.len > 0 ? blueprint->children.data[child_idx].tag.ptr : "",
+    };
+
+    propagate_child_remove(state, editor_state, bp_name, match);
+
+    /* Remove the BlueprintChild from the vec (swap with last) */
+    int last = blueprint->children.count - 1;
+    if (child_idx < last) {
+        blueprint->children.data[child_idx] = blueprint->children.data[last];
+    }
+    blueprint->children.count--;
+
+    undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
+                           strv_from_cstr("Remove child"));
+}
+
+static void add_blueprint_child(Diag *diag,
+                                GameState *state,
+                                EditorState *editor_state,
+                                UndoHistory *undo_history,
+                                const char *child_blueprint_name,
+                                TextureLookupFn texture_lookup,
+                                void *texture_user_data)
+{
+    int sel = editor_state->selected_entity_index;
+    if (sel < 0) {
+        return;
+    }
+    Entity *entity = &state->gamedata.current_level.entities.data[sel];
+    Blueprint *blueprint = find_blueprint_by_name(state, entity->blueprint_name.ptr);
+    if (!blueprint) {
+        return;
+    }
+    Allocator alloc = allocator_arena(&state->gamedata_arena);
+    BlueprintChild new_child = {0};
+    (void)str_from_cstr(&alloc, &new_child.blueprint_name, child_blueprint_name);
+    new_child.offset = (Vector2){0, 0};
+    if (!vec_blueprint_child_push(&blueprint->children, new_child)) {
+        return;
+    }
+    int child_idx = blueprint->children.count - 1;
+
+    /* Spawn for all instances of this blueprint */
+    const char *bp_name = attr_get_string(&blueprint->attrs, "name");
+    for (int index = 0; index < state->gamedata.current_level.entities.count; index++) {
+        const Entity *parent = &state->gamedata.current_level.entities.data[index];
+        if (strcmp(parent->blueprint_name.ptr, bp_name) != 0) {
+            continue;
+        }
+        if (!level_spawn_single_child(diag, &state->gamedata.current_level, index, &blueprint->children.data[child_idx],
+                                      &state->gamedata.blueprints, texture_lookup, texture_user_data, &alloc)) {
+            debug_log(diag->debug, "add child: %s", error_get(diag->error));
+            error_clear(diag->error);
+        }
+    }
+    undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
+                           strv_from_cstr("Add child"));
+}
+
+static void
+handle_browse_delete(GameState *state, EditorState *editor_state, WatchList *watches, UndoHistory *undo_history)
+{
+    int del_sel = editor_state->selected_entity_index;
+    if (del_sel < 0) {
+        return;
+    }
+
+    /* Tree section: X on child row → remove blueprint child */
+    int tree_idx = editor_state->selected_tree_index;
+    if (tree_idx >= 0) {
+        const Entity *entity = &state->gamedata.current_level.entities.data[del_sel];
+        const Blueprint *blueprint = blueprint_find(&state->gamedata.blueprints, entity->blueprint_name.ptr);
+        if (blueprint && !tree_is_parent_row(entity, tree_idx) && !tree_is_add_child_row(entity, blueprint, tree_idx)) {
+            int child_idx = tree_child_index(entity, tree_idx);
+            if (child_idx >= 0 && child_idx < blueprint->children.count) {
+                remove_blueprint_child(state, editor_state, undo_history, child_idx);
+            }
+        }
+        return;
+    }
+
+    /* Attr section: X on instance attr → remove attr; otherwise → delete entity */
+    int del_attr = editor_state->selected_attr_index;
+    int del_sentinel = total_attr_count(state, &state->gamedata.current_level.entities.data[del_sel]);
+    if (del_attr >= 0 && del_attr < del_sentinel &&
+        !is_blueprint_attr(&state->gamedata.current_level.entities.data[del_sel], del_attr)) {
+        Entity *del_entity = &state->gamedata.current_level.entities.data[del_sel];
+        Attribute *del_target = &del_entity->attrs.entries.data[del_attr];
+        Allocator alloc = allocator_arena(&state->gamedata_arena);
+        attr_remove(&alloc, &del_entity->attrs, del_target->name.ptr);
+        editor_state->selected_attr_index = -1;
+        undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
+                               strv_from_cstr("Remove attribute"));
+    } else if (del_attr < 0 || (del_attr < del_sentinel &&
+                                is_blueprint_attr(&state->gamedata.current_level.entities.data[del_sel], del_attr))) {
+        delete_selected_entity(state, editor_state, watches);
+        undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
+                               strv_from_cstr("Delete entity"));
+    }
+}
+
 static void reset_editor_selection(EditorState *editor_state, WatchList *watches)
 {
     editor_state->selected_entity_index = -1;
     editor_state->selected_attr_index = -1;
+    editor_state->selected_tree_index = -1;
     watches->count = 0;
 }
 
@@ -828,35 +1291,16 @@ void handle_browse_input(GameState *state,
         handle_browse_cancel(editor_state);
     }
     if (toggle_pressed((ToggleBinding){KEY_DOWN, GAMEPAD_BUTTON_LEFT_FACE_DOWN})) {
-        handle_browse_attr_navigate(state, editor_state, 1);
+        handle_browse_navigate(state, editor_state, 1);
     }
     if (toggle_pressed((ToggleBinding){KEY_UP, GAMEPAD_BUTTON_LEFT_FACE_UP})) {
-        handle_browse_attr_navigate(state, editor_state, -1);
+        handle_browse_navigate(state, editor_state, -1);
     }
     if (toggle_pressed((ToggleBinding){KEY_LEFT_SHIFT, GAMEPAD_BUTTON_LEFT_TRIGGER_2})) {
         toggle_watch(editor_state, watches);
     }
     if (toggle_pressed((ToggleBinding){KEY_DELETE, GAMEPAD_BUTTON_RIGHT_FACE_LEFT})) {
-        int del_sel = editor_state->selected_entity_index;
-        int del_attr = editor_state->selected_attr_index;
-        int del_sentinel =
-            (del_sel >= 0) ? total_attr_count(state, &state->gamedata.current_level.entities.data[del_sel]) : -1;
-        if (del_sel >= 0 && del_attr >= 0 && del_attr < del_sentinel &&
-            !is_blueprint_attr(&state->gamedata.current_level.entities.data[del_sel], del_attr)) {
-            Entity *del_entity = &state->gamedata.current_level.entities.data[del_sel];
-            Attribute *del_target = &del_entity->attrs.entries.data[del_attr];
-            Allocator alloc = allocator_arena(&state->gamedata_arena);
-            attr_remove(&alloc, &del_entity->attrs, del_target->name.ptr);
-            editor_state->selected_attr_index = -1;
-            undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
-                                   strv_from_cstr("Remove attribute"));
-        } else if (del_attr < 0 ||
-                   (del_attr < del_sentinel &&
-                    is_blueprint_attr(&state->gamedata.current_level.entities.data[del_sel], del_attr))) {
-            delete_selected_entity(state, editor_state, watches);
-            undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
-                                   strv_from_cstr("Delete entity"));
-        }
+        handle_browse_delete(state, editor_state, watches, undo_history);
     }
     if (toggle_pressed((ToggleBinding){KEY_P, GAMEPAD_BUTTON_RIGHT_TRIGGER_1})) {
         if (state->gamedata.blueprints.entries.count > 0) {
@@ -871,6 +1315,19 @@ void handle_browse_input(GameState *state,
             editor_state->radial_item_count = 4;
             editor_state->radial_context = RADIAL_CTX_ATTR_TYPE;
             editor_state->sub_mode = EDITOR_SUB_RADIAL;
+        } else if (editor_state->selected_tree_index >= 0) {
+            int r2_sel = editor_state->selected_entity_index;
+            const Entity *r2_entity = &state->gamedata.current_level.entities.data[r2_sel];
+            const Blueprint *r2_bp = blueprint_find(&state->gamedata.blueprints, r2_entity->blueprint_name.ptr);
+            int r2_tree = editor_state->selected_tree_index;
+            if (r2_bp && !tree_is_parent_row(r2_entity, r2_tree) && !tree_is_add_child_row(r2_entity, r2_bp, r2_tree)) {
+                editor_state->radial_selected = -1;
+                editor_state->radial_confirmed = -1;
+                editor_state->radial_item_count = 3;
+                editor_state->radial_context = RADIAL_CTX_CHILD_PROPS;
+                editor_state->child_edit_index = tree_child_index(r2_entity, r2_tree);
+                editor_state->sub_mode = EDITOR_SUB_RADIAL;
+            }
         }
     }
     if (toggle_pressed((ToggleBinding){KEY_LEFT, GAMEPAD_BUTTON_LEFT_FACE_LEFT})) {
@@ -994,8 +1451,15 @@ static void apply_attr_delta(GameState *state, EditorState *editor_state, int de
     }
 }
 
+static void
+handle_child_offset_edit(GameState *state, EditorState *editor_state, UndoHistory *undo_history, float delta_time);
+
 void handle_attr_edit_input(GameState *state, EditorState *editor_state, UndoHistory *undo_history, float delta_time)
 {
+    if (editor_state->editing_child_offset) {
+        handle_child_offset_edit(state, editor_state, undo_history, delta_time);
+        return;
+    }
     int sel = editor_state->selected_entity_index;
     int attr_idx = editor_state->selected_attr_index;
     if (sel < 0 || attr_idx < 0) {
@@ -1065,6 +1529,57 @@ void handle_attr_edit_input(GameState *state, EditorState *editor_state, UndoHis
     }
 }
 
+static void reset_attr_hold(EditorState *editor_state)
+{
+    editor_state->attr_hold_total = 0.0F;
+    editor_state->attr_hold_subtick = 0.0F;
+    editor_state->attr_hold_dir = 0;
+}
+
+static void
+handle_child_offset_edit(GameState *state, EditorState *editor_state, UndoHistory *undo_history, float delta_time)
+{
+    if (toggle_pressed((ToggleBinding){KEY_ENTER, GAMEPAD_BUTTON_RIGHT_FACE_DOWN})) {
+        confirm_child_offset_edit(state, editor_state, undo_history, editor_state->saved_attr_int);
+        reset_attr_hold(editor_state);
+        editor_state->sub_mode = EDITOR_SUB_BROWSE;
+        return;
+    }
+    if (toggle_pressed((ToggleBinding){KEY_ESCAPE, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT})) {
+        editor_state->editing_child_offset = false;
+        reset_attr_hold(editor_state);
+        editor_state->sub_mode = EDITOR_SUB_BROWSE;
+        return;
+    }
+    int multi_delta = read_value_delta();
+    if (multi_delta != 0) {
+        editor_state->saved_attr_int += multi_delta;
+    }
+    int held = read_held_dir();
+    if (held != editor_state->attr_hold_dir) {
+        editor_state->attr_hold_dir = held;
+        editor_state->attr_hold_total = 0.0F;
+        editor_state->attr_hold_subtick = 0.0F;
+    }
+    if (held == 0) {
+        return;
+    }
+    editor_state->attr_hold_total += delta_time;
+    editor_state->attr_hold_subtick += delta_time;
+    if (editor_state->attr_hold_total < ATTR_REPEAT_DELAY) {
+        return;
+    }
+    float hold_excess = editor_state->attr_hold_total - ATTR_REPEAT_DELAY;
+    float period = ATTR_REPEAT_PERIOD / (1.0F + (ATTR_REPEAT_ACCEL * hold_excess));
+    if (period < ATTR_REPEAT_MIN_PERIOD) {
+        period = ATTR_REPEAT_MIN_PERIOD;
+    }
+    while (editor_state->attr_hold_subtick >= period) {
+        editor_state->attr_hold_subtick -= period;
+        editor_state->saved_attr_int += held;
+    }
+}
+
 static int radial_sector_from_stick(Vector2 stick, int item_count)
 {
     float magnitude = sqrtf((stick.x * stick.x) + (stick.y * stick.y));
@@ -1088,6 +1603,11 @@ static const char *radial_label(const EditorState *editor_state, int index)
         static const char *const types[] = {"Float", "Int", "Bool", "String"};
         if (index >= 0 && index < 4) {
             return types[index];
+        }
+    } else if (editor_state->radial_context == RADIAL_CTX_CHILD_PROPS) {
+        static const char *const props[] = {"Tag", "Offset X", "Offset Y"};
+        if (index >= 0 && index < 3) {
+            return props[index];
         }
     }
     return "";
@@ -1321,7 +1841,10 @@ void handle_word_builder_input(Diag *diag, GameState *state, EditorState *editor
     int total = word_builder_total_count(state);
     word_builder_navigate(editor_state, total);
     if (toggle_pressed((ToggleBinding){KEY_ENTER, GAMEPAD_BUTTON_RIGHT_FACE_DOWN})) {
-        if (editor_state->word_builder_scroll == 0 && editor_state->adding_attr) {
+        if (editor_state->word_builder_scroll == 0 && editor_state->editing_child_tag) {
+            confirm_child_tag_edit(diag, state, editor_state, undo_history);
+            editor_state->sub_mode = EDITOR_SUB_BROWSE;
+        } else if (editor_state->word_builder_scroll == 0 && editor_state->adding_attr) {
             add_attr_by_name(diag, state, editor_state, editor_state->word_builder_buf);
             undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
                                    strv_from_cstr("Add attribute"));
@@ -1347,6 +1870,7 @@ void handle_word_builder_input(Diag *diag, GameState *state, EditorState *editor
             word_builder_pop(editor_state);
         } else {
             editor_state->adding_attr = false;
+            editor_state->editing_child_tag = false;
             editor_state->sub_mode = EDITOR_SUB_BROWSE;
         }
     }
@@ -1589,12 +2113,26 @@ static void fuzzy_finder_confirm(Diag *diag, GameState *state, EditorState *edit
     }
 }
 
-void handle_fuzzy_finder_input(Diag *diag, GameState *state, EditorState *editor_state, UndoHistory *undo_history)
+void handle_fuzzy_finder_input(Diag *diag,
+                               GameState *state,
+                               EditorState *editor_state,
+                               UndoHistory *undo_history,
+                               TextureLookupFn texture_lookup,
+                               void *texture_user_data)
 {
     int total = fuzzy_finder_total_count(editor_state);
     fuzzy_finder_navigate(editor_state, total);
     if (toggle_pressed((ToggleBinding){KEY_ENTER, GAMEPAD_BUTTON_RIGHT_FACE_DOWN})) {
-        if (editor_state->adding_attr) {
+        if (editor_state->adding_child) {
+            if (editor_state->fuzzy_finder_scroll == 0) {
+                fuzzy_finder_enter_word_builder(state, editor_state);
+            } else {
+                const char *chosen = fuzzy_finder_item(editor_state, editor_state->fuzzy_finder_scroll);
+                add_blueprint_child(diag, state, editor_state, undo_history, chosen, texture_lookup, texture_user_data);
+                editor_state->adding_child = false;
+                editor_state->sub_mode = EDITOR_SUB_BROWSE;
+            }
+        } else if (editor_state->adding_attr) {
             if (editor_state->fuzzy_finder_scroll == 0) {
                 fuzzy_finder_enter_word_builder(state, editor_state);
             } else {
@@ -1616,6 +2154,7 @@ void handle_fuzzy_finder_input(Diag *diag, GameState *state, EditorState *editor
     }
     if (toggle_pressed((ToggleBinding){KEY_ESCAPE, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT})) {
         editor_state->adding_attr = false;
+        editor_state->adding_child = false;
         editor_state->sub_mode = EDITOR_SUB_BROWSE;
     }
 }

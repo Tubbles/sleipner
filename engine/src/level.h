@@ -30,6 +30,17 @@ VEC_DECL(level, Level)
 /* Free level name, music name, and all entity Str fields and attrs. */
 void level_free(Allocator *alloc, Level *level);
 
+/* Spawn a single child entity from a BlueprintChild definition under the given parent.
+ * Instantiates grandchildren recursively; assigns next_entity_id. Returns true on success. */
+[[nodiscard]] bool level_spawn_single_child(Diag *diag,
+                                            Level *level,
+                                            int parent_index,
+                                            const BlueprintChild *child_def,
+                                            const BlueprintTable *blueprints,
+                                            TextureLookupFn texture_lookup,
+                                            void *texture_user_data,
+                                            Allocator *alloc);
+
 /* Spawn a new root entity from a blueprint at the given position.
  * Instantiates children; assigns next_entity_id. Returns true on success. */
 [[nodiscard]] bool level_spawn_entity(Diag *diag,

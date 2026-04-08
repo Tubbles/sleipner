@@ -772,7 +772,7 @@ static void handle_editor_input(Diag *diag,
     } else if (editor_state->sub_mode == EDITOR_SUB_WORD_BUILDER) {
         handle_word_builder_input(diag, state, editor_state, undo_history);
     } else if (editor_state->sub_mode == EDITOR_SUB_FUZZY_FINDER) {
-        handle_fuzzy_finder_input(diag, state, editor_state, undo_history);
+        handle_fuzzy_finder_input(diag, state, editor_state, undo_history, texture_registry_lookup, state);
     } else if (editor_state->sub_mode == EDITOR_SUB_GAMEPAD_KB) {
         handle_gamepad_kb_input(editor_state, input);
     } else {

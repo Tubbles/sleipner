@@ -254,6 +254,59 @@ static toml_table_t *find_level_table(toml_array_t *levels, const char *level_na
     return nullptr;
 }
 
+bool level_spawn_single_child(Diag *diag,
+                              Level *level,
+                              int parent_index,
+                              const BlueprintChild *child_def,
+                              const BlueprintTable *blueprints,
+                              TextureLookupFn texture_lookup,
+                              void *texture_user_data,
+                              Allocator *alloc)
+{
+    const Blueprint *child_blueprint = blueprint_find(blueprints, child_def->blueprint_name.ptr);
+    if (!child_blueprint) {
+        error_set(diag->error, "child blueprint '%s' not found", child_def->blueprint_name.ptr);
+        return false;
+    }
+    Vector2 parent_position = level->entities.data[parent_index].position;
+    const char *child_texture_name = attr_get_string(&child_blueprint->attrs, "texture");
+    Texture2D *texture = child_texture_name ? texture_lookup(child_texture_name, texture_user_data) : nullptr;
+    Vector2 child_position = {parent_position.x + child_def->offset.x, parent_position.y + child_def->offset.y};
+    EntitySpec child_spec = {
+        .blueprint_name = strv_from_cstr(attr_get_string(&child_blueprint->attrs, "name")),
+        .collision_offset = blueprint_get_collision_offset(child_blueprint),
+        .collision_size = blueprint_get_collision_size(child_blueprint),
+        .texture = texture,
+    };
+    Entity child = {0};
+    if (!entity_init(&child, child_spec, child_position, alloc)) {
+        error_wrap(diag->error, "level_spawn_single_child");
+        return false;
+    }
+    if (!attr_get(&child_blueprint->attrs, "solid")) {
+        bool is_solid = (child_spec.collision_size.x > 0.0F) || (child_spec.collision_size.y > 0.0F);
+        (void)attr_set_bool(alloc, &child.attrs, "solid", is_solid);
+    }
+    child.id = level->next_entity_id++;
+    child.parent_index = parent_index;
+    child.offset = child_def->offset;
+    if (child_def->tag.len > 0 && !str_from_strv(alloc, &child.tag, str_to_strv(child_def->tag))) {
+        error_set(diag->error, "level_spawn_single_child: tag copy failed");
+        return false;
+    }
+    int child_entity_index = level->entities.count;
+    if (!vec_entity_push(&level->entities, child)) {
+        error_set(diag->error, "level_spawn_single_child: out of memory");
+        return false;
+    }
+    if (!instantiate_children(diag->error, alloc, level, child_entity_index, blueprints, texture_lookup,
+                              texture_user_data)) {
+        error_wrap(diag->error, "level_spawn_single_child");
+        return false;
+    }
+    return true;
+}
+
 bool level_spawn_entity(Diag *diag,
                         Level *level,
                         const Blueprint *blueprint,

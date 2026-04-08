@@ -1123,9 +1123,11 @@ Rules that prevent memory corruption when modifying the codebase:
 - [x] Value adjuster with auto-repeat and ±100 step (hold for acceleration)
 - [x] Gamepad keyboard (last resort)
 - [x] Attribute editor (built-in + custom, with diff view)
-- [ ] Child entity editor (composition, tags)
+- [x] Child entity editor (composition, tags)
 - [x] Undo (snapshot-based, arena memcpy)
 - [x] Attribute watcher (pin to debug overlay, live values during play)
+- [ ] Instance attribute persistence (serialize per-entity attr overrides to TOML)
+- [ ] Add blueprint attributes from browse mode (currently only instance attrs can be added)
 
 ### Phase 6 — Multiplayer
 - [ ] Input source abstraction (decouple player behavior from hardcoded gamepad)
