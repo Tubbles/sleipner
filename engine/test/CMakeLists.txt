@@ -30,6 +30,7 @@ add_unit_test(editor_core_test)
 add_unit_test(editor_attr_test)
 add_unit_test(editor_widgets_test)
 add_unit_test(editor_child_test)
+add_unit_test(editor_blueprint_test)
 
 add_executable(engine_tests
     main_test.c
