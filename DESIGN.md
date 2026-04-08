@@ -1110,7 +1110,7 @@ Rules that prevent memory corruption when modifying the codebase:
 - [x] Browse mode: select entities, inspect attributes
 - [x] Edit mode: move entities, resize collision boxes with visual handles
 - [x] Scene mode: place/move/delete entities, inspect properties
-- [ ] Blueprint mode: create/edit blueprints (texture, collision, behavior, attributes, rules, children)
+- [x] Blueprint mode: create/edit/duplicate/delete blueprints, edit attributes, manage children
 - [ ] Tile mode: paint ground and overlay layers, tile palette
 - [ ] Atlas mode: view textures, define named source rects, preview sprites
 - [ ] Animation mode: define frame sequences, preview playback, link directional states
@@ -1127,7 +1127,7 @@ Rules that prevent memory corruption when modifying the codebase:
 - [x] Undo (snapshot-based, arena memcpy)
 - [x] Attribute watcher (pin to debug overlay, live values during play)
 - [ ] Instance attribute persistence (serialize per-entity attr overrides to TOML)
-- [ ] Add blueprint attributes from browse mode (currently only instance attrs can be added)
+- [x] Add blueprint attributes from blueprint mode (and from browse mode via scoped editing)
 
 ### Phase 6 — Multiplayer
 - [ ] Input source abstraction (decouple player behavior from hardcoded gamepad)

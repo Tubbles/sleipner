@@ -17,9 +17,10 @@
 
 ## Architecture audit findings
 
-- **Editor test coverage — Phase 4** — 154 unit tests across 5 files (draw 14,
-  core 30, attr 26, widgets 64, child 20). Still missing: integration tests for
-  full editor workflows (select → edit → confirm), draw function testing.
+- **Editor test coverage — Phase 4+5** — 176 unit tests across 6 files (draw 14,
+  core 30, attr 26, widgets 64, child 20, blueprint 22). Still missing:
+  integration tests for full editor workflows (select → edit → confirm), draw
+  function testing.
 - **`TriggerEventQueue` uses fixed array** — `rule.h` defines
   `events[MAX_CASCADE_EVENTS]` instead of a vec. Violates "prefer vec over
   fixed-size arrays with MAX\_\* constants" in CLAUDE.md.
