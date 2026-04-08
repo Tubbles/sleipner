@@ -25,7 +25,10 @@ add_unit_test(attribute_test)
 add_unit_test(entity_test)
 add_unit_test(toml_str_test)
 add_unit_test(rule_test)
-add_unit_test(editor_test)
+add_unit_test(editor_draw_test)
+add_unit_test(editor_core_test)
+add_unit_test(editor_attr_test)
+add_unit_test(editor_widgets_test)
 
 add_executable(engine_tests
     main_test.c

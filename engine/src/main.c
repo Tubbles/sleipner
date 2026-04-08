@@ -7,7 +7,7 @@
 #include "audio.h"
 #include "blueprint.h"
 #include "debug.h"
-#include "editor.h"
+#include "editor/editor.h"
 #include "entity.h"
 #include "diag.h"
 #include "game.h"

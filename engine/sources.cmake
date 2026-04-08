@@ -3,7 +3,7 @@
 # Include from any CMakeLists.txt that needs to build the engine.
 #
 # Provides:
-#   ENGINE_SOURCE_FILES              — .c basenames under engine/src/ (no path prefix)
+#   ENGINE_SOURCE_FILES              — .c paths relative to engine/src/ (no path prefix)
 #   embed_asset(target symbol path)  — embed one binary asset via .incbin
 #   embed_all_assets(target root)    — embed all standard assets; root is absolute project root
 
@@ -20,7 +20,11 @@ set(ENGINE_SOURCE_FILES
     blueprint.c
     collision.c
     debug.c
-    editor.c
+    editor/attr.c
+    editor/child.c
+    editor/core.c
+    editor/draw.c
+    editor/widgets.c
     entity.c
     error.c
     game.c

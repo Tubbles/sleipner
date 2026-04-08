@@ -1,0 +1,859 @@
+#include "fff.h"
+#include "unity.h"
+
+#include "../src/strv.c"           // NOLINT(bugprone-suspicious-include)
+#include "../src/str.c"            // NOLINT(bugprone-suspicious-include)
+#include "../src/error.c"          // NOLINT(bugprone-suspicious-include)
+#include "../src/arena_posix.c"    // NOLINT(bugprone-suspicious-include)
+#include "../src/attribute.c"      // NOLINT(bugprone-suspicious-include)
+#include "../src/entity.c"         // NOLINT(bugprone-suspicious-include)
+#include "../src/map.c"            // NOLINT(bugprone-suspicious-include)
+#include "../src/editor/widgets.c" // NOLINT(bugprone-suspicious-include)
+
+DEFINE_FFF_GLOBALS;
+
+/* raylib draw fakes (used by draw_radial_picker, draw_gamepad_kb, etc.) */
+FAKE_VOID_FUNC(DrawCircle, int, int, float, Color);
+FAKE_VOID_FUNC(DrawRing, Vector2, float, float, float, float, int, Color);
+FAKE_VOID_FUNC(DrawRectangle, int, int, int, int, Color);
+
+/* Cross-file editor fakes: draw.c */
+FAKE_VALUE_FUNC(bool, toggle_pressed, ToggleBinding);
+FAKE_VOID_FUNC(draw_ui_text, Font, const char *, int, int, int, Color);
+FAKE_VALUE_FUNC(int, measure_ui_text, Font, const char *, int);
+
+/* extern color constants from draw.c */
+const Color debug_text_color = {0};
+const Color debug_bg_color = {0};
+const Color debug_log_color = {0};
+
+/* Cross-file editor fakes: core.c */
+FAKE_VALUE_FUNC(Blueprint *, find_blueprint_by_name, GameState *, const char *);
+FAKE_VALUE_FUNC(bool, is_blueprint_attr, const Entity *, int);
+FAKE_VALUE_FUNC(Attribute *, attr_at_display_index, GameState *, Entity *, int);
+FAKE_VALUE_FUNC(int, place_visible_count, int);
+
+/* Cross-file editor fakes: attr.c */
+FAKE_VOID_FUNC(confirm_child_tag_edit, Diag *, GameState *, EditorState *, UndoHistory *);
+
+/* Cross-file editor fakes: child.c */
+FAKE_VOID_FUNC(
+    add_blueprint_child, Diag *, GameState *, EditorState *, UndoHistory *, const char *, TextureLookupFn, void *);
+
+/* External module fakes */
+FAKE_VOID_FUNC(undo_history_new_entry, UndoHistory *, GamedataState *, Arena *, ArenaCheckpoint, Strv);
+
+/* TextFormat stub — variadic, cannot use FAKE_VALUE_FUNC */
+const char *TextFormat(const char *text, ...)
+{
+    (void)text;
+    return "";
+}
+
+/* debug_log stub — variadic with __attribute__((format)) */
+void debug_log(DebugState *dbg, const char *format, ...)
+{
+    (void)dbg;
+    (void)format;
+}
+
+/* VEC_IMPL / MAP_IMPL for types needed by test setup/cleanup */
+VEC_IMPL(blueprint_child, BlueprintChild)
+VEC_IMPL(blueprint, Blueprint)
+VEC_IMPL(flag_name, FlagName)
+
+#include "test_heap_alloc.h"
+
+#include <string.h>
+
+void setUp(void) {}
+void tearDown(void) {}
+
+/* ---- Helpers ------------------------------------------------------------ */
+
+static void test_attr_set_free_local(AttrSet *set)
+{
+    attr_set_free(&test_heap_alloc, set);
+}
+
+static void test_blueprint_free_local(Blueprint *blueprint)
+{
+    for (int index = 0; index < blueprint->children.count; index++) {
+        str_free(&test_heap_alloc, &blueprint->children.data[index].blueprint_name);
+        str_free(&test_heap_alloc, &blueprint->children.data[index].tag);
+    }
+    vec_blueprint_child_free(&blueprint->children);
+    test_attr_set_free_local(&blueprint->attrs);
+}
+
+static void test_blueprint_table_free_local(BlueprintTable *table)
+{
+    for (int index = 0; index < table->entries.count; index++) {
+        test_blueprint_free_local(&table->entries.data[index]);
+    }
+    vec_blueprint_free(&table->entries);
+}
+
+static Blueprint make_named_blueprint(const char *name)
+{
+    Blueprint blueprint = {0};
+    TEST_ASSERT_TRUE(attr_set_string(&test_heap_alloc, &blueprint.attrs, (AttrStringPair){"name", name}));
+    return blueprint;
+}
+
+static void reset_input_fakes(void)
+{
+    RESET_FAKE(toggle_pressed);
+    FFF_RESET_HISTORY(); // NOLINT(bugprone-multi-level-implicit-pointer-conversion)
+}
+
+static int target_key_for_press;
+static bool press_specific_toggle(ToggleBinding binding)
+{
+    return binding.key == target_key_for_press;
+}
+
+/* ---- radial_sector_from_stick ------------------------------------------- */
+
+void test_editor_radial_dead_zone_returns_negative_one(void)
+{
+    Vector2 tiny_stick = {0.1F, 0.1F};
+    TEST_ASSERT_EQUAL_INT(-1, radial_sector_from_stick(tiny_stick, 4));
+}
+
+void test_editor_radial_stick_up_four_items(void)
+{
+    Vector2 stick_up = {0.0F, -1.0F};
+    TEST_ASSERT_EQUAL_INT(0, radial_sector_from_stick(stick_up, 4));
+}
+
+void test_editor_radial_stick_right_four_items(void)
+{
+    Vector2 right = {1.0F, 0.0F};
+    TEST_ASSERT_EQUAL_INT(1, radial_sector_from_stick(right, 4));
+}
+
+void test_editor_radial_stick_down_four_items(void)
+{
+    /* Slightly west of south to avoid exact sector boundary at 180 degrees */
+    Vector2 down = {-0.1F, 1.0F};
+    TEST_ASSERT_EQUAL_INT(2, radial_sector_from_stick(down, 4));
+}
+
+void test_editor_radial_stick_left_four_items(void)
+{
+    Vector2 left = {-1.0F, 0.0F};
+    TEST_ASSERT_EQUAL_INT(3, radial_sector_from_stick(left, 4));
+}
+
+/* ---- radial_label ------------------------------------------------------- */
+
+void test_editor_radial_label_grab(void)
+{
+    EditorState editor_state = {.radial_context = RADIAL_CTX_TOOLS};
+    TEST_ASSERT_EQUAL_STRING("Grab", radial_label(&editor_state, 0));
+}
+
+void test_editor_radial_label_delete(void)
+{
+    EditorState editor_state = {.radial_context = RADIAL_CTX_TOOLS};
+    TEST_ASSERT_EQUAL_STRING("Delete", radial_label(&editor_state, 3));
+}
+
+void test_editor_radial_label_out_of_bounds(void)
+{
+    EditorState editor_state = {.radial_context = RADIAL_CTX_TOOLS};
+    TEST_ASSERT_EQUAL_STRING("", radial_label(&editor_state, 4));
+}
+
+void test_attr_radial_label_float(void)
+{
+    EditorState editor_state = {.radial_context = RADIAL_CTX_ATTR_TYPE};
+    TEST_ASSERT_EQUAL_STRING("Float", radial_label(&editor_state, 0));
+}
+
+void test_attr_radial_label_string(void)
+{
+    EditorState editor_state = {.radial_context = RADIAL_CTX_ATTR_TYPE};
+    TEST_ASSERT_EQUAL_STRING("String", radial_label(&editor_state, 3));
+}
+
+void test_child_radial_label_tag(void)
+{
+    EditorState editor_state = {0};
+    editor_state.radial_context = RADIAL_CTX_CHILD_PROPS;
+    TEST_ASSERT_EQUAL_STRING("Tag", radial_label(&editor_state, 0));
+}
+
+void test_child_radial_label_offset(void)
+{
+    EditorState editor_state = {0};
+    editor_state.radial_context = RADIAL_CTX_CHILD_PROPS;
+    TEST_ASSERT_EQUAL_STRING("Offset X", radial_label(&editor_state, 1));
+    TEST_ASSERT_EQUAL_STRING("Offset Y", radial_label(&editor_state, 2));
+}
+
+/* ---- word_builder_append ------------------------------------------------ */
+
+void test_editor_word_builder_append_to_empty(void)
+{
+    EditorState editor_state = {0};
+    word_builder_append(&editor_state, "chest");
+    TEST_ASSERT_EQUAL_STRING("chest", editor_state.word_builder_buf);
+    TEST_ASSERT_EQUAL_INT(5, editor_state.word_builder_len);
+}
+
+void test_editor_word_builder_append_with_underscore(void)
+{
+    EditorState editor_state = {0};
+    word_builder_append(&editor_state, "chest");
+    word_builder_append(&editor_state, "locked");
+    TEST_ASSERT_EQUAL_STRING("chest_locked", editor_state.word_builder_buf);
+    TEST_ASSERT_EQUAL_INT(12, editor_state.word_builder_len);
+}
+
+void test_editor_word_builder_append_overflow_noop(void)
+{
+    EditorState editor_state = {0};
+    memset(editor_state.word_builder_buf, 'a', WORD_BUILDER_BUF_SIZE - 2);
+    editor_state.word_builder_buf[WORD_BUILDER_BUF_SIZE - 2] = '\0';
+    editor_state.word_builder_len = WORD_BUILDER_BUF_SIZE - 2;
+
+    word_builder_append(&editor_state, "x");
+
+    TEST_ASSERT_EQUAL_INT(WORD_BUILDER_BUF_SIZE - 2, editor_state.word_builder_len);
+}
+
+void test_editor_word_builder_append_multiple(void)
+{
+    EditorState editor_state = {0};
+    word_builder_append(&editor_state, "fire");
+    word_builder_append(&editor_state, "ice");
+    word_builder_append(&editor_state, "water");
+    TEST_ASSERT_EQUAL_STRING("fire_ice_water", editor_state.word_builder_buf);
+    TEST_ASSERT_EQUAL_INT(14, editor_state.word_builder_len);
+}
+
+/* ---- word_builder_pop --------------------------------------------------- */
+
+void test_editor_word_builder_pop_last_word(void)
+{
+    EditorState editor_state = {0};
+    word_builder_append(&editor_state, "chest");
+    word_builder_append(&editor_state, "locked");
+    word_builder_pop(&editor_state);
+    TEST_ASSERT_EQUAL_STRING("chest", editor_state.word_builder_buf);
+    TEST_ASSERT_EQUAL_INT(5, editor_state.word_builder_len);
+}
+
+void test_editor_word_builder_pop_single_word(void)
+{
+    EditorState editor_state = {0};
+    word_builder_append(&editor_state, "chest");
+    word_builder_pop(&editor_state);
+    TEST_ASSERT_EQUAL_STRING("", editor_state.word_builder_buf);
+    TEST_ASSERT_EQUAL_INT(0, editor_state.word_builder_len);
+}
+
+void test_editor_word_builder_pop_empty_noop(void)
+{
+    EditorState editor_state = {0};
+    word_builder_pop(&editor_state);
+    TEST_ASSERT_EQUAL_STRING("", editor_state.word_builder_buf);
+    TEST_ASSERT_EQUAL_INT(0, editor_state.word_builder_len);
+}
+
+/* ---- word_builder_total_count ------------------------------------------- */
+
+void test_editor_word_builder_total_count_no_blueprints(void)
+{
+    GameState state = {0};
+    int total = word_builder_total_count(&state);
+    TEST_ASSERT_EQUAL_INT(1 + WORD_BUILDER_BUILTIN_COUNT, total);
+}
+
+void test_editor_word_builder_total_count_with_blueprints(void)
+{
+    GameState state = {0};
+    state.gamedata.blueprints.entries.alloc = test_heap_alloc;
+    int base = word_builder_total_count(&state);
+
+    Blueprint blueprint = make_named_blueprint("player");
+    TEST_ASSERT_TRUE(vec_blueprint_push(&state.gamedata.blueprints.entries, blueprint));
+
+    TEST_ASSERT_EQUAL_INT(base + 1, word_builder_total_count(&state));
+
+    test_blueprint_table_free_local(&state.gamedata.blueprints);
+}
+
+/* ---- word_builder_item -------------------------------------------------- */
+
+void test_editor_word_builder_item_zero_is_done(void)
+{
+    GameState state = {0};
+    TEST_ASSERT_EQUAL_STRING("[ DONE ]", word_builder_item(&state, 0));
+}
+
+void test_editor_word_builder_item_first_builtin(void)
+{
+    GameState state = {0};
+    TEST_ASSERT_EQUAL_STRING("chest", word_builder_item(&state, 1));
+}
+
+void test_editor_word_builder_item_blueprint_name(void)
+{
+    GameState state = {0};
+    state.gamedata.blueprints.entries.alloc = test_heap_alloc;
+    Blueprint blueprint = make_named_blueprint("player");
+    TEST_ASSERT_TRUE(vec_blueprint_push(&state.gamedata.blueprints.entries, blueprint));
+
+    int blueprint_index = 1 + WORD_BUILDER_BUILTIN_COUNT;
+    TEST_ASSERT_EQUAL_STRING("player", word_builder_item(&state, blueprint_index));
+
+    test_blueprint_table_free_local(&state.gamedata.blueprints);
+}
+
+void test_editor_word_builder_item_negative_index(void)
+{
+    GameState state = {0};
+    TEST_ASSERT_EQUAL_STRING("[ DONE ]", word_builder_item(&state, -1));
+}
+
+/* ---- word_builder_navigate ---------------------------------------------- */
+
+void test_editor_word_builder_nav_up(void)
+{
+    reset_input_fakes();
+    target_key_for_press = KEY_UP;
+    toggle_pressed_fake.custom_fake = press_specific_toggle;
+
+    EditorState editor_state = {.word_builder_scroll = 5};
+    word_builder_navigate(&editor_state, 10);
+    TEST_ASSERT_EQUAL_INT(4, editor_state.word_builder_scroll);
+}
+
+void test_editor_word_builder_nav_up_clamped(void)
+{
+    reset_input_fakes();
+    target_key_for_press = KEY_UP;
+    toggle_pressed_fake.custom_fake = press_specific_toggle;
+
+    EditorState editor_state = {.word_builder_scroll = 0};
+    word_builder_navigate(&editor_state, 10);
+    TEST_ASSERT_EQUAL_INT(0, editor_state.word_builder_scroll);
+}
+
+void test_editor_word_builder_nav_down(void)
+{
+    reset_input_fakes();
+    target_key_for_press = KEY_DOWN;
+    toggle_pressed_fake.custom_fake = press_specific_toggle;
+
+    EditorState editor_state = {.word_builder_scroll = 0};
+    word_builder_navigate(&editor_state, 10);
+    TEST_ASSERT_EQUAL_INT(1, editor_state.word_builder_scroll);
+}
+
+void test_editor_word_builder_nav_down_clamped(void)
+{
+    reset_input_fakes();
+    target_key_for_press = KEY_DOWN;
+    toggle_pressed_fake.custom_fake = press_specific_toggle;
+
+    EditorState editor_state = {.word_builder_scroll = 9};
+    word_builder_navigate(&editor_state, 10);
+    TEST_ASSERT_EQUAL_INT(9, editor_state.word_builder_scroll);
+}
+
+void test_editor_word_builder_nav_page_up(void)
+{
+    reset_input_fakes();
+    target_key_for_press = KEY_Q;
+    toggle_pressed_fake.custom_fake = press_specific_toggle;
+
+    EditorState editor_state = {.word_builder_scroll = 8};
+    word_builder_navigate(&editor_state, 20);
+    TEST_ASSERT_EQUAL_INT(8 - WORD_BUILDER_PAGE_SIZE, editor_state.word_builder_scroll);
+}
+
+void test_editor_word_builder_nav_page_down(void)
+{
+    reset_input_fakes();
+    target_key_for_press = KEY_E;
+    toggle_pressed_fake.custom_fake = press_specific_toggle;
+
+    EditorState editor_state = {.word_builder_scroll = 0};
+    word_builder_navigate(&editor_state, 20);
+    TEST_ASSERT_EQUAL_INT(WORD_BUILDER_PAGE_SIZE, editor_state.word_builder_scroll);
+}
+
+/* ---- add_attr_by_name --------------------------------------------------- */
+
+void test_attr_add_by_name_creates_int_attr(void)
+{
+    ErrorState err_state = {0};
+    DebugState dbg_state = {0};
+    Diag diag = {.error = &err_state, .debug = &dbg_state};
+    GameState state = {0};
+    TEST_ASSERT_TRUE(arena_init(&err_state, &state.gamedata_arena));
+    state.gamedata.current_level.entities.alloc = allocator_arena(&state.gamedata_arena);
+    Entity entity = {.id = 1};
+    TEST_ASSERT_TRUE(vec_entity_push(&state.gamedata.current_level.entities, entity));
+    EditorState editor_state = {.selected_entity_index = 0};
+
+    TEST_ASSERT_TRUE(add_attr_by_name(&diag, &state, &editor_state, "new_attr"));
+
+    Entity *result = &state.gamedata.current_level.entities.data[0];
+    TEST_ASSERT_EQUAL_INT(1, result->attrs.entries.count);
+    TEST_ASSERT_EQUAL_STRING("new_attr", result->attrs.entries.data[0].name.ptr);
+    TEST_ASSERT_EQUAL_INT(ATTR_INT, result->attrs.entries.data[0].type);
+    TEST_ASSERT_EQUAL_INT(0, result->attrs.entries.data[0].value.i);
+
+    arena_reset(&state.gamedata_arena);
+}
+
+void test_attr_add_by_name_duplicate_returns_false(void)
+{
+    ErrorState err_state = {0};
+    DebugState dbg_state = {0};
+    Diag diag = {.error = &err_state, .debug = &dbg_state};
+    GameState state = {0};
+    TEST_ASSERT_TRUE(arena_init(&err_state, &state.gamedata_arena));
+    state.gamedata.current_level.entities.alloc = allocator_arena(&state.gamedata_arena);
+    Allocator alloc = allocator_arena(&state.gamedata_arena);
+    Entity entity = {.id = 1};
+    TEST_ASSERT_TRUE(attr_set_int(&alloc, &entity.attrs, "existing", 42));
+    TEST_ASSERT_TRUE(vec_entity_push(&state.gamedata.current_level.entities, entity));
+    EditorState editor_state = {.selected_entity_index = 0};
+
+    TEST_ASSERT_FALSE(add_attr_by_name(&diag, &state, &editor_state, "existing"));
+
+    arena_reset(&state.gamedata_arena);
+}
+
+/* ---- fuzzy_finder_contains ---------------------------------------------- */
+
+void test_fuzzy_finder_contains_found(void)
+{
+    const char *items[] = {"alpha", "beta", "gamma"};
+    TEST_ASSERT_TRUE(fuzzy_finder_contains(items, 3, "beta"));
+}
+
+void test_fuzzy_finder_contains_not_found(void)
+{
+    const char *items[] = {"alpha", "beta", "gamma"};
+    TEST_ASSERT_FALSE(fuzzy_finder_contains(items, 3, "delta"));
+}
+
+void test_fuzzy_finder_contains_empty(void)
+{
+    TEST_ASSERT_FALSE(fuzzy_finder_contains(nullptr, 0, "anything"));
+}
+
+/* ---- fuzzy_finder_item / fuzzy_finder_total_count ----------------------- */
+
+void test_fuzzy_finder_item_zero_is_new(void)
+{
+    EditorState editor_state = {0};
+    TEST_ASSERT_EQUAL_STRING("[ NEW... ]", fuzzy_finder_item(&editor_state, 0));
+}
+
+void test_fuzzy_finder_item_negative_is_new(void)
+{
+    EditorState editor_state = {0};
+    TEST_ASSERT_EQUAL_STRING("[ NEW... ]", fuzzy_finder_item(&editor_state, -1));
+}
+
+void test_fuzzy_finder_item_returns_name(void)
+{
+    const char *items[] = {"alpha", "beta"};
+    EditorState editor_state = {.fuzzy_finder_items = items, .fuzzy_finder_item_count = 2};
+    TEST_ASSERT_EQUAL_STRING("alpha", fuzzy_finder_item(&editor_state, 1));
+    TEST_ASSERT_EQUAL_STRING("beta", fuzzy_finder_item(&editor_state, 2));
+}
+
+void test_fuzzy_finder_item_out_of_range(void)
+{
+    const char *items[] = {"alpha"};
+    EditorState editor_state = {.fuzzy_finder_items = items, .fuzzy_finder_item_count = 1};
+    TEST_ASSERT_EQUAL_STRING("", fuzzy_finder_item(&editor_state, 5));
+}
+
+void test_fuzzy_finder_total_count_value(void)
+{
+    EditorState editor_state = {.fuzzy_finder_item_count = 7};
+    TEST_ASSERT_EQUAL_INT(8, fuzzy_finder_total_count(&editor_state));
+}
+
+/* ---- fuzzy_finder_navigate ---------------------------------------------- */
+
+void test_fuzzy_finder_navigate_up_clamped(void)
+{
+    reset_input_fakes();
+    target_key_for_press = KEY_UP;
+    toggle_pressed_fake.custom_fake = press_specific_toggle;
+
+    EditorState editor_state = {.fuzzy_finder_scroll = 0};
+    fuzzy_finder_navigate(&editor_state, 10);
+    TEST_ASSERT_EQUAL_INT(0, editor_state.fuzzy_finder_scroll);
+}
+
+void test_fuzzy_finder_navigate_down_clamped(void)
+{
+    reset_input_fakes();
+    target_key_for_press = KEY_DOWN;
+    toggle_pressed_fake.custom_fake = press_specific_toggle;
+
+    EditorState editor_state = {.fuzzy_finder_scroll = 9};
+    fuzzy_finder_navigate(&editor_state, 10);
+    TEST_ASSERT_EQUAL_INT(9, editor_state.fuzzy_finder_scroll);
+}
+
+void test_fuzzy_finder_navigate_page_up(void)
+{
+    reset_input_fakes();
+    target_key_for_press = KEY_Q;
+    toggle_pressed_fake.custom_fake = press_specific_toggle;
+
+    EditorState editor_state = {.fuzzy_finder_scroll = 8};
+    fuzzy_finder_navigate(&editor_state, 20);
+    TEST_ASSERT_EQUAL_INT(8 - FUZZY_FINDER_PAGE_SIZE, editor_state.fuzzy_finder_scroll);
+}
+
+void test_fuzzy_finder_navigate_page_down(void)
+{
+    reset_input_fakes();
+    target_key_for_press = KEY_E;
+    toggle_pressed_fake.custom_fake = press_specific_toggle;
+
+    EditorState editor_state = {.fuzzy_finder_scroll = 0};
+    fuzzy_finder_navigate(&editor_state, 20);
+    TEST_ASSERT_EQUAL_INT(FUZZY_FINDER_PAGE_SIZE, editor_state.fuzzy_finder_scroll);
+}
+
+/* ---- fuzzy_finder_build_items ------------------------------------------- */
+
+void test_fuzzy_finder_build_items_collects_blueprint_names(void)
+{
+    ErrorState err = {0};
+    GameState state = {0};
+    TEST_ASSERT_TRUE(arena_init(&err, &state.gamedata_arena));
+    state.gamedata.blueprints.entries.alloc = test_heap_alloc;
+
+    Blueprint bp_chest = make_named_blueprint("chest");
+    Blueprint bp_door = make_named_blueprint("door");
+    TEST_ASSERT_TRUE(vec_blueprint_push(&state.gamedata.blueprints.entries, bp_chest));
+    TEST_ASSERT_TRUE(vec_blueprint_push(&state.gamedata.blueprints.entries, bp_door));
+
+    EditorState editor_state = {0};
+    fuzzy_finder_build_items(&state, &editor_state);
+
+    TEST_ASSERT_TRUE(editor_state.fuzzy_finder_item_count >= 2);
+    bool found_chest = false;
+    bool found_door = false;
+    for (int index = 0; index < editor_state.fuzzy_finder_item_count; index++) {
+        if (strcmp(editor_state.fuzzy_finder_items[index], "chest") == 0) {
+            found_chest = true;
+        }
+        if (strcmp(editor_state.fuzzy_finder_items[index], "door") == 0) {
+            found_door = true;
+        }
+    }
+    TEST_ASSERT_TRUE(found_chest);
+    TEST_ASSERT_TRUE(found_door);
+
+    test_blueprint_table_free_local(&state.gamedata.blueprints);
+    arena_reset(&state.gamedata_arena);
+}
+
+void test_fuzzy_finder_build_items_deduplicates(void)
+{
+    ErrorState err = {0};
+    GameState state = {0};
+    TEST_ASSERT_TRUE(arena_init(&err, &state.gamedata_arena));
+    state.gamedata.blueprints.entries.alloc = test_heap_alloc;
+
+    Blueprint bp_one = make_named_blueprint("chest");
+    Blueprint bp_two = make_named_blueprint("chest");
+    TEST_ASSERT_TRUE(vec_blueprint_push(&state.gamedata.blueprints.entries, bp_one));
+    TEST_ASSERT_TRUE(vec_blueprint_push(&state.gamedata.blueprints.entries, bp_two));
+
+    EditorState editor_state = {0};
+    fuzzy_finder_build_items(&state, &editor_state);
+
+    int chest_count = 0;
+    for (int index = 0; index < editor_state.fuzzy_finder_item_count; index++) {
+        if (strcmp(editor_state.fuzzy_finder_items[index], "chest") == 0) {
+            chest_count++;
+        }
+    }
+    TEST_ASSERT_EQUAL_INT(1, chest_count);
+
+    test_blueprint_table_free_local(&state.gamedata.blueprints);
+    arena_reset(&state.gamedata_arena);
+}
+
+void test_fuzzy_finder_build_items_sorts_alphabetically(void)
+{
+    ErrorState err = {0};
+    GameState state = {0};
+    TEST_ASSERT_TRUE(arena_init(&err, &state.gamedata_arena));
+    state.gamedata.blueprints.entries.alloc = test_heap_alloc;
+
+    Blueprint bp_z = make_named_blueprint("zebra");
+    Blueprint bp_a = make_named_blueprint("apple");
+    Blueprint bp_m = make_named_blueprint("mango");
+    TEST_ASSERT_TRUE(vec_blueprint_push(&state.gamedata.blueprints.entries, bp_z));
+    TEST_ASSERT_TRUE(vec_blueprint_push(&state.gamedata.blueprints.entries, bp_a));
+    TEST_ASSERT_TRUE(vec_blueprint_push(&state.gamedata.blueprints.entries, bp_m));
+
+    EditorState editor_state = {0};
+    fuzzy_finder_build_items(&state, &editor_state);
+
+    TEST_ASSERT_TRUE(editor_state.fuzzy_finder_item_count >= 3);
+    int apple_index = -1;
+    int mango_index = -1;
+    int zebra_index = -1;
+    for (int index = 0; index < editor_state.fuzzy_finder_item_count; index++) {
+        if (strcmp(editor_state.fuzzy_finder_items[index], "apple") == 0) {
+            apple_index = index;
+        }
+        if (strcmp(editor_state.fuzzy_finder_items[index], "mango") == 0) {
+            mango_index = index;
+        }
+        if (strcmp(editor_state.fuzzy_finder_items[index], "zebra") == 0) {
+            zebra_index = index;
+        }
+    }
+    TEST_ASSERT_TRUE(apple_index >= 0);
+    TEST_ASSERT_TRUE(mango_index >= 0);
+    TEST_ASSERT_TRUE(zebra_index >= 0);
+    TEST_ASSERT_TRUE(apple_index < mango_index);
+    TEST_ASSERT_TRUE(mango_index < zebra_index);
+
+    test_blueprint_table_free_local(&state.gamedata.blueprints);
+    arena_reset(&state.gamedata_arena);
+}
+
+void test_fuzzy_finder_build_items_collects_entity_tags(void)
+{
+    ErrorState err = {0};
+    GameState state = {0};
+    TEST_ASSERT_TRUE(arena_init(&err, &state.gamedata_arena));
+    state.gamedata.current_level.entities.alloc = test_heap_alloc;
+
+    Entity entity = {.parent_index = -1};
+    TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &entity.tag, "my_tag"));
+    TEST_ASSERT_TRUE(vec_entity_push(&state.gamedata.current_level.entities, entity));
+
+    EditorState editor_state = {0};
+    fuzzy_finder_build_items(&state, &editor_state);
+
+    bool found_tag = false;
+    for (int index = 0; index < editor_state.fuzzy_finder_item_count; index++) {
+        if (strcmp(editor_state.fuzzy_finder_items[index], "my_tag") == 0) {
+            found_tag = true;
+        }
+    }
+    TEST_ASSERT_TRUE(found_tag);
+
+    str_free(&test_heap_alloc, &state.gamedata.current_level.entities.data[0].tag);
+    vec_entity_free(&state.gamedata.current_level.entities);
+    arena_reset(&state.gamedata_arena);
+}
+
+void test_fuzzy_finder_build_items_collects_flag_names(void)
+{
+    ErrorState err = {0};
+    GameState state = {0};
+    TEST_ASSERT_TRUE(arena_init(&err, &state.gamedata_arena));
+    state.gamedata.flags.names.alloc = test_heap_alloc;
+
+    FlagName flag = {0};
+    TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &flag.name, "has_key"));
+    TEST_ASSERT_TRUE(vec_flag_name_push(&state.gamedata.flags.names, flag));
+
+    EditorState editor_state = {0};
+    fuzzy_finder_build_items(&state, &editor_state);
+
+    bool found_flag = false;
+    for (int index = 0; index < editor_state.fuzzy_finder_item_count; index++) {
+        if (strcmp(editor_state.fuzzy_finder_items[index], "has_key") == 0) {
+            found_flag = true;
+        }
+    }
+    TEST_ASSERT_TRUE(found_flag);
+
+    str_free(&test_heap_alloc, &state.gamedata.flags.names.data[0].name);
+    vec_flag_name_free(&state.gamedata.flags.names);
+    arena_reset(&state.gamedata_arena);
+}
+
+/* ---- keyboard_type_char ------------------------------------------------- */
+
+void test_keyboard_type_char_appends(void)
+{
+    EditorState editor_state = {0};
+    keyboard_type_char(&editor_state, 'a');
+    TEST_ASSERT_EQUAL_STRING("a", editor_state.word_builder_buf);
+    TEST_ASSERT_EQUAL_INT(1, editor_state.word_builder_len);
+}
+
+void test_keyboard_type_char_multiple(void)
+{
+    EditorState editor_state = {0};
+    keyboard_type_char(&editor_state, 'a');
+    keyboard_type_char(&editor_state, 'b');
+    keyboard_type_char(&editor_state, 'c');
+    TEST_ASSERT_EQUAL_STRING("abc", editor_state.word_builder_buf);
+    TEST_ASSERT_EQUAL_INT(3, editor_state.word_builder_len);
+}
+
+void test_keyboard_type_char_overflow_noop(void)
+{
+    EditorState editor_state = {0};
+    memset(editor_state.word_builder_buf, 'x', WORD_BUILDER_BUF_SIZE - 1);
+    editor_state.word_builder_buf[WORD_BUILDER_BUF_SIZE - 1] = '\0';
+    editor_state.word_builder_len = WORD_BUILDER_BUF_SIZE - 1;
+
+    keyboard_type_char(&editor_state, 'z');
+
+    TEST_ASSERT_EQUAL_INT(WORD_BUILDER_BUF_SIZE - 1, editor_state.word_builder_len);
+}
+
+/* ---- keyboard_backspace ------------------------------------------------- */
+
+void test_keyboard_backspace_removes_last(void)
+{
+    EditorState editor_state = {0};
+    keyboard_type_char(&editor_state, 'a');
+    keyboard_type_char(&editor_state, 'b');
+    keyboard_type_char(&editor_state, 'c');
+    keyboard_backspace(&editor_state);
+    TEST_ASSERT_EQUAL_STRING("ab", editor_state.word_builder_buf);
+    TEST_ASSERT_EQUAL_INT(2, editor_state.word_builder_len);
+}
+
+void test_keyboard_backspace_empty_noop(void)
+{
+    EditorState editor_state = {0};
+    keyboard_backspace(&editor_state);
+    TEST_ASSERT_EQUAL_STRING("", editor_state.word_builder_buf);
+    TEST_ASSERT_EQUAL_INT(0, editor_state.word_builder_len);
+}
+
+/* ---- keyboard data integrity -------------------------------------------- */
+
+void test_keyboard_group_sizes_consistent(void)
+{
+    for (int group = 0; group < KEYBOARD_GROUP_COUNT; group++) {
+        int actual_size = 0;
+        for (int character = 0; character < KEYBOARD_MAX_CHARS_PER_GROUP; character++) {
+            if (keyboard_groups[group][character] != '\0') {
+                actual_size++;
+            }
+        }
+        TEST_ASSERT_EQUAL_INT(keyboard_group_sizes[group], actual_size);
+    }
+}
+
+void test_keyboard_all_lowercase_alpha_present(void)
+{
+    for (int code = 'a'; code <= 'z'; code++) {
+        char letter = (char)code;
+        bool found = false;
+        for (int group = 0; group < KEYBOARD_GROUP_COUNT && !found; group++) {
+            for (int character = 0; character < keyboard_group_sizes[group]; character++) {
+                if (keyboard_groups[group][character] == letter) {
+                    found = true;
+                    break;
+                }
+            }
+        }
+        TEST_ASSERT_TRUE_MESSAGE(found, TextFormat("letter '%c' not found in any keyboard group", letter));
+    }
+}
+
+void test_keyboard_all_digits_present(void)
+{
+    for (int code = '0'; code <= '9'; code++) {
+        char digit = (char)code;
+        bool found = false;
+        for (int group = 0; group < KEYBOARD_GROUP_COUNT && !found; group++) {
+            for (int character = 0; character < keyboard_group_sizes[group]; character++) {
+                if (keyboard_groups[group][character] == digit) {
+                    found = true;
+                    break;
+                }
+            }
+        }
+        TEST_ASSERT_TRUE_MESSAGE(found, TextFormat("digit '%c' not found in any keyboard group", digit));
+    }
+}
+
+int main(void)
+{
+    test_helpers_init();
+    UNITY_BEGIN();
+
+    RUN_TEST(test_editor_radial_dead_zone_returns_negative_one);
+    RUN_TEST(test_editor_radial_stick_up_four_items);
+    RUN_TEST(test_editor_radial_stick_right_four_items);
+    RUN_TEST(test_editor_radial_stick_down_four_items);
+    RUN_TEST(test_editor_radial_stick_left_four_items);
+    RUN_TEST(test_editor_radial_label_grab);
+    RUN_TEST(test_editor_radial_label_delete);
+    RUN_TEST(test_editor_radial_label_out_of_bounds);
+    RUN_TEST(test_attr_radial_label_float);
+    RUN_TEST(test_attr_radial_label_string);
+    RUN_TEST(test_child_radial_label_tag);
+    RUN_TEST(test_child_radial_label_offset);
+    RUN_TEST(test_editor_word_builder_append_to_empty);
+    RUN_TEST(test_editor_word_builder_append_with_underscore);
+    RUN_TEST(test_editor_word_builder_append_overflow_noop);
+    RUN_TEST(test_editor_word_builder_append_multiple);
+    RUN_TEST(test_editor_word_builder_pop_last_word);
+    RUN_TEST(test_editor_word_builder_pop_single_word);
+    RUN_TEST(test_editor_word_builder_pop_empty_noop);
+    RUN_TEST(test_editor_word_builder_total_count_no_blueprints);
+    RUN_TEST(test_editor_word_builder_total_count_with_blueprints);
+    RUN_TEST(test_editor_word_builder_item_zero_is_done);
+    RUN_TEST(test_editor_word_builder_item_first_builtin);
+    RUN_TEST(test_editor_word_builder_item_blueprint_name);
+    RUN_TEST(test_editor_word_builder_item_negative_index);
+    RUN_TEST(test_editor_word_builder_nav_up);
+    RUN_TEST(test_editor_word_builder_nav_up_clamped);
+    RUN_TEST(test_editor_word_builder_nav_down);
+    RUN_TEST(test_editor_word_builder_nav_down_clamped);
+    RUN_TEST(test_editor_word_builder_nav_page_up);
+    RUN_TEST(test_editor_word_builder_nav_page_down);
+    RUN_TEST(test_attr_add_by_name_creates_int_attr);
+    RUN_TEST(test_attr_add_by_name_duplicate_returns_false);
+    RUN_TEST(test_fuzzy_finder_contains_found);
+    RUN_TEST(test_fuzzy_finder_contains_not_found);
+    RUN_TEST(test_fuzzy_finder_contains_empty);
+    RUN_TEST(test_fuzzy_finder_item_zero_is_new);
+    RUN_TEST(test_fuzzy_finder_item_negative_is_new);
+    RUN_TEST(test_fuzzy_finder_item_returns_name);
+    RUN_TEST(test_fuzzy_finder_item_out_of_range);
+    RUN_TEST(test_fuzzy_finder_total_count_value);
+    RUN_TEST(test_fuzzy_finder_navigate_up_clamped);
+    RUN_TEST(test_fuzzy_finder_navigate_down_clamped);
+    RUN_TEST(test_fuzzy_finder_navigate_page_up);
+    RUN_TEST(test_fuzzy_finder_navigate_page_down);
+    RUN_TEST(test_fuzzy_finder_build_items_collects_blueprint_names);
+    RUN_TEST(test_fuzzy_finder_build_items_deduplicates);
+    RUN_TEST(test_fuzzy_finder_build_items_sorts_alphabetically);
+    RUN_TEST(test_fuzzy_finder_build_items_collects_entity_tags);
+    RUN_TEST(test_fuzzy_finder_build_items_collects_flag_names);
+    RUN_TEST(test_keyboard_type_char_appends);
+    RUN_TEST(test_keyboard_type_char_multiple);
+    RUN_TEST(test_keyboard_type_char_overflow_noop);
+    RUN_TEST(test_keyboard_backspace_removes_last);
+    RUN_TEST(test_keyboard_backspace_empty_noop);
+    RUN_TEST(test_keyboard_group_sizes_consistent);
+    RUN_TEST(test_keyboard_all_lowercase_alpha_present);
+    RUN_TEST(test_keyboard_all_digits_present);
+
+    return UNITY_END();
+}
