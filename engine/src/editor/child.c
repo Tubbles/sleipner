@@ -128,9 +128,19 @@ static void propagate_child_remove(GameState *state, EditorState *editor_state, 
 
 void remove_blueprint_child(GameState *state, EditorState *editor_state, UndoHistory *undo_history, int child_idx)
 {
-    int sel = editor_state->selected_entity_index;
-    Entity *entity = &state->gamedata.current_level.entities.data[sel];
-    Blueprint *blueprint = find_blueprint_by_name(state, entity->blueprint_name.ptr);
+    Blueprint *blueprint = nullptr;
+    if (editor_state->top_mode == EDITOR_TOP_BLUEPRINT) {
+        int bp_idx = editor_state->selected_blueprint_index;
+        if (bp_idx >= 0 && bp_idx < state->gamedata.blueprints.entries.count) {
+            blueprint = &state->gamedata.blueprints.entries.data[bp_idx];
+        }
+    } else {
+        int sel = editor_state->selected_entity_index;
+        if (sel >= 0 && sel < state->gamedata.current_level.entities.count) {
+            Entity *entity = &state->gamedata.current_level.entities.data[sel];
+            blueprint = find_blueprint_by_name(state, entity->blueprint_name.ptr);
+        }
+    }
     if (!blueprint || child_idx < 0 || child_idx >= blueprint->children.count) {
         return;
     }
@@ -161,12 +171,19 @@ void add_blueprint_child(Diag *diag,
                          TextureLookupFn texture_lookup,
                          void *texture_user_data)
 {
-    int sel = editor_state->selected_entity_index;
-    if (sel < 0) {
-        return;
+    Blueprint *blueprint = nullptr;
+    if (editor_state->top_mode == EDITOR_TOP_BLUEPRINT) {
+        int bp_idx = editor_state->selected_blueprint_index;
+        if (bp_idx >= 0 && bp_idx < state->gamedata.blueprints.entries.count) {
+            blueprint = &state->gamedata.blueprints.entries.data[bp_idx];
+        }
+    } else {
+        int sel = editor_state->selected_entity_index;
+        if (sel >= 0 && sel < state->gamedata.current_level.entities.count) {
+            Entity *entity = &state->gamedata.current_level.entities.data[sel];
+            blueprint = find_blueprint_by_name(state, entity->blueprint_name.ptr);
+        }
     }
-    Entity *entity = &state->gamedata.current_level.entities.data[sel];
-    Blueprint *blueprint = find_blueprint_by_name(state, entity->blueprint_name.ptr);
     if (!blueprint) {
         return;
     }

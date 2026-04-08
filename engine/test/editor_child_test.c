@@ -579,6 +579,7 @@ void test_add_blueprint_child_adds_to_vec(void)
     add_blueprint_child(&diag, &state, &editor_state, &undo_history, "weapon", nullptr, nullptr);
 
     TEST_ASSERT_EQUAL_INT(1, blueprint.children.count);
+    TEST_ASSERT_NOT_NULL(blueprint.children.data);
     TEST_ASSERT_EQUAL_STRING("weapon", blueprint.children.data[0].blueprint_name.ptr);
 
     test_attr_set_free_local(&blueprint.attrs);

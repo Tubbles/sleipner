@@ -177,12 +177,22 @@ void dispatch_attr_type_change(GameState *state, EditorState *editor_state, int 
 
 void dispatch_child_props(GameState *state, EditorState *editor_state, int confirmed)
 {
-    int sel = editor_state->selected_entity_index;
-    if (sel < 0 || confirmed < 0) {
+    if (confirmed < 0) {
         return;
     }
-    Entity *entity = &state->gamedata.current_level.entities.data[sel];
-    Blueprint *blueprint = find_blueprint_by_name(state, entity->blueprint_name.ptr);
+    Blueprint *blueprint = nullptr;
+    if (editor_state->top_mode == EDITOR_TOP_BLUEPRINT) {
+        int bp_idx = editor_state->selected_blueprint_index;
+        if (bp_idx >= 0 && bp_idx < state->gamedata.blueprints.entries.count) {
+            blueprint = &state->gamedata.blueprints.entries.data[bp_idx];
+        }
+    } else {
+        int sel = editor_state->selected_entity_index;
+        if (sel >= 0 && sel < state->gamedata.current_level.entities.count) {
+            Entity *entity = &state->gamedata.current_level.entities.data[sel];
+            blueprint = find_blueprint_by_name(state, entity->blueprint_name.ptr);
+        }
+    }
     if (!blueprint || editor_state->child_edit_index < 0 ||
         editor_state->child_edit_index >= blueprint->children.count) {
         return;
@@ -215,12 +225,19 @@ void dispatch_child_props(GameState *state, EditorState *editor_state, int confi
 void confirm_child_tag_edit(Diag *diag, GameState *state, EditorState *editor_state, UndoHistory *undo_history)
 {
     (void)diag;
-    int sel = editor_state->selected_entity_index;
-    if (sel < 0) {
-        return;
+    Blueprint *blueprint = nullptr;
+    if (editor_state->top_mode == EDITOR_TOP_BLUEPRINT) {
+        int bp_idx = editor_state->selected_blueprint_index;
+        if (bp_idx >= 0 && bp_idx < state->gamedata.blueprints.entries.count) {
+            blueprint = &state->gamedata.blueprints.entries.data[bp_idx];
+        }
+    } else {
+        int sel = editor_state->selected_entity_index;
+        if (sel >= 0 && sel < state->gamedata.current_level.entities.count) {
+            Entity *entity = &state->gamedata.current_level.entities.data[sel];
+            blueprint = find_blueprint_by_name(state, entity->blueprint_name.ptr);
+        }
     }
-    Entity *entity = &state->gamedata.current_level.entities.data[sel];
-    Blueprint *blueprint = find_blueprint_by_name(state, entity->blueprint_name.ptr);
     int child_idx = editor_state->child_edit_index;
     if (!blueprint || child_idx < 0 || child_idx >= blueprint->children.count) {
         editor_state->editing_child_tag = false;
@@ -239,12 +256,19 @@ void confirm_child_tag_edit(Diag *diag, GameState *state, EditorState *editor_st
 static void
 confirm_child_offset_edit(GameState *state, EditorState *editor_state, UndoHistory *undo_history, int new_value)
 {
-    int sel = editor_state->selected_entity_index;
-    if (sel < 0) {
-        return;
+    Blueprint *blueprint = nullptr;
+    if (editor_state->top_mode == EDITOR_TOP_BLUEPRINT) {
+        int bp_idx = editor_state->selected_blueprint_index;
+        if (bp_idx >= 0 && bp_idx < state->gamedata.blueprints.entries.count) {
+            blueprint = &state->gamedata.blueprints.entries.data[bp_idx];
+        }
+    } else {
+        int sel = editor_state->selected_entity_index;
+        if (sel >= 0 && sel < state->gamedata.current_level.entities.count) {
+            Entity *entity = &state->gamedata.current_level.entities.data[sel];
+            blueprint = find_blueprint_by_name(state, entity->blueprint_name.ptr);
+        }
     }
-    Entity *entity = &state->gamedata.current_level.entities.data[sel];
-    Blueprint *blueprint = find_blueprint_by_name(state, entity->blueprint_name.ptr);
     int child_idx = editor_state->child_edit_index;
     if (!blueprint || child_idx < 0 || child_idx >= blueprint->children.count) {
         editor_state->editing_child_offset = false;
