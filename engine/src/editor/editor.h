@@ -18,11 +18,11 @@ typedef struct {
 
 #define EDITOR_CAMERA_SPEED 120.0F
 #define EDITOR_CROSSHAIR_HALF 6
-#define HINTS_BAR_HEIGHT 28
+#define HINTS_BAR_HEIGHT 40
 #define HINTS_FONT_SIZE 32
 #define EDITOR_PANEL_WIDTH 380
-#define EDITOR_PANEL_FONT_SIZE 20
-#define EDITOR_PANEL_LINE_HEIGHT 24
+#define EDITOR_PANEL_FONT_SIZE 32
+#define EDITOR_PANEL_LINE_HEIGHT 36
 /* Fixed-size: 4 slots is a hard UI display limit — the watch overlay has room for
  * exactly EDITOR_WATCH_MAX entries; more would overflow the panel. */
 #define EDITOR_WATCH_MAX 4
@@ -39,7 +39,7 @@ typedef struct {
 #define RADIAL_INNER_RADIUS 50.0F        /* inner donut radius, screen px */
 #define RADIAL_OUTER_RADIUS 140.0F       /* outer donut radius, screen px */
 #define RADIAL_STICK_THRESHOLD 0.3F      /* min stick magnitude to register a sector */
-#define RADIAL_FONT_SIZE 20              /* label font size */
+#define RADIAL_FONT_SIZE 32              /* label font size */
 #define RADIAL_BG_PADDING 4.0F           /* background circle padding beyond outer radius */
 #define RADIAL_FULL_CIRCLE_DEG 360.0F    /* degrees in a full circle */
 #define RADIAL_NORTH_OFFSET_DEG 90.0F    /* rotation offset so top is north (12 o'clock) */
@@ -51,7 +51,7 @@ typedef struct {
 #define KEYBOARD_MAX_CHARS_PER_GROUP 5   /* max characters in any single group */
 #define TOAST_DURATION 2.0F              /* seconds before toast fades out */
 #define TOAST_FADE_TIME 0.5F             /* seconds of fade-out at the end */
-#define TOAST_FONT_SIZE 28               /* toast text font size */
+#define TOAST_FONT_SIZE 32               /* toast text font size */
 #define ALPHA_MAX 255.0F                 /* max alpha value for color byte conversion */
 
 extern const Color debug_text_color;
