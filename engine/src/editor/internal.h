@@ -63,6 +63,11 @@ void add_blueprint_child(Diag *diag,
                          TextureLookupFn texture_lookup,
                          void *texture_user_data);
 
+/* --- Cross-file calls: blueprint.c --- */
+
+void create_blank_blueprint(GameState *state, EditorState *editor_state, UndoHistory *undo_history, const char *name);
+void duplicate_blueprint(GameState *state, EditorState *editor_state, UndoHistory *undo_history, const char *name);
+
 /* --- Cross-file calls: widgets.c (called from core.c) --- */
 
 void fuzzy_finder_build_items(GameState *state, EditorState *editor_state);

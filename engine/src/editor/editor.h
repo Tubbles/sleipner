@@ -127,6 +127,8 @@ typedef struct {
     int blueprint_attr_index;                     /* -1 = none; index into blueprint attrs (detail view) */
     int blueprint_tree_index;                     /* -1 = not in tree; >=0 = child/ADD CHILD row */
     bool adding_blueprint_attr;                   /* fuzzy finder is adding a blueprint-level attr */
+    bool creating_blueprint;                      /* word builder is naming a new blueprint */
+    bool duplicating_blueprint;                   /* word builder is naming a duplicate blueprint */
 } EditorState;
 
 typedef struct {

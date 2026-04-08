@@ -36,6 +36,10 @@ FAKE_VALUE_FUNC(int, place_visible_count, int);
 /* Cross-file editor fakes: attr.c */
 FAKE_VOID_FUNC(confirm_child_tag_edit, Diag *, GameState *, EditorState *, UndoHistory *);
 
+/* Cross-file editor fakes: blueprint.c */
+FAKE_VOID_FUNC(create_blank_blueprint, GameState *, EditorState *, UndoHistory *, const char *);
+FAKE_VOID_FUNC(duplicate_blueprint, GameState *, EditorState *, UndoHistory *, const char *);
+
 /* Cross-file editor fakes: child.c */
 FAKE_VOID_FUNC(
     add_blueprint_child, Diag *, GameState *, EditorState *, UndoHistory *, const char *, TextureLookupFn, void *);

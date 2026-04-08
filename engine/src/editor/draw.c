@@ -71,9 +71,10 @@ void draw_hints_bar(bool editor_mode, const EditorState *editor_state, bool is_d
             hints = "A/Ent: Pick / New  |  B/Esc: Cancel  |  Up/Dn: Scroll  |  L1/Q: PgUp  |  R1/E: PgDn";
         } else if (editor_state->top_mode == EDITOR_TOP_BLUEPRINT) {
             if (editor_state->selected_blueprint_index >= 0) {
-                hints = "F9/Y: Save  |  A: Edit  |  B: Back  |  Up/Down: Nav  |  X: Del/Rm  |  ]/R2: Type/Props";
+                hints = "F9/Y: Save  |  A: Edit  |  B: Back  |  Up/Down: Nav  |  X: Del/Rm  |  ]/R2: Type  |  "
+                        "[/L2: Dup";
             } else {
-                hints = "F9/Y: Save  |  A: Select  |  B/Esc: Exit  |  Up/Down: Scroll";
+                hints = "F9/Y: Save  |  A: Select/New  |  B/Esc: Exit  |  Up/Down: Scroll";
             }
         } else {
             hints = "F5: Play  |  F9/Y: Save  |  Tab/Sel: Tools  |  A: Sel/Drill  |  B: Desel  |  Up/Down: Nav  |  "
@@ -412,18 +413,13 @@ void draw_blueprint_list_panel(ScreenSize screen, const GameState *state, const 
     draw_ui_text(font, "[ Blueprint Mode ]", panel_x + DEBUG_MARGIN, y_offset, EDITOR_PANEL_FONT_SIZE, debug_text_color);
     y_offset += EDITOR_PANEL_LINE_HEIGHT;
 
-    if (count == 0) {
-        draw_ui_text(font, "  (no blueprints)", panel_x + DEBUG_MARGIN, y_offset, EDITOR_PANEL_FONT_SIZE,
-                     debug_text_color);
-        return;
-    }
-
+    int total = count + 1; /* +1 for "+NEW" sentinel */
     int visible = place_visible_count(screen.height);
     int scroll = editor_state->blueprint_list_scroll - (visible / 2);
     if (scroll < 0) {
         scroll = 0;
     }
-    int max_scroll = count - visible;
+    int max_scroll = total - visible;
     if (max_scroll < 0) {
         max_scroll = 0;
     }
@@ -431,18 +427,23 @@ void draw_blueprint_list_panel(ScreenSize screen, const GameState *state, const 
         scroll = max_scroll;
     }
     int end = scroll + visible;
-    if (end > count) {
-        end = count;
+    if (end > total) {
+        end = total;
     }
     for (int index = scroll; index < end; index++) {
-        const Blueprint *blueprint = &state->gamedata.blueprints.entries.data[index];
-        const char *name = attr_get_string(&blueprint->attrs, "name");
         bool selected = (index == editor_state->blueprint_list_scroll);
         Color color = selected ? WHITE : debug_text_color;
-        draw_ui_text(font,
-                     TextFormat("%s %s  (%da %dc %dr)", selected ? ">" : " ", name ? name : "?",
-                                blueprint->attrs.entries.count, blueprint->children.count, blueprint->rules.count),
-                     panel_x + DEBUG_MARGIN, y_offset, EDITOR_PANEL_FONT_SIZE, color);
+        if (index == count) {
+            draw_ui_text(font, TextFormat("%s + NEW BLUEPRINT", selected ? ">" : " "), panel_x + DEBUG_MARGIN, y_offset,
+                         EDITOR_PANEL_FONT_SIZE, color);
+        } else {
+            const Blueprint *blueprint = &state->gamedata.blueprints.entries.data[index];
+            const char *name = attr_get_string(&blueprint->attrs, "name");
+            draw_ui_text(font,
+                         TextFormat("%s %s  (%da %dc %dr)", selected ? ">" : " ", name ? name : "?",
+                                    blueprint->attrs.entries.count, blueprint->children.count, blueprint->rules.count),
+                         panel_x + DEBUG_MARGIN, y_offset, EDITOR_PANEL_FONT_SIZE, color);
+        }
         y_offset += EDITOR_PANEL_LINE_HEIGHT;
     }
 }

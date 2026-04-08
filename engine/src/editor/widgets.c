@@ -304,7 +304,15 @@ void handle_word_builder_input(Diag *diag, GameState *state, EditorState *editor
     int total = word_builder_total_count(state);
     word_builder_navigate(editor_state, total);
     if (toggle_pressed((ToggleBinding){KEY_ENTER, GAMEPAD_BUTTON_RIGHT_FACE_DOWN})) {
-        if (editor_state->word_builder_scroll == 0 && editor_state->editing_child_tag) {
+        if (editor_state->word_builder_scroll == 0 && editor_state->creating_blueprint) {
+            create_blank_blueprint(state, editor_state, undo_history, editor_state->word_builder_buf);
+            editor_state->creating_blueprint = false;
+            editor_state->sub_mode = EDITOR_SUB_BROWSE;
+        } else if (editor_state->word_builder_scroll == 0 && editor_state->duplicating_blueprint) {
+            duplicate_blueprint(state, editor_state, undo_history, editor_state->word_builder_buf);
+            editor_state->duplicating_blueprint = false;
+            editor_state->sub_mode = EDITOR_SUB_BROWSE;
+        } else if (editor_state->word_builder_scroll == 0 && editor_state->editing_child_tag) {
             confirm_child_tag_edit(diag, state, editor_state, undo_history);
             editor_state->sub_mode = EDITOR_SUB_BROWSE;
         } else if (editor_state->word_builder_scroll == 0 &&
@@ -337,6 +345,8 @@ void handle_word_builder_input(Diag *diag, GameState *state, EditorState *editor
             editor_state->adding_attr = false;
             editor_state->adding_blueprint_attr = false;
             editor_state->editing_child_tag = false;
+            editor_state->creating_blueprint = false;
+            editor_state->duplicating_blueprint = false;
             editor_state->sub_mode = EDITOR_SUB_BROWSE;
         }
     }

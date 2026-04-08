@@ -1,5 +1,9 @@
 #include "internal.h"
 
+#include "alloc.h"
+#include "str.h"
+#include "strv.h"
+
 #include <string.h>
 
 /* --- Helpers --- */
@@ -193,7 +197,89 @@ static void open_type_radial(EditorState *editor_state)
     editor_state->sub_mode = EDITOR_SUB_RADIAL;
 }
 
+/* --- Create / Duplicate --- */
+
+void create_blank_blueprint(GameState *state, EditorState *editor_state, UndoHistory *undo_history, const char *name)
+{
+    Allocator alloc = allocator_arena(&state->gamedata_arena);
+    Blueprint new_bp = {0};
+    new_bp.attrs.entries = vec_attribute_new(alloc);
+    new_bp.children = vec_blueprint_child_new(alloc);
+    new_bp.rules = vec_rule_new(alloc);
+    (void)attr_set_string(&alloc, &new_bp.attrs, (AttrStringPair){"name", name});
+    if (!vec_blueprint_push(&state->gamedata.blueprints.entries, new_bp)) {
+        return;
+    }
+    editor_state->selected_blueprint_index = state->gamedata.blueprints.entries.count - 1;
+    editor_state->blueprint_attr_index = -1;
+    editor_state->blueprint_tree_index = -1;
+    undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
+                           strv_from_cstr("Create blueprint"));
+}
+
+void duplicate_blueprint(GameState *state, EditorState *editor_state, UndoHistory *undo_history, const char *name)
+{
+    Blueprint *source = selected_blueprint(state, editor_state);
+    if (!source) {
+        return;
+    }
+    Allocator alloc = allocator_arena(&state->gamedata_arena);
+    Blueprint new_bp = {0};
+    new_bp.attrs.entries = vec_attribute_new(alloc);
+    new_bp.children = vec_blueprint_child_new(alloc);
+    new_bp.rules = vec_rule_new(alloc);
+
+    /* Copy attrs, overriding name */
+    for (int index = 0; index < source->attrs.entries.count; index++) {
+        const Attribute *src_attr = &source->attrs.entries.data[index];
+        if (strcmp(src_attr->name.ptr, "name") == 0) {
+            (void)attr_set_string(&alloc, &new_bp.attrs, (AttrStringPair){"name", name});
+        } else if (src_attr->type == ATTR_STRING) {
+            (void)attr_set_string(&alloc, &new_bp.attrs, (AttrStringPair){src_attr->name.ptr, src_attr->value.str.ptr});
+        } else if (src_attr->type == ATTR_INT) {
+            (void)attr_set_int(&alloc, &new_bp.attrs, src_attr->name.ptr, src_attr->value.i);
+        } else if (src_attr->type == ATTR_FLOAT) {
+            (void)attr_set_float(&alloc, &new_bp.attrs, src_attr->name.ptr, src_attr->value.f);
+        } else if (src_attr->type == ATTR_BOOL) {
+            (void)attr_set_bool(&alloc, &new_bp.attrs, src_attr->name.ptr, src_attr->value.b);
+        }
+    }
+
+    /* Copy children */
+    for (int index = 0; index < source->children.count; index++) {
+        const BlueprintChild *src_child = &source->children.data[index];
+        BlueprintChild new_child = {0};
+        (void)str_from_cstr(&alloc, &new_child.blueprint_name, src_child->blueprint_name.ptr);
+        if (src_child->tag.len > 0) {
+            (void)str_from_cstr(&alloc, &new_child.tag, src_child->tag.ptr);
+        }
+        new_child.offset = src_child->offset;
+        (void)vec_blueprint_child_push(&new_bp.children, new_child);
+    }
+
+    /* Rules are not deep-copied — duplicated blueprints start with empty rules.
+     * Rules contain complex nested ActionTree structures that require specialized
+     * deep-copy logic. Rules can be added via gamedata.toml editing. */
+
+    if (!vec_blueprint_push(&state->gamedata.blueprints.entries, new_bp)) {
+        return;
+    }
+    editor_state->selected_blueprint_index = state->gamedata.blueprints.entries.count - 1;
+    editor_state->blueprint_attr_index = -1;
+    editor_state->blueprint_tree_index = -1;
+    undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
+                           strv_from_cstr("Duplicate blueprint"));
+}
+
 /* --- Blueprint list view --- */
+
+static void enter_word_builder_empty(EditorState *editor_state)
+{
+    editor_state->word_builder_len = 0;
+    editor_state->word_builder_buf[0] = '\0';
+    editor_state->word_builder_scroll = 0;
+    editor_state->sub_mode = EDITOR_SUB_WORD_BUILDER;
+}
 
 static void handle_blueprint_list_input(GameState *state, EditorState *editor_state, InputState input)
 {
@@ -207,21 +293,25 @@ static void handle_blueprint_list_input(GameState *state, EditorState *editor_st
     }
 
     int count = state->gamedata.blueprints.entries.count;
-    if (count == 0) {
-        return;
-    }
+    int total = count + 1; /* +1 for "+NEW" sentinel */
 
     if (toggle_pressed((ToggleBinding){KEY_DOWN, GAMEPAD_BUTTON_LEFT_FACE_DOWN})) {
-        editor_state->blueprint_list_scroll = (editor_state->blueprint_list_scroll + 1) % count;
+        editor_state->blueprint_list_scroll = (editor_state->blueprint_list_scroll + 1) % total;
     }
     if (toggle_pressed((ToggleBinding){KEY_UP, GAMEPAD_BUTTON_LEFT_FACE_UP})) {
-        editor_state->blueprint_list_scroll = (editor_state->blueprint_list_scroll - 1 + count) % count;
+        editor_state->blueprint_list_scroll = (editor_state->blueprint_list_scroll - 1 + total) % total;
     }
 
     if (toggle_pressed((ToggleBinding){KEY_ENTER, GAMEPAD_BUTTON_RIGHT_FACE_DOWN})) {
-        editor_state->selected_blueprint_index = editor_state->blueprint_list_scroll;
-        editor_state->blueprint_attr_index = -1;
-        editor_state->blueprint_tree_index = -1;
+        if (editor_state->blueprint_list_scroll == count) {
+            /* "+NEW" sentinel — create new blueprint via word builder */
+            editor_state->creating_blueprint = true;
+            enter_word_builder_empty(editor_state);
+        } else {
+            editor_state->selected_blueprint_index = editor_state->blueprint_list_scroll;
+            editor_state->blueprint_attr_index = -1;
+            editor_state->blueprint_tree_index = -1;
+        }
     }
 }
 
@@ -268,6 +358,11 @@ handle_blueprint_detail_input(GameState *state, EditorState *editor_state, UndoH
     }
     if (toggle_pressed((ToggleBinding){KEY_RIGHT_BRACKET, GAMEPAD_BUTTON_RIGHT_TRIGGER_2})) {
         open_type_radial(editor_state);
+    }
+    /* Duplicate blueprint */
+    if (toggle_pressed((ToggleBinding){KEY_LEFT_BRACKET, GAMEPAD_BUTTON_LEFT_TRIGGER_2})) {
+        editor_state->duplicating_blueprint = true;
+        enter_word_builder_empty(editor_state);
     }
     /* Undo / Redo */
     if (toggle_pressed((ToggleBinding){KEY_LEFT, GAMEPAD_BUTTON_LEFT_FACE_LEFT})) {
