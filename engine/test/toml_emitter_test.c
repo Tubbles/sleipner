@@ -289,7 +289,8 @@ void test_toml_emit_skips_child_entities(void)
 void test_toml_emit_no_music(void)
 {
     Level level = {0};
-    TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &level.name, "silent"));
+    level.name = str_new(test_heap_alloc);
+    TEST_ASSERT_TRUE(str_from_cstr(&level.name, "silent"));
     level.width = 100;
     level.height = 100;
 

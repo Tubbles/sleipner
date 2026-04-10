@@ -123,8 +123,11 @@ static bool spawn_children_for(ErrorState *err,
         child.id = level->next_entity_id++;
         child.parent_index = parent_index;
         child.offset = child_def->offset;
-        if (child_def->tag.len > 0 && !str_from_strv(alloc, &child.tag, str_to_strv(child_def->tag))) {
-            return false;
+        if (child_def->tag.len > 0) {
+            child.tag = str_new(*alloc);
+            if (!str_from_strv(&child.tag, str_to_strv(child_def->tag))) {
+                return false;
+            }
         }
         if (!vec_entity_push(&level->entities, child)) {
             error_set(err, "spawn_children_for: out of memory");
@@ -290,7 +293,10 @@ bool level_spawn_single_child(Diag *diag,
     child.id = level->next_entity_id++;
     child.parent_index = parent_index;
     child.offset = child_def->offset;
-    if (child_def->tag.len > 0 && !str_from_strv(alloc, &child.tag, str_to_strv(child_def->tag))) {
+    if (child_def->tag.len > 0) {
+        child.tag = str_new(*alloc);
+    }
+    if (child_def->tag.len > 0 && !str_from_strv(&child.tag, str_to_strv(child_def->tag))) {
         error_set(diag->error, "level_spawn_single_child: tag copy failed");
         return false;
     }
@@ -348,12 +354,12 @@ bool level_spawn_entity(Diag *diag,
 
 void level_free(Allocator *alloc, Level *level)
 {
-    str_free(alloc, &level->name);
-    str_free(alloc, &level->music_name);
-    str_free(alloc, &level->background_tile);
+    str_free(&level->name);
+    str_free(&level->music_name);
+    str_free(&level->background_tile);
     for (int index = 0; index < level->entities.count; index++) {
-        str_free(alloc, &level->entities.data[index].blueprint_name);
-        str_free(alloc, &level->entities.data[index].tag);
+        str_free(&level->entities.data[index].blueprint_name);
+        str_free(&level->entities.data[index].tag);
         attr_set_free(alloc, &level->entities.data[index].attrs);
     }
     vec_entity_free(&level->entities);
@@ -393,24 +399,32 @@ static bool parse_level_metadata(Allocator *alloc, Level *level, toml_table_t *l
 {
     /* Level name */
     toml_datum_t name = toml_string_in(level_table, "name");
-    if (name.ok && !str_from_toml_datum(alloc, &level->name, &name)) {
-        return false;
+    if (name.ok) {
+        level->name = str_new(*alloc);
+        if (!str_from_toml_datum(&level->name, &name)) {
+            return false;
+        }
     }
 
     /* Level music */
     toml_datum_t music = toml_string_in(level_table, "music");
-    if (music.ok && !str_from_toml_datum(alloc, &level->music_name, &music)) {
-        return false;
+    if (music.ok) {
+        level->music_name = str_new(*alloc);
+        if (!str_from_toml_datum(&level->music_name, &music)) {
+            return false;
+        }
     }
 
     /* Background tile — defaults to "grass.png" */
     toml_datum_t bg_tile = toml_string_in(level_table, "background_tile");
     if (bg_tile.ok) {
-        if (!str_from_toml_datum(alloc, &level->background_tile, &bg_tile)) {
+        level->background_tile = str_new(*alloc);
+        if (!str_from_toml_datum(&level->background_tile, &bg_tile)) {
             return false;
         }
     } else {
-        if (!str_from_cstr(alloc, &level->background_tile, "grass.png")) {
+        level->background_tile = str_new(*alloc);
+        if (!str_from_cstr(&level->background_tile, "grass.png")) {
             return false;
         }
     }

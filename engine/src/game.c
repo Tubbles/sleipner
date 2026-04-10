@@ -78,8 +78,9 @@ bool game_load_gamedata(Diag *diag, GameState *state, GamedataParams params)
     char errbuf[TOML_ERRBUF_SIZE];
     toml_table_t *root = toml_parse(buffer, errbuf, (int)sizeof(errbuf));
     arena_restore(&state->gamedata_arena, state->gamedata_base);
-    state->gamedata.rule_table = (map_entity_ruleset){0};
-    state->gamedata.entity_blueprints = (map_int_str){0};
+    Allocator gamedata_alloc_early = allocator_arena(&state->gamedata_arena);
+    state->gamedata.rule_table = map_entity_ruleset_new(gamedata_alloc_early);
+    state->gamedata.entity_blueprints = map_int_str_new(gamedata_alloc_early);
     if (!root) {
         error_set(diag->error, "toml_parse: %s", errbuf);
         error_wrap(diag->error, "game_load_gamedata");
@@ -112,13 +113,12 @@ bool game_load_gamedata(Diag *diag, GameState *state, GamedataParams params)
     if (level_ok) {
         for (int index = 0; index < state->gamedata.current_level.entities.count; index++) {
             const Entity *entity = &state->gamedata.current_level.entities.data[index];
-            Str bp_name = {0};
-            (void)str_from_strv(&gamedata_alloc, &bp_name, str_to_strv(entity->blueprint_name));
-            (void)map_int_str_set(&state->gamedata.entity_blueprints, entity->id, bp_name, &gamedata_alloc);
+            Str bp_name = str_new(gamedata_alloc);
+            (void)str_from_strv(&bp_name, str_to_strv(entity->blueprint_name));
+            (void)map_int_str_set(&state->gamedata.entity_blueprints, entity->id, bp_name);
             const Blueprint *blueprint = blueprint_find(&state->gamedata.blueprints, entity->blueprint_name.ptr);
             if (blueprint && blueprint->rules.count > 0) {
-                (void)map_entity_ruleset_set(&state->gamedata.rule_table, entity->id, blueprint->rules,
-                                             &gamedata_alloc);
+                (void)map_entity_ruleset_set(&state->gamedata.rule_table, entity->id, blueprint->rules);
             }
         }
         state->gamedata.player_index = find_player_entity(state);

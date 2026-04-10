@@ -28,20 +28,20 @@ static toml_datum_t make_string_datum(const char *value)
 void test_toml_str_content_is_copied(void)
 {
     toml_datum_t datum = make_string_datum("hello");
-    Str str = {0};
-    TEST_ASSERT_TRUE(str_from_toml_datum(&test_heap_alloc, &str, &datum));
+    Str str = str_new(test_heap_alloc);
+    TEST_ASSERT_TRUE(str_from_toml_datum(&str, &datum));
     TEST_ASSERT_EQUAL_STRING("hello", str.ptr);
     TEST_ASSERT_EQUAL_size_t(5, str.len);
-    str_free(&test_heap_alloc, &str);
+    str_free(&str);
 }
 
 void test_toml_str_datum_nulled_after_call(void)
 {
     toml_datum_t datum = make_string_datum("world");
-    Str str = {0};
-    TEST_ASSERT_TRUE(str_from_toml_datum(&test_heap_alloc, &str, &datum));
+    Str str = str_new(test_heap_alloc);
+    TEST_ASSERT_TRUE(str_from_toml_datum(&str, &datum));
     TEST_ASSERT_NULL(datum.u.s);
-    str_free(&test_heap_alloc, &str);
+    str_free(&str);
 }
 
 int main(void)

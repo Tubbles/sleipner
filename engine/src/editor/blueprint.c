@@ -251,9 +251,11 @@ void duplicate_blueprint(GameState *state, EditorState *editor_state, UndoHistor
     for (int index = 0; index < source->children.count; index++) {
         const BlueprintChild *src_child = &source->children.data[index];
         BlueprintChild new_child = {0};
-        (void)str_from_cstr(&alloc, &new_child.blueprint_name, src_child->blueprint_name.ptr);
+        new_child.blueprint_name = str_new(alloc);
+        (void)str_from_cstr(&new_child.blueprint_name, src_child->blueprint_name.ptr);
         if (src_child->tag.len > 0) {
-            (void)str_from_cstr(&alloc, &new_child.tag, src_child->tag.ptr);
+            new_child.tag = str_new(alloc);
+            (void)str_from_cstr(&new_child.tag, src_child->tag.ptr);
         }
         new_child.offset = src_child->offset;
         (void)vec_blueprint_child_push(&new_bp.children, new_child);

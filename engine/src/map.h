@@ -12,12 +12,11 @@
  *     MAP_IMPL(name, key_type, value_type, hash_fn, eq_fn)
  *   Emits: function bodies.  hash_fn and eq_fn are only needed here.
  *
- * A zero-initialised map_<name> is a valid empty map.
+ * Create a map with map_<name>_new(alloc) — the allocator is stored
+ * in the struct and used by all subsequent set/free calls.
  * Capacity is always a power of 2; initial capacity is MAP_INITIAL_CAPACITY on first insert.
  * Rehashes (doubles capacity) when (count + 1) * 4 > capacity * 3  (75% load factor).
- * Deleted entries use tombstone state MAP_ENTRY_DELETED so probe chains stay intact.
- *
- * Pass an Allocator * to set/free — nullptr is not permitted. */
+ * Deleted entries use tombstone state MAP_ENTRY_DELETED so probe chains stay intact. */
 
 #include "alloc.h"
 #include "str.h"
@@ -62,11 +61,15 @@ static inline bool map_eq_int(int first, int second)
         map_##name##_entry *entries;                                                       \
         int                 count;                                                         \
         int                 capacity;                                                      \
+        Allocator           alloc;                                                         \
     } map_##name;                                                                          \
-    [[nodiscard]] bool            map_##name##_set(map_##name *map, key_type key, value_type value, Allocator *alloc); \
+    static inline map_##name map_##name##_new(Allocator alloc_arg) {                       \
+        return (map_##name){.alloc = alloc_arg};                                           \
+    }                                                                                      \
+    [[nodiscard]] bool            map_##name##_set(map_##name *map, key_type key, value_type value); \
     const typeof(value_type)     *map_##name##_get(const map_##name *map, key_type key);   \
     bool                          map_##name##_remove(map_##name *map, key_type key);      \
-    void                          map_##name##_free(map_##name *map, Allocator *alloc);
+    void                          map_##name##_free(map_##name *map);
 
 /* MAP_IMPL(name, key_type, value_type, hash_fn, eq_fn) — emit the function bodies
  * declared by MAP_DECL.  Place in exactly one .c file per type.
@@ -85,10 +88,10 @@ static inline bool map_eq_int(int first, int second)
         }                                                                                  \
         return -1;                                                                         \
     }                                                                                      \
-    static bool map_##name##_rehash(map_##name *map, Allocator *alloc) {                  \
+    static bool map_##name##_rehash(map_##name *map) {                                   \
         int    new_cap   = map->capacity == 0 ? MAP_INITIAL_CAPACITY : map->capacity * 2; \
         size_t new_bytes = (size_t)new_cap * sizeof(map_##name##_entry);                  \
-        map_##name##_entry *new_entries = alloc->malloc_fn(alloc->ctx, new_bytes);                                                                                  \
+        map_##name##_entry *new_entries = map->alloc.malloc_fn(map->alloc.ctx, new_bytes);                                                                                  \
         if (!new_entries) return false;                                                    \
         memset(new_entries, 0, new_bytes);                                                 \
         for (int index = 0; index < map->capacity; index++) {                             \
@@ -104,18 +107,20 @@ static inline bool map_eq_int(int first, int second)
                 }                                                                          \
             }                                                                              \
         }                                                                                  \
-        alloc->free_fn(alloc->ctx, map->entries);                                           \
+        if (map->alloc.free_fn) {                                                          \
+            map->alloc.free_fn(map->alloc.ctx, map->entries);                              \
+        }                                                                                  \
         map->entries  = new_entries;                                                       \
         map->capacity = new_cap;                                                           \
         return true;                                                                       \
     }                                                                                      \
-    [[nodiscard]] bool map_##name##_set(map_##name *map, key_type key, value_type value, Allocator *alloc) { \
+    [[nodiscard]] bool map_##name##_set(map_##name *map, key_type key, value_type value) { \
         if (map->capacity > 0) {                                                           \
             int existing = map_##name##_find_slot(map, key);                               \
             if (existing >= 0) { map->entries[existing].value = value; return true; }      \
         }                                                                                  \
         if (map->capacity == 0 || (map->count + 1) * 4 > map->capacity * 3) {            \
-            if (!map_##name##_rehash(map, alloc)) return false;                            \
+            if (!map_##name##_rehash(map)) return false;                                   \
         }                                                                                  \
         uint32_t hash          = hash_fn(key);                                             \
         int      first_deleted = -1;                                                       \
@@ -153,9 +158,13 @@ static inline bool map_eq_int(int first, int second)
         map->count--;                                                                       \
         return true;                                                                        \
     }                                                                                      \
-    void map_##name##_free(map_##name *map, Allocator *alloc) {                           \
-        alloc->free_fn(alloc->ctx, map->entries);                                           \
-        *map = (map_##name){0};                                                            \
+    void map_##name##_free(map_##name *map) {                                            \
+        if (map->alloc.free_fn) {                                                          \
+            map->alloc.free_fn(map->alloc.ctx, map->entries);                              \
+        }                                                                                  \
+        map->entries  = nullptr;                                                           \
+        map->count    = 0;                                                                 \
+        map->capacity = 0;                                                                 \
     }
 // clang-format on
 

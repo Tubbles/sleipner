@@ -15,7 +15,8 @@ bool entity_init(Entity *entity, EntitySpec spec, Vector2 position, Allocator *a
 {
     memset(entity, 0, sizeof(*entity));
 
-    if (!str_from_strv(alloc, &entity->blueprint_name, spec.blueprint_name)) {
+    entity->blueprint_name = str_new(*alloc);
+    if (!str_from_strv(&entity->blueprint_name, spec.blueprint_name)) {
         return false;
     }
 

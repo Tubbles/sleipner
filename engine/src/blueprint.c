@@ -93,21 +93,21 @@ static bool inherit_attributes(Allocator *alloc, Blueprint *child, const Bluepri
         }
         /* Deep copy: allocate independent Strs for name and (if ATTR_STRING) value. */
         Attribute new_entry = *parent_attr;
-        new_entry.name = (Str){0};
-        if (!str_from_strv(alloc, &new_entry.name, str_to_strv(parent_attr->name))) {
+        new_entry.name = str_new(*alloc);
+        if (!str_from_strv(&new_entry.name, str_to_strv(parent_attr->name))) {
             continue;
         }
         if (parent_attr->type == ATTR_STRING) {
-            new_entry.value.str = (Str){0};
-            if (!str_from_strv(alloc, &new_entry.value.str, str_to_strv(parent_attr->value.str))) {
-                str_free(alloc, &new_entry.name);
+            new_entry.value.str = str_new(*alloc);
+            if (!str_from_strv(&new_entry.value.str, str_to_strv(parent_attr->value.str))) {
+                str_free(&new_entry.name);
                 continue;
             }
         }
         if (!vec_attribute_push(&child->attrs.entries, new_entry)) {
-            str_free(alloc, &new_entry.name);
+            str_free(&new_entry.name);
             if (parent_attr->type == ATTR_STRING) {
-                str_free(alloc, &new_entry.value.str);
+                str_free(&new_entry.value.str);
             }
             continue;
         }
@@ -230,13 +230,17 @@ static bool parse_single_child(Allocator *alloc, BlueprintChild *child, toml_tab
     if (!blueprint_name.ok) {
         return false;
     }
-    if (!str_from_toml_datum(alloc, &child->blueprint_name, &blueprint_name)) {
+    child->blueprint_name = str_new(*alloc);
+    if (!str_from_toml_datum(&child->blueprint_name, &blueprint_name)) {
         return false;
     }
 
     toml_datum_t tag = toml_string_in(entry, "tag");
-    if (tag.ok && !str_from_toml_datum(alloc, &child->tag, &tag)) {
-        return false;
+    if (tag.ok) {
+        child->tag = str_new(*alloc);
+        if (!str_from_toml_datum(&child->tag, &tag)) {
+            return false;
+        }
     }
 
     toml_array_t *offset = toml_array_in(entry, "offset");
@@ -312,8 +316,8 @@ parse_single_blueprint(Diag *diag, Allocator *alloc, Blueprint *blueprint, toml_
 static void blueprint_cleanup(Allocator *alloc, Blueprint *blp)
 {
     for (int child_index = 0; child_index < blp->children.count; child_index++) {
-        str_free(alloc, &blp->children.data[child_index].blueprint_name);
-        str_free(alloc, &blp->children.data[child_index].tag);
+        str_free(&blp->children.data[child_index].blueprint_name);
+        str_free(&blp->children.data[child_index].tag);
     }
     vec_blueprint_child_free(&blp->children);
     attr_set_free(alloc, &blp->attrs);

@@ -57,23 +57,25 @@ void flag_set(Diag *diag, Allocator *alloc, FlagSet *flags, const char *name)
     }
     flags->names.alloc = *alloc;
     FlagName entry = {0};
-    if (!str_from_cstr(alloc, &entry.name, name)) {
+    entry.name = str_new(*alloc);
+    if (!str_from_cstr(&entry.name, name)) {
         debug_log(diag->debug, "flag_set: allocation failed for '%s'", name);
         return;
     }
     if (!vec_flag_name_push(&flags->names, entry)) {
-        str_free(alloc, &entry.name);
+        str_free(&entry.name);
         debug_log(diag->debug, "flag_set: vec push failed for '%s'", name);
     }
 }
 
 void flag_clear(Allocator *alloc, FlagSet *flags, const char *name)
 {
+    (void)alloc;
     int index = flag_find(flags, name);
     if (index < 0) {
         return;
     }
-    str_free(alloc, &flags->names.data[index].name);
+    str_free(&flags->names.data[index].name);
     flags->names.count--;
     if (index < flags->names.count) {
         flags->names.data[index] = flags->names.data[flags->names.count];
@@ -82,8 +84,9 @@ void flag_clear(Allocator *alloc, FlagSet *flags, const char *name)
 
 void flag_set_free(Allocator *alloc, FlagSet *flags)
 {
+    (void)alloc;
     for (int index = 0; index < flags->names.count; index++) {
-        str_free(alloc, &flags->names.data[index].name);
+        str_free(&flags->names.data[index].name);
     }
     vec_flag_name_free(&flags->names);
     *flags = (FlagSet){0};
@@ -94,6 +97,7 @@ void flag_set_free(Allocator *alloc, FlagSet *flags)
 bool trigger_parse(Diag *diag, Allocator *alloc, Trigger *trigger, const char *string)
 {
     memset(trigger, 0, sizeof(*trigger));
+    trigger->argument = str_new(*alloc);
     Strv strv = strv_from_cstr(string);
 
     if (strv_eq_cstr(strv, "interact")) {
@@ -112,7 +116,7 @@ bool trigger_parse(Diag *diag, Allocator *alloc, Trigger *trigger, const char *s
         trigger->type = TRIGGER_EVENT;
         Strv rest = strv;
         (void)strv_split(&rest, ':');
-        if (!str_from_strv(alloc, &trigger->argument, rest)) {
+        if (!str_from_strv(&trigger->argument, rest)) {
             error_set(diag->error, "trigger_parse: allocation failed");
             return false;
         }
@@ -122,7 +126,7 @@ bool trigger_parse(Diag *diag, Allocator *alloc, Trigger *trigger, const char *s
         trigger->type = TRIGGER_ATTR_CHANGED;
         Strv rest = strv;
         (void)strv_split(&rest, ':');
-        if (!str_from_strv(alloc, &trigger->argument, rest)) {
+        if (!str_from_strv(&trigger->argument, rest)) {
             error_set(diag->error, "trigger_parse: allocation failed");
             return false;
         }
@@ -132,7 +136,7 @@ bool trigger_parse(Diag *diag, Allocator *alloc, Trigger *trigger, const char *s
         trigger->type = TRIGGER_TIMER_PERIODIC;
         Strv rest = strv;
         (void)strv_split(&rest, ':');
-        if (!str_from_strv(alloc, &trigger->argument, rest)) {
+        if (!str_from_strv(&trigger->argument, rest)) {
             error_set(diag->error, "trigger_parse: allocation failed");
             return false;
         }
@@ -142,7 +146,7 @@ bool trigger_parse(Diag *diag, Allocator *alloc, Trigger *trigger, const char *s
         trigger->type = TRIGGER_TIMER;
         Strv rest = strv;
         (void)strv_split(&rest, ':');
-        if (!str_from_strv(alloc, &trigger->argument, rest)) {
+        if (!str_from_strv(&trigger->argument, rest)) {
             error_set(diag->error, "trigger_parse: allocation failed");
             return false;
         }
@@ -160,7 +164,7 @@ bool trigger_parse(Diag *diag, Allocator *alloc, Trigger *trigger, const char *s
         trigger->type = TRIGGER_COLLIDE;
         Strv rest = strv;
         (void)strv_split(&rest, ':');
-        if (!str_from_strv(alloc, &trigger->argument, rest)) {
+        if (!str_from_strv(&trigger->argument, rest)) {
             error_set(diag->error, "trigger_parse: allocation failed");
             return false;
         }
@@ -178,6 +182,7 @@ bool trigger_parse(Diag *diag, Allocator *alloc, Trigger *trigger, const char *s
 // Returns: 1 = comparison found and allocated, 0 = no comparison, -1 = alloc failed
 static int parse_condition_attr_comparison(Allocator *alloc, Condition *condition, const char *argument)
 {
+    (void)alloc;
     const char *less_than = strchr(argument, '<');
     const char *greater_than = strchr(argument, '>');
     const char *equals = strstr(argument, "==");
@@ -185,7 +190,7 @@ static int parse_condition_attr_comparison(Allocator *alloc, Condition *conditio
     if (equals) {
         condition->type = COND_ATTR_EQ;
         Strv name = {.ptr = argument, .len = (size_t)(equals - argument)};
-        if (!str_from_strv(alloc, &condition->argument, name)) {
+        if (!str_from_strv(&condition->argument, name)) {
             return -1;
         }
         condition->compare_value = strtof(equals + 2, nullptr);
@@ -194,7 +199,7 @@ static int parse_condition_attr_comparison(Allocator *alloc, Condition *conditio
     if (less_than) {
         condition->type = COND_ATTR_LT;
         Strv name = {.ptr = argument, .len = (size_t)(less_than - argument)};
-        if (!str_from_strv(alloc, &condition->argument, name)) {
+        if (!str_from_strv(&condition->argument, name)) {
             return -1;
         }
         condition->compare_value = strtof(less_than + 1, nullptr);
@@ -203,7 +208,7 @@ static int parse_condition_attr_comparison(Allocator *alloc, Condition *conditio
     if (greater_than) {
         condition->type = COND_ATTR_GT;
         Strv name = {.ptr = argument, .len = (size_t)(greater_than - argument)};
-        if (!str_from_strv(alloc, &condition->argument, name)) {
+        if (!str_from_strv(&condition->argument, name)) {
             return -1;
         }
         condition->compare_value = strtof(greater_than + 1, nullptr);
@@ -216,13 +221,14 @@ static int parse_condition_attr_comparison(Allocator *alloc, Condition *conditio
 bool condition_parse(Diag *diag, Allocator *alloc, Condition *condition, const char *string)
 {
     memset(condition, 0, sizeof(*condition));
+    condition->argument = str_new(*alloc);
     Strv strv = strv_from_cstr(string);
 
     if (strv_starts_with_cstr(strv, "not_flag:")) {
         condition->type = COND_NOT_FLAG;
         Strv rest = strv;
         (void)strv_split(&rest, ':');
-        if (!str_from_strv(alloc, &condition->argument, rest)) {
+        if (!str_from_strv(&condition->argument, rest)) {
             error_set(diag->error, "condition_parse: allocation failed");
             return false;
         }
@@ -232,7 +238,7 @@ bool condition_parse(Diag *diag, Allocator *alloc, Condition *condition, const c
         condition->type = COND_FLAG;
         Strv rest = strv;
         (void)strv_split(&rest, ':');
-        if (!str_from_strv(alloc, &condition->argument, rest)) {
+        if (!str_from_strv(&condition->argument, rest)) {
             error_set(diag->error, "condition_parse: allocation failed");
             return false;
         }
@@ -242,7 +248,7 @@ bool condition_parse(Diag *diag, Allocator *alloc, Condition *condition, const c
         condition->type = COND_HAS_ITEM;
         Strv rest = strv;
         (void)strv_split(&rest, ':');
-        if (!str_from_strv(alloc, &condition->argument, rest)) {
+        if (!str_from_strv(&condition->argument, rest)) {
             error_set(diag->error, "condition_parse: allocation failed");
             return false;
         }
@@ -252,7 +258,7 @@ bool condition_parse(Diag *diag, Allocator *alloc, Condition *condition, const c
         condition->type = COND_VAR;
         Strv rest = strv;
         (void)strv_split(&rest, ':');
-        if (!str_from_strv(alloc, &condition->argument, rest)) {
+        if (!str_from_strv(&condition->argument, rest)) {
             error_set(diag->error, "condition_parse: allocation failed");
             return false;
         }
@@ -262,7 +268,7 @@ bool condition_parse(Diag *diag, Allocator *alloc, Condition *condition, const c
         condition->type = COND_NOT_ATTR;
         Strv rest = strv;
         (void)strv_split(&rest, ':');
-        if (!str_from_strv(alloc, &condition->argument, rest)) {
+        if (!str_from_strv(&condition->argument, rest)) {
             error_set(diag->error, "condition_parse: allocation failed");
             return false;
         }
@@ -282,7 +288,7 @@ bool condition_parse(Diag *diag, Allocator *alloc, Condition *condition, const c
             return true;
         }
         condition->type = COND_ATTR;
-        if (!str_from_strv(alloc, &condition->argument, rest)) {
+        if (!str_from_strv(&condition->argument, rest)) {
             error_set(diag->error, "condition_parse: allocation failed");
             return false;
         }
@@ -295,13 +301,15 @@ bool condition_parse(Diag *diag, Allocator *alloc, Condition *condition, const c
 
 static bool parse_action_two_args(Allocator *alloc, ActionNode *node, Strv strv)
 {
+    node->argument = str_new(*alloc);
+    node->second_argument = str_new(*alloc);
     Strv first = strv_split(&strv, ',');
-    if (!str_from_strv(alloc, &node->argument, first)) {
+    if (!str_from_strv(&node->argument, first)) {
         return false;
     }
     if (strv.ptr) {
-        if (!str_from_strv(alloc, &node->second_argument, strv)) {
-            str_free(alloc, &node->argument);
+        if (!str_from_strv(&node->second_argument, strv)) {
+            str_free(&node->argument);
             return false;
         }
     }
@@ -481,7 +489,8 @@ static bool parse_one_cf_node(Diag *diag,
     toml_datum_t repeat_str = toml_string_in(table, "repeat");
     if (repeat_str.ok) {
         node->type = ACTION_REPEAT;
-        bool alloc_ok = str_from_cstr(alloc, &node->argument, repeat_str.u.s);
+        node->argument = str_new(*alloc);
+        bool alloc_ok = str_from_cstr(&node->argument, repeat_str.u.s);
         free(repeat_str.u.s);
         if (!alloc_ok) {
             error_set(diag->error, "parse_one_cf_node: allocation failed");
@@ -494,7 +503,8 @@ static bool parse_one_cf_node(Diag *diag,
     toml_datum_t for_each_str = toml_string_in(table, "for_each");
     if (for_each_str.ok) {
         node->type = ACTION_FOR_EACH;
-        bool alloc_ok = str_from_cstr(alloc, &node->argument, for_each_str.u.s);
+        node->argument = str_new(*alloc);
+        bool alloc_ok = str_from_cstr(&node->argument, for_each_str.u.s);
         free(for_each_str.u.s);
         if (!alloc_ok) {
             error_set(diag->error, "parse_one_cf_node: allocation failed for for_each");
@@ -506,7 +516,8 @@ static bool parse_one_cf_node(Diag *diag,
         }
         toml_datum_t bind_str = toml_string_in(table, "bind");
         if (bind_str.ok) {
-            bool bind_ok = str_from_cstr(alloc, &node->second_argument, bind_str.u.s);
+            node->second_argument = str_new(*alloc);
+            bool bind_ok = str_from_cstr(&node->second_argument, bind_str.u.s);
             free(bind_str.u.s);
             if (!bind_ok) {
                 error_set(diag->error, "parse_one_cf_node: allocation failed for bind");
@@ -1156,7 +1167,8 @@ static bool execute_transition_action(Diag *diag, Allocator *alloc, const Action
         error_set(diag->error, "transition: expected 'level,x,y'");
         return false;
     }
-    if (!str_from_strv(alloc, &context.transition->level, str_to_strv(node->argument))) {
+    context.transition->level = str_new(*alloc);
+    if (!str_from_strv(&context.transition->level, str_to_strv(node->argument))) {
         error_set(diag->error, "transition: allocation failed for level name");
         return false;
     }
@@ -1485,7 +1497,8 @@ bool subroutines_parse(Diag *diag, Allocator *alloc, vec_subroutine *subroutines
          * (reachable via subroutines->data), avoiding false-positive leak warnings from
          * the clang-analyzer about arena-backed allocations. */
         Subroutine stub = {0};
-        bool alloc_ok = str_from_cstr(alloc, &stub.name, name_datum.u.s);
+        stub.name = str_new(*alloc);
+        bool alloc_ok = str_from_cstr(&stub.name, name_datum.u.s);
         free(name_datum.u.s);
         if (!alloc_ok) {
             error_set(diag->error, "subroutine[%d]: allocation failed for name", index);

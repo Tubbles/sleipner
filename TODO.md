@@ -60,5 +60,3 @@
   edge cases entirely.
 
 ## misc
-
-- do the same stored-allocator change for map and Str types (parallels vec work)

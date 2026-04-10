@@ -125,7 +125,7 @@ void test_trigger_parse_event(void)
     TEST_ASSERT_TRUE(trigger_parse(&test_diag, &test_heap_alloc, &trigger, "event:boss_defeated"));
     TEST_ASSERT_EQUAL_INT(TRIGGER_EVENT, trigger.type);
     TEST_ASSERT_EQUAL_STRING("boss_defeated", trigger.argument.ptr);
-    str_free(&test_heap_alloc, &trigger.argument);
+    str_free(&trigger.argument);
 }
 
 void test_trigger_parse_attr_changed(void)
@@ -134,7 +134,7 @@ void test_trigger_parse_attr_changed(void)
     TEST_ASSERT_TRUE(trigger_parse(&test_diag, &test_heap_alloc, &trigger, "attr_changed:health"));
     TEST_ASSERT_EQUAL_INT(TRIGGER_ATTR_CHANGED, trigger.type);
     TEST_ASSERT_EQUAL_STRING("health", trigger.argument.ptr);
-    str_free(&test_heap_alloc, &trigger.argument);
+    str_free(&trigger.argument);
 }
 
 void test_trigger_parse_unknown(void)
@@ -151,7 +151,7 @@ void test_condition_parse_flag(void)
     TEST_ASSERT_TRUE(condition_parse(&test_diag, &test_heap_alloc, &condition, "flag:chest_opened"));
     TEST_ASSERT_EQUAL_INT(COND_FLAG, condition.type);
     TEST_ASSERT_EQUAL_STRING("chest_opened", condition.argument.ptr);
-    str_free(&test_heap_alloc, &condition.argument);
+    str_free(&condition.argument);
 }
 
 void test_condition_parse_not_flag(void)
@@ -160,7 +160,7 @@ void test_condition_parse_not_flag(void)
     TEST_ASSERT_TRUE(condition_parse(&test_diag, &test_heap_alloc, &condition, "not_flag:boss_alive"));
     TEST_ASSERT_EQUAL_INT(COND_NOT_FLAG, condition.type);
     TEST_ASSERT_EQUAL_STRING("boss_alive", condition.argument.ptr);
-    str_free(&test_heap_alloc, &condition.argument);
+    str_free(&condition.argument);
 }
 
 void test_condition_parse_attr_truthy(void)
@@ -169,7 +169,7 @@ void test_condition_parse_attr_truthy(void)
     TEST_ASSERT_TRUE(condition_parse(&test_diag, &test_heap_alloc, &condition, "self.attr:is_locked"));
     TEST_ASSERT_EQUAL_INT(COND_ATTR, condition.type);
     TEST_ASSERT_EQUAL_STRING("is_locked", condition.argument.ptr);
-    str_free(&test_heap_alloc, &condition.argument);
+    str_free(&condition.argument);
 }
 
 void test_condition_parse_attr_short_form(void)
@@ -178,7 +178,7 @@ void test_condition_parse_attr_short_form(void)
     TEST_ASSERT_TRUE(condition_parse(&test_diag, &test_heap_alloc, &condition, "attr:visible"));
     TEST_ASSERT_EQUAL_INT(COND_ATTR, condition.type);
     TEST_ASSERT_EQUAL_STRING("visible", condition.argument.ptr);
-    str_free(&test_heap_alloc, &condition.argument);
+    str_free(&condition.argument);
 }
 
 void test_condition_parse_not_attr(void)
@@ -187,7 +187,7 @@ void test_condition_parse_not_attr(void)
     TEST_ASSERT_TRUE(condition_parse(&test_diag, &test_heap_alloc, &condition, "not_attr:dead"));
     TEST_ASSERT_EQUAL_INT(COND_NOT_ATTR, condition.type);
     TEST_ASSERT_EQUAL_STRING("dead", condition.argument.ptr);
-    str_free(&test_heap_alloc, &condition.argument);
+    str_free(&condition.argument);
 }
 
 void test_condition_parse_attr_less_than(void)
@@ -197,7 +197,7 @@ void test_condition_parse_attr_less_than(void)
     TEST_ASSERT_EQUAL_INT(COND_ATTR_LT, condition.type);
     TEST_ASSERT_EQUAL_STRING("health", condition.argument.ptr);
     TEST_ASSERT_FLOAT_WITHIN(0.01F, 10.0F, condition.compare_value);
-    str_free(&test_heap_alloc, &condition.argument);
+    str_free(&condition.argument);
 }
 
 void test_condition_parse_attr_greater_than(void)
@@ -207,7 +207,7 @@ void test_condition_parse_attr_greater_than(void)
     TEST_ASSERT_EQUAL_INT(COND_ATTR_GT, condition.type);
     TEST_ASSERT_EQUAL_STRING("speed", condition.argument.ptr);
     TEST_ASSERT_FLOAT_WITHIN(0.01F, 5.0F, condition.compare_value);
-    str_free(&test_heap_alloc, &condition.argument);
+    str_free(&condition.argument);
 }
 
 void test_condition_parse_attr_equals(void)
@@ -217,7 +217,7 @@ void test_condition_parse_attr_equals(void)
     TEST_ASSERT_EQUAL_INT(COND_ATTR_EQ, condition.type);
     TEST_ASSERT_EQUAL_STRING("level", condition.argument.ptr);
     TEST_ASSERT_FLOAT_WITHIN(0.01F, 3.0F, condition.compare_value);
-    str_free(&test_heap_alloc, &condition.argument);
+    str_free(&condition.argument);
 }
 
 void test_condition_parse_has_item(void)
@@ -226,7 +226,7 @@ void test_condition_parse_has_item(void)
     TEST_ASSERT_TRUE(condition_parse(&test_diag, &test_heap_alloc, &condition, "has_item:key"));
     TEST_ASSERT_EQUAL_INT(COND_HAS_ITEM, condition.type);
     TEST_ASSERT_EQUAL_STRING("key", condition.argument.ptr);
-    str_free(&test_heap_alloc, &condition.argument);
+    str_free(&condition.argument);
 }
 
 void test_condition_parse_unknown(void)
@@ -253,7 +253,7 @@ void test_action_parse_set_flag(void)
     TEST_ASSERT_TRUE(parse_action_str(&action, "set_flag:chest_opened"));
     TEST_ASSERT_EQUAL_INT(ACTION_SET_FLAG, action.type);
     TEST_ASSERT_EQUAL_STRING("chest_opened", action.argument.ptr);
-    str_free(&test_heap_alloc, &action.argument);
+    str_free(&action.argument);
 }
 
 void test_action_parse_clear_flag(void)
@@ -262,7 +262,7 @@ void test_action_parse_clear_flag(void)
     TEST_ASSERT_TRUE(parse_action_str(&action, "clear_flag:door_locked"));
     TEST_ASSERT_EQUAL_INT(ACTION_CLEAR_FLAG, action.type);
     TEST_ASSERT_EQUAL_STRING("door_locked", action.argument.ptr);
-    str_free(&test_heap_alloc, &action.argument);
+    str_free(&action.argument);
 }
 
 void test_action_parse_set_attr(void)
@@ -272,8 +272,8 @@ void test_action_parse_set_attr(void)
     TEST_ASSERT_EQUAL_INT(ACTION_SET_ATTR, action.type);
     TEST_ASSERT_EQUAL_STRING("self.is_locked", action.argument.ptr);
     TEST_ASSERT_EQUAL_STRING("false", action.second_argument.ptr);
-    str_free(&test_heap_alloc, &action.argument);
-    str_free(&test_heap_alloc, &action.second_argument);
+    str_free(&action.argument);
+    str_free(&action.second_argument);
 }
 
 void test_action_parse_add_attr(void)
@@ -283,8 +283,8 @@ void test_action_parse_add_attr(void)
     TEST_ASSERT_EQUAL_INT(ACTION_ADD_ATTR, action.type);
     TEST_ASSERT_EQUAL_STRING("root.health", action.argument.ptr);
     TEST_ASSERT_EQUAL_STRING("-2", action.second_argument.ptr);
-    str_free(&test_heap_alloc, &action.argument);
-    str_free(&test_heap_alloc, &action.second_argument);
+    str_free(&action.argument);
+    str_free(&action.second_argument);
 }
 
 void test_action_parse_toggle_attr(void)
@@ -293,7 +293,7 @@ void test_action_parse_toggle_attr(void)
     TEST_ASSERT_TRUE(parse_action_str(&action, "toggle_attr:self.visible"));
     TEST_ASSERT_EQUAL_INT(ACTION_TOGGLE_ATTR, action.type);
     TEST_ASSERT_EQUAL_STRING("self.visible", action.argument.ptr);
-    str_free(&test_heap_alloc, &action.argument);
+    str_free(&action.argument);
 }
 
 void test_action_parse_destroy(void)
@@ -309,7 +309,7 @@ void test_action_parse_fire_event(void)
     TEST_ASSERT_TRUE(parse_action_str(&action, "fire_event:boss_defeated"));
     TEST_ASSERT_EQUAL_INT(ACTION_FIRE_EVENT, action.type);
     TEST_ASSERT_EQUAL_STRING("boss_defeated", action.argument.ptr);
-    str_free(&test_heap_alloc, &action.argument);
+    str_free(&action.argument);
 }
 
 void test_action_parse_unknown(void)
@@ -337,27 +337,31 @@ void test_trigger_no_match_different_type(void)
 void test_trigger_matches_event_with_argument(void)
 {
     Trigger trigger = {.type = TRIGGER_EVENT};
-    TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &trigger.argument, "boss_defeated"));
+    trigger.argument = str_new(test_heap_alloc);
+    TEST_ASSERT_TRUE(str_from_cstr(&trigger.argument, "boss_defeated"));
 
     TriggerEvent event = {.type = TRIGGER_EVENT, .entity_index = -1};
-    TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &event.argument, "boss_defeated"));
+    event.argument = str_new(test_heap_alloc);
+    TEST_ASSERT_TRUE(str_from_cstr(&event.argument, "boss_defeated"));
 
     TEST_ASSERT_TRUE(trigger_matches(&trigger, &event));
-    str_free(&test_heap_alloc, &trigger.argument);
-    str_free(&test_heap_alloc, &event.argument);
+    str_free(&trigger.argument);
+    str_free(&event.argument);
 }
 
 void test_trigger_no_match_event_wrong_argument(void)
 {
     Trigger trigger = {.type = TRIGGER_EVENT};
-    TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &trigger.argument, "boss_defeated"));
+    trigger.argument = str_new(test_heap_alloc);
+    TEST_ASSERT_TRUE(str_from_cstr(&trigger.argument, "boss_defeated"));
 
     TriggerEvent event = {.type = TRIGGER_EVENT, .entity_index = -1};
-    TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &event.argument, "door_opened"));
+    event.argument = str_new(test_heap_alloc);
+    TEST_ASSERT_TRUE(str_from_cstr(&event.argument, "door_opened"));
 
     TEST_ASSERT_FALSE(trigger_matches(&trigger, &event));
-    str_free(&test_heap_alloc, &trigger.argument);
-    str_free(&test_heap_alloc, &event.argument);
+    str_free(&trigger.argument);
+    str_free(&event.argument);
 }
 
 /* ---- Condition evaluation tests ---- */
@@ -368,13 +372,14 @@ void test_condition_flag_true(void)
     flag_set(&test_diag, &test_heap_alloc, &flags, "test_flag");
 
     Condition condition = {.type = COND_FLAG};
-    TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &condition.argument, "test_flag"));
+    condition.argument = str_new(test_heap_alloc);
+    TEST_ASSERT_TRUE(str_from_cstr(&condition.argument, "test_flag"));
 
     Entity entity = {0};
     const AttrSet *entity_defs[] = {nullptr};
     ConditionContext context = {.entity = &entity, .flags = &flags, .entity_defaults = entity_defs};
     TEST_ASSERT_TRUE(conditions_evaluate(&condition, 1, context));
-    str_free(&test_heap_alloc, &condition.argument);
+    str_free(&condition.argument);
     test_flag_set_free_local(&flags);
 }
 
@@ -383,13 +388,14 @@ void test_condition_flag_false(void)
     FlagSet flags = {0};
 
     Condition condition = {.type = COND_FLAG};
-    TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &condition.argument, "test_flag"));
+    condition.argument = str_new(test_heap_alloc);
+    TEST_ASSERT_TRUE(str_from_cstr(&condition.argument, "test_flag"));
 
     Entity entity = {0};
     const AttrSet *entity_defs[] = {nullptr};
     ConditionContext context = {.entity = &entity, .flags = &flags, .entity_defaults = entity_defs};
     TEST_ASSERT_FALSE(conditions_evaluate(&condition, 1, context));
-    str_free(&test_heap_alloc, &condition.argument);
+    str_free(&condition.argument);
     test_flag_set_free_local(&flags);
 }
 
@@ -398,13 +404,14 @@ void test_condition_not_flag(void)
     FlagSet flags = {0};
 
     Condition condition = {.type = COND_NOT_FLAG};
-    TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &condition.argument, "test_flag"));
+    condition.argument = str_new(test_heap_alloc);
+    TEST_ASSERT_TRUE(str_from_cstr(&condition.argument, "test_flag"));
 
     Entity entity = {0};
     const AttrSet *entity_defs[] = {nullptr};
     ConditionContext context = {.entity = &entity, .flags = &flags, .entity_defaults = entity_defs};
     TEST_ASSERT_TRUE(conditions_evaluate(&condition, 1, context));
-    str_free(&test_heap_alloc, &condition.argument);
+    str_free(&condition.argument);
     test_flag_set_free_local(&flags);
 }
 
@@ -414,13 +421,14 @@ void test_condition_attr_truthy(void)
     (void)attr_set_bool(&test_heap_alloc, &entity.attrs, "is_locked", true);
 
     Condition condition = {.type = COND_ATTR};
-    TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &condition.argument, "is_locked"));
+    condition.argument = str_new(test_heap_alloc);
+    TEST_ASSERT_TRUE(str_from_cstr(&condition.argument, "is_locked"));
 
     FlagSet flags = {0};
     const AttrSet *entity_defs[] = {nullptr};
     ConditionContext context = {.entity = &entity, .flags = &flags, .entity_defaults = entity_defs};
     TEST_ASSERT_TRUE(conditions_evaluate(&condition, 1, context));
-    str_free(&test_heap_alloc, &condition.argument);
+    str_free(&condition.argument);
     attr_set_free(&test_heap_alloc, &entity.attrs);
     test_flag_set_free_local(&flags);
 }
@@ -431,13 +439,14 @@ void test_condition_attr_falsy(void)
     (void)attr_set_bool(&test_heap_alloc, &entity.attrs, "is_locked", false);
 
     Condition condition = {.type = COND_ATTR};
-    TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &condition.argument, "is_locked"));
+    condition.argument = str_new(test_heap_alloc);
+    TEST_ASSERT_TRUE(str_from_cstr(&condition.argument, "is_locked"));
 
     FlagSet flags = {0};
     const AttrSet *entity_defs[] = {nullptr};
     ConditionContext context = {.entity = &entity, .flags = &flags, .entity_defaults = entity_defs};
     TEST_ASSERT_FALSE(conditions_evaluate(&condition, 1, context));
-    str_free(&test_heap_alloc, &condition.argument);
+    str_free(&condition.argument);
     attr_set_free(&test_heap_alloc, &entity.attrs);
     test_flag_set_free_local(&flags);
 }
@@ -447,13 +456,14 @@ void test_condition_attr_missing(void)
     Entity entity = {0};
 
     Condition condition = {.type = COND_ATTR};
-    TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &condition.argument, "nonexistent"));
+    condition.argument = str_new(test_heap_alloc);
+    TEST_ASSERT_TRUE(str_from_cstr(&condition.argument, "nonexistent"));
 
     FlagSet flags = {0};
     const AttrSet *entity_defs[] = {nullptr};
     ConditionContext context = {.entity = &entity, .flags = &flags, .entity_defaults = entity_defs};
     TEST_ASSERT_FALSE(conditions_evaluate(&condition, 1, context));
-    str_free(&test_heap_alloc, &condition.argument);
+    str_free(&condition.argument);
     test_flag_set_free_local(&flags);
 }
 
@@ -463,13 +473,14 @@ void test_condition_attr_less_than(void)
     (void)attr_set_int(&test_heap_alloc, &entity.attrs, "health", 5);
 
     Condition condition = {.type = COND_ATTR_LT, .compare_value = 10.0F};
-    TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &condition.argument, "health"));
+    condition.argument = str_new(test_heap_alloc);
+    TEST_ASSERT_TRUE(str_from_cstr(&condition.argument, "health"));
 
     FlagSet flags = {0};
     const AttrSet *entity_defs[] = {nullptr};
     ConditionContext context = {.entity = &entity, .flags = &flags, .entity_defaults = entity_defs};
     TEST_ASSERT_TRUE(conditions_evaluate(&condition, 1, context));
-    str_free(&test_heap_alloc, &condition.argument);
+    str_free(&condition.argument);
     attr_set_free(&test_heap_alloc, &entity.attrs);
     test_flag_set_free_local(&flags);
 }
@@ -480,13 +491,14 @@ void test_condition_attr_greater_than(void)
     (void)attr_set_int(&test_heap_alloc, &entity.attrs, "speed", 15);
 
     Condition condition = {.type = COND_ATTR_GT, .compare_value = 10.0F};
-    TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &condition.argument, "speed"));
+    condition.argument = str_new(test_heap_alloc);
+    TEST_ASSERT_TRUE(str_from_cstr(&condition.argument, "speed"));
 
     FlagSet flags = {0};
     const AttrSet *entity_defs[] = {nullptr};
     ConditionContext context = {.entity = &entity, .flags = &flags, .entity_defaults = entity_defs};
     TEST_ASSERT_TRUE(conditions_evaluate(&condition, 1, context));
-    str_free(&test_heap_alloc, &condition.argument);
+    str_free(&condition.argument);
     attr_set_free(&test_heap_alloc, &entity.attrs);
     test_flag_set_free_local(&flags);
 }
@@ -501,15 +513,17 @@ void test_condition_and_logic_all_pass(void)
         {.type = COND_FLAG},
         {.type = COND_FLAG},
     };
-    TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &conditions[0].argument, "flag_a"));
-    TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &conditions[1].argument, "flag_b"));
+    conditions[0].argument = str_new(test_heap_alloc);
+    TEST_ASSERT_TRUE(str_from_cstr(&conditions[0].argument, "flag_a"));
+    conditions[1].argument = str_new(test_heap_alloc);
+    TEST_ASSERT_TRUE(str_from_cstr(&conditions[1].argument, "flag_b"));
 
     Entity entity = {0};
     const AttrSet *entity_defs[] = {nullptr};
     ConditionContext context = {.entity = &entity, .flags = &flags, .entity_defaults = entity_defs};
     TEST_ASSERT_TRUE(conditions_evaluate(conditions, 2, context));
-    str_free(&test_heap_alloc, &conditions[0].argument);
-    str_free(&test_heap_alloc, &conditions[1].argument);
+    str_free(&conditions[0].argument);
+    str_free(&conditions[1].argument);
     test_flag_set_free_local(&flags);
 }
 
@@ -522,15 +536,17 @@ void test_condition_and_logic_one_fails(void)
         {.type = COND_FLAG},
         {.type = COND_FLAG},
     };
-    TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &conditions[0].argument, "flag_a"));
-    TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &conditions[1].argument, "flag_b"));
+    conditions[0].argument = str_new(test_heap_alloc);
+    TEST_ASSERT_TRUE(str_from_cstr(&conditions[0].argument, "flag_a"));
+    conditions[1].argument = str_new(test_heap_alloc);
+    TEST_ASSERT_TRUE(str_from_cstr(&conditions[1].argument, "flag_b"));
 
     Entity entity = {0};
     const AttrSet *entity_defs[] = {nullptr};
     ConditionContext context = {.entity = &entity, .flags = &flags, .entity_defaults = entity_defs};
     TEST_ASSERT_FALSE(conditions_evaluate(conditions, 2, context));
-    str_free(&test_heap_alloc, &conditions[0].argument);
-    str_free(&test_heap_alloc, &conditions[1].argument);
+    str_free(&conditions[0].argument);
+    str_free(&conditions[1].argument);
     test_flag_set_free_local(&flags);
 }
 
@@ -543,7 +559,8 @@ void test_action_set_flag_executes(void)
     Entity entity = {0};
 
     ActionNode action = {.type = ACTION_SET_FLAG};
-    TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &action.argument, "chest_opened"));
+    action.argument = str_new(test_heap_alloc);
+    TEST_ASSERT_TRUE(str_from_cstr(&action.argument, "chest_opened"));
 
     ActionContext context = {
         .entity = &entity,
@@ -553,7 +570,7 @@ void test_action_set_flag_executes(void)
     };
     TEST_ASSERT_TRUE(action_node_execute(&test_diag, &test_heap_alloc, &action, context));
     TEST_ASSERT_TRUE(flag_get(&flags, "chest_opened"));
-    str_free(&test_heap_alloc, &action.argument);
+    str_free(&action.argument);
     test_flag_set_free_local(&flags);
 }
 
@@ -565,7 +582,8 @@ void test_action_clear_flag_executes(void)
     Entity entity = {0};
 
     ActionNode action = {.type = ACTION_CLEAR_FLAG};
-    TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &action.argument, "door_locked"));
+    action.argument = str_new(test_heap_alloc);
+    TEST_ASSERT_TRUE(str_from_cstr(&action.argument, "door_locked"));
 
     ActionContext context = {
         .entity = &entity,
@@ -575,7 +593,7 @@ void test_action_clear_flag_executes(void)
     };
     TEST_ASSERT_TRUE(action_node_execute(&test_diag, &test_heap_alloc, &action, context));
     TEST_ASSERT_FALSE(flag_get(&flags, "door_locked"));
-    str_free(&test_heap_alloc, &action.argument);
+    str_free(&action.argument);
     test_flag_set_free_local(&flags);
 }
 
@@ -587,8 +605,10 @@ void test_action_set_attr_bool(void)
     (void)attr_set_bool(&test_heap_alloc, &entity.attrs, "is_locked", true);
 
     ActionNode action = {.type = ACTION_SET_ATTR};
-    TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &action.argument, "is_locked"));
-    TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &action.second_argument, "false"));
+    action.argument = str_new(test_heap_alloc);
+    TEST_ASSERT_TRUE(str_from_cstr(&action.argument, "is_locked"));
+    action.second_argument = str_new(test_heap_alloc);
+    TEST_ASSERT_TRUE(str_from_cstr(&action.second_argument, "false"));
 
     ActionContext context = {
         .entity = &entity,
@@ -604,8 +624,8 @@ void test_action_set_attr_bool(void)
     TEST_ASSERT_NOT_NULL(attr);
     TEST_ASSERT_EQUAL_INT(ATTR_BOOL, attr->type);
     TEST_ASSERT_FALSE(attr->value.b);
-    str_free(&test_heap_alloc, &action.argument);
-    str_free(&test_heap_alloc, &action.second_argument);
+    str_free(&action.argument);
+    str_free(&action.second_argument);
     attr_set_free(&test_heap_alloc, &entity.attrs);
     test_flag_set_free_local(&flags);
 }
@@ -617,8 +637,10 @@ void test_action_set_attr_int(void)
     Entity entity = {0};
 
     ActionNode action = {.type = ACTION_SET_ATTR};
-    TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &action.argument, "health"));
-    TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &action.second_argument, "42"));
+    action.argument = str_new(test_heap_alloc);
+    TEST_ASSERT_TRUE(str_from_cstr(&action.argument, "health"));
+    action.second_argument = str_new(test_heap_alloc);
+    TEST_ASSERT_TRUE(str_from_cstr(&action.second_argument, "42"));
 
     ActionContext context = {
         .entity = &entity,
@@ -630,8 +652,8 @@ void test_action_set_attr_int(void)
     };
     TEST_ASSERT_TRUE(action_node_execute(&test_diag, &test_heap_alloc, &action, context));
     TEST_ASSERT_EQUAL_INT(42, attr_get_int(&entity.attrs, "health", 0));
-    str_free(&test_heap_alloc, &action.argument);
-    str_free(&test_heap_alloc, &action.second_argument);
+    str_free(&action.argument);
+    str_free(&action.second_argument);
     attr_set_free(&test_heap_alloc, &entity.attrs);
     test_flag_set_free_local(&flags);
 }
@@ -644,8 +666,10 @@ void test_action_add_attr(void)
     (void)attr_set_int(&test_heap_alloc, &entity.attrs, "health", 10);
 
     ActionNode action = {.type = ACTION_ADD_ATTR};
-    TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &action.argument, "health"));
-    TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &action.second_argument, "-3"));
+    action.argument = str_new(test_heap_alloc);
+    TEST_ASSERT_TRUE(str_from_cstr(&action.argument, "health"));
+    action.second_argument = str_new(test_heap_alloc);
+    TEST_ASSERT_TRUE(str_from_cstr(&action.second_argument, "-3"));
 
     ActionContext context = {
         .entity = &entity,
@@ -657,8 +681,8 @@ void test_action_add_attr(void)
     };
     TEST_ASSERT_TRUE(action_node_execute(&test_diag, &test_heap_alloc, &action, context));
     TEST_ASSERT_EQUAL_INT(7, attr_get_int(&entity.attrs, "health", 0));
-    str_free(&test_heap_alloc, &action.argument);
-    str_free(&test_heap_alloc, &action.second_argument);
+    str_free(&action.argument);
+    str_free(&action.second_argument);
     attr_set_free(&test_heap_alloc, &entity.attrs);
     test_flag_set_free_local(&flags);
 }
@@ -671,7 +695,8 @@ void test_action_toggle_attr(void)
     (void)attr_set_bool(&test_heap_alloc, &entity.attrs, "visible", true);
 
     ActionNode action = {.type = ACTION_TOGGLE_ATTR};
-    TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &action.argument, "visible"));
+    action.argument = str_new(test_heap_alloc);
+    TEST_ASSERT_TRUE(str_from_cstr(&action.argument, "visible"));
 
     ActionContext context = {
         .entity = &entity,
@@ -683,7 +708,7 @@ void test_action_toggle_attr(void)
     };
     TEST_ASSERT_TRUE(action_node_execute(&test_diag, &test_heap_alloc, &action, context));
     TEST_ASSERT_FALSE(attr_get_bool(&entity.attrs, "visible", true));
-    str_free(&test_heap_alloc, &action.argument);
+    str_free(&action.argument);
     attr_set_free(&test_heap_alloc, &entity.attrs);
     test_flag_set_free_local(&flags);
 }
@@ -715,7 +740,8 @@ void test_action_fire_event_queues(void)
     Entity entity = {0};
 
     ActionNode action = {.type = ACTION_FIRE_EVENT};
-    TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &action.argument, "boss_defeated"));
+    action.argument = str_new(test_heap_alloc);
+    TEST_ASSERT_TRUE(str_from_cstr(&action.argument, "boss_defeated"));
 
     ActionContext context = {
         .entity = &entity,
@@ -727,7 +753,7 @@ void test_action_fire_event_queues(void)
     TEST_ASSERT_EQUAL_INT(1, queue.count);
     TEST_ASSERT_EQUAL_INT(TRIGGER_EVENT, queue.events[0].type);
     TEST_ASSERT_EQUAL_STRING("boss_defeated", queue.events[0].argument.ptr);
-    str_free(&test_heap_alloc, &action.argument);
+    str_free(&action.argument);
     test_flag_set_free_local(&flags);
 }
 
@@ -741,8 +767,10 @@ void test_action_execution_order(void)
         {.type = ACTION_SET_FLAG},
         {.type = ACTION_SET_FLAG},
     };
-    TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &actions[0].argument, "first"));
-    TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &actions[1].argument, "second"));
+    actions[0].argument = str_new(test_heap_alloc);
+    TEST_ASSERT_TRUE(str_from_cstr(&actions[0].argument, "first"));
+    actions[1].argument = str_new(test_heap_alloc);
+    TEST_ASSERT_TRUE(str_from_cstr(&actions[1].argument, "second"));
 
     ActionContext context = {
         .entity = &entity,
@@ -756,8 +784,8 @@ void test_action_execution_order(void)
     TEST_ASSERT_TRUE(flag_get(&flags, "first"));
     TEST_ASSERT_TRUE(flag_get(&flags, "second"));
     TEST_ASSERT_EQUAL_INT(2, flags.names.count);
-    str_free(&test_heap_alloc, &actions[0].argument);
-    str_free(&test_heap_alloc, &actions[1].argument);
+    str_free(&actions[0].argument);
+    str_free(&actions[1].argument);
     test_flag_set_free_local(&flags);
 }
 
@@ -779,7 +807,8 @@ void test_evaluate_interact_sets_flag(void)
     rule->trigger.type = TRIGGER_INTERACT;
     rule->action_tree.nodes.alloc = rule_alloc;
     ActionNode node_interact = {.type = ACTION_SET_FLAG};
-    TEST_ASSERT_TRUE(str_from_cstr(&rule_alloc, &node_interact.argument, "chest_opened"));
+    node_interact.argument = str_new(rule_alloc);
+    TEST_ASSERT_TRUE(str_from_cstr(&node_interact.argument, "chest_opened"));
     TEST_ASSERT_TRUE(vec_action_node_push(&rule->action_tree.nodes, node_interact));
 
     blueprint.rules.alloc = rule_alloc;
@@ -787,11 +816,12 @@ void test_evaluate_interact_sets_flag(void)
 
     Entity entity = {0};
     entity.id = 0;
-    TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &entity.blueprint_name, "chest"));
+    entity.blueprint_name = str_new(test_heap_alloc);
+    TEST_ASSERT_TRUE(str_from_cstr(&entity.blueprint_name, "chest"));
 
-    map_entity_ruleset rule_table = {0};
     Allocator heap_alloc = allocator_heap();
-    TEST_ASSERT_TRUE(map_entity_ruleset_set(&rule_table, entity.id, blueprint.rules, &heap_alloc));
+    map_entity_ruleset rule_table = map_entity_ruleset_new(heap_alloc);
+    TEST_ASSERT_TRUE(map_entity_ruleset_set(&rule_table, entity.id, blueprint.rules));
 
     FlagSet flags = {0};
     AttrSet global_vars = {0};
@@ -804,8 +834,8 @@ void test_evaluate_interact_sets_flag(void)
 
     arena_free(&arena);
     attr_set_free(&test_heap_alloc, &blueprint.attrs);
-    str_free(&test_heap_alloc, &entity.blueprint_name);
-    map_entity_ruleset_free(&rule_table, &heap_alloc);
+    str_free(&entity.blueprint_name);
+    map_entity_ruleset_free(&rule_table);
     test_flag_set_free_local(&flags);
     test_attr_set_free_local(&global_vars);
 }
@@ -826,11 +856,13 @@ void test_evaluate_condition_blocks_action(void)
     rule->trigger.type = TRIGGER_INTERACT;
     rule->conditions.alloc = rule_alloc;
     Condition cond_blocked = {.type = COND_FLAG};
-    TEST_ASSERT_TRUE(str_from_cstr(&rule_alloc, &cond_blocked.argument, "has_key"));
+    cond_blocked.argument = str_new(rule_alloc);
+    TEST_ASSERT_TRUE(str_from_cstr(&cond_blocked.argument, "has_key"));
     TEST_ASSERT_TRUE(vec_condition_push(&rule->conditions, cond_blocked));
     rule->action_tree.nodes.alloc = rule_alloc;
     ActionNode node_blocked = {.type = ACTION_SET_FLAG};
-    TEST_ASSERT_TRUE(str_from_cstr(&rule_alloc, &node_blocked.argument, "chest_opened"));
+    node_blocked.argument = str_new(rule_alloc);
+    TEST_ASSERT_TRUE(str_from_cstr(&node_blocked.argument, "chest_opened"));
     TEST_ASSERT_TRUE(vec_action_node_push(&rule->action_tree.nodes, node_blocked));
 
     blueprint.rules.alloc = rule_alloc;
@@ -838,11 +870,12 @@ void test_evaluate_condition_blocks_action(void)
 
     Entity entity = {0};
     entity.id = 0;
-    TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &entity.blueprint_name, "chest"));
+    entity.blueprint_name = str_new(test_heap_alloc);
+    TEST_ASSERT_TRUE(str_from_cstr(&entity.blueprint_name, "chest"));
 
-    map_entity_ruleset rule_table = {0};
     Allocator heap_alloc = allocator_heap();
-    TEST_ASSERT_TRUE(map_entity_ruleset_set(&rule_table, entity.id, blueprint.rules, &heap_alloc));
+    map_entity_ruleset rule_table = map_entity_ruleset_new(heap_alloc);
+    TEST_ASSERT_TRUE(map_entity_ruleset_set(&rule_table, entity.id, blueprint.rules));
 
     FlagSet flags = {0};
     AttrSet global_vars = {0};
@@ -855,8 +888,8 @@ void test_evaluate_condition_blocks_action(void)
 
     arena_free(&arena);
     attr_set_free(&test_heap_alloc, &blueprint.attrs);
-    str_free(&test_heap_alloc, &entity.blueprint_name);
-    map_entity_ruleset_free(&rule_table, &heap_alloc);
+    str_free(&entity.blueprint_name);
+    map_entity_ruleset_free(&rule_table);
     test_flag_set_free_local(&flags);
     test_attr_set_free_local(&global_vars);
 }
@@ -876,7 +909,8 @@ void test_evaluate_fire_event_cascading(void)
     switch_rule->trigger.type = TRIGGER_INTERACT;
     switch_rule->action_tree.nodes.alloc = rule_alloc;
     ActionNode switch_node = {.type = ACTION_FIRE_EVENT};
-    TEST_ASSERT_TRUE(str_from_cstr(&rule_alloc, &switch_node.argument, "switch_pulled"));
+    switch_node.argument = str_new(rule_alloc);
+    TEST_ASSERT_TRUE(str_from_cstr(&switch_node.argument, "switch_pulled"));
     TEST_ASSERT_TRUE(vec_action_node_push(&switch_rule->action_tree.nodes, switch_node));
     bp_switch.rules.alloc = rule_alloc;
     TEST_ASSERT_TRUE(vec_rule_push(&bp_switch.rules, *switch_rule));
@@ -888,24 +922,28 @@ void test_evaluate_fire_event_cascading(void)
     Rule *door_rule = arena_alloc(&arena, sizeof(Rule));
     memset(door_rule, 0, sizeof(*door_rule));
     door_rule->trigger.type = TRIGGER_EVENT;
-    TEST_ASSERT_TRUE(str_from_cstr(&rule_alloc, &door_rule->trigger.argument, "switch_pulled"));
+    door_rule->trigger.argument = str_new(rule_alloc);
+    TEST_ASSERT_TRUE(str_from_cstr(&door_rule->trigger.argument, "switch_pulled"));
     door_rule->action_tree.nodes.alloc = rule_alloc;
     ActionNode door_node = {.type = ACTION_SET_FLAG};
-    TEST_ASSERT_TRUE(str_from_cstr(&rule_alloc, &door_node.argument, "door_opened"));
+    door_node.argument = str_new(rule_alloc);
+    TEST_ASSERT_TRUE(str_from_cstr(&door_node.argument, "door_opened"));
     TEST_ASSERT_TRUE(vec_action_node_push(&door_rule->action_tree.nodes, door_node));
     bp_door.rules.alloc = rule_alloc;
     TEST_ASSERT_TRUE(vec_rule_push(&bp_door.rules, *door_rule));
 
     Entity entities[2] = {0};
     entities[0].id = 0;
-    TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &entities[0].blueprint_name, "switch"));
+    entities[0].blueprint_name = str_new(test_heap_alloc);
+    TEST_ASSERT_TRUE(str_from_cstr(&entities[0].blueprint_name, "switch"));
     entities[1].id = 1;
-    TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &entities[1].blueprint_name, "door"));
+    entities[1].blueprint_name = str_new(test_heap_alloc);
+    TEST_ASSERT_TRUE(str_from_cstr(&entities[1].blueprint_name, "door"));
 
-    map_entity_ruleset rule_table = {0};
     Allocator heap_alloc = allocator_heap();
-    TEST_ASSERT_TRUE(map_entity_ruleset_set(&rule_table, entities[0].id, bp_switch.rules, &heap_alloc));
-    TEST_ASSERT_TRUE(map_entity_ruleset_set(&rule_table, entities[1].id, bp_door.rules, &heap_alloc));
+    map_entity_ruleset rule_table = map_entity_ruleset_new(heap_alloc);
+    TEST_ASSERT_TRUE(map_entity_ruleset_set(&rule_table, entities[0].id, bp_switch.rules));
+    TEST_ASSERT_TRUE(map_entity_ruleset_set(&rule_table, entities[1].id, bp_door.rules));
 
     FlagSet flags = {0};
     AttrSet global_vars = {0};
@@ -919,9 +957,9 @@ void test_evaluate_fire_event_cascading(void)
     arena_free(&arena);
     attr_set_free(&test_heap_alloc, &bp_switch.attrs);
     attr_set_free(&test_heap_alloc, &bp_door.attrs);
-    str_free(&test_heap_alloc, &entities[0].blueprint_name);
-    str_free(&test_heap_alloc, &entities[1].blueprint_name);
-    map_entity_ruleset_free(&rule_table, &heap_alloc);
+    str_free(&entities[0].blueprint_name);
+    str_free(&entities[1].blueprint_name);
+    map_entity_ruleset_free(&rule_table);
     test_flag_set_free_local(&flags);
     test_attr_set_free_local(&global_vars);
 }
@@ -937,8 +975,10 @@ void test_var_set_local(void)
     AttrSet global_vars = {0};
 
     ActionNode action = {.type = ACTION_SET_VAR};
-    TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &action.argument, "damage"));
-    TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &action.second_argument, "42"));
+    action.argument = str_new(test_heap_alloc);
+    TEST_ASSERT_TRUE(str_from_cstr(&action.argument, "damage"));
+    action.second_argument = str_new(test_heap_alloc);
+    TEST_ASSERT_TRUE(str_from_cstr(&action.second_argument, "42"));
 
     ActionContext context = {
         .entity = &entity,
@@ -953,8 +993,8 @@ void test_var_set_local(void)
     TEST_ASSERT_TRUE(action_node_execute(&test_diag, &test_heap_alloc, &action, context));
     TEST_ASSERT_EQUAL_INT(42, attr_get_int(&local_vars, "damage", 0));
     TEST_ASSERT_NULL(attr_get(&global_vars, "damage"));
-    str_free(&test_heap_alloc, &action.argument);
-    str_free(&test_heap_alloc, &action.second_argument);
+    str_free(&action.argument);
+    str_free(&action.second_argument);
     attr_set_free(&test_heap_alloc, &local_vars);
     test_flag_set_free_local(&flags);
     test_attr_set_free_local(&local_vars);
@@ -969,8 +1009,10 @@ void test_var_set_global(void)
     AttrSet global_vars = {0};
 
     ActionNode action = {.type = ACTION_SET_VAR};
-    TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &action.argument, "global.score"));
-    TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &action.second_argument, "100"));
+    action.argument = str_new(test_heap_alloc);
+    TEST_ASSERT_TRUE(str_from_cstr(&action.argument, "global.score"));
+    action.second_argument = str_new(test_heap_alloc);
+    TEST_ASSERT_TRUE(str_from_cstr(&action.second_argument, "100"));
 
     ActionContext context = {
         .entity = &entity,
@@ -985,8 +1027,8 @@ void test_var_set_global(void)
     TEST_ASSERT_TRUE(action_node_execute(&test_diag, &test_heap_alloc, &action, context));
     TEST_ASSERT_EQUAL_INT(100, attr_get_int(&global_vars, "score", 0));
     TEST_ASSERT_NULL(attr_get(&local_vars, "score"));
-    str_free(&test_heap_alloc, &action.argument);
-    str_free(&test_heap_alloc, &action.second_argument);
+    str_free(&action.argument);
+    str_free(&action.second_argument);
     attr_set_free(&test_heap_alloc, &global_vars);
     test_flag_set_free_local(&flags);
     test_attr_set_free_local(&local_vars);
@@ -1001,7 +1043,8 @@ void test_var_condition_truthy(void)
     (void)attr_set_int(&test_heap_alloc, &local_vars, "active", 1);
 
     Condition cond = {.type = COND_VAR};
-    TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &cond.argument, "active"));
+    cond.argument = str_new(test_heap_alloc);
+    TEST_ASSERT_TRUE(str_from_cstr(&cond.argument, "active"));
 
     const AttrSet *var_defs[] = {nullptr};
     ConditionContext context = {
@@ -1014,7 +1057,7 @@ void test_var_condition_truthy(void)
         .entity_defaults = var_defs,
     };
     TEST_ASSERT_TRUE(conditions_evaluate(&cond, 1, context));
-    str_free(&test_heap_alloc, &cond.argument);
+    str_free(&cond.argument);
     attr_set_free(&test_heap_alloc, &local_vars);
     test_flag_set_free_local(&flags);
     test_attr_set_free_local(&local_vars);
@@ -1028,7 +1071,8 @@ void test_var_condition_falsy_when_unset(void)
     AttrSet global_vars = {0};
 
     Condition cond = {.type = COND_VAR};
-    TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &cond.argument, "missing"));
+    cond.argument = str_new(test_heap_alloc);
+    TEST_ASSERT_TRUE(str_from_cstr(&cond.argument, "missing"));
 
     const AttrSet *var_defs2[] = {nullptr};
     ConditionContext context = {
@@ -1041,7 +1085,7 @@ void test_var_condition_falsy_when_unset(void)
         .entity_defaults = var_defs2,
     };
     TEST_ASSERT_FALSE(conditions_evaluate(&cond, 1, context));
-    str_free(&test_heap_alloc, &cond.argument);
+    str_free(&cond.argument);
     test_flag_set_free_local(&flags);
     test_attr_set_free_local(&local_vars);
 }
@@ -1056,8 +1100,10 @@ void test_var_substitution_in_set_attr(void)
     (void)attr_set_int(&test_heap_alloc, &local_vars, "amount", 5);
 
     ActionNode action = {.type = ACTION_SET_ATTR};
-    TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &action.argument, "health"));
-    TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &action.second_argument, "$amount"));
+    action.argument = str_new(test_heap_alloc);
+    TEST_ASSERT_TRUE(str_from_cstr(&action.argument, "health"));
+    action.second_argument = str_new(test_heap_alloc);
+    TEST_ASSERT_TRUE(str_from_cstr(&action.second_argument, "$amount"));
 
     ActionContext context = {
         .entity = &entity,
@@ -1071,8 +1117,8 @@ void test_var_substitution_in_set_attr(void)
     };
     TEST_ASSERT_TRUE(action_node_execute(&test_diag, &test_heap_alloc, &action, context));
     TEST_ASSERT_EQUAL_INT(5, attr_get_int(&entity.attrs, "health", 0));
-    str_free(&test_heap_alloc, &action.argument);
-    str_free(&test_heap_alloc, &action.second_argument);
+    str_free(&action.argument);
+    str_free(&action.second_argument);
     attr_set_free(&test_heap_alloc, &local_vars);
     attr_set_free(&test_heap_alloc, &entity.attrs);
     test_flag_set_free_local(&flags);
@@ -1089,8 +1135,10 @@ void test_local_var_scoped_per_rule(void)
     AttrSet global_vars = {0};
 
     ActionNode action = {.type = ACTION_SET_VAR};
-    TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &action.argument, "temp"));
-    TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &action.second_argument, "99"));
+    action.argument = str_new(test_heap_alloc);
+    TEST_ASSERT_TRUE(str_from_cstr(&action.argument, "temp"));
+    action.second_argument = str_new(test_heap_alloc);
+    TEST_ASSERT_TRUE(str_from_cstr(&action.second_argument, "99"));
 
     ActionContext context_a = {
         .entity = &entity,
@@ -1104,8 +1152,8 @@ void test_local_var_scoped_per_rule(void)
     TEST_ASSERT_TRUE(action_node_execute(&test_diag, &test_heap_alloc, &action, context_a));
     TEST_ASSERT_EQUAL_INT(99, attr_get_int(&local_vars_a, "temp", 0));
     TEST_ASSERT_NULL(attr_get(&local_vars_b, "temp"));
-    str_free(&test_heap_alloc, &action.argument);
-    str_free(&test_heap_alloc, &action.second_argument);
+    str_free(&action.argument);
+    str_free(&action.second_argument);
     attr_set_free(&test_heap_alloc, &local_vars_a);
     test_flag_set_free_local(&flags);
     test_attr_set_free_local(&global_vars);

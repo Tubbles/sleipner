@@ -83,8 +83,8 @@ static void test_attr_set_free_local(AttrSet *set)
 static void test_blueprint_free_local(Blueprint *blueprint)
 {
     for (int index = 0; index < blueprint->children.count; index++) {
-        str_free(&test_heap_alloc, &blueprint->children.data[index].blueprint_name);
-        str_free(&test_heap_alloc, &blueprint->children.data[index].tag);
+        str_free(&blueprint->children.data[index].blueprint_name);
+        str_free(&blueprint->children.data[index].tag);
     }
     vec_blueprint_child_free(&blueprint->children);
     test_attr_set_free_local(&blueprint->attrs);
@@ -653,7 +653,8 @@ void test_fuzzy_finder_build_items_collects_entity_tags(void)
     state.gamedata.current_level.entities.alloc = test_heap_alloc;
 
     Entity entity = {.parent_index = -1};
-    TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &entity.tag, "my_tag"));
+    entity.tag = str_new(test_heap_alloc);
+    TEST_ASSERT_TRUE(str_from_cstr(&entity.tag, "my_tag"));
     TEST_ASSERT_TRUE(vec_entity_push(&state.gamedata.current_level.entities, entity));
 
     EditorState editor_state = {0};
@@ -667,7 +668,7 @@ void test_fuzzy_finder_build_items_collects_entity_tags(void)
     }
     TEST_ASSERT_TRUE(found_tag);
 
-    str_free(&test_heap_alloc, &state.gamedata.current_level.entities.data[0].tag);
+    str_free(&state.gamedata.current_level.entities.data[0].tag);
     vec_entity_free(&state.gamedata.current_level.entities);
     arena_reset(&state.gamedata_arena);
 }
@@ -680,7 +681,8 @@ void test_fuzzy_finder_build_items_collects_flag_names(void)
     state.gamedata.flags.names.alloc = test_heap_alloc;
 
     FlagName flag = {0};
-    TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &flag.name, "has_key"));
+    flag.name = str_new(test_heap_alloc);
+    TEST_ASSERT_TRUE(str_from_cstr(&flag.name, "has_key"));
     TEST_ASSERT_TRUE(vec_flag_name_push(&state.gamedata.flags.names, flag));
 
     EditorState editor_state = {0};
@@ -694,7 +696,7 @@ void test_fuzzy_finder_build_items_collects_flag_names(void)
     }
     TEST_ASSERT_TRUE(found_flag);
 
-    str_free(&test_heap_alloc, &state.gamedata.flags.names.data[0].name);
+    str_free(&state.gamedata.flags.names.data[0].name);
     vec_flag_name_free(&state.gamedata.flags.names);
     arena_reset(&state.gamedata_arena);
 }
@@ -869,10 +871,12 @@ void test_word_builder_confirm_sets_string_value(void)
 
     state.gamedata.current_level.entities = vec_entity_new(alloc);
     Entity entity = {.parent_index = -1};
-    (void)str_from_cstr(&alloc, &entity.blueprint_name, "npc");
-    Attribute attr = {.type = ATTR_STRING, .value = {.str = {0}}};
-    (void)str_from_cstr(&test_heap_alloc, &attr.name, "greeting");
-    (void)str_from_cstr(&alloc, &attr.value.str, "old");
+    entity.blueprint_name = str_new(alloc);
+    (void)str_from_cstr(&entity.blueprint_name, "npc");
+    Attribute attr = {.type = ATTR_STRING, .value = {.str = str_new(alloc)}};
+    attr.name = str_new(alloc);
+    (void)str_from_cstr(&attr.name, "greeting");
+    (void)str_from_cstr(&attr.value.str, "old");
     entity.attrs.entries.alloc = alloc;
     (void)vec_attribute_push(&entity.attrs.entries, attr);
     (void)vec_entity_push(&state.gamedata.current_level.entities, entity);
@@ -890,7 +894,7 @@ void test_word_builder_confirm_sets_string_value(void)
     Attribute *updated = &state.gamedata.current_level.entities.data[0].attrs.entries.data[0];
     TEST_ASSERT_EQUAL_STRING("hello", updated->value.str.ptr);
 
-    str_free(&test_heap_alloc, &updated->name);
+    str_free(&updated->name);
     arena_free(&state.gamedata_arena);
 }
 
@@ -905,10 +909,12 @@ void test_fuzzy_finder_confirm_sets_string_value(void)
 
     state.gamedata.current_level.entities = vec_entity_new(alloc);
     Entity entity = {.parent_index = -1};
-    (void)str_from_cstr(&alloc, &entity.blueprint_name, "npc");
-    Attribute attr = {.type = ATTR_STRING, .value = {.str = {0}}};
-    (void)str_from_cstr(&test_heap_alloc, &attr.name, "target");
-    (void)str_from_cstr(&alloc, &attr.value.str, "old");
+    entity.blueprint_name = str_new(alloc);
+    (void)str_from_cstr(&entity.blueprint_name, "npc");
+    Attribute attr = {.type = ATTR_STRING, .value = {.str = str_new(alloc)}};
+    attr.name = str_new(alloc);
+    (void)str_from_cstr(&attr.name, "target");
+    (void)str_from_cstr(&attr.value.str, "old");
     entity.attrs.entries.alloc = alloc;
     (void)vec_attribute_push(&entity.attrs.entries, attr);
     (void)vec_entity_push(&state.gamedata.current_level.entities, entity);
@@ -931,7 +937,7 @@ void test_fuzzy_finder_confirm_sets_string_value(void)
     Attribute *updated = &state.gamedata.current_level.entities.data[0].attrs.entries.data[0];
     TEST_ASSERT_EQUAL_STRING("chosen_name", updated->value.str.ptr);
 
-    str_free(&test_heap_alloc, &updated->name);
+    str_free(&updated->name);
     arena_free(&state.gamedata_arena);
 }
 

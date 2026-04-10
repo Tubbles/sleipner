@@ -24,18 +24,19 @@ static Attribute *find_or_append(Allocator *alloc, AttrSet *set, const char *nam
             Attribute *entry = &set->entries.data[index];
             /* Free old string value so callers can safely overwrite with any type. */
             if (entry->type == ATTR_STRING) {
-                str_free(alloc, &entry->value.str);
+                str_free(&entry->value.str);
                 entry->value = (AttrValue){0};
             }
             return entry;
         }
     }
     Attribute new_entry = {0};
-    if (!str_from_cstr(alloc, &new_entry.name, name)) {
+    new_entry.name = str_new(*alloc);
+    if (!str_from_cstr(&new_entry.name, name)) {
         return nullptr;
     }
     if (!vec_attribute_push(&set->entries, new_entry)) {
-        str_free(alloc, &new_entry.name);
+        str_free(&new_entry.name);
         return nullptr;
     }
     return &set->entries.data[set->entries.count - 1];
@@ -43,10 +44,11 @@ static Attribute *find_or_append(Allocator *alloc, AttrSet *set, const char *nam
 
 void attr_set_free(Allocator *alloc, AttrSet *set)
 {
+    (void)alloc;
     for (int index = 0; index < set->entries.count; index++) {
-        str_free(alloc, &set->entries.data[index].name);
+        str_free(&set->entries.data[index].name);
         if (set->entries.data[index].type == ATTR_STRING) {
-            str_free(alloc, &set->entries.data[index].value.str);
+            str_free(&set->entries.data[index].value.str);
         }
     }
     vec_attribute_free(&set->entries);
@@ -93,7 +95,8 @@ bool attr_set_string(Allocator *alloc, AttrSet *set, AttrStringPair pair)
         return false;
     }
     entry->type = ATTR_STRING;
-    return str_from_cstr(alloc, &entry->value.str, pair.value);
+    entry->value.str = str_new(*alloc);
+    return str_from_cstr(&entry->value.str, pair.value);
 }
 
 float attr_get_float(const AttrSet *set, const char *name, float fallback)
@@ -134,13 +137,14 @@ const char *attr_get_string(const AttrSet *set, const char *name)
 
 void attr_remove(Allocator *alloc, AttrSet *set, const char *name)
 {
+    (void)alloc;
     for (int index = 0; index < set->entries.count; index++) {
         if (!strv_eq_cstr(str_to_strv(set->entries.data[index].name), name)) {
             continue;
         }
-        str_free(alloc, &set->entries.data[index].name);
+        str_free(&set->entries.data[index].name);
         if (set->entries.data[index].type == ATTR_STRING) {
-            str_free(alloc, &set->entries.data[index].value.str);
+            str_free(&set->entries.data[index].value.str);
         }
         int last = set->entries.count - 1;
         if (index != last) {

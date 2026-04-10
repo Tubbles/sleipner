@@ -73,8 +73,8 @@ static void test_attr_set_free_local(AttrSet *set)
 static void test_blueprint_free_local(Blueprint *blueprint)
 {
     for (int index = 0; index < blueprint->children.count; index++) {
-        str_free(&test_heap_alloc, &blueprint->children.data[index].blueprint_name);
-        str_free(&test_heap_alloc, &blueprint->children.data[index].tag);
+        str_free(&blueprint->children.data[index].blueprint_name);
+        str_free(&blueprint->children.data[index].tag);
     }
     vec_blueprint_child_free(&blueprint->children);
     test_attr_set_free_local(&blueprint->attrs);
@@ -169,11 +169,13 @@ void test_editor_total_attr_count_with_blueprint(void)
 
     Entity entity = {0};
     entity.id = 1;
-    TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &entity.blueprint_name, "test_bp"));
+    entity.blueprint_name = str_new(test_heap_alloc);
+    TEST_ASSERT_TRUE(str_from_cstr(&entity.blueprint_name, "test_bp"));
     TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, &entity.attrs, "inst_attr", 10));
-    Str bp_name = {0};
-    TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &bp_name, "test_bp"));
-    (void)map_int_str_set(&state.gamedata.entity_blueprints, entity.id, bp_name, &test_heap_alloc);
+    Str bp_name = str_new(test_heap_alloc);
+    TEST_ASSERT_TRUE(str_from_cstr(&bp_name, "test_bp"));
+    state.gamedata.entity_blueprints = map_int_str_new(test_heap_alloc);
+    (void)map_int_str_set(&state.gamedata.entity_blueprints, entity.id, bp_name);
 
     entity_resolve_defaults_fake.return_val = &state.gamedata.blueprints.entries.data[0].attrs;
     TEST_ASSERT_EQUAL_INT(2 + 1, total_attr_count(&state, &entity));
@@ -181,9 +183,9 @@ void test_editor_total_attr_count_with_blueprint(void)
 
     test_attr_set_free_local(&entity.attrs);
     test_attr_set_free_local(&blueprint.attrs);
-    str_free(&test_heap_alloc, &entity.blueprint_name);
-    str_free(&test_heap_alloc, &bp_name);
-    map_int_str_free(&state.gamedata.entity_blueprints, &test_heap_alloc);
+    str_free(&entity.blueprint_name);
+    str_free(&bp_name);
+    map_int_str_free(&state.gamedata.entity_blueprints);
     vec_blueprint_free(&state.gamedata.blueprints.entries);
 }
 
@@ -235,7 +237,8 @@ void test_editor_attr_at_display_index_blueprint(void)
     TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, &blueprint->attrs, "bp_val", 99));
 
     Entity entity = {.parent_index = -1};
-    TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &entity.blueprint_name, "test_bp"));
+    entity.blueprint_name = str_new(test_heap_alloc);
+    TEST_ASSERT_TRUE(str_from_cstr(&entity.blueprint_name, "test_bp"));
     TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, &entity.attrs, "inst_val", 10));
 
     int blueprint_attr_index = entity.attrs.entries.count + 1;
@@ -243,7 +246,7 @@ void test_editor_attr_at_display_index_blueprint(void)
     TEST_ASSERT_NOT_NULL(attr);
     TEST_ASSERT_EQUAL_INT(99, attr->value.i);
 
-    str_free(&test_heap_alloc, &entity.blueprint_name);
+    str_free(&entity.blueprint_name);
     test_attr_set_free_local(&entity.attrs);
     test_blueprint_table_free_local(&state.gamedata.blueprints);
 }
@@ -396,25 +399,25 @@ void test_editor_delete_entity_removes_map_entries(void)
     GameState state = {0};
     TEST_ASSERT_TRUE(arena_init(&err, &state.scratch_arena));
     state.gamedata.current_level.entities.alloc = test_heap_alloc;
-    state.gamedata.entity_blueprints = (map_int_str){0};
-    state.gamedata.rule_table = (map_entity_ruleset){0};
+    state.gamedata.entity_blueprints = map_int_str_new(test_heap_alloc);
+    state.gamedata.rule_table = map_entity_ruleset_new(test_heap_alloc);
 
     Entity entity_a = {.id = 10, .parent_index = -1};
     Entity entity_b = {.id = 20, .parent_index = -1};
     TEST_ASSERT_TRUE(vec_entity_push(&state.gamedata.current_level.entities, entity_a));
     TEST_ASSERT_TRUE(vec_entity_push(&state.gamedata.current_level.entities, entity_b));
 
-    Str name_a = {0};
-    Str name_b = {0};
-    TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &name_a, "blueprint_a"));
-    TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &name_b, "blueprint_b"));
-    TEST_ASSERT_TRUE(map_int_str_set(&state.gamedata.entity_blueprints, 10, name_a, &test_heap_alloc));
-    TEST_ASSERT_TRUE(map_int_str_set(&state.gamedata.entity_blueprints, 20, name_b, &test_heap_alloc));
+    Str name_a = str_new(test_heap_alloc);
+    Str name_b = str_new(test_heap_alloc);
+    TEST_ASSERT_TRUE(str_from_cstr(&name_a, "blueprint_a"));
+    TEST_ASSERT_TRUE(str_from_cstr(&name_b, "blueprint_b"));
+    TEST_ASSERT_TRUE(map_int_str_set(&state.gamedata.entity_blueprints, 10, name_a));
+    TEST_ASSERT_TRUE(map_int_str_set(&state.gamedata.entity_blueprints, 20, name_b));
 
     vec_rule rules_a = {0};
     vec_rule rules_b = {0};
-    TEST_ASSERT_TRUE(map_entity_ruleset_set(&state.gamedata.rule_table, 10, rules_a, &test_heap_alloc));
-    TEST_ASSERT_TRUE(map_entity_ruleset_set(&state.gamedata.rule_table, 20, rules_b, &test_heap_alloc));
+    TEST_ASSERT_TRUE(map_entity_ruleset_set(&state.gamedata.rule_table, 10, rules_a));
+    TEST_ASSERT_TRUE(map_entity_ruleset_set(&state.gamedata.rule_table, 20, rules_b));
 
     EditorState editor_state = {.selected_entity_index = 0};
     WatchList watches = {0};
@@ -428,11 +431,11 @@ void test_editor_delete_entity_removes_map_entries(void)
     TEST_ASSERT_NULL(map_entity_ruleset_get(&state.gamedata.rule_table, 10));
     TEST_ASSERT_NOT_NULL(map_entity_ruleset_get(&state.gamedata.rule_table, 20));
 
-    str_free(&test_heap_alloc, &name_a);
-    str_free(&test_heap_alloc, &name_b);
+    str_free(&name_a);
+    str_free(&name_b);
     vec_entity_free(&state.gamedata.current_level.entities);
-    map_int_str_free(&state.gamedata.entity_blueprints, &test_heap_alloc);
-    map_entity_ruleset_free(&state.gamedata.rule_table, &test_heap_alloc);
+    map_int_str_free(&state.gamedata.entity_blueprints);
+    map_entity_ruleset_free(&state.gamedata.rule_table);
     arena_reset(&state.scratch_arena);
 }
 
@@ -447,7 +450,8 @@ void test_navigate_tree_to_attr_boundary(void)
 
     Entity entity = {0};
     entity.parent_index = -1;
-    (void)str_from_cstr(&alloc, &entity.blueprint_name, "wagon");
+    entity.blueprint_name = str_new(alloc);
+    (void)str_from_cstr(&entity.blueprint_name, "wagon");
     state.gamedata.current_level.entities = vec_entity_new(alloc);
     (void)vec_entity_push(&state.gamedata.current_level.entities, entity);
 
@@ -480,7 +484,8 @@ void test_navigate_attr_to_tree_boundary(void)
 
     Entity entity = {0};
     entity.parent_index = -1;
-    (void)str_from_cstr(&alloc, &entity.blueprint_name, "wagon");
+    entity.blueprint_name = str_new(alloc);
+    (void)str_from_cstr(&entity.blueprint_name, "wagon");
     state.gamedata.current_level.entities = vec_entity_new(alloc);
     (void)vec_entity_push(&state.gamedata.current_level.entities, entity);
 
@@ -511,7 +516,8 @@ void test_find_place_blueprint_index_found(void)
     GameState state = {0};
     state.gamedata.current_level.entities.alloc = test_heap_alloc;
     Entity entity = {.parent_index = -1};
-    (void)str_from_cstr(&test_heap_alloc, &entity.blueprint_name, "chest");
+    entity.blueprint_name = str_new(test_heap_alloc);
+    (void)str_from_cstr(&entity.blueprint_name, "chest");
     (void)vec_entity_push(&state.gamedata.current_level.entities, entity);
 
     state.gamedata.blueprints.entries.alloc = test_heap_alloc;
@@ -521,7 +527,7 @@ void test_find_place_blueprint_index_found(void)
     EditorState editor_state = {.selected_entity_index = 0};
     TEST_ASSERT_EQUAL_INT(1, find_place_blueprint_index(&state, &editor_state));
 
-    str_free(&test_heap_alloc, &entity.blueprint_name);
+    str_free(&entity.blueprint_name);
     vec_entity_free(&state.gamedata.current_level.entities);
     test_blueprint_table_free_local(&state.gamedata.blueprints);
 }
@@ -531,7 +537,8 @@ void test_find_place_blueprint_index_not_found(void)
     GameState state = {0};
     state.gamedata.current_level.entities.alloc = test_heap_alloc;
     Entity entity = {.parent_index = -1};
-    (void)str_from_cstr(&test_heap_alloc, &entity.blueprint_name, "unknown");
+    entity.blueprint_name = str_new(test_heap_alloc);
+    (void)str_from_cstr(&entity.blueprint_name, "unknown");
     (void)vec_entity_push(&state.gamedata.current_level.entities, entity);
 
     state.gamedata.blueprints.entries.alloc = test_heap_alloc;
@@ -540,7 +547,7 @@ void test_find_place_blueprint_index_not_found(void)
     EditorState editor_state = {.selected_entity_index = 0};
     TEST_ASSERT_EQUAL_INT(0, find_place_blueprint_index(&state, &editor_state));
 
-    str_free(&test_heap_alloc, &entity.blueprint_name);
+    str_free(&entity.blueprint_name);
     vec_entity_free(&state.gamedata.current_level.entities);
     test_blueprint_table_free_local(&state.gamedata.blueprints);
 }

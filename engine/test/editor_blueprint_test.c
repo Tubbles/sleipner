@@ -85,8 +85,8 @@ static void test_attr_set_free_local(AttrSet *set)
 static void test_blueprint_free_local(Blueprint *blueprint)
 {
     for (int index = 0; index < blueprint->children.count; index++) {
-        str_free(&test_heap_alloc, &blueprint->children.data[index].blueprint_name);
-        str_free(&test_heap_alloc, &blueprint->children.data[index].tag);
+        str_free(&blueprint->children.data[index].blueprint_name);
+        str_free(&blueprint->children.data[index].tag);
     }
     vec_blueprint_child_free(&blueprint->children);
     test_attr_set_free_local(&blueprint->attrs);
@@ -472,10 +472,12 @@ void test_delete_child_calls_remove(void)
     (void)attr_set_string(&alloc, &blueprint.attrs, (AttrStringPair){"name", "npc"});
     /* Push two dummy children so count = 2 */
     BlueprintChild dummy_child = {0};
-    (void)str_from_cstr(&alloc, &dummy_child.blueprint_name, "child_a");
+    dummy_child.blueprint_name = str_new(alloc);
+    (void)str_from_cstr(&dummy_child.blueprint_name, "child_a");
     (void)vec_blueprint_child_push(&blueprint.children, dummy_child);
     BlueprintChild dummy_child_b = {0};
-    (void)str_from_cstr(&alloc, &dummy_child_b.blueprint_name, "child_b");
+    dummy_child_b.blueprint_name = str_new(alloc);
+    (void)str_from_cstr(&dummy_child_b.blueprint_name, "child_b");
     (void)vec_blueprint_child_push(&blueprint.children, dummy_child_b);
     (void)vec_blueprint_push(&state.gamedata.blueprints.entries, blueprint);
 
@@ -567,8 +569,10 @@ void test_duplicate_blueprint_copies_children(void)
     (void)attr_set_string(&alloc, &source.attrs, (AttrStringPair){"name", "parent"});
 
     BlueprintChild child = {0};
-    (void)str_from_cstr(&alloc, &child.blueprint_name, "weapon");
-    (void)str_from_cstr(&alloc, &child.tag, "main");
+    child.blueprint_name = str_new(alloc);
+    (void)str_from_cstr(&child.blueprint_name, "weapon");
+    child.tag = str_new(alloc);
+    (void)str_from_cstr(&child.tag, "main");
     child.offset = (Vector2){10.0F, 20.0F};
     (void)vec_blueprint_child_push(&source.children, child);
     (void)vec_blueprint_push(&state.gamedata.blueprints.entries, source);

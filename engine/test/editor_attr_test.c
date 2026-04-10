@@ -252,8 +252,8 @@ void test_attr_type_change_int_to_bool_zero(void)
 
 void test_attr_type_change_string_to_int(void)
 {
-    Str test_str = {0};
-    TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &test_str, "42"));
+    Str test_str = str_new(test_heap_alloc);
+    TEST_ASSERT_TRUE(str_from_cstr(&test_str, "42"));
     Attribute attr = {.type = ATTR_STRING, .value = {.str = test_str}};
     AttrConvertedValues values = attr_extract_values(&attr, &test_heap_alloc);
     attr_apply_converted(&attr, ATTR_INT, values, &test_heap_alloc);
@@ -293,7 +293,8 @@ void test_propagate_collision_updates_matching(void)
     GameState state = {0};
     state.gamedata.current_level.entities.alloc = test_heap_alloc;
     Entity entity = {.parent_index = -1, .position = {10.0F, 20.0F}};
-    (void)str_from_cstr(&test_heap_alloc, &entity.blueprint_name, "chest");
+    entity.blueprint_name = str_new(test_heap_alloc);
+    (void)str_from_cstr(&entity.blueprint_name, "chest");
     TEST_ASSERT_TRUE(vec_entity_push(&state.gamedata.current_level.entities, entity));
 
     AttrSet bp_attrs = {0};
@@ -311,7 +312,7 @@ void test_propagate_collision_updates_matching(void)
     TEST_ASSERT_EQUAL_FLOAT(16.0F, updated->collision_size.x);
     TEST_ASSERT_EQUAL_FLOAT(16.0F, updated->collision_size.y);
 
-    str_free(&test_heap_alloc, &state.gamedata.current_level.entities.data[0].blueprint_name);
+    str_free(&state.gamedata.current_level.entities.data[0].blueprint_name);
     vec_entity_free(&state.gamedata.current_level.entities);
     test_attr_set_free_local(&bp_attrs);
 }
@@ -321,7 +322,8 @@ void test_propagate_collision_skips_nonmatching(void)
     GameState state = {0};
     state.gamedata.current_level.entities.alloc = test_heap_alloc;
     Entity entity = {.parent_index = -1, .collision_offset = {99.0F, 99.0F}};
-    (void)str_from_cstr(&test_heap_alloc, &entity.blueprint_name, "tree");
+    entity.blueprint_name = str_new(test_heap_alloc);
+    (void)str_from_cstr(&entity.blueprint_name, "tree");
     TEST_ASSERT_TRUE(vec_entity_push(&state.gamedata.current_level.entities, entity));
 
     AttrSet bp_attrs = {0};
@@ -332,7 +334,7 @@ void test_propagate_collision_skips_nonmatching(void)
 
     TEST_ASSERT_EQUAL_FLOAT(99.0F, state.gamedata.current_level.entities.data[0].collision_offset.x);
 
-    str_free(&test_heap_alloc, &state.gamedata.current_level.entities.data[0].blueprint_name);
+    str_free(&state.gamedata.current_level.entities.data[0].blueprint_name);
     vec_entity_free(&state.gamedata.current_level.entities);
     test_attr_set_free_local(&bp_attrs);
 }
@@ -344,15 +346,18 @@ void test_dispatch_child_props_tag_mode(void)
     GameState state = {0};
     state.gamedata.current_level.entities.alloc = test_heap_alloc;
     Entity entity = {.parent_index = -1};
-    (void)str_from_cstr(&test_heap_alloc, &entity.blueprint_name, "npc");
+    entity.blueprint_name = str_new(test_heap_alloc);
+    (void)str_from_cstr(&entity.blueprint_name, "npc");
     TEST_ASSERT_TRUE(vec_entity_push(&state.gamedata.current_level.entities, entity));
 
     Blueprint blueprint = {0};
     TEST_ASSERT_TRUE(attr_set_string(&test_heap_alloc, &blueprint.attrs, (AttrStringPair){"name", "npc"}));
     blueprint.children.alloc = test_heap_alloc;
     BlueprintChild child = {0};
-    (void)str_from_cstr(&test_heap_alloc, &child.blueprint_name, "weapon");
-    (void)str_from_cstr(&test_heap_alloc, &child.tag, "sword");
+    child.blueprint_name = str_new(test_heap_alloc);
+    (void)str_from_cstr(&child.blueprint_name, "weapon");
+    child.tag = str_new(test_heap_alloc);
+    (void)str_from_cstr(&child.tag, "sword");
     TEST_ASSERT_TRUE(vec_blueprint_child_push(&blueprint.children, child));
 
     find_blueprint_by_name_fake.return_val = &blueprint;
@@ -364,11 +369,11 @@ void test_dispatch_child_props_tag_mode(void)
     TEST_ASSERT_EQUAL_INT(EDITOR_SUB_WORD_BUILDER, editor_state.sub_mode);
     TEST_ASSERT_EQUAL_STRING("sword", editor_state.word_builder_buf);
 
-    str_free(&test_heap_alloc, &state.gamedata.current_level.entities.data[0].blueprint_name);
+    str_free(&state.gamedata.current_level.entities.data[0].blueprint_name);
     vec_entity_free(&state.gamedata.current_level.entities);
     for (int index = 0; index < blueprint.children.count; index++) {
-        str_free(&test_heap_alloc, &blueprint.children.data[index].blueprint_name);
-        str_free(&test_heap_alloc, &blueprint.children.data[index].tag);
+        str_free(&blueprint.children.data[index].blueprint_name);
+        str_free(&blueprint.children.data[index].tag);
     }
     vec_blueprint_child_free(&blueprint.children);
     test_attr_set_free_local(&blueprint.attrs);
@@ -379,14 +384,16 @@ void test_dispatch_child_props_offset_x(void)
     GameState state = {0};
     state.gamedata.current_level.entities.alloc = test_heap_alloc;
     Entity entity = {.parent_index = -1};
-    (void)str_from_cstr(&test_heap_alloc, &entity.blueprint_name, "npc");
+    entity.blueprint_name = str_new(test_heap_alloc);
+    (void)str_from_cstr(&entity.blueprint_name, "npc");
     TEST_ASSERT_TRUE(vec_entity_push(&state.gamedata.current_level.entities, entity));
 
     Blueprint blueprint = {0};
     TEST_ASSERT_TRUE(attr_set_string(&test_heap_alloc, &blueprint.attrs, (AttrStringPair){"name", "npc"}));
     blueprint.children.alloc = test_heap_alloc;
     BlueprintChild child = {.offset = {42.0F, 0.0F}};
-    (void)str_from_cstr(&test_heap_alloc, &child.blueprint_name, "weapon");
+    child.blueprint_name = str_new(test_heap_alloc);
+    (void)str_from_cstr(&child.blueprint_name, "weapon");
     TEST_ASSERT_TRUE(vec_blueprint_child_push(&blueprint.children, child));
 
     find_blueprint_by_name_fake.return_val = &blueprint;
@@ -399,9 +406,9 @@ void test_dispatch_child_props_offset_x(void)
     TEST_ASSERT_EQUAL_INT(42, editor_state.saved_attr_int);
     TEST_ASSERT_EQUAL_INT(EDITOR_SUB_ATTR_EDIT, editor_state.sub_mode);
 
-    str_free(&test_heap_alloc, &state.gamedata.current_level.entities.data[0].blueprint_name);
+    str_free(&state.gamedata.current_level.entities.data[0].blueprint_name);
     vec_entity_free(&state.gamedata.current_level.entities);
-    str_free(&test_heap_alloc, &blueprint.children.data[0].blueprint_name);
+    str_free(&blueprint.children.data[0].blueprint_name);
     vec_blueprint_child_free(&blueprint.children);
     test_attr_set_free_local(&blueprint.attrs);
 }
@@ -427,16 +434,19 @@ void test_confirm_child_tag_edit_updates_tag(void)
 
     state.gamedata.current_level.entities = vec_entity_new(alloc);
     Entity entity = {.parent_index = -1};
-    (void)str_from_cstr(&alloc, &entity.blueprint_name, "npc");
+    entity.blueprint_name = str_new(alloc);
+    (void)str_from_cstr(&entity.blueprint_name, "npc");
     (void)vec_entity_push(&state.gamedata.current_level.entities, entity);
 
     Blueprint blueprint = {0};
     TEST_ASSERT_TRUE(attr_set_string(&test_heap_alloc, &blueprint.attrs, (AttrStringPair){"name", "npc"}));
     blueprint.children = vec_blueprint_child_new(alloc);
     BlueprintChild child = {0};
-    (void)str_from_cstr(&alloc, &child.blueprint_name, "weapon");
-    (void)str_from_cstr(&alloc, &child.tag, "old_tag");
-    (void)vec_blueprint_child_push(&blueprint.children, child);
+    child.blueprint_name = str_new(alloc);
+    (void)str_from_cstr(&child.blueprint_name, "weapon");
+    child.tag = str_new(alloc);
+    (void)str_from_cstr(&child.tag, "old_tag");
+    TEST_ASSERT_TRUE(vec_blueprint_child_push(&blueprint.children, child));
 
     find_blueprint_by_name_fake.return_val = &blueprint;
     EditorState editor_state = {

@@ -71,8 +71,8 @@ static AttrSet make_test_blueprint_attrs(void)
 
 static void free_test_entity(Entity *entity)
 {
-    str_free(&test_heap_alloc, &entity->blueprint_name);
-    str_free(&test_heap_alloc, &entity->tag);
+    str_free(&entity->blueprint_name);
+    str_free(&entity->tag);
     attr_set_free(&test_heap_alloc, &entity->attrs);
 }
 
@@ -205,15 +205,20 @@ static void make_entity_tree(Entity *entities)
 {
     memset(entities, 0, 3 * sizeof(Entity));
 
-    TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &entities[0].blueprint_name, "wagon"));
+    entities[0].blueprint_name = str_new(test_heap_alloc);
+    TEST_ASSERT_TRUE(str_from_cstr(&entities[0].blueprint_name, "wagon"));
     entities[0].parent_index = -1;
 
-    TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &entities[1].blueprint_name, "lantern"));
-    TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &entities[1].tag, "light"));
+    entities[1].blueprint_name = str_new(test_heap_alloc);
+    TEST_ASSERT_TRUE(str_from_cstr(&entities[1].blueprint_name, "lantern"));
+    entities[1].tag = str_new(test_heap_alloc);
+    TEST_ASSERT_TRUE(str_from_cstr(&entities[1].tag, "light"));
     entities[1].parent_index = 0;
 
-    TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &entities[2].blueprint_name, "wheel"));
-    TEST_ASSERT_TRUE(str_from_cstr(&test_heap_alloc, &entities[2].tag, "front_wheel"));
+    entities[2].blueprint_name = str_new(test_heap_alloc);
+    TEST_ASSERT_TRUE(str_from_cstr(&entities[2].blueprint_name, "wheel"));
+    entities[2].tag = str_new(test_heap_alloc);
+    TEST_ASSERT_TRUE(str_from_cstr(&entities[2].tag, "front_wheel"));
     entities[2].parent_index = 0;
 }
 

@@ -54,8 +54,8 @@ void test_blueprint_table_free(BlueprintTable *table)
 void test_blueprint_free(Blueprint *blueprint)
 {
     for (int index = 0; index < blueprint->children.count; index++) {
-        str_free(&test_heap_alloc, &blueprint->children.data[index].blueprint_name);
-        str_free(&test_heap_alloc, &blueprint->children.data[index].tag);
+        str_free(&blueprint->children.data[index].blueprint_name);
+        str_free(&blueprint->children.data[index].tag);
     }
     vec_blueprint_child_free(&blueprint->children);
     test_attr_set_free(&blueprint->attrs);
@@ -68,8 +68,8 @@ void test_level_free(Level *level)
 
 void test_entity_free(Entity *entity)
 {
-    str_free(&test_heap_alloc, &entity->blueprint_name);
-    str_free(&test_heap_alloc, &entity->tag);
+    str_free(&entity->blueprint_name);
+    str_free(&entity->tag);
     test_attr_set_free(&entity->attrs);
 }
 

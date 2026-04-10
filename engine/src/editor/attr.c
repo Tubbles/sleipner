@@ -84,7 +84,7 @@ static AttrConvertedValues attr_extract_values(const Attribute *attr, Allocator 
         result.as_int = (int)strtol(text, nullptr, RADIX_DECIMAL);
         result.as_bool = attr->value.str.len > 0;
         Str freed = attr->value.str;
-        str_free(alloc, &freed);
+        str_free(&freed);
         break;
     }
     }
@@ -102,8 +102,8 @@ static void attr_apply_converted(Attribute *attr, AttrType target_type, AttrConv
         } else if (attr->type == ATTR_BOOL) {
             formatted = values.as_bool ? "true" : "false";
         }
-        Str new_str = {0};
-        (void)str_from_cstr(alloc, &new_str, formatted);
+        Str new_str = str_new(*alloc);
+        (void)str_from_cstr(&new_str, formatted);
         attr->value.str = new_str;
     } else if (target_type == ATTR_FLOAT) {
         attr->value.f = values.as_float;
@@ -246,7 +246,8 @@ void confirm_child_tag_edit(Diag *diag, GameState *state, EditorState *editor_st
     BlueprintChild *child = &blueprint->children.data[child_idx];
     const char *old_tag = child->tag.len > 0 ? child->tag.ptr : "";
     Allocator alloc = allocator_arena(&state->gamedata_arena);
-    (void)str_from_cstr(&alloc, &child->tag, editor_state->word_builder_buf);
+    child->tag = str_new(alloc);
+    (void)str_from_cstr(&child->tag, editor_state->word_builder_buf);
     propagate_child_tag(state, blueprint, child_idx, old_tag);
     undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
                            strv_from_cstr("Edit child tag"));

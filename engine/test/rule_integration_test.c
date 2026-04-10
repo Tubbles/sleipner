@@ -644,8 +644,8 @@ void test_integration_timer_destroy_cancels(void)
 
     /* Fire cancel event -- timer removed */
     TriggerEvent cancel = {.type = TRIGGER_EVENT, .entity_index = -1};
-    Allocator heap_alloc = allocator_heap();
-    (void)str_from_cstr(&heap_alloc, &cancel.argument, "cancel");
+    cancel.argument = str_new(test_heap_alloc);
+    (void)str_from_cstr(&cancel.argument, "cancel");
     int cancel_count = state.gamedata.current_level.entities.count;
     const AttrSet *cancel_defaults[64];
     for (int index = 0; index < cancel_count; index++) {
@@ -655,7 +655,7 @@ void test_integration_timer_destroy_cancels(void)
     rules_evaluate_batch(&test_diag, &rule_alloc, state.gamedata.current_level.entities.data, cancel_count, &cancel, 1,
                          &state.gamedata.flags, &state.gamedata.vars, &state.gamedata.rule_table,
                          &state.gamedata.subroutines, &state.gamedata.timers, cancel_defaults, &state.transition);
-    str_free(&heap_alloc, &cancel.argument);
+    str_free(&cancel.argument);
 
     TEST_ASSERT_EQUAL_INT(0, state.gamedata.timers.count);
 

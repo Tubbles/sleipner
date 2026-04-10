@@ -1,6 +1,5 @@
 #include "str.h"
 
-#include "alloc.h"
 #include "check.h"
 #include "strv.h"
 
@@ -10,7 +9,7 @@
 
 /* Ensure at least `needed` bytes of capacity are available.
  * Always allocates when ptr is nullptr, so ptr is non-nullptr on success. */
-static bool str_ensure_cap(Allocator *alloc, Str *str, size_t needed)
+static bool str_ensure_cap(Str *str, size_t needed)
 {
     if (str->ptr != nullptr && needed <= str->cap) {
         return true;
@@ -19,7 +18,7 @@ static bool str_ensure_cap(Allocator *alloc, Str *str, size_t needed)
     while (new_cap < needed) {
         new_cap *= 2;
     }
-    char *new_ptr = alloc->realloc_fn(alloc->ctx, str->ptr, new_cap + 1);
+    char *new_ptr = str->alloc.realloc_fn(str->alloc.ctx, str->ptr, new_cap + 1);
     if (!new_ptr) {
         return false;
     }
@@ -28,10 +27,10 @@ static bool str_ensure_cap(Allocator *alloc, Str *str, size_t needed)
     return true;
 }
 
-bool str_from_strv(Allocator *alloc, Str *out, Strv strv)
+bool str_from_strv(Str *out, Strv strv)
 {
-    str_free(alloc, out);
-    if (!str_ensure_cap(alloc, out, strv.len)) {
+    str_free(out);
+    if (!str_ensure_cap(out, strv.len)) {
         return false;
     }
     if (strv.len > 0) {
@@ -42,24 +41,28 @@ bool str_from_strv(Allocator *alloc, Str *out, Strv strv)
     return true;
 }
 
-bool str_from_cstr(Allocator *alloc, Str *out, const char *cstr)
+bool str_from_cstr(Str *out, const char *cstr)
 {
-    return str_from_strv(alloc, out, strv_from_cstr(cstr));
+    return str_from_strv(out, strv_from_cstr(cstr));
 }
 
-void str_free(Allocator *alloc, Str *str)
+void str_free(Str *str)
 {
     CHECK(str);
-    alloc->free_fn(alloc->ctx, str->ptr);
-    *str = (Str){0};
+    if (str->alloc.free_fn) {
+        str->alloc.free_fn(str->alloc.ctx, str->ptr);
+    }
+    str->ptr = nullptr;
+    str->len = 0;
+    str->cap = 0;
 }
 
-bool str_append_strv(Allocator *alloc, Str *str, Strv strv)
+bool str_append_strv(Str *str, Strv strv)
 {
     if (strv.len == 0) {
         return true;
     }
-    if (!str_ensure_cap(alloc, str, str->len + strv.len)) {
+    if (!str_ensure_cap(str, str->len + strv.len)) {
         return false;
     }
     memcpy(str->ptr + str->len, strv.ptr, strv.len);
@@ -68,14 +71,14 @@ bool str_append_strv(Allocator *alloc, Str *str, Strv strv)
     return true;
 }
 
-bool str_append_cstr(Allocator *alloc, Str *str, const char *cstr)
+bool str_append_cstr(Str *str, const char *cstr)
 {
-    return str_append_strv(alloc, str, strv_from_cstr(cstr));
+    return str_append_strv(str, strv_from_cstr(cstr));
 }
 
-bool str_push_char(Allocator *alloc, Str *str, char character)
+bool str_push_char(Str *str, char character)
 {
-    if (!str_ensure_cap(alloc, str, str->len + 1)) {
+    if (!str_ensure_cap(str, str->len + 1)) {
         return false;
     }
     str->ptr[str->len++] = character;

@@ -43,7 +43,8 @@ void propagate_child_tag(GameState *state, const Blueprint *blueprint, int child
         int child_entity = find_child_entity(&state->gamedata.current_level, index, child->blueprint_name.ptr, old_tag);
         if (child_entity >= 0) {
             Allocator alloc = allocator_arena(&state->gamedata_arena);
-            (void)str_from_cstr(&alloc, &state->gamedata.current_level.entities.data[child_entity].tag, child->tag.ptr);
+            state->gamedata.current_level.entities.data[child_entity].tag = str_new(alloc);
+            (void)str_from_cstr(&state->gamedata.current_level.entities.data[child_entity].tag, child->tag.ptr);
         }
     }
 }
@@ -189,7 +190,8 @@ void add_blueprint_child(Diag *diag,
     }
     Allocator alloc = allocator_arena(&state->gamedata_arena);
     BlueprintChild new_child = {0};
-    (void)str_from_cstr(&alloc, &new_child.blueprint_name, child_blueprint_name);
+    new_child.blueprint_name = str_new(alloc);
+    (void)str_from_cstr(&new_child.blueprint_name, child_blueprint_name);
     new_child.offset = (Vector2){0, 0};
     if (!vec_blueprint_child_push(&blueprint->children, new_child)) {
         return;

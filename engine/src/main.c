@@ -600,8 +600,8 @@ static void handle_transition(Diag *diag, GameState *state, UndoHistory *undo_hi
     float spawn_y = state->transition.y;
     SCRATCH_SCOPE(&state->scratch_arena);
     Allocator scratch_alloc = allocator_arena(&state->scratch_arena);
-    Str level_name = {0};
-    (void)str_from_strv(&scratch_alloc, &level_name, str_to_strv(state->transition.level));
+    Str level_name = str_new(scratch_alloc);
+    (void)str_from_strv(&level_name, str_to_strv(state->transition.level));
     debug_log(diag->debug, "transition to '%s' at (%.0f, %.0f)", level_name.ptr, spawn_x, spawn_y);
     load_gamedata(diag, state, level_name.ptr);
     Entity *player = game_get_player(state);
@@ -717,12 +717,12 @@ static void handle_place_input(Diag *diag,
         } else {
             for (int index = count_before; index < state->gamedata.current_level.entities.count; index++) {
                 Entity *spawned = &state->gamedata.current_level.entities.data[index];
-                Str bp_name = {0};
-                (void)str_from_strv(&alloc, &bp_name, str_to_strv(spawned->blueprint_name));
-                (void)map_int_str_set(&state->gamedata.entity_blueprints, spawned->id, bp_name, &alloc);
+                Str bp_name = str_new(alloc);
+                (void)str_from_strv(&bp_name, str_to_strv(spawned->blueprint_name));
+                (void)map_int_str_set(&state->gamedata.entity_blueprints, spawned->id, bp_name);
                 const Blueprint *spawned_bp = blueprint_find(&state->gamedata.blueprints, spawned->blueprint_name.ptr);
                 if (spawned_bp && spawned_bp->rules.count > 0) {
-                    (void)map_entity_ruleset_set(&state->gamedata.rule_table, spawned->id, spawned_bp->rules, &alloc);
+                    (void)map_entity_ruleset_set(&state->gamedata.rule_table, spawned->id, spawned_bp->rules);
                 }
             }
             undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,

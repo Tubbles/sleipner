@@ -69,8 +69,8 @@ static void test_attr_set_free_local(AttrSet *set)
 static void test_blueprint_free_local(Blueprint *blueprint)
 {
     for (int index = 0; index < blueprint->children.count; index++) {
-        str_free(&test_heap_alloc, &blueprint->children.data[index].blueprint_name);
-        str_free(&test_heap_alloc, &blueprint->children.data[index].tag);
+        str_free(&blueprint->children.data[index].blueprint_name);
+        str_free(&blueprint->children.data[index].tag);
     }
     vec_blueprint_child_free(&blueprint->children);
     test_attr_set_free_local(&blueprint->attrs);
@@ -102,14 +102,16 @@ static void mark_descendants_custom(const Level *level, bool *is_deleted, int co
     }
 }
 
-static Entity make_entity(Allocator *alloc, int entity_id, const char *bp_name, int parent_index, const char *tag)
+static Entity make_entity(Allocator alloc, int entity_id, const char *bp_name, int parent_index, const char *tag)
 {
     Entity entity = {0};
     entity.id = entity_id;
     entity.parent_index = parent_index;
-    (void)str_from_cstr(alloc, &entity.blueprint_name, bp_name);
+    entity.blueprint_name = str_new(alloc);
+    (void)str_from_cstr(&entity.blueprint_name, bp_name);
     if (tag && tag[0] != '\0') {
-        (void)str_from_cstr(alloc, &entity.tag, tag);
+        entity.tag = str_new(alloc);
+        (void)str_from_cstr(&entity.tag, tag);
     }
     return entity;
 }
@@ -120,15 +122,15 @@ void test_find_child_entity_exact_tag(void)
 {
     Level level = {0};
     level.entities.alloc = test_heap_alloc;
-    (void)vec_entity_push(&level.entities, make_entity(&test_heap_alloc, 1, "parent_bp", -1, ""));
-    (void)vec_entity_push(&level.entities, make_entity(&test_heap_alloc, 2, "child_bp", 0, "arm"));
+    (void)vec_entity_push(&level.entities, make_entity(test_heap_alloc, 1, "parent_bp", -1, ""));
+    (void)vec_entity_push(&level.entities, make_entity(test_heap_alloc, 2, "child_bp", 0, "arm"));
 
     int result = find_child_entity(&level, 0, "child_bp", "arm");
     TEST_ASSERT_EQUAL_INT(1, result);
 
     for (int index = 0; index < level.entities.count; index++) {
-        str_free(&test_heap_alloc, &level.entities.data[index].blueprint_name);
-        str_free(&test_heap_alloc, &level.entities.data[index].tag);
+        str_free(&level.entities.data[index].blueprint_name);
+        str_free(&level.entities.data[index].tag);
     }
     vec_entity_free(&level.entities);
 }
@@ -137,15 +139,15 @@ void test_find_child_entity_empty_tag(void)
 {
     Level level = {0};
     level.entities.alloc = test_heap_alloc;
-    (void)vec_entity_push(&level.entities, make_entity(&test_heap_alloc, 1, "parent_bp", -1, ""));
-    (void)vec_entity_push(&level.entities, make_entity(&test_heap_alloc, 2, "child_bp", 0, ""));
+    (void)vec_entity_push(&level.entities, make_entity(test_heap_alloc, 1, "parent_bp", -1, ""));
+    (void)vec_entity_push(&level.entities, make_entity(test_heap_alloc, 2, "child_bp", 0, ""));
 
     int result = find_child_entity(&level, 0, "child_bp", "");
     TEST_ASSERT_EQUAL_INT(1, result);
 
     for (int index = 0; index < level.entities.count; index++) {
-        str_free(&test_heap_alloc, &level.entities.data[index].blueprint_name);
-        str_free(&test_heap_alloc, &level.entities.data[index].tag);
+        str_free(&level.entities.data[index].blueprint_name);
+        str_free(&level.entities.data[index].tag);
     }
     vec_entity_free(&level.entities);
 }
@@ -154,15 +156,15 @@ void test_find_child_entity_wrong_parent(void)
 {
     Level level = {0};
     level.entities.alloc = test_heap_alloc;
-    (void)vec_entity_push(&level.entities, make_entity(&test_heap_alloc, 1, "parent_bp", -1, ""));
-    (void)vec_entity_push(&level.entities, make_entity(&test_heap_alloc, 2, "child_bp", 0, "arm"));
+    (void)vec_entity_push(&level.entities, make_entity(test_heap_alloc, 1, "parent_bp", -1, ""));
+    (void)vec_entity_push(&level.entities, make_entity(test_heap_alloc, 2, "child_bp", 0, "arm"));
 
     int result = find_child_entity(&level, 99, "child_bp", "arm");
     TEST_ASSERT_EQUAL_INT(-1, result);
 
     for (int index = 0; index < level.entities.count; index++) {
-        str_free(&test_heap_alloc, &level.entities.data[index].blueprint_name);
-        str_free(&test_heap_alloc, &level.entities.data[index].tag);
+        str_free(&level.entities.data[index].blueprint_name);
+        str_free(&level.entities.data[index].tag);
     }
     vec_entity_free(&level.entities);
 }
@@ -171,15 +173,15 @@ void test_find_child_entity_wrong_blueprint(void)
 {
     Level level = {0};
     level.entities.alloc = test_heap_alloc;
-    (void)vec_entity_push(&level.entities, make_entity(&test_heap_alloc, 1, "parent_bp", -1, ""));
-    (void)vec_entity_push(&level.entities, make_entity(&test_heap_alloc, 2, "child_bp", 0, "arm"));
+    (void)vec_entity_push(&level.entities, make_entity(test_heap_alloc, 1, "parent_bp", -1, ""));
+    (void)vec_entity_push(&level.entities, make_entity(test_heap_alloc, 2, "child_bp", 0, "arm"));
 
     int result = find_child_entity(&level, 0, "other_bp", "arm");
     TEST_ASSERT_EQUAL_INT(-1, result);
 
     for (int index = 0; index < level.entities.count; index++) {
-        str_free(&test_heap_alloc, &level.entities.data[index].blueprint_name);
-        str_free(&test_heap_alloc, &level.entities.data[index].tag);
+        str_free(&level.entities.data[index].blueprint_name);
+        str_free(&level.entities.data[index].tag);
     }
     vec_entity_free(&level.entities);
 }
@@ -188,15 +190,15 @@ void test_find_child_entity_wrong_tag(void)
 {
     Level level = {0};
     level.entities.alloc = test_heap_alloc;
-    (void)vec_entity_push(&level.entities, make_entity(&test_heap_alloc, 1, "parent_bp", -1, ""));
-    (void)vec_entity_push(&level.entities, make_entity(&test_heap_alloc, 2, "child_bp", 0, "arm"));
+    (void)vec_entity_push(&level.entities, make_entity(test_heap_alloc, 1, "parent_bp", -1, ""));
+    (void)vec_entity_push(&level.entities, make_entity(test_heap_alloc, 2, "child_bp", 0, "arm"));
 
     int result = find_child_entity(&level, 0, "child_bp", "leg");
     TEST_ASSERT_EQUAL_INT(-1, result);
 
     for (int index = 0; index < level.entities.count; index++) {
-        str_free(&test_heap_alloc, &level.entities.data[index].blueprint_name);
-        str_free(&test_heap_alloc, &level.entities.data[index].tag);
+        str_free(&level.entities.data[index].blueprint_name);
+        str_free(&level.entities.data[index].tag);
     }
     vec_entity_free(&level.entities);
 }
@@ -218,14 +220,16 @@ void test_propagate_child_tag_updates_matching(void)
     Allocator alloc = allocator_arena(&state.gamedata_arena);
 
     state.gamedata.current_level.entities = vec_entity_new(alloc);
-    (void)vec_entity_push(&state.gamedata.current_level.entities, make_entity(&alloc, 1, "npc", -1, ""));
-    (void)vec_entity_push(&state.gamedata.current_level.entities, make_entity(&alloc, 2, "weapon", 0, "sword"));
+    (void)vec_entity_push(&state.gamedata.current_level.entities, make_entity(alloc, 1, "npc", -1, ""));
+    (void)vec_entity_push(&state.gamedata.current_level.entities, make_entity(alloc, 2, "weapon", 0, "sword"));
 
     Blueprint blueprint = make_named_blueprint("npc");
     blueprint.children.alloc = test_heap_alloc;
     BlueprintChild child = {0};
-    (void)str_from_cstr(&test_heap_alloc, &child.blueprint_name, "weapon");
-    (void)str_from_cstr(&test_heap_alloc, &child.tag, "axe");
+    child.blueprint_name = str_new(alloc);
+    (void)str_from_cstr(&child.blueprint_name, "weapon");
+    child.tag = str_new(alloc);
+    (void)str_from_cstr(&child.tag, "axe");
     (void)vec_blueprint_child_push(&blueprint.children, child);
 
     propagate_child_tag(&state, &blueprint, 0, "sword");
@@ -244,16 +248,18 @@ void test_propagate_child_tag_multiple_parents(void)
     Allocator alloc = allocator_arena(&state.gamedata_arena);
 
     state.gamedata.current_level.entities = vec_entity_new(alloc);
-    (void)vec_entity_push(&state.gamedata.current_level.entities, make_entity(&alloc, 1, "npc", -1, ""));
-    (void)vec_entity_push(&state.gamedata.current_level.entities, make_entity(&alloc, 2, "weapon", 0, "old"));
-    (void)vec_entity_push(&state.gamedata.current_level.entities, make_entity(&alloc, 3, "npc", -1, ""));
-    (void)vec_entity_push(&state.gamedata.current_level.entities, make_entity(&alloc, 4, "weapon", 2, "old"));
+    (void)vec_entity_push(&state.gamedata.current_level.entities, make_entity(alloc, 1, "npc", -1, ""));
+    (void)vec_entity_push(&state.gamedata.current_level.entities, make_entity(alloc, 2, "weapon", 0, "old"));
+    (void)vec_entity_push(&state.gamedata.current_level.entities, make_entity(alloc, 3, "npc", -1, ""));
+    (void)vec_entity_push(&state.gamedata.current_level.entities, make_entity(alloc, 4, "weapon", 2, "old"));
 
     Blueprint blueprint = make_named_blueprint("npc");
     blueprint.children.alloc = test_heap_alloc;
     BlueprintChild child = {0};
-    (void)str_from_cstr(&test_heap_alloc, &child.blueprint_name, "weapon");
-    (void)str_from_cstr(&test_heap_alloc, &child.tag, "new");
+    child.blueprint_name = str_new(alloc);
+    (void)str_from_cstr(&child.blueprint_name, "weapon");
+    child.tag = str_new(alloc);
+    (void)str_from_cstr(&child.tag, "new");
     (void)vec_blueprint_child_push(&blueprint.children, child);
 
     propagate_child_tag(&state, &blueprint, 0, "old");
@@ -273,14 +279,16 @@ void test_propagate_child_tag_no_match(void)
     Allocator alloc = allocator_arena(&state.gamedata_arena);
 
     state.gamedata.current_level.entities = vec_entity_new(alloc);
-    (void)vec_entity_push(&state.gamedata.current_level.entities, make_entity(&alloc, 1, "npc", -1, ""));
-    (void)vec_entity_push(&state.gamedata.current_level.entities, make_entity(&alloc, 2, "weapon", 0, "sword"));
+    (void)vec_entity_push(&state.gamedata.current_level.entities, make_entity(alloc, 1, "npc", -1, ""));
+    (void)vec_entity_push(&state.gamedata.current_level.entities, make_entity(alloc, 2, "weapon", 0, "sword"));
 
     Blueprint blueprint = make_named_blueprint("npc");
     blueprint.children.alloc = test_heap_alloc;
     BlueprintChild child = {0};
-    (void)str_from_cstr(&test_heap_alloc, &child.blueprint_name, "weapon");
-    (void)str_from_cstr(&test_heap_alloc, &child.tag, "axe");
+    child.blueprint_name = str_new(alloc);
+    (void)str_from_cstr(&child.blueprint_name, "weapon");
+    child.tag = str_new(alloc);
+    (void)str_from_cstr(&child.tag, "axe");
     (void)vec_blueprint_child_push(&blueprint.children, child);
 
     propagate_child_tag(&state, &blueprint, 0, "nonexistent");
@@ -301,15 +309,16 @@ void test_propagate_child_offset_repositions(void)
     Allocator alloc = allocator_arena(&state.gamedata_arena);
 
     state.gamedata.current_level.entities = vec_entity_new(alloc);
-    Entity parent = make_entity(&alloc, 1, "npc", -1, "");
+    Entity parent = make_entity(alloc, 1, "npc", -1, "");
     parent.position = (Vector2){100.0F, 200.0F};
     (void)vec_entity_push(&state.gamedata.current_level.entities, parent);
-    (void)vec_entity_push(&state.gamedata.current_level.entities, make_entity(&alloc, 2, "weapon", 0, ""));
+    (void)vec_entity_push(&state.gamedata.current_level.entities, make_entity(alloc, 2, "weapon", 0, ""));
 
     Blueprint blueprint = make_named_blueprint("npc");
     blueprint.children.alloc = test_heap_alloc;
     BlueprintChild child = {0};
-    (void)str_from_cstr(&test_heap_alloc, &child.blueprint_name, "weapon");
+    child.blueprint_name = str_new(alloc);
+    (void)str_from_cstr(&child.blueprint_name, "weapon");
     child.offset = (Vector2){10.0F, 20.0F};
     (void)vec_blueprint_child_push(&blueprint.children, child);
 
@@ -331,17 +340,18 @@ void test_propagate_child_offset_updates_collision(void)
     Allocator alloc = allocator_arena(&state.gamedata_arena);
 
     state.gamedata.current_level.entities = vec_entity_new(alloc);
-    Entity parent = make_entity(&alloc, 1, "npc", -1, "");
+    Entity parent = make_entity(alloc, 1, "npc", -1, "");
     parent.position = (Vector2){50.0F, 60.0F};
     (void)vec_entity_push(&state.gamedata.current_level.entities, parent);
-    Entity child_entity = make_entity(&alloc, 2, "weapon", 0, "");
+    Entity child_entity = make_entity(alloc, 2, "weapon", 0, "");
     child_entity.collision_offset = (Vector2){5.0F, 5.0F};
     (void)vec_entity_push(&state.gamedata.current_level.entities, child_entity);
 
     Blueprint blueprint = make_named_blueprint("npc");
     blueprint.children.alloc = test_heap_alloc;
     BlueprintChild child = {0};
-    (void)str_from_cstr(&test_heap_alloc, &child.blueprint_name, "weapon");
+    child.blueprint_name = str_new(alloc);
+    (void)str_from_cstr(&child.blueprint_name, "weapon");
     child.offset = (Vector2){10.0F, 10.0F};
     (void)vec_blueprint_child_push(&blueprint.children, child);
 
@@ -363,19 +373,20 @@ void test_propagate_child_offset_multiple_parents(void)
     Allocator alloc = allocator_arena(&state.gamedata_arena);
 
     state.gamedata.current_level.entities = vec_entity_new(alloc);
-    Entity parent_a = make_entity(&alloc, 1, "npc", -1, "");
+    Entity parent_a = make_entity(alloc, 1, "npc", -1, "");
     parent_a.position = (Vector2){100.0F, 100.0F};
     (void)vec_entity_push(&state.gamedata.current_level.entities, parent_a);
-    (void)vec_entity_push(&state.gamedata.current_level.entities, make_entity(&alloc, 2, "weapon", 0, ""));
-    Entity parent_b = make_entity(&alloc, 3, "npc", -1, "");
+    (void)vec_entity_push(&state.gamedata.current_level.entities, make_entity(alloc, 2, "weapon", 0, ""));
+    Entity parent_b = make_entity(alloc, 3, "npc", -1, "");
     parent_b.position = (Vector2){200.0F, 300.0F};
     (void)vec_entity_push(&state.gamedata.current_level.entities, parent_b);
-    (void)vec_entity_push(&state.gamedata.current_level.entities, make_entity(&alloc, 4, "weapon", 2, ""));
+    (void)vec_entity_push(&state.gamedata.current_level.entities, make_entity(alloc, 4, "weapon", 2, ""));
 
     Blueprint blueprint = make_named_blueprint("npc");
     blueprint.children.alloc = test_heap_alloc;
     BlueprintChild child = {0};
-    (void)str_from_cstr(&test_heap_alloc, &child.blueprint_name, "weapon");
+    child.blueprint_name = str_new(alloc);
+    (void)str_from_cstr(&child.blueprint_name, "weapon");
     child.offset = (Vector2){5.0F, 5.0F};
     (void)vec_blueprint_child_push(&blueprint.children, child);
 
@@ -401,15 +412,17 @@ void test_remove_blueprint_child_removes_from_vec(void)
     Allocator alloc = allocator_arena(&state.gamedata_arena);
 
     state.gamedata.current_level.entities = vec_entity_new(alloc);
-    (void)vec_entity_push(&state.gamedata.current_level.entities, make_entity(&alloc, 1, "npc", -1, ""));
+    (void)vec_entity_push(&state.gamedata.current_level.entities, make_entity(alloc, 1, "npc", -1, ""));
 
     Blueprint blueprint = make_named_blueprint("npc");
     blueprint.children = vec_blueprint_child_new(alloc);
     BlueprintChild child_a = {0};
-    (void)str_from_cstr(&alloc, &child_a.blueprint_name, "weapon");
+    child_a.blueprint_name = str_new(alloc);
+    (void)str_from_cstr(&child_a.blueprint_name, "weapon");
     (void)vec_blueprint_child_push(&blueprint.children, child_a);
     BlueprintChild child_b = {0};
-    (void)str_from_cstr(&alloc, &child_b.blueprint_name, "shield");
+    child_b.blueprint_name = str_new(alloc);
+    (void)str_from_cstr(&child_b.blueprint_name, "shield");
     (void)vec_blueprint_child_push(&blueprint.children, child_b);
 
     find_blueprint_by_name_fake.return_val = &blueprint;
@@ -436,13 +449,14 @@ void test_remove_blueprint_child_deletes_entities(void)
     Allocator alloc = allocator_arena(&state.gamedata_arena);
 
     state.gamedata.current_level.entities = vec_entity_new(alloc);
-    (void)vec_entity_push(&state.gamedata.current_level.entities, make_entity(&alloc, 1, "npc", -1, ""));
-    (void)vec_entity_push(&state.gamedata.current_level.entities, make_entity(&alloc, 2, "weapon", 0, ""));
+    (void)vec_entity_push(&state.gamedata.current_level.entities, make_entity(alloc, 1, "npc", -1, ""));
+    (void)vec_entity_push(&state.gamedata.current_level.entities, make_entity(alloc, 2, "weapon", 0, ""));
 
     Blueprint blueprint = make_named_blueprint("npc");
     blueprint.children = vec_blueprint_child_new(alloc);
     BlueprintChild child = {0};
-    (void)str_from_cstr(&alloc, &child.blueprint_name, "weapon");
+    child.blueprint_name = str_new(alloc);
+    (void)str_from_cstr(&child.blueprint_name, "weapon");
     (void)vec_blueprint_child_push(&blueprint.children, child);
 
     find_blueprint_by_name_fake.return_val = &blueprint;
@@ -469,14 +483,15 @@ void test_remove_blueprint_child_cascades_descendants(void)
     Allocator alloc = allocator_arena(&state.gamedata_arena);
 
     state.gamedata.current_level.entities = vec_entity_new(alloc);
-    (void)vec_entity_push(&state.gamedata.current_level.entities, make_entity(&alloc, 1, "npc", -1, ""));
-    (void)vec_entity_push(&state.gamedata.current_level.entities, make_entity(&alloc, 2, "weapon", 0, ""));
-    (void)vec_entity_push(&state.gamedata.current_level.entities, make_entity(&alloc, 3, "gem", 1, ""));
+    (void)vec_entity_push(&state.gamedata.current_level.entities, make_entity(alloc, 1, "npc", -1, ""));
+    (void)vec_entity_push(&state.gamedata.current_level.entities, make_entity(alloc, 2, "weapon", 0, ""));
+    (void)vec_entity_push(&state.gamedata.current_level.entities, make_entity(alloc, 3, "gem", 1, ""));
 
     Blueprint blueprint = make_named_blueprint("npc");
     blueprint.children = vec_blueprint_child_new(alloc);
     BlueprintChild child = {0};
-    (void)str_from_cstr(&alloc, &child.blueprint_name, "weapon");
+    child.blueprint_name = str_new(alloc);
+    (void)str_from_cstr(&child.blueprint_name, "weapon");
     (void)vec_blueprint_child_push(&blueprint.children, child);
 
     find_blueprint_by_name_fake.return_val = &blueprint;
@@ -505,7 +520,7 @@ void test_remove_blueprint_child_invalid_index(void)
     Allocator alloc = allocator_arena(&state.gamedata_arena);
 
     state.gamedata.current_level.entities = vec_entity_new(alloc);
-    (void)vec_entity_push(&state.gamedata.current_level.entities, make_entity(&alloc, 1, "npc", -1, ""));
+    (void)vec_entity_push(&state.gamedata.current_level.entities, make_entity(alloc, 1, "npc", -1, ""));
 
     Blueprint blueprint = make_named_blueprint("npc");
     blueprint.children.alloc = test_heap_alloc;
@@ -533,12 +548,13 @@ void test_remove_blueprint_child_records_undo(void)
     Allocator alloc = allocator_arena(&state.gamedata_arena);
 
     state.gamedata.current_level.entities = vec_entity_new(alloc);
-    (void)vec_entity_push(&state.gamedata.current_level.entities, make_entity(&alloc, 1, "npc", -1, ""));
+    (void)vec_entity_push(&state.gamedata.current_level.entities, make_entity(alloc, 1, "npc", -1, ""));
 
     Blueprint blueprint = make_named_blueprint("npc");
     blueprint.children = vec_blueprint_child_new(alloc);
     BlueprintChild child = {0};
-    (void)str_from_cstr(&alloc, &child.blueprint_name, "weapon");
+    child.blueprint_name = str_new(alloc);
+    (void)str_from_cstr(&child.blueprint_name, "weapon");
     (void)vec_blueprint_child_push(&blueprint.children, child);
 
     find_blueprint_by_name_fake.return_val = &blueprint;
@@ -565,7 +581,7 @@ void test_add_blueprint_child_adds_to_vec(void)
     Allocator alloc = allocator_arena(&state.gamedata_arena);
 
     state.gamedata.current_level.entities = vec_entity_new(alloc);
-    (void)vec_entity_push(&state.gamedata.current_level.entities, make_entity(&alloc, 1, "npc", -1, ""));
+    (void)vec_entity_push(&state.gamedata.current_level.entities, make_entity(alloc, 1, "npc", -1, ""));
 
     Blueprint blueprint = make_named_blueprint("npc");
     blueprint.children = vec_blueprint_child_new(alloc);
@@ -594,9 +610,9 @@ void test_add_blueprint_child_spawns_for_instances(void)
     Allocator alloc = allocator_arena(&state.gamedata_arena);
 
     state.gamedata.current_level.entities = vec_entity_new(alloc);
-    (void)vec_entity_push(&state.gamedata.current_level.entities, make_entity(&alloc, 1, "npc", -1, ""));
-    (void)vec_entity_push(&state.gamedata.current_level.entities, make_entity(&alloc, 2, "npc", -1, ""));
-    (void)vec_entity_push(&state.gamedata.current_level.entities, make_entity(&alloc, 3, "tree", -1, ""));
+    (void)vec_entity_push(&state.gamedata.current_level.entities, make_entity(alloc, 1, "npc", -1, ""));
+    (void)vec_entity_push(&state.gamedata.current_level.entities, make_entity(alloc, 2, "npc", -1, ""));
+    (void)vec_entity_push(&state.gamedata.current_level.entities, make_entity(alloc, 3, "tree", -1, ""));
 
     Blueprint blueprint = make_named_blueprint("npc");
     blueprint.children = vec_blueprint_child_new(alloc);
