@@ -61,6 +61,7 @@ typedef struct {
 
 static AttrConvertedValues attr_extract_values(const Attribute *attr, Allocator *alloc)
 {
+    (void)alloc;
     AttrConvertedValues result = {0};
     switch (attr->type) {
     case ATTR_FLOAT:
@@ -163,7 +164,7 @@ void dispatch_attr_type_change(GameState *state, EditorState *editor_state, int 
         int sel = editor_state->selected_entity_index;
         if (sel >= 0 && sel < state->gamedata.current_level.entities.count) {
             Entity *entity = &state->gamedata.current_level.entities.data[sel];
-            if (is_blueprint_attr(entity, editor_state->selected_attr_index)) {
+            if (is_blueprint_attr(state, entity, editor_state->selected_attr_index)) {
                 Blueprint *blueprint = find_blueprint_by_name(state, entity->blueprint_name.ptr);
                 if (blueprint) {
                     propagate_collision_to_entities(state, blueprint);
@@ -363,7 +364,7 @@ static void attr_edit_confirm(GameState *state, EditorState *editor_state, UndoH
         int attr_idx = editor_state->selected_attr_index;
         if (sel >= 0 && sel < state->gamedata.current_level.entities.count) {
             Entity *entity = &state->gamedata.current_level.entities.data[sel];
-            if (is_blueprint_attr(entity, attr_idx)) {
+            if (is_blueprint_attr(state, entity, attr_idx)) {
                 Blueprint *blueprint = find_blueprint_by_name(state, entity->blueprint_name.ptr);
                 if (blueprint) {
                     propagate_collision_to_entities(state, blueprint);

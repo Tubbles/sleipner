@@ -206,6 +206,53 @@ static void draw_attr_section(Font font,
     }
 }
 
+/* Tri-section renderer for the scene attr panel. Each section walks its AttrSet and colors
+ * each row based on whether its name also exists in either of the two "other" sections. */
+static void draw_scene_attr_section(Font font,
+                                    const AttrSet *set,
+                                    AttrSection section,
+                                    const AttrSet *other_a,
+                                    const AttrSet *other_b,
+                                    int panel_x,
+                                    int *y_offset,
+                                    int base_index,
+                                    int selected_attr_index)
+{
+    for (int index = 0; index < set->entries.count; index++) {
+        const Attribute *attr = &set->entries.data[index];
+        bool selected = (base_index + index == selected_attr_index);
+        bool exists_in_other = (other_a && attr_get(other_a, attr->name.ptr)) ||
+                               (other_b && attr_get(other_b, attr->name.ptr));
+        const char *prefix = "  ";
+        Color base_color = debug_text_color;
+        if (section == ATTR_SECTION_BLUEPRINT) {
+            if (exists_in_other) {
+                base_color = attr_dimmed_color;
+            }
+        } else {
+            prefix = exists_in_other ? "> " : "+ ";
+            base_color = exists_in_other ? attr_override_color : attr_custom_color;
+        }
+        Color text_color = selected ? WHITE : base_color;
+        draw_ui_text(font, TextFormat("%s%s: %s", prefix, attr->name.ptr, attr_display_value(attr)),
+                     panel_x + DEBUG_MARGIN, *y_offset, EDITOR_PANEL_FONT_SIZE, text_color);
+        *y_offset += EDITOR_PANEL_LINE_HEIGHT;
+    }
+}
+
+static void draw_add_sentinel(Font font, int panel_x, int *y_offset, bool selected)
+{
+    Color color = selected ? WHITE : attr_custom_color;
+    draw_ui_text(font, "  [ + ADD ]", panel_x + DEBUG_MARGIN, *y_offset, EDITOR_PANEL_FONT_SIZE, color);
+    *y_offset += EDITOR_PANEL_LINE_HEIGHT;
+}
+
+static void draw_section_header(Font font, const char *label, int panel_x, int *y_offset)
+{
+    draw_ui_text(font, label, panel_x + DEBUG_MARGIN, *y_offset, EDITOR_PANEL_FONT_SIZE, debug_text_color);
+    *y_offset += EDITOR_PANEL_LINE_HEIGHT;
+}
+
 void draw_editor_panel(ScreenSize screen, const GameState *state, const EditorState *editor_state)
 {
     int sel = editor_state->selected_entity_index;
@@ -256,22 +303,34 @@ void draw_editor_panel(ScreenSize screen, const GameState *state, const EditorSt
     draw_ui_text(font, "  [ + ADD CHILD ]", panel_x + DEBUG_MARGIN, y_offset, EDITOR_PANEL_FONT_SIZE, add_child_color);
     y_offset += EDITOR_PANEL_LINE_HEIGHT * 2;
 
-    draw_ui_text(font, "--- instance ---", panel_x + DEBUG_MARGIN, y_offset, EDITOR_PANEL_FONT_SIZE, debug_text_color);
-    y_offset += EDITOR_PANEL_LINE_HEIGHT;
     int sel_attr = editor_state->selected_attr_index;
     const AttrSet *defaults = entity_resolve_defaults(state, entity->id);
-    draw_attr_section(font, &entity->attrs, true, defaults, panel_x, &y_offset, 0, sel_attr);
-    int sentinel_index = total_attr_count(state, entity);
-    Color sentinel_color = (sel_attr == sentinel_index) ? WHITE : attr_custom_color;
-    draw_ui_text(font, "  [ + ADD ]", panel_x + DEBUG_MARGIN, y_offset, EDITOR_PANEL_FONT_SIZE, sentinel_color);
-    y_offset += EDITOR_PANEL_LINE_HEIGHT;
-    if (defaults) {
-        draw_ui_text(font, "--- blueprint ---", panel_x + DEBUG_MARGIN, y_offset, EDITOR_PANEL_FONT_SIZE,
-                     debug_text_color);
-        y_offset += EDITOR_PANEL_LINE_HEIGHT;
-        int blueprint_base = entity->attrs.entries.count;
-        draw_attr_section(font, defaults, false, &entity->attrs, panel_x, &y_offset, blueprint_base, sel_attr);
+    int base_idx = 0;
+
+    if (entity_has_persisted_section(entity)) {
+        draw_section_header(font, "--- persisted ---", panel_x, &y_offset);
+        draw_scene_attr_section(font, &entity->persisted_attrs, ATTR_SECTION_PERSISTED, &entity->attrs, defaults,
+                                panel_x, &y_offset, base_idx, sel_attr);
+        base_idx += entity->persisted_attrs.entries.count;
+        draw_add_sentinel(font, panel_x, &y_offset, sel_attr == base_idx);
+        base_idx += 1;
     }
+
+    draw_section_header(font, "--- runtime ---", panel_x, &y_offset);
+    const AttrSet *persisted_other = entity_has_persisted_section(entity) ? &entity->persisted_attrs : nullptr;
+    draw_scene_attr_section(font, &entity->attrs, ATTR_SECTION_RUNTIME, persisted_other, defaults, panel_x, &y_offset,
+                            base_idx, sel_attr);
+    base_idx += entity->attrs.entries.count;
+    draw_add_sentinel(font, panel_x, &y_offset, sel_attr == base_idx);
+    base_idx += 1;
+
+    draw_section_header(font, "--- blueprint ---", panel_x, &y_offset);
+    if (defaults) {
+        draw_scene_attr_section(font, defaults, ATTR_SECTION_BLUEPRINT, persisted_other, &entity->attrs, panel_x,
+                                &y_offset, base_idx, sel_attr);
+        base_idx += defaults->entries.count;
+    }
+    draw_add_sentinel(font, panel_x, &y_offset, sel_attr == base_idx);
 }
 
 void draw_watch_overlay(ScreenSize screen, const GameState *state, const WatchList *watches)

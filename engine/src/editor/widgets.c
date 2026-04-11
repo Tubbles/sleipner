@@ -209,18 +209,33 @@ static bool add_attr_by_name(Diag *diag, GameState *state, EditorState *editor_s
         return false;
     }
     AttrSet *target = nullptr;
-    if (editor_state->adding_blueprint_attr) {
+    if (editor_state->top_mode == EDITOR_TOP_BLUEPRINT || editor_state->adding_blueprint_attr) {
         int bp_idx = editor_state->selected_blueprint_index;
-        if (bp_idx < 0 || bp_idx >= state->gamedata.blueprints.entries.count) {
-            return false;
+        /* In scene mode, selected_blueprint_index isn't set; resolve from the selected entity. */
+        if (editor_state->top_mode == EDITOR_TOP_SCENE) {
+            int sel = editor_state->selected_entity_index;
+            if (sel < 0) {
+                return false;
+            }
+            Blueprint *blueprint = find_blueprint_by_name(
+                state, state->gamedata.current_level.entities.data[sel].blueprint_name.ptr);
+            if (!blueprint) {
+                return false;
+            }
+            target = &blueprint->attrs;
+        } else {
+            if (bp_idx < 0 || bp_idx >= state->gamedata.blueprints.entries.count) {
+                return false;
+            }
+            target = &state->gamedata.blueprints.entries.data[bp_idx].attrs;
         }
-        target = &state->gamedata.blueprints.entries.data[bp_idx].attrs;
     } else {
         int sel = editor_state->selected_entity_index;
         if (sel < 0) {
             return false;
         }
-        target = &state->gamedata.current_level.entities.data[sel].attrs;
+        Entity *entity = &state->gamedata.current_level.entities.data[sel];
+        target = editor_state->adding_persisted_attr ? &entity->persisted_attrs : &entity->attrs;
     }
     if (attr_get(target, name)) {
         return false;
@@ -261,12 +276,10 @@ static void word_builder_confirm(Diag *diag, GameState *state, EditorState *edit
         if (!attr) {
             return;
         }
-        target = &entity->attrs;
-        if (is_blueprint_attr(entity, attr_idx)) {
-            Blueprint *blueprint = find_blueprint_by_name(state, entity->blueprint_name.ptr);
-            if (blueprint) {
-                target = &blueprint->attrs;
-            }
+        AttrRow row = attr_row_at(state, entity, attr_idx);
+        target = attr_section_set(state, entity, row.section);
+        if (!target) {
+            return;
         }
     }
     Allocator alloc = allocator_arena(&state->gamedata_arena);
@@ -316,12 +329,14 @@ void handle_word_builder_input(Diag *diag, GameState *state, EditorState *editor
             confirm_child_tag_edit(diag, state, editor_state, undo_history);
             editor_state->sub_mode = EDITOR_SUB_BROWSE;
         } else if (editor_state->word_builder_scroll == 0 &&
-                   (editor_state->adding_attr || editor_state->adding_blueprint_attr)) {
+                   (editor_state->adding_attr || editor_state->adding_blueprint_attr ||
+                    editor_state->adding_persisted_attr)) {
             add_attr_by_name(diag, state, editor_state, editor_state->word_builder_buf);
             undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
                                    strv_from_cstr("Add attribute"));
             editor_state->adding_attr = false;
             editor_state->adding_blueprint_attr = false;
+            editor_state->adding_persisted_attr = false;
             editor_state->sub_mode = EDITOR_SUB_BROWSE;
         } else if (editor_state->word_builder_scroll == 0) {
             word_builder_confirm(diag, state, editor_state);
@@ -344,6 +359,7 @@ void handle_word_builder_input(Diag *diag, GameState *state, EditorState *editor
         } else {
             editor_state->adding_attr = false;
             editor_state->adding_blueprint_attr = false;
+            editor_state->adding_persisted_attr = false;
             editor_state->editing_child_tag = false;
             editor_state->creating_blueprint = false;
             editor_state->duplicating_blueprint = false;
@@ -588,12 +604,10 @@ static void fuzzy_finder_confirm(Diag *diag, GameState *state, EditorState *edit
         if (!attr) {
             return;
         }
-        target = &entity->attrs;
-        if (is_blueprint_attr(entity, attr_idx)) {
-            Blueprint *blueprint = find_blueprint_by_name(state, entity->blueprint_name.ptr);
-            if (blueprint) {
-                target = &blueprint->attrs;
-            }
+        AttrRow row = attr_row_at(state, entity, attr_idx);
+        target = attr_section_set(state, entity, row.section);
+        if (!target) {
+            return;
         }
     }
     const char *chosen = fuzzy_finder_item(editor_state, editor_state->fuzzy_finder_scroll);
@@ -624,7 +638,8 @@ void handle_fuzzy_finder_input(Diag *diag,
                 editor_state->adding_child = false;
                 editor_state->sub_mode = EDITOR_SUB_BROWSE;
             }
-        } else if (editor_state->adding_attr || editor_state->adding_blueprint_attr) {
+        } else if (editor_state->adding_attr || editor_state->adding_blueprint_attr ||
+                   editor_state->adding_persisted_attr) {
             if (editor_state->fuzzy_finder_scroll == 0) {
                 fuzzy_finder_enter_word_builder(state, editor_state);
             } else {
@@ -634,6 +649,7 @@ void handle_fuzzy_finder_input(Diag *diag,
                                        strv_from_cstr("Add attribute"));
                 editor_state->adding_attr = false;
                 editor_state->adding_blueprint_attr = false;
+                editor_state->adding_persisted_attr = false;
                 editor_state->sub_mode = EDITOR_SUB_BROWSE;
             }
         } else if (editor_state->fuzzy_finder_scroll == 0) {
@@ -649,6 +665,7 @@ void handle_fuzzy_finder_input(Diag *diag,
         editor_state->adding_attr = false;
         editor_state->adding_child = false;
         editor_state->adding_blueprint_attr = false;
+        editor_state->adding_persisted_attr = false;
         editor_state->sub_mode = EDITOR_SUB_BROWSE;
     }
 }

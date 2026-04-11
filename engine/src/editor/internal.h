@@ -24,10 +24,39 @@ int measure_ui_text(Font font, const char *text, int font_size);
 
 /* --- Shared helpers: core.c --- */
 
-Blueprint *find_blueprint_by_name(GameState *state, const char *name);
+/* The editor attr panel for an entity is split into three sections:
+ * persisted (saved to TOML), runtime (live read path, mutated by rules),
+ * and blueprint (shared defaults from the blueprint table). Child entities
+ * hide the persisted section — they have no TOML representation in v1. */
+typedef enum {
+    ATTR_SECTION_PERSISTED,
+    ATTR_SECTION_RUNTIME,
+    ATTR_SECTION_BLUEPRINT,
+} AttrSection;
+
+typedef enum {
+    ATTR_ROW_KIND_ATTR,     /* row is an attribute, index_in_section is the AttrSet index */
+    ATTR_ROW_KIND_ADD,      /* row is an ADD sentinel for the section */
+    ATTR_ROW_KIND_INVALID,  /* row index is out of range */
+} AttrRowKind;
+
+typedef struct {
+    AttrRowKind kind;
+    AttrSection section;
+    int index_in_section;
+} AttrRow;
+
+/* Row layout helpers. Top-level entities have three sections (persisted,
+ * runtime, blueprint), child entities skip persisted. Each section ends in
+ * its own ADD sentinel row. */
 int total_attr_count(const GameState *state, const Entity *entity);
+bool entity_has_persisted_section(const Entity *entity);
+AttrRow attr_row_at(const GameState *state, const Entity *entity, int attr_index);
+
+Blueprint *find_blueprint_by_name(GameState *state, const char *name);
 Attribute *attr_at_display_index(GameState *state, Entity *entity, int attr_index);
-bool is_blueprint_attr(const Entity *entity, int attr_index);
+bool is_blueprint_attr(const GameState *state, const Entity *entity, int attr_index);
+AttrSet *attr_section_set(GameState *state, Entity *entity, AttrSection section);
 int tree_section_total(const Entity *entity, const Blueprint *blueprint);
 bool tree_is_parent_row(const Entity *entity, int tree_index);
 bool tree_is_add_child_row(const Entity *entity, const Blueprint *blueprint, int tree_index);

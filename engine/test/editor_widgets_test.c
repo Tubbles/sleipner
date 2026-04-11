@@ -29,8 +29,10 @@ const Color debug_log_color = {0};
 
 /* Cross-file editor fakes: core.c */
 FAKE_VALUE_FUNC(Blueprint *, find_blueprint_by_name, GameState *, const char *);
-FAKE_VALUE_FUNC(bool, is_blueprint_attr, const Entity *, int);
+FAKE_VALUE_FUNC(bool, is_blueprint_attr, const GameState *, const Entity *, int);
 FAKE_VALUE_FUNC(Attribute *, attr_at_display_index, GameState *, Entity *, int);
+FAKE_VALUE_FUNC(AttrRow, attr_row_at, const GameState *, const Entity *, int);
+FAKE_VALUE_FUNC(AttrSet *, attr_section_set, GameState *, Entity *, AttrSection);
 FAKE_VALUE_FUNC(int, place_visible_count, int);
 
 /* Cross-file editor fakes: attr.c */
@@ -883,6 +885,9 @@ void test_word_builder_confirm_sets_string_value(void)
 
     attr_at_display_index_fake.return_val = &state.gamedata.current_level.entities.data[0].attrs.entries.data[0];
     is_blueprint_attr_fake.return_val = false;
+    attr_row_at_fake.return_val =
+        (AttrRow){.kind = ATTR_ROW_KIND_ATTR, .section = ATTR_SECTION_RUNTIME, .index_in_section = 0};
+    attr_section_set_fake.return_val = &state.gamedata.current_level.entities.data[0].attrs;
 
     EditorState editor_state = {.selected_entity_index = 0, .selected_attr_index = 0};
     strcpy(editor_state.word_builder_buf, "hello");
@@ -921,6 +926,9 @@ void test_fuzzy_finder_confirm_sets_string_value(void)
 
     attr_at_display_index_fake.return_val = &state.gamedata.current_level.entities.data[0].attrs.entries.data[0];
     is_blueprint_attr_fake.return_val = false;
+    attr_row_at_fake.return_val =
+        (AttrRow){.kind = ATTR_ROW_KIND_ATTR, .section = ATTR_SECTION_RUNTIME, .index_in_section = 0};
+    attr_section_set_fake.return_val = &state.gamedata.current_level.entities.data[0].attrs;
 
     const char *items[] = {"chosen_name"};
     EditorState editor_state = {

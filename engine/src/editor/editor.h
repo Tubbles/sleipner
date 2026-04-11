@@ -115,7 +115,8 @@ typedef struct {
     int fuzzy_finder_item_count;                  /* number of names (excludes the NEW sentinel) */
     int keyboard_group;                           /* -1 = level 1 (group select), 0..8 = level 2 (char select) */
     int keyboard_selected;                        /* radial sector highlighted by stick (-1 = dead zone) */
-    bool adding_attr;                             /* true when fuzzy finder is open for adding a new attribute */
+    bool adding_attr;                             /* true when fuzzy finder is open for adding a runtime attribute */
+    bool adding_persisted_attr;                   /* true when fuzzy finder is open for adding a persisted attribute */
     int selected_tree_index;                      /* -1 = not in tree section; >=0 = parent/child/ADD CHILD */
     bool editing_child_tag;                       /* word builder is editing a blueprint child tag */
     bool editing_child_offset;                    /* attr_edit is editing a blueprint child offset */

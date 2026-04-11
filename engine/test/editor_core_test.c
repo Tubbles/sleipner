@@ -146,19 +146,22 @@ void test_editor_find_blueprint_by_name_empty_table(void)
 
 /* ---- total_attr_count --------------------------------------------------- */
 
-void test_editor_total_attr_count_instance_only(void)
+/* Top-level entity: sections = persisted(N)+ADD + runtime(N)+ADD + blueprint(N)+ADD. */
+void test_editor_total_attr_count_top_level_no_blueprint(void)
 {
     GameState state = {0};
-    Entity entity = {0};
+    Entity entity = {.parent_index = -1};
     TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, &entity.attrs, "speed", 10));
     TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, &entity.attrs, "health", 5));
+    entity_resolve_defaults_fake.return_val = nullptr;
 
-    TEST_ASSERT_EQUAL_INT(2, total_attr_count(&state, &entity));
+    /* persisted(0)+1 + runtime(2)+1 + blueprint(0)+1 = 5 */
+    TEST_ASSERT_EQUAL_INT(5, total_attr_count(&state, &entity));
 
     test_attr_set_free_local(&entity.attrs);
 }
 
-void test_editor_total_attr_count_with_blueprint(void)
+void test_editor_total_attr_count_top_level_with_blueprint(void)
 {
     GameState state = {0};
     state.gamedata.blueprints.entries.alloc = test_heap_alloc;
@@ -167,10 +170,11 @@ void test_editor_total_attr_count_with_blueprint(void)
     TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, &blueprint.attrs, "bp_attr", 42));
     (void)vec_blueprint_push(&state.gamedata.blueprints.entries, blueprint);
 
-    Entity entity = {0};
+    Entity entity = {.parent_index = -1};
     entity.id = 1;
     entity.blueprint_name = str_new(test_heap_alloc);
     TEST_ASSERT_TRUE(str_from_cstr(&entity.blueprint_name, "test_bp"));
+    TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, &entity.persisted_attrs, "hp", 42));
     TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, &entity.attrs, "inst_attr", 10));
     Str bp_name = str_new(test_heap_alloc);
     TEST_ASSERT_TRUE(str_from_cstr(&bp_name, "test_bp"));
@@ -178,9 +182,11 @@ void test_editor_total_attr_count_with_blueprint(void)
     (void)map_int_str_set(&state.gamedata.entity_blueprints, entity.id, bp_name);
 
     entity_resolve_defaults_fake.return_val = &state.gamedata.blueprints.entries.data[0].attrs;
-    TEST_ASSERT_EQUAL_INT(2 + 1, total_attr_count(&state, &entity));
+    /* persisted(1)+1 + runtime(1)+1 + blueprint(2)+1 = 7 */
+    TEST_ASSERT_EQUAL_INT(7, total_attr_count(&state, &entity));
     entity_resolve_defaults_fake.return_val = nullptr;
 
+    test_attr_set_free_local(&entity.persisted_attrs);
     test_attr_set_free_local(&entity.attrs);
     test_attr_set_free_local(&blueprint.attrs);
     str_free(&entity.blueprint_name);
@@ -189,43 +195,77 @@ void test_editor_total_attr_count_with_blueprint(void)
     vec_blueprint_free(&state.gamedata.blueprints.entries);
 }
 
-/* ---- is_blueprint_attr -------------------------------------------------- */
-
-void test_editor_is_blueprint_attr_false_for_instance(void)
+/* Child entity: skips persisted section → runtime(N)+ADD + blueprint(N)+ADD. */
+void test_editor_total_attr_count_child_skips_persisted(void)
 {
-    Entity entity = {0};
+    GameState state = {0};
+    Entity entity = {.parent_index = 0};
     TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, &entity.attrs, "speed", 10));
+    entity_resolve_defaults_fake.return_val = nullptr;
 
-    TEST_ASSERT_FALSE(is_blueprint_attr(&entity, 0));
+    /* runtime(1)+1 + blueprint(0)+1 = 3 */
+    TEST_ASSERT_EQUAL_INT(3, total_attr_count(&state, &entity));
 
     test_attr_set_free_local(&entity.attrs);
 }
 
-void test_editor_is_blueprint_attr_true_for_blueprint(void)
-{
-    Entity entity = {0};
-    TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, &entity.attrs, "speed", 10));
+/* ---- is_blueprint_attr -------------------------------------------------- */
 
-    TEST_ASSERT_TRUE(is_blueprint_attr(&entity, 1));
+void test_editor_is_blueprint_attr_false_for_runtime(void)
+{
+    GameState state = {0};
+    Entity entity = {.parent_index = -1};
+    TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, &entity.attrs, "speed", 10));
+    entity_resolve_defaults_fake.return_val = nullptr;
+
+    /* index 0 = persisted ADD sentinel; index 1 = runtime attr 0 */
+    TEST_ASSERT_FALSE(is_blueprint_attr(&state, &entity, 1));
 
     test_attr_set_free_local(&entity.attrs);
+}
+
+void test_editor_is_blueprint_attr_true_for_blueprint_section(void)
+{
+    GameState state = {0};
+    state.gamedata.blueprints.entries.alloc = test_heap_alloc;
+    Blueprint blueprint = {0};
+    TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, &blueprint.attrs, "bp_val", 99));
+    (void)vec_blueprint_push(&state.gamedata.blueprints.entries, blueprint);
+
+    Entity entity = {.parent_index = -1};
+    entity_resolve_defaults_fake.return_val = &state.gamedata.blueprints.entries.data[0].attrs;
+
+    /* Row layout: [0]=persisted ADD, [1]=runtime ADD, [2]=blueprint attr 0 */
+    TEST_ASSERT_TRUE(is_blueprint_attr(&state, &entity, 2));
+    entity_resolve_defaults_fake.return_val = nullptr;
+
+    test_attr_set_free_local(&state.gamedata.blueprints.entries.data[0].attrs);
+    vec_blueprint_free(&state.gamedata.blueprints.entries);
 }
 
 /* ---- attr_at_display_index ---------------------------------------------- */
 
-void test_editor_attr_at_display_index_instance(void)
+/* Top-level layout with 1 runtime attr, no blueprint:
+ *   [0]=persisted ADD, [1]=runtime attr, [2]=runtime ADD, [3]=blueprint ADD. */
+void test_editor_attr_at_display_index_runtime(void)
 {
     GameState state = {0};
     Entity entity = {.parent_index = -1};
     TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, &entity.attrs, "speed", 42));
+    entity_resolve_defaults_fake.return_val = nullptr;
 
-    Attribute *attr = attr_at_display_index(&state, &entity, 0);
+    Attribute *attr = attr_at_display_index(&state, &entity, 1);
     TEST_ASSERT_NOT_NULL(attr);
     TEST_ASSERT_EQUAL_INT(42, attr->value.i);
+    /* ADD sentinel returns nullptr */
+    TEST_ASSERT_NULL(attr_at_display_index(&state, &entity, 0));
 
     test_attr_set_free_local(&entity.attrs);
 }
 
+/* Top-level layout with persisted(1) + runtime(1) + blueprint(2):
+ *   [0]=persisted attr 0, [1]=persisted ADD, [2]=runtime attr 0, [3]=runtime ADD,
+ *   [4]=blueprint attr 0, [5]=blueprint attr 1, [6]=blueprint ADD. */
 void test_editor_attr_at_display_index_blueprint(void)
 {
     GameState state = {0};
@@ -239,14 +279,28 @@ void test_editor_attr_at_display_index_blueprint(void)
     Entity entity = {.parent_index = -1};
     entity.blueprint_name = str_new(test_heap_alloc);
     TEST_ASSERT_TRUE(str_from_cstr(&entity.blueprint_name, "test_bp"));
+    TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, &entity.persisted_attrs, "hp", 50));
     TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, &entity.attrs, "inst_val", 10));
+    entity_resolve_defaults_fake.return_val = &blueprint->attrs;
 
-    int blueprint_attr_index = entity.attrs.entries.count + 1;
-    Attribute *attr = attr_at_display_index(&state, &entity, blueprint_attr_index);
-    TEST_ASSERT_NOT_NULL(attr);
-    TEST_ASSERT_EQUAL_INT(99, attr->value.i);
+    /* persisted attr at index 0 */
+    Attribute *persisted = attr_at_display_index(&state, &entity, 0);
+    TEST_ASSERT_NOT_NULL(persisted);
+    TEST_ASSERT_EQUAL_INT(50, persisted->value.i);
+
+    /* runtime attr at index 2 */
+    Attribute *runtime = attr_at_display_index(&state, &entity, 2);
+    TEST_ASSERT_NOT_NULL(runtime);
+    TEST_ASSERT_EQUAL_INT(10, runtime->value.i);
+
+    /* blueprint attr 1 (bp_val=99) at index 5 */
+    Attribute *bp_attr = attr_at_display_index(&state, &entity, 5);
+    TEST_ASSERT_NOT_NULL(bp_attr);
+    TEST_ASSERT_EQUAL_INT(99, bp_attr->value.i);
+    entity_resolve_defaults_fake.return_val = nullptr;
 
     str_free(&entity.blueprint_name);
+    test_attr_set_free_local(&entity.persisted_attrs);
     test_attr_set_free_local(&entity.attrs);
     test_blueprint_table_free_local(&state.gamedata.blueprints);
 }
@@ -256,6 +310,7 @@ void test_editor_attr_at_display_index_out_of_range(void)
     GameState state = {0};
     Entity entity = {.parent_index = -1};
     TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, &entity.attrs, "speed", 10));
+    entity_resolve_defaults_fake.return_val = nullptr;
 
     Attribute *attr = attr_at_display_index(&state, &entity, 99);
     TEST_ASSERT_NULL(attr);
@@ -603,11 +658,12 @@ int main(void)
     RUN_TEST(test_editor_find_blueprint_by_name_found);
     RUN_TEST(test_editor_find_blueprint_by_name_not_found);
     RUN_TEST(test_editor_find_blueprint_by_name_empty_table);
-    RUN_TEST(test_editor_total_attr_count_instance_only);
-    RUN_TEST(test_editor_total_attr_count_with_blueprint);
-    RUN_TEST(test_editor_is_blueprint_attr_false_for_instance);
-    RUN_TEST(test_editor_is_blueprint_attr_true_for_blueprint);
-    RUN_TEST(test_editor_attr_at_display_index_instance);
+    RUN_TEST(test_editor_total_attr_count_top_level_no_blueprint);
+    RUN_TEST(test_editor_total_attr_count_top_level_with_blueprint);
+    RUN_TEST(test_editor_total_attr_count_child_skips_persisted);
+    RUN_TEST(test_editor_is_blueprint_attr_false_for_runtime);
+    RUN_TEST(test_editor_is_blueprint_attr_true_for_blueprint_section);
+    RUN_TEST(test_editor_attr_at_display_index_runtime);
     RUN_TEST(test_editor_attr_at_display_index_blueprint);
     RUN_TEST(test_editor_attr_at_display_index_out_of_range);
     RUN_TEST(test_editor_mark_deleted_root_marks_child);

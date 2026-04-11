@@ -23,7 +23,7 @@ FAKE_VALUE_FUNC(bool, toggle_pressed, ToggleBinding);
 
 /* Cross-file editor fakes: core.c */
 FAKE_VALUE_FUNC(Blueprint *, find_blueprint_by_name, GameState *, const char *);
-FAKE_VALUE_FUNC(bool, is_blueprint_attr, const Entity *, int);
+FAKE_VALUE_FUNC(bool, is_blueprint_attr, const GameState *, const Entity *, int);
 FAKE_VALUE_FUNC(Attribute *, attr_at_display_index, GameState *, Entity *, int);
 
 /* Cross-file editor fakes: child.c */

@@ -39,6 +39,7 @@ FAKE_VALUE_FUNC(const Blueprint *, blueprint_find, const BlueprintTable *, const
 
 /* Cross-file editor fakes (functions from other editor split files) */
 FAKE_VALUE_FUNC(int, total_attr_count, const GameState *, const Entity *);
+FAKE_VALUE_FUNC(bool, entity_has_persisted_section, const Entity *);
 FAKE_VALUE_FUNC(int, place_visible_count, int);
 
 #include "test_heap_alloc.h"

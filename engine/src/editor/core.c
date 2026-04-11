@@ -22,33 +22,110 @@ Blueprint *find_blueprint_by_name(GameState *state, const char *name)
     return nullptr;
 }
 
+bool entity_has_persisted_section(const Entity *entity)
+{
+    return entity->parent_index < 0;
+}
+
+/* Row layout: each section is [attrs...][ADD sentinel]. Children skip persisted. */
 int total_attr_count(const GameState *state, const Entity *entity)
 {
     const AttrSet *defaults = entity_resolve_defaults(state, entity->id);
-    int count = entity->attrs.entries.count;
-    if (defaults) {
-        count += defaults->entries.count;
+    int total = 0;
+    if (entity_has_persisted_section(entity)) {
+        total += entity->persisted_attrs.entries.count + 1;
     }
-    return count;
+    total += entity->attrs.entries.count + 1;
+    total += (defaults ? defaults->entries.count : 0) + 1;
+    return total;
 }
 
-Attribute *attr_at_display_index(GameState *state, Entity *entity, int attr_index)
+AttrRow attr_row_at(const GameState *state, const Entity *entity, int attr_index)
 {
-    if (attr_index < entity->attrs.entries.count) {
-        return &entity->attrs.entries.data[attr_index];
+    AttrRow row = {.kind = ATTR_ROW_KIND_INVALID, .section = ATTR_SECTION_RUNTIME, .index_in_section = -1};
+    if (attr_index < 0) {
+        return row;
     }
-    int bp_idx = attr_index - entity->attrs.entries.count;
-    const char *bp_name = entity->blueprint_name.ptr;
-    Blueprint *blueprint = find_blueprint_by_name(state, bp_name);
-    if (blueprint && bp_idx >= 0 && bp_idx < blueprint->attrs.entries.count) {
-        return &blueprint->attrs.entries.data[bp_idx];
+    int cursor = attr_index;
+
+    if (entity_has_persisted_section(entity)) {
+        int persisted_count = entity->persisted_attrs.entries.count;
+        if (cursor < persisted_count) {
+            row.kind = ATTR_ROW_KIND_ATTR;
+            row.section = ATTR_SECTION_PERSISTED;
+            row.index_in_section = cursor;
+            return row;
+        }
+        if (cursor == persisted_count) {
+            row.kind = ATTR_ROW_KIND_ADD;
+            row.section = ATTR_SECTION_PERSISTED;
+            return row;
+        }
+        cursor -= persisted_count + 1;
+    }
+
+    int runtime_count = entity->attrs.entries.count;
+    if (cursor < runtime_count) {
+        row.kind = ATTR_ROW_KIND_ATTR;
+        row.section = ATTR_SECTION_RUNTIME;
+        row.index_in_section = cursor;
+        return row;
+    }
+    if (cursor == runtime_count) {
+        row.kind = ATTR_ROW_KIND_ADD;
+        row.section = ATTR_SECTION_RUNTIME;
+        return row;
+    }
+    cursor -= runtime_count + 1;
+
+    const AttrSet *defaults = entity_resolve_defaults(state, entity->id);
+    int bp_count = defaults ? defaults->entries.count : 0;
+    if (cursor < bp_count) {
+        row.kind = ATTR_ROW_KIND_ATTR;
+        row.section = ATTR_SECTION_BLUEPRINT;
+        row.index_in_section = cursor;
+        return row;
+    }
+    if (cursor == bp_count) {
+        row.kind = ATTR_ROW_KIND_ADD;
+        row.section = ATTR_SECTION_BLUEPRINT;
+        return row;
+    }
+    return row;
+}
+
+AttrSet *attr_section_set(GameState *state, Entity *entity, AttrSection section)
+{
+    switch (section) {
+    case ATTR_SECTION_PERSISTED:
+        return &entity->persisted_attrs;
+    case ATTR_SECTION_RUNTIME:
+        return &entity->attrs;
+    case ATTR_SECTION_BLUEPRINT: {
+        Blueprint *blueprint = find_blueprint_by_name(state, entity->blueprint_name.ptr);
+        return blueprint ? &blueprint->attrs : nullptr;
+    }
     }
     return nullptr;
 }
 
-bool is_blueprint_attr(const Entity *entity, int attr_index)
+Attribute *attr_at_display_index(GameState *state, Entity *entity, int attr_index)
 {
-    return attr_index >= entity->attrs.entries.count;
+    AttrRow row = attr_row_at(state, entity, attr_index);
+    if (row.kind != ATTR_ROW_KIND_ATTR) {
+        return nullptr;
+    }
+    AttrSet *target = attr_section_set(state, entity, row.section);
+    if (!target || row.index_in_section >= target->entries.count) {
+        return nullptr;
+    }
+    return &target->entries.data[row.index_in_section];
+}
+
+bool is_blueprint_attr(const GameState *state, const Entity *entity, int attr_index)
+{
+    AttrRow row = attr_row_at(state, entity, attr_index);
+    return row.kind == ATTR_ROW_KIND_ATTR && row.section == ATTR_SECTION_BLUEPRINT;
 }
 
 int tree_section_total(const Entity *entity, const Blueprint *blueprint)
@@ -244,11 +321,17 @@ handle_browse_select(GameState *state, Camera2D *camera, EditorState *editor_sta
     if (attr_idx < 0) {
         return;
     }
-    int sentinel_index = total_attr_count(state, entity);
-    if (attr_idx == sentinel_index) {
+    AttrRow row = attr_row_at(state, entity, attr_idx);
+    if (row.kind == ATTR_ROW_KIND_ADD) {
         fuzzy_finder_build_items(state, editor_state);
         editor_state->fuzzy_finder_scroll = 0;
-        editor_state->adding_attr = true;
+        if (row.section == ATTR_SECTION_PERSISTED) {
+            editor_state->adding_persisted_attr = true;
+        } else if (row.section == ATTR_SECTION_RUNTIME) {
+            editor_state->adding_attr = true;
+        } else {
+            editor_state->adding_blueprint_attr = true;
+        }
         editor_state->sub_mode = EDITOR_SUB_FUZZY_FINDER;
         return;
     }
@@ -258,7 +341,7 @@ handle_browse_select(GameState *state, Camera2D *camera, EditorState *editor_sta
     }
     if (attr->type == ATTR_BOOL) {
         attr->value.b = !attr->value.b;
-        if (is_blueprint_attr(entity, attr_idx)) {
+        if (is_blueprint_attr(state, entity, attr_idx)) {
             Blueprint *blueprint = find_blueprint_by_name(state, entity->blueprint_name.ptr);
             if (blueprint) {
                 propagate_collision_to_entities(state, blueprint);
@@ -303,7 +386,7 @@ static void handle_browse_navigate(const GameState *state, EditorState *editor_s
 
     int tree_total = tree_section_total(entity, blueprint);
     int attr_total = total_attr_count(state, entity);
-    int attr_sentinel = attr_total; /* the "+ADD" row */
+    int attr_last = attr_total - 1; /* last valid attr row (the final ADD sentinel) */
 
     if (editor_state->selected_tree_index >= 0) {
         int new_tree = editor_state->selected_tree_index + direction;
@@ -320,8 +403,8 @@ static void handle_browse_navigate(const GameState *state, EditorState *editor_s
         if (new_attr < 0) {
             editor_state->selected_attr_index = -1;
             editor_state->selected_tree_index = tree_total - 1;
-        } else if (new_attr > attr_sentinel) {
-            editor_state->selected_attr_index = attr_sentinel;
+        } else if (new_attr > attr_last) {
+            editor_state->selected_attr_index = attr_last;
         } else {
             editor_state->selected_attr_index = new_attr;
         }
@@ -329,7 +412,7 @@ static void handle_browse_navigate(const GameState *state, EditorState *editor_s
         if (direction > 0) {
             editor_state->selected_tree_index = 0;
         } else {
-            editor_state->selected_attr_index = attr_sentinel;
+            editor_state->selected_attr_index = attr_last;
         }
     }
 }
@@ -356,20 +439,21 @@ handle_browse_delete(GameState *state, EditorState *editor_state, WatchList *wat
         return;
     }
 
-    /* Attr section: X on instance attr -> remove attr; otherwise -> delete entity */
+    /* Attr section: X on persisted/runtime attr -> remove from that set;
+     * X on blueprint attr (or no attr selected) -> delete entity. */
+    Entity *del_entity = &state->gamedata.current_level.entities.data[del_sel];
     int del_attr = editor_state->selected_attr_index;
-    int del_sentinel = total_attr_count(state, &state->gamedata.current_level.entities.data[del_sel]);
-    if (del_attr >= 0 && del_attr < del_sentinel &&
-        !is_blueprint_attr(&state->gamedata.current_level.entities.data[del_sel], del_attr)) {
-        Entity *del_entity = &state->gamedata.current_level.entities.data[del_sel];
-        Attribute *del_target = &del_entity->attrs.entries.data[del_attr];
+    AttrRow del_row = attr_row_at(state, del_entity, del_attr);
+    if (del_row.kind == ATTR_ROW_KIND_ATTR &&
+        (del_row.section == ATTR_SECTION_PERSISTED || del_row.section == ATTR_SECTION_RUNTIME)) {
+        AttrSet *target = attr_section_set(state, del_entity, del_row.section);
+        Attribute *del_target = &target->entries.data[del_row.index_in_section];
         Allocator alloc = allocator_arena(&state->gamedata_arena);
-        attr_remove(&alloc, &del_entity->attrs, del_target->name.ptr);
+        attr_remove(&alloc, target, del_target->name.ptr);
         editor_state->selected_attr_index = -1;
         undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
                                strv_from_cstr("Remove attribute"));
-    } else if (del_attr < 0 || (del_attr < del_sentinel &&
-                                is_blueprint_attr(&state->gamedata.current_level.entities.data[del_sel], del_attr))) {
+    } else if (del_attr < 0 || (del_row.kind == ATTR_ROW_KIND_ATTR && del_row.section == ATTR_SECTION_BLUEPRINT)) {
         delete_selected_entity(state, editor_state, watches);
         undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
                                strv_from_cstr("Delete entity"));
