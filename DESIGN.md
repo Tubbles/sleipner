@@ -1047,6 +1047,37 @@ Rules that prevent memory corruption when modifying the codebase:
 9. **Vec growth invalidates pointers.** Never hold a pointer across a push — doubly
    critical for undo since snapshots capture `.data` pointers.
 
+## Bug Investigation Discipline
+
+Two non-negotiable rules govern how every bug report is handled in this project.
+CLAUDE.md carries the operational details; this section is the design-level
+statement of intent.
+
+**1. Every bug report starts with a failing integration test.** Before anyone
+hypothesizes causes, reads unrelated code, adds diagnostic logging, or proposes
+fixes, the first commit on the bug is a headless integration test that
+reproduces the reported behavior against real gamedata. The failing test IS the
+bug specification — it pins down the exact state, inputs, and assertion. Root
+cause analysis then iterates against a stable repro, not against guesses. The
+same test doubles as the regression guard when the fix lands. A bug
+investigation that does not begin with a test is not in line with project
+discipline and must be restarted.
+
+**2. User reports are authoritative.** The user's description of the bug is
+ground truth. Do not construct hypotheses that amount to "the user did X by
+accident" or "the user misread what they saw" without first asking them. Visible
+side effects the user would have noticed (toasts, sounds, animations, overlay
+text, obvious UI state) are strong negative evidence — if your hypothesis would
+have produced one and the report doesn't mention it, the hypothesis is likely
+dead before it's written. Ask clarifying questions instead of filling gaps with
+guesses. "User error" is not an acceptable first hypothesis without explicit
+confirmation.
+
+Both rules exist because we once burned a planning cycle hypothesizing about
+accidental D-pad presses causing a player-position reset, when a one-line
+question and a five-line integration test would have resolved it correctly.
+See CLAUDE.md → *Bug Investigation Discipline* for the operational workflow.
+
 ## Roadmap
 
 ### Phase 1 — Foundation (DONE)

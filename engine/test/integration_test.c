@@ -589,3 +589,74 @@ void test_integration_transition_changes_level(void)
 
     game_free(&diag, &state);
 }
+
+/* Bug: "after panning around in editor for a little while, the player's
+ * position gets reset". This is the initial failing-test repro — it
+ * describes the user's reported scenario at the coarsest integration
+ * level. If this passes, the repro is not yet correct and we need more
+ * specifics from the user about the exact sequence that triggers the
+ * reset. If it fails, we have a stable pin for root-cause work.
+ *
+ * Scenario (per the user's report):
+ *   1. Load gamedata, player at TOML start position (160, 120).
+ *   2. Play mode: walk the player visibly away from the start.
+ *   3. Toggle editor mode.
+ *   4. Pan the editor camera with the left stick for a while.
+ *   5. Assert the player position has NOT been reset.
+ */
+void test_integration_editor_pan_does_not_reset_player_position(void)
+{
+    GameState state = {0};
+    Diag diag = {&state.error, &state.debug};
+    TEST_ASSERT_TRUE(game_init(&diag, &state, (RectU32){320, 240}));
+    TEST_ASSERT_TRUE(game_load_gamedata(
+        &diag, &state, (GamedataParams){.toml_string = fixture_gamedata, .texture_lookup = dummy_lookup}));
+
+    /* Player starts at TOML position (160, 120). */
+    const Entity *player = game_get_player_const(&state);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 160.0F, player->position.x);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 120.0F, player->position.y);
+
+    /* Play mode: walk the player down-left for 60 frames so the position
+     * visibly diverges from the TOML start. (Away from the rock at 200,120
+     * and the tree at 50,50 — take a path clear of both.) */
+    state.editor_mode = false;
+    InputState walk_input = {0};
+    walk_input.left_stick.x = 0.0F;
+    walk_input.left_stick.y = 1.0F;
+    for (int iteration = 0; iteration < 60; iteration++) {
+        game_update(&diag, &state, walk_input, 1.0F / 60.0F);
+    }
+
+    player = game_get_player_const(&state);
+    float walked_x = player->position.x;
+    float walked_y = player->position.y;
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 160.0F, walked_x); /* unchanged in X */
+    TEST_ASSERT_TRUE(walked_y > 120.5F);              /* moved down */
+
+    /* Toggle to editor mode. Player position must be preserved across
+     * the mode toggle. */
+    state.editor_mode = true;
+    player = game_get_player_const(&state);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, walked_x, player->position.x);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, walked_y, player->position.y);
+
+    /* Editor pan: drive the left stick for 600 frames (10 simulated
+     * seconds). game_update still runs every frame in editor mode; the
+     * bug report says "after panning around for a little while the
+     * player's position gets reset". This is the window in which the
+     * reset is alleged to happen. */
+    InputState pan_input = {0};
+    pan_input.left_stick.x = 1.0F;
+    pan_input.left_stick.y = 0.0F;
+    for (int iteration = 0; iteration < 600; iteration++) {
+        game_update(&diag, &state, pan_input, 1.0F / 60.0F);
+    }
+
+    /* The player must still be exactly where we left them. */
+    player = game_get_player_const(&state);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, walked_x, player->position.x);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, walked_y, player->position.y);
+
+    game_free(&diag, &state);
+}

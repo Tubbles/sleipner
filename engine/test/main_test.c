@@ -58,6 +58,7 @@ void test_integration_enter_trigger_fires_only_once(void);
 void test_integration_real_gamedata_loads(void);
 void test_integration_real_gamedata_all_levels_load(void);
 void test_integration_transition_changes_level(void);
+void test_integration_editor_pan_does_not_reset_player_position(void);
 
 /* toml_emitter_test.c */
 void test_toml_emit_blueprints(void);
@@ -151,6 +152,7 @@ int main(void)
     RUN_TEST(test_integration_real_gamedata_loads);
     RUN_TEST(test_integration_real_gamedata_all_levels_load);
     RUN_TEST(test_integration_transition_changes_level);
+    RUN_TEST(test_integration_editor_pan_does_not_reset_player_position);
 
     RUN_TEST(test_level_load_first);
     RUN_TEST(test_level_load_by_name);

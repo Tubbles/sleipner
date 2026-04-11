@@ -236,7 +236,38 @@ Two levels of testing, both run in CI:
 - **Every new feature ships with tests.** Unit tests for the pure logic, integration tests for the subsystem interaction. A feature is not done until its tests are written.
 - **Tests document behavior.** Integration test scenarios serve as executable documentation of how the game systems work together.
 - **Test the interesting cases.** Don't test trivial getters. Test state transitions, edge cases, rule interactions, and anything that has broken before.
-- **Regression tests for every bug.** When you fix a bug, always add a test for it — no exceptions. The test serves two purposes: (1) verify the fix actually works, and (2) prevent the bug from reappearing in the future. Write the test at the appropriate level (unit for pure logic bugs, integration for subsystem interaction bugs). A bug fix without a regression test is not complete.
+- **Bugs get tests FIRST, not last.** See the next section — every bug report begins with a failing integration test, which then doubles as the regression guard.
+
+## Bug Investigation Discipline
+
+**READ THIS BEFORE INVESTIGATING ANY BUG REPORT.** Two rules, both non-negotiable:
+
+### 1. Reproduce before hypothesizing — write the test first
+
+The **first** action on any bug report is to write a failing integration test — headless engine, real gamedata, real inputs — that reproduces the reported behavior. The test lives in `engine/test/integration_test.c` (or a focused unit test if the bug is purely in pure logic). It is the first commit on the bug, not the last.
+
+**Do not** add diagnostic logging, hypothesize causes, read unrelated code, or propose fixes until you have a failing test that reproduces the bug for the reason the user reported. Logging is second-best: it ships a build and depends on the user to repro manually. A failing test is a concrete, iteration-ready pin on the exact behavior.
+
+**Strict bug-fix workflow:**
+1. Write a failing integration test that reproduces the reported behavior.
+2. Run it — confirm it fails for the reported reason (not an unrelated reason).
+3. Investigate the root cause with the test as a stable repro.
+4. Fix the code.
+5. Re-run the test — confirm it passes.
+6. Commit test + fix together.
+
+The failing test written in step 1 IS the regression test. Don't write it twice. If you cannot reproduce after reasonable effort, stop and ask the user for concrete specifics (exact input sequence, exact level, exact toggle state, what UI appeared around the moment of the bug). Never fill the gaps with guesses.
+
+### 2. User reports are authoritative — never blame the user
+
+Treat what the user says as ground truth. Do **not** construct hypotheses that amount to "the user did X accidentally" or "the user misread what they saw" without first asking them directly.
+
+Before writing any hypothesis into a plan:
+- Re-read the report looking for evidence that already falsifies it. Visible side effects the user would have mentioned — toasts, sounds, animations, overlay text, obvious state changes — are strong negative evidence. If your hypothesis would have produced one of those and the user didn't mention it, the hypothesis is likely dead.
+- If the hypothesis requires the user to have done something they didn't mention, ask with `AskUserQuestion` first. One direct yes/no question usually kills or confirms it in seconds.
+- Hypotheses consistent with "the user did exactly what they said" are high-prior. Hypotheses that require unreported user input are low-prior.
+
+**"The user must have pressed X by accident" is almost never the right answer, and it is never an acceptable first hypothesis without explicit confirmation.**
 
 ## Diagnostics: Logging and Error Handling
 
