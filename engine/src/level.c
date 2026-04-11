@@ -50,14 +50,43 @@ static void parse_instance_overrides(DebugState *dbg, Allocator *alloc, Entity *
     int total_keys = toml_table_nkval(entity_table) + toml_table_narr(entity_table) + toml_table_ntab(entity_table);
     for (int key_index = 0; key_index < total_keys; key_index++) {
         const char *key = toml_key_in(entity_table, key_index);
-        if (!key || strcmp(key, "blueprint") == 0) {
+        if (!key || strcmp(key, "blueprint") == 0 || strcmp(key, "pos") == 0) {
             continue;
         }
-        if (!parse_instance_attr(alloc, &entity->attrs, entity_table, key)) {
+        if (!parse_instance_attr(alloc, &entity->persisted_attrs, entity_table, key)) {
             debug_log(dbg, "ent: attr '%s' failed to set (set full)", key);
             break;
         }
     }
+}
+
+/* Merge every attribute from src into dest (overwriting existing entries by name).
+ * Used to initialize the runtime attrs layer from persisted_attrs at load time. */
+static bool copy_attr_set(Allocator *alloc, AttrSet *dest, const AttrSet *src)
+{
+    for (int index = 0; index < src->entries.count; index++) {
+        const Attribute *src_attr = &src->entries.data[index];
+        const char *name = src_attr->name.ptr;
+        bool success = false;
+        switch (src_attr->type) {
+        case ATTR_FLOAT:
+            success = attr_set_float(alloc, dest, name, src_attr->value.f);
+            break;
+        case ATTR_INT:
+            success = attr_set_int(alloc, dest, name, src_attr->value.i);
+            break;
+        case ATTR_BOOL:
+            success = attr_set_bool(alloc, dest, name, src_attr->value.b);
+            break;
+        case ATTR_STRING:
+            success = attr_set_string(alloc, dest, (AttrStringPair){.name = name, .value = src_attr->value.str.ptr});
+            break;
+        }
+        if (!success) {
+            return false;
+        }
+    }
+    return true;
 }
 
 #define MAX_CHILD_DEPTH 4
@@ -227,6 +256,10 @@ static void parse_entity(Diag *diag,
     }
     entity_temp.id = level->next_entity_id++;
     parse_instance_overrides(diag->debug, alloc, &entity_temp, entity_table);
+    if (!copy_attr_set(alloc, &entity_temp.attrs, &entity_temp.persisted_attrs)) {
+        debug_log(diag->debug, "ent[%d]: persisted->runtime attr copy failed", entity_index);
+        return;
+    }
     if (!vec_entity_push(&level->entities, entity_temp)) {
         debug_log(diag->debug, "ent[%d]: out of memory", entity_index);
         return;
@@ -360,6 +393,7 @@ void level_free(Allocator *alloc, Level *level)
     for (int index = 0; index < level->entities.count; index++) {
         str_free(&level->entities.data[index].blueprint_name);
         str_free(&level->entities.data[index].tag);
+        attr_set_free(alloc, &level->entities.data[index].persisted_attrs);
         attr_set_free(alloc, &level->entities.data[index].attrs);
     }
     vec_entity_free(&level->entities);

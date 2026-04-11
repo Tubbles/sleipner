@@ -22,6 +22,7 @@ typedef struct {
 typedef struct {
     Texture2D *texture;
 
+    AttrSet persisted_attrs;
     AttrSet attrs;
     Str blueprint_name;
     Str tag;
