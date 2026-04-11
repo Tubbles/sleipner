@@ -405,6 +405,122 @@ void test_toml_emit_health(void)
     arena_free(&arena2);
 }
 
+static const char *persisted_attr_fixture = "[[blueprint]]\n"
+                                            "name = \"chest\"\n"
+                                            "texture = \"chest.png\"\n"
+                                            "src = [0, 0, 16, 16]\n"
+                                            "collision_offset = [0, 0]\n"
+                                            "collision_size = [16, 16]\n"
+                                            "\n"
+                                            "[[level]]\n"
+                                            "name = \"test\"\n"
+                                            "size = [320, 240]\n"
+                                            "\n"
+                                            "[[level.entity]]\n"
+                                            "blueprint = \"chest\"\n"
+                                            "pos = [40, 60]\n"
+                                            "opened = true\n"
+                                            "coins = 25\n"
+                                            "owner = \"hero\"\n";
+
+void test_toml_emit_persisted_attrs(void)
+{
+    Arena arena;
+    TEST_ASSERT_TRUE(arena_init(&test_err, &arena));
+    BlueprintTable blueprints = {0};
+    Level level = {0};
+
+    toml_table_t *root = parse_toml(persisted_attr_fixture);
+    TEST_ASSERT_NOT_NULL(root);
+    blueprints_load(&test_diag, &blueprints, root, &arena);
+    TEST_ASSERT_TRUE(
+        level_load(&test_diag, &level, root, "test", &blueprints, dummy_lookup, nullptr, &test_heap_alloc));
+    toml_free(root);
+
+    /* Confirm loader placed overrides in persisted_attrs, and runtime mirrors them */
+    TEST_ASSERT_EQUAL_INT(1, level.entities.count);
+    const Entity *entity = &level.entities.data[0];
+    TEST_ASSERT_EQUAL_INT(1, attr_get_bool(&entity->persisted_attrs, "opened", 0));
+    TEST_ASSERT_EQUAL_INT(25, attr_get_int(&entity->persisted_attrs, "coins", -1));
+    TEST_ASSERT_EQUAL_STRING("hero", attr_get_string(&entity->persisted_attrs, "owner"));
+    TEST_ASSERT_EQUAL_INT(1, attr_get_bool(&entity->attrs, "opened", 0));
+    TEST_ASSERT_EQUAL_INT(25, attr_get_int(&entity->attrs, "coins", -1));
+
+    /* Emit and verify the persisted values appear on the [[level.entity]] line */
+    char output[4096];
+    int written = toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &level, 1);
+    TEST_ASSERT_TRUE(written > 0);
+
+    TEST_ASSERT_NOT_NULL(strstr(output, "blueprint = \"chest\""));
+    TEST_ASSERT_NOT_NULL(strstr(output, "pos = [40, 60]"));
+    TEST_ASSERT_NOT_NULL(strstr(output, "opened = true"));
+    TEST_ASSERT_NOT_NULL(strstr(output, "coins = 25"));
+    TEST_ASSERT_NOT_NULL(strstr(output, "owner = \"hero\""));
+
+    /* Runtime mutation to attrs must NOT affect persisted emission */
+    TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, (AttrSet *)&entity->attrs, "coins", 999));
+    char output2[4096];
+    int written2 = toml_emit_gamedata(&test_err, output2, (int)sizeof(output2), &blueprints, &level, 1);
+    TEST_ASSERT_TRUE(written2 > 0);
+    TEST_ASSERT_NOT_NULL(strstr(output2, "coins = 25"));
+    TEST_ASSERT_NULL(strstr(output2, "coins = 999"));
+
+    /* Round-trip: re-parse the emitted output and confirm persisted_attrs match */
+    Arena arena2;
+    TEST_ASSERT_TRUE(arena_init(&test_err, &arena2));
+    BlueprintTable blueprints2 = {0};
+    Level level2 = {0};
+
+    toml_table_t *root2 = parse_toml(output);
+    TEST_ASSERT_NOT_NULL(root2);
+    blueprints_load(&test_diag, &blueprints2, root2, &arena2);
+    TEST_ASSERT_TRUE(
+        level_load(&test_diag, &level2, root2, "test", &blueprints2, dummy_lookup, nullptr, &test_heap_alloc));
+    toml_free(root2);
+
+    TEST_ASSERT_EQUAL_INT(1, level2.entities.count);
+    const Entity *entity2 = &level2.entities.data[0];
+    TEST_ASSERT_EQUAL_INT(1, attr_get_bool(&entity2->persisted_attrs, "opened", 0));
+    TEST_ASSERT_EQUAL_INT(25, attr_get_int(&entity2->persisted_attrs, "coins", -1));
+    TEST_ASSERT_EQUAL_STRING("hero", attr_get_string(&entity2->persisted_attrs, "owner"));
+
+    test_level_free(&level);
+    test_level_free(&level2);
+    arena_free(&arena);
+    arena_free(&arena2);
+}
+
+void test_toml_emit_no_persisted_attrs(void)
+{
+    /* Entity without instance overrides — output should have no extra keys */
+    Arena arena;
+    TEST_ASSERT_TRUE(arena_init(&test_err, &arena));
+    BlueprintTable blueprints = {0};
+    Level level = {0};
+
+    toml_table_t *root = parse_toml(fixture_gamedata);
+    TEST_ASSERT_NOT_NULL(root);
+    blueprints_load(&test_diag, &blueprints, root, &arena);
+    TEST_ASSERT_TRUE(
+        level_load(&test_diag, &level, root, nullptr, &blueprints, dummy_lookup, nullptr, &test_heap_alloc));
+    toml_free(root);
+
+    /* Persisted sets must be empty even though runtime got auto-injected solid */
+    for (int index = 0; index < level.entities.count; index++) {
+        TEST_ASSERT_EQUAL_INT(0, level.entities.data[index].persisted_attrs.entries.count);
+    }
+
+    char output[4096];
+    int written = toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &level, 1);
+    TEST_ASSERT_TRUE(written > 0);
+
+    /* Auto-injected solid must not appear in the output */
+    TEST_ASSERT_NULL(strstr(output, "solid ="));
+
+    test_level_free(&level);
+    arena_free(&arena);
+}
+
 static const char *rule_fixture = "[[blueprint]]\n"
                                   "name = \"chest\"\n"
                                   "texture = \"chest.png\"\n"

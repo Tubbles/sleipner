@@ -423,6 +423,12 @@ static int emit_levels(char *buffer, int capacity, int offset, const Level *leve
             offset = emit_append(buffer, capacity, offset, "blueprint = \"%s\"\n", entity->blueprint_name.ptr);
             offset = emit_append(buffer, capacity, offset, "pos = [%d, %d]\n", (int)entity->position.x,
                                  (int)entity->position.y);
+            for (int attr_index = 0; attr_index < entity->persisted_attrs.entries.count; attr_index++) {
+                const Attribute *attr = &entity->persisted_attrs.entries.data[attr_index];
+                offset = emit_append(buffer, capacity, offset, "%s = ", attr->name.ptr);
+                offset = emit_attr_value(buffer, capacity, offset, attr);
+                offset = emit_append(buffer, capacity, offset, "\n");
+            }
             offset = emit_append(buffer, capacity, offset, "\n");
         }
     }

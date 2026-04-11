@@ -69,6 +69,8 @@ void test_toml_emit_blueprint_children(void);
 void test_toml_emit_skips_child_entities(void);
 void test_toml_emit_custom_attrs(void);
 void test_toml_emit_health(void);
+void test_toml_emit_persisted_attrs(void);
+void test_toml_emit_no_persisted_attrs(void);
 void test_toml_emit_rules(void);
 
 /* undo_test.c */
@@ -200,6 +202,8 @@ int main(void)
     RUN_TEST(test_toml_emit_skips_child_entities);
     RUN_TEST(test_toml_emit_custom_attrs);
     RUN_TEST(test_toml_emit_health);
+    RUN_TEST(test_toml_emit_persisted_attrs);
+    RUN_TEST(test_toml_emit_no_persisted_attrs);
     RUN_TEST(test_toml_emit_rules);
 
     return UNITY_END();
