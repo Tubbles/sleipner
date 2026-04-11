@@ -623,23 +623,37 @@ static void handle_transition(Diag *diag, GameState *state, UndoHistory *undo_hi
                            strv_from_cstr("Level loaded"));
 }
 
+/* Reset editor-side state after a gamedata load: drop the old undo chain,
+ * push a fresh baseline snapshot, and clear transient editor UI state.
+ * The sentinel -1 init is load-bearing — a zero-init EditorState has
+ * radial_confirmed = 0 which is a valid radial sector and silently breaks
+ * handle_browse_input. Any reload path must go through here. */
+static void reset_editor_after_reload(GameState *state,
+                                      EditorState *editor_state,
+                                      WatchList *watches,
+                                      UndoHistory *undo_history,
+                                      Strv baseline_description)
+{
+    undo_history_clear(undo_history);
+    undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
+                           baseline_description);
+    *editor_state = (EditorState){.top_mode = EDITOR_TOP_SCENE,
+                                  .selected_entity_index = -1,
+                                  .sub_mode = EDITOR_SUB_BROWSE,
+                                  .selected_attr_index = -1,
+                                  .radial_confirmed = -1,
+                                  .radial_selected = -1,
+                                  .selected_blueprint_index = -1,
+                                  .blueprint_attr_index = -1,
+                                  .blueprint_tree_index = -1};
+    *watches = (WatchList){0};
+}
+
 static void handle_hot_reload(
     Diag *diag, GameState *state, EditorState *editor_state, WatchList *watches, UndoHistory *undo_history)
 {
     if (poll_hot_reload(diag, state)) {
-        undo_history_clear(undo_history);
-        undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
-                               strv_from_cstr("Reload"));
-        *editor_state = (EditorState){.top_mode = EDITOR_TOP_SCENE,
-                                      .selected_entity_index = -1,
-                                      .sub_mode = EDITOR_SUB_BROWSE,
-                                      .selected_attr_index = -1,
-                                      .radial_confirmed = -1,
-                                      .radial_selected = -1,
-                                      .selected_blueprint_index = -1,
-                                      .blueprint_attr_index = -1,
-                                      .blueprint_tree_index = -1};
-        *watches = (WatchList){0};
+        reset_editor_after_reload(state, editor_state, watches, undo_history, strv_from_cstr("Reload"));
     }
 }
 
@@ -691,6 +705,24 @@ static void handle_save_input(Diag *diag, GameState *state, UndoHistory *undo_hi
             debug_log(diag->debug, "gamedata saved");
         }
     }
+}
+
+/* Manual reload: discard in-memory edits and re-read gamedata from disk.
+ * The automatic hot-reload only fires on external mtime changes; this
+ * binding covers the "revert my in-game edits" case. Dirty state is
+ * logged but not confirmed — matches save's no-confirmation policy. */
+static void handle_load_input(
+    Diag *diag, GameState *state, EditorState *editor_state, WatchList *watches, UndoHistory *undo_history)
+{
+    if (!toggle_pressed((ToggleBinding){KEY_F10, GAMEPAD_BUTTON_MIDDLE_LEFT})) {
+        return;
+    }
+    bool was_dirty = undo_history_is_dirty(undo_history);
+    debug_log(diag->debug, "gamedata: manual reload requested (dirty=%s)", was_dirty ? "yes" : "no");
+    load_gamedata(diag, state, nullptr);
+    reset_editor_after_reload(state, editor_state, watches, undo_history, strv_from_cstr("Manual reload"));
+    editor_state->toast_text = strv_from_cstr("Reloaded from disk");
+    editor_state->toast_timer = 2.0F;
 }
 
 static void handle_place_input(Diag *diag,
@@ -762,6 +794,7 @@ static void handle_editor_input(Diag *diag,
                                 float delta_time)
 {
     handle_save_input(diag, state, undo_history);
+    handle_load_input(diag, state, editor_state, watches, undo_history);
     handle_mode_transitions(state, editor_state);
     if (editor_state->sub_mode == EDITOR_SUB_DRAG) {
         handle_drag_input(state, editor_state, undo_history, input, delta_time);
