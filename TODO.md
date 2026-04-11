@@ -61,5 +61,20 @@
 
 ## misc
 
+- improve integration test framework / ergonomics for black-box bug-repro
+  tests: today the editor's button bindings read raylib globals directly
+  and there is no headless frame entry point, so driving a bug like "press
+  LEFT in the editor, assert the player didn't move" end-to-end is
+  prohibitively painful. Make it cheap and idiomatic. See DESIGN.md §
+  "Test ergonomics for black-box integration testing" and CLAUDE.md Bug
+  Investigation Discipline rule 3.
 - add persisted attrs for children in toml emit and editor ui
 - normalize stick input to unit circle
+- pressing escape on a computer exits the game, not "b/esc back" as described in
+  various places
+- handle sprite z-fighting
+- camera shouldn't be "big pixel" locked, it should pan smoothly to decrease
+  motion sickness
+- for some reason, when running against the wall while indoors significantly
+  warps the sprite. but curiously not while running north direction, only south
+  east and west

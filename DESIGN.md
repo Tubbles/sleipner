@@ -1073,10 +1073,58 @@ dead before it's written. Ask clarifying questions instead of filling gaps with
 guesses. "User error" is not an acceptable first hypothesis without explicit
 confirmation.
 
-Both rules exist because we once burned a planning cycle hypothesizing about
-accidental D-pad presses causing a player-position reset, when a one-line
-question and a five-line integration test would have resolved it correctly.
-See CLAUDE.md → *Bug Investigation Discipline* for the operational workflow.
+**3. Integration tests for bugs must drive the game as a black box.** A bug
+report is a claim about externally observable behavior — what the user did at
+the input layer, what the user saw at the output layer. A bug-repro test must
+live entirely between those two boundaries. Inputs are synthetic `InputState`
+values (or their moral equivalent at the top-level frame entry point) fed
+through the real input pipeline; outputs are observable game state like entity
+positions, level name, attribute values, or toast text. Internal functions,
+arena offsets, undo cursors, and handler names must never appear in a
+bug-repro test body. If the internal mechanism is refactored but the
+user-visible behavior is preserved, the test must stay green. Conversely, if
+the internal mechanism is fixed in the wrong place — or renamed, or no-opped
+— the test must still fail, because the keyboard→pixel path is still broken.
+A test that can be silenced by touching an internal helper is not a
+regression test, it is a unit test in disguise, and it creates dangerous
+false confidence. See CLAUDE.md → *Bug Investigation Discipline* rule 3 for
+the worked anti-pattern and the writing heuristic.
+
+All three rules exist because of real mistakes we want to lock out:
+
+- Rule 1 came from proposing diagnostic-log commits instead of a repro test
+  on a player-position-reset bug.
+- Rule 2 came from blaming "accidental D-pad presses" on that same bug
+  without asking the user, when visible side effects the user would have
+  mentioned (no toast, no overlay, no indication) already falsified it.
+- Rule 3 came from writing a "repro test" for that bug that reached into the
+  engine and called the undo helper directly, bypassing the keyboard and the
+  editor input handler — so the test would have passed even if the real fix
+  had unbound the key entirely. Worse than no test, because it would have
+  green-lit the wrong fix.
+
+See CLAUDE.md → *Bug Investigation Discipline* for the operational workflow,
+and § *Headless input and the test frame loop* below for the test
+infrastructure direction that makes rule 3 ergonomic to follow.
+
+## Test ergonomics for black-box integration testing
+
+**Intent.** Rule 3 above requires bug-repro tests to drive the game as a
+black box — inputs through the real input layer, outputs as observable game
+state. Today, writing such a test for anything that touches the editor input
+path is prohibitively painful, because the editor's button bindings read
+raylib globals directly and there is no single headless frame entry point
+that tests can drive. As a result, the path of least resistance for any
+agent (human or otherwise) writing a bug-repro test is to skip layers — the
+exact anti-pattern rule 3 forbids.
+
+**Open work item:** improve the integration test framework and its
+ergonomics so that writing a black-box bug-repro test — "press KEY_LEFT for
+two seconds, assert the player didn't move" — is a few lines, reads like the
+bug report, and requires no knowledge of the engine's internal handler
+shape. The specific architecture is not pinned yet; it will be designed
+when we take the work on. Until it exists, we accept that bug-repro tests
+for editor-path bugs are going to be scoped narrowly or deferred.
 
 ## Roadmap
 

@@ -269,6 +269,23 @@ Before writing any hypothesis into a plan:
 
 **"The user must have pressed X by accident" is almost never the right answer, and it is never an acceptable first hypothesis without explicit confirmation.**
 
+### 3. Integration tests for bugs must drive the game as a black box
+
+The failing test that reproduces a bug is a claim about **external** behavior — what the user sees on screen, what they physically did to the controller or keyboard, and what the game responded with. The test must be written in those terms. It must not skip layers to reach the "obvious" internal mechanism.
+
+**Concretely:**
+
+- **Inputs go through the real input layer.** Build an `InputState` (or raise it through whatever top-level frame entry point tests use) and feed it to the frame loop. Do not call internal editor handlers, undo helpers, rule firings, or subsystem functions directly in a bug-repro test.
+- **Outputs are observable game state.** Assert on things a player would see: entity positions, the current level name, attribute values, toast text, flags that gate progression. Do not assert on arena offsets, linked-list cursors, map bucket counts, or other internal plumbing.
+- **The test must still fail if a "fix" touches the wrong layer.** If you can silence the test by renaming or no-opping an internal function without changing behavior at the keyboard→pixel boundary, the test is wired to the wrong layer. Bug-repro tests must only go green when the externally observable behavior changes.
+- **The test must still pass after any refactor that preserves behavior.** Swapping out the undo strategy, restructuring the editor handlers, renaming internal functions — none of these should break a bug-repro test. If they do, the test was over-coupled.
+
+**Anti-pattern worked example.** The bug report says "I pressed the arrow key in the editor and the player snapped back to start." Calling `undo_history_step_back` directly in the test is **not** a reproduction of that bug. It skips the keyboard, skips `input_read_keyboard`, skips the frame dispatcher, skips `handle_browse_input`, and skips the `toggle_pressed` call that the real keypress would fire. What's left is a unit test of the undo subsystem wearing an integration test's name. If the real fix were to unbind `KEY_LEFT` from undo entirely, the test would still pass against the broken code — which is exactly the opposite of what a regression test must do.
+
+**Heuristic while writing a bug-repro test:** write every step in the vocabulary of the bug report. "I pressed the arrow key" → the test presses the arrow key (via the input layer). "The player snapped back" → the test asserts on the player's position. Any step of the test that uses vocabulary from the engine's internals — function names, struct fields, arena operations — is a smell. If you catch yourself typing `undo_history_`, `gamedata_arena_`, `handle_*_input`, or any other internal symbol into the test body, stop: you are testing the wrong layer.
+
+If the input layer does not yet support driving the path headlessly (e.g. a binding reads raylib globals directly), the correct response is to **extend the test infrastructure** so it can, not to reach past the abstraction. Improving the integration test framework so black-box bug-repro tests are ergonomic is tracked as open work — see DESIGN.md § "Test ergonomics for black-box integration testing".
+
 ## Diagnostics: Logging and Error Handling
 
 Two separate concerns, one header (`debug.h`):
