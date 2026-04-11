@@ -61,6 +61,5 @@
 
 ## misc
 
-- remove special handling around the solid attr, no implicit handling at this
-  level
 - add persisted attrs for children in toml emit and editor ui
+- normalize stick input to unit circle

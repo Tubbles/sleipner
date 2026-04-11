@@ -145,10 +145,6 @@ static bool spawn_children_for(ErrorState *err,
                       attr_get_string(&child_blueprint->attrs, "name"));
             return false;
         }
-        if (!attr_get(&child_blueprint->attrs, "solid") && !attr_get(&child.attrs, "solid")) {
-            bool is_solid = (child_spec.collision_size.x > 0.0F) || (child_spec.collision_size.y > 0.0F);
-            (void)attr_set_bool(alloc, &child.attrs, "solid", is_solid);
-        }
         child.id = level->next_entity_id++;
         child.parent_index = parent_index;
         child.offset = child_def->offset;
@@ -256,10 +252,6 @@ static void parse_entity(Diag *diag,
         debug_log(diag->debug, "ent[%d]: persisted->runtime attr copy failed", entity_index);
         return;
     }
-    if (!attr_get(&blueprint->attrs, "solid") && !attr_get(&entity_temp.attrs, "solid")) {
-        bool is_solid = (spec.collision_size.x > 0.0F) || (spec.collision_size.y > 0.0F);
-        (void)attr_set_bool(alloc, &entity_temp.attrs, "solid", is_solid);
-    }
     if (!vec_entity_push(&level->entities, entity_temp)) {
         debug_log(diag->debug, "ent[%d]: out of memory", entity_index);
         return;
@@ -319,10 +311,6 @@ bool level_spawn_single_child(Diag *diag,
         error_wrap(diag->error, "level_spawn_single_child");
         return false;
     }
-    if (!attr_get(&child_blueprint->attrs, "solid") && !attr_get(&child.attrs, "solid")) {
-        bool is_solid = (child_spec.collision_size.x > 0.0F) || (child_spec.collision_size.y > 0.0F);
-        (void)attr_set_bool(alloc, &child.attrs, "solid", is_solid);
-    }
     child.id = level->next_entity_id++;
     child.parent_index = parent_index;
     child.offset = child_def->offset;
@@ -368,10 +356,6 @@ bool level_spawn_entity(Diag *diag,
     if (!entity_init(&entity, spec, position, alloc)) {
         error_wrap(diag->error, "level_spawn_entity");
         return false;
-    }
-    if (!attr_get(&blueprint->attrs, "solid") && !attr_get(&entity.attrs, "solid")) {
-        bool is_solid = (spec.collision_size.x > 0.0F) || (spec.collision_size.y > 0.0F);
-        (void)attr_set_bool(alloc, &entity.attrs, "solid", is_solid);
     }
     entity.id = level->next_entity_id++;
     if (!vec_entity_push(&level->entities, entity)) {

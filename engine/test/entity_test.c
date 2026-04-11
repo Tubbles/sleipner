@@ -97,7 +97,7 @@ void test_entity_init_from_blueprint(void)
     TEST_ASSERT_EQUAL_INT(5, attr_get_scoped_int(&entity.attrs, defaults, "max_health", 0));
     TEST_ASSERT_TRUE(attr_get_scoped_bool(&entity.attrs, defaults, "visible", true));
     TEST_ASSERT_TRUE(attr_get_scoped_bool(&entity.attrs, defaults, "active", true));
-    /* solid is now set by level.c, not entity_init — check collision size instead */
+    /* solid is no longer auto-derived anywhere — blueprints declare it explicitly */
     TEST_ASSERT_TRUE(spec.collision_size.x > 0.0F || spec.collision_size.y > 0.0F);
     TEST_ASSERT_EQUAL_INT(-1, entity.parent_index);
     attr_set_free(&test_heap_alloc, &bp_attrs);
@@ -190,8 +190,8 @@ void test_entity_no_blueprint(void)
 
 void test_entity_solid_from_collision(void)
 {
-    /* Solid is no longer auto-derived in entity_init — it's set by level.c.
-     * Test the logic directly: no collision size means not solid. */
+    /* Solid is no longer auto-derived anywhere — blueprints must set it
+     * explicitly. Exercise the attr get/set path on a manually-set value. */
     Entity entity = {0};
     entity.parent_index = -1;
     TEST_ASSERT_TRUE(attr_set_bool(&test_heap_alloc, &entity.attrs, "solid", false));

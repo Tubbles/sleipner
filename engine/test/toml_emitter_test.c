@@ -505,7 +505,7 @@ void test_toml_emit_no_persisted_attrs(void)
         level_load(&test_diag, &level, root, nullptr, &blueprints, dummy_lookup, nullptr, &test_heap_alloc));
     toml_free(root);
 
-    /* Persisted sets must be empty even though runtime got auto-injected solid */
+    /* Persisted sets must be empty when no instance overrides were declared */
     for (int index = 0; index < level.entities.count; index++) {
         TEST_ASSERT_EQUAL_INT(0, level.entities.data[index].persisted_attrs.entries.count);
     }
@@ -514,7 +514,7 @@ void test_toml_emit_no_persisted_attrs(void)
     int written = toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &level, 1);
     TEST_ASSERT_TRUE(written > 0);
 
-    /* Auto-injected solid must not appear in the output */
+    /* Fixture has no solid attr, so nothing should be emitted for it */
     TEST_ASSERT_NULL(strstr(output, "solid ="));
 
     test_level_free(&level);
