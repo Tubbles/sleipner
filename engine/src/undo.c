@@ -84,13 +84,17 @@ void undo_history_step_back(UndoHistory *history,
                             Arena *gamedata_arena,
                             ArenaCheckpoint gamedata_base)
 {
-    if (!history->current) {
+    /* No-op at the left edge. Re-applying the current entry here would
+     * clobber any live runtime drift (e.g. play-mode player movement)
+     * with the entry's snapshot — that's how the reported
+     * "player position snaps to TOML start after editor pan" bug
+     * manifested. Stepping back from the baseline means there's
+     * nothing to undo; leave live state alone. */
+    if (!history->current || !history->current->prev) {
         return;
     }
-    if (history->current->prev) {
-        history->current = history->current->prev;
-        history->current_position--;
-    }
+    history->current = history->current->prev;
+    history->current_position--;
     restore_entry(history->current, gamedata, gamedata_arena, gamedata_base);
 }
 

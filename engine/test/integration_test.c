@@ -2,6 +2,8 @@
 #include "diag.h"
 #include "entity.h"
 #include "game.h"
+#include "strv.h"
+#include "undo.h"
 
 #include "toml.h"
 
@@ -658,5 +660,85 @@ void test_integration_editor_pan_does_not_reset_player_position(void)
     TEST_ASSERT_FLOAT_WITHIN(0.1F, walked_x, player->position.x);
     TEST_ASSERT_FLOAT_WITHIN(0.1F, walked_y, player->position.y);
 
+    game_free(&diag, &state);
+}
+
+/* --- Bug repro: editor undo-at-left-edge re-applies "Initial" snapshot ---
+ *
+ * User report: in a fresh Linux session, start → walk for a second → enter
+ * editor → pan for a couple seconds → player snaps back to TOML start.
+ *
+ * Suspected mechanism, wired up here in the test:
+ *   1. main.c pushes an "Initial" undo entry at startup, capturing the
+ *      freshly loaded level (player at TOML start).
+ *   2. The user enters play mode and walks the player.
+ *   3. The user toggles to editor mode — no new undo entry is pushed by
+ *      play-mode movement (play movement is not an editor edit).
+ *   4. In editor BROWSE, KEY_LEFT is bound to undo_history_step_back
+ *      (editor/core.c:596). On Linux the user is panning with the arrow
+ *      keys, so LEFT arrow fires at the left edge of the pan.
+ *   5. undo_history_step_back at the left edge (no prev entry) still
+ *      calls restore_entry on the current node (undo.c:82-95). That
+ *      memcpys the "Initial" arena bytes back over live state,
+ *      resetting the player to the TOML start position.
+ *
+ * This test drives the mechanism directly rather than through raylib
+ * input: push an Initial snapshot like main.c does, walk the player,
+ * toggle editor_mode, then call undo_history_step_back on the undo
+ * history (exactly what KEY_LEFT triggers). The player's position must
+ * survive.
+ *
+ * This test is expected to FAIL on an unfixed tree. The failure IS the
+ * bug specification. */
+void test_integration_editor_undo_at_left_edge_preserves_play_state(void)
+{
+    GameState state = {0};
+    Diag diag = {&state.error, &state.debug};
+    TEST_ASSERT_TRUE(game_init(&diag, &state, (RectU32){320, 240}));
+    TEST_ASSERT_TRUE(game_load_gamedata(
+        &diag, &state, (GamedataParams){.toml_string = fixture_gamedata, .texture_lookup = dummy_lookup}));
+
+    /* Replicate main.c:995-1009 — real startup pushes a baseline "Initial"
+     * snapshot immediately after loading gamedata. */
+    UndoHistory undo_history = {0};
+    TEST_ASSERT_TRUE(undo_history_init(&state.error, &undo_history));
+    undo_history_new_entry(&undo_history, &state.gamedata, &state.gamedata_arena, state.gamedata_base,
+                           strv_from_cstr("Initial"));
+
+    /* Player starts at TOML position (160, 120). */
+    const Entity *player = game_get_player_const(&state);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 160.0F, player->position.x);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 120.0F, player->position.y);
+
+    /* Play mode: walk the player so the position visibly diverges from
+     * the TOML start. */
+    state.editor_mode = false;
+    InputState walk_input = {0};
+    walk_input.left_stick.y = 1.0F;
+    for (int iteration = 0; iteration < 60; iteration++) {
+        game_update(&diag, &state, walk_input, 1.0F / 60.0F);
+    }
+
+    player = game_get_player_const(&state);
+    float walked_x = player->position.x;
+    float walked_y = player->position.y;
+    TEST_ASSERT_TRUE(walked_y > 120.5F); /* actually moved */
+
+    /* User toggles to editor mode. No editor edits happen here — the
+     * only undo entry in history is still the "Initial" one. */
+    state.editor_mode = true;
+
+    /* User pans with the arrow keys. When KEY_LEFT triggers at the
+     * left pan edge, editor/core.c:596-601 fires this call. */
+    undo_history_step_back(&undo_history, &state.gamedata, &state.gamedata_arena, state.gamedata_base);
+
+    /* The user did not perform any editor edits, so undo must be a no-op
+     * with respect to live state. The player must still be at the walked
+     * position. */
+    player = game_get_player_const(&state);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, walked_x, player->position.x);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, walked_y, player->position.y);
+
+    undo_history_free(&undo_history);
     game_free(&diag, &state);
 }

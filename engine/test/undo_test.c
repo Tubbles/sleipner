@@ -46,20 +46,36 @@ void test_undo_new_entry_and_step_back(void)
     ErrorState err = {0};
     TEST_ASSERT_TRUE(undo_history_init(&err, &history));
 
-    /* Allocate a value and take a snapshot. */
+    /* Baseline snapshot: value = 42. */
     int *value = alloc_dummy_value(&state, 42);
     undo_history_new_entry(&history, &state.gamedata, &state.gamedata_arena, state.gamedata_base,
-                           strv_from_cstr("Set value"));
+                           strv_from_cstr("Baseline"));
 
-    /* Modify the value after the snapshot. */
+    /* Edit 1: value = 99, push. */
     *value = 99;
+    undo_history_new_entry(&history, &state.gamedata, &state.gamedata_arena, state.gamedata_base,
+                           strv_from_cstr("Edit 1"));
+
+    /* Edit 2: value = 123, push. */
+    *value = 123;
+    undo_history_new_entry(&history, &state.gamedata, &state.gamedata_arena, state.gamedata_base,
+                           strv_from_cstr("Edit 2"));
+
+    /* Undo Edit 2 — moves current to Edit 1, restores 99. */
+    undo_history_step_back(&history, &state.gamedata, &state.gamedata_arena, state.gamedata_base);
     TEST_ASSERT_EQUAL_INT(99, *value);
 
-    /* Step back — should restore the value. */
+    /* Undo Edit 1 — moves current to Baseline, restores 42. */
     undo_history_step_back(&history, &state.gamedata, &state.gamedata_arena, state.gamedata_base);
-
-    /* The arena contents were restored — the pointer still points at the same arena address. */
     TEST_ASSERT_EQUAL_INT(42, *value);
+
+    /* Step back at the left edge — must be a no-op. Mutate live state
+     * first and verify step_back does NOT overwrite it with the baseline
+     * snapshot (that's the bug: editor undo at the left edge clobbering
+     * play-mode runtime state). */
+    *value = 77;
+    undo_history_step_back(&history, &state.gamedata, &state.gamedata_arena, state.gamedata_base);
+    TEST_ASSERT_EQUAL_INT(77, *value);
 
     undo_history_free(&history);
     teardown_state(&state);
