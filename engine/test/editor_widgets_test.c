@@ -424,6 +424,61 @@ void test_attr_add_by_name_creates_int_attr(void)
     arena_reset(&state.gamedata_arena);
 }
 
+void test_attr_add_by_name_persisted_targets_persisted_set(void)
+{
+    ErrorState err_state = {0};
+    DebugState dbg_state = {0};
+    Diag diag = {.error = &err_state, .debug = &dbg_state};
+    GameState state = {0};
+    TEST_ASSERT_TRUE(arena_init(&err_state, &state.gamedata_arena));
+    state.gamedata.current_level.entities.alloc = allocator_arena(&state.gamedata_arena);
+    Entity entity = {.id = 1, .parent_index = -1};
+    TEST_ASSERT_TRUE(vec_entity_push(&state.gamedata.current_level.entities, entity));
+    EditorState editor_state = {
+        .selected_entity_index = 0,
+        .top_mode = EDITOR_TOP_SCENE,
+        .adding_persisted_attr = true,
+    };
+
+    TEST_ASSERT_TRUE(add_attr_by_name(&diag, &state, &editor_state, "hp"));
+
+    Entity *result = &state.gamedata.current_level.entities.data[0];
+    TEST_ASSERT_EQUAL_INT(1, result->persisted_attrs.entries.count);
+    TEST_ASSERT_EQUAL_STRING("hp", result->persisted_attrs.entries.data[0].name.ptr);
+    TEST_ASSERT_EQUAL_INT(ATTR_INT, result->persisted_attrs.entries.data[0].type);
+    /* Runtime set untouched */
+    TEST_ASSERT_EQUAL_INT(0, result->attrs.entries.count);
+
+    arena_reset(&state.gamedata_arena);
+}
+
+void test_attr_add_by_name_runtime_targets_runtime_set(void)
+{
+    ErrorState err_state = {0};
+    DebugState dbg_state = {0};
+    Diag diag = {.error = &err_state, .debug = &dbg_state};
+    GameState state = {0};
+    TEST_ASSERT_TRUE(arena_init(&err_state, &state.gamedata_arena));
+    state.gamedata.current_level.entities.alloc = allocator_arena(&state.gamedata_arena);
+    Entity entity = {.id = 1, .parent_index = -1};
+    TEST_ASSERT_TRUE(vec_entity_push(&state.gamedata.current_level.entities, entity));
+    EditorState editor_state = {
+        .selected_entity_index = 0,
+        .top_mode = EDITOR_TOP_SCENE,
+        .adding_persisted_attr = false,
+    };
+
+    TEST_ASSERT_TRUE(add_attr_by_name(&diag, &state, &editor_state, "speed"));
+
+    Entity *result = &state.gamedata.current_level.entities.data[0];
+    TEST_ASSERT_EQUAL_INT(1, result->attrs.entries.count);
+    TEST_ASSERT_EQUAL_STRING("speed", result->attrs.entries.data[0].name.ptr);
+    /* Persisted set untouched */
+    TEST_ASSERT_EQUAL_INT(0, result->persisted_attrs.entries.count);
+
+    arena_reset(&state.gamedata_arena);
+}
+
 void test_attr_add_by_name_duplicate_returns_false(void)
 {
     ErrorState err_state = {0};
@@ -987,6 +1042,8 @@ int main(void)
     RUN_TEST(test_editor_word_builder_nav_page_up);
     RUN_TEST(test_editor_word_builder_nav_page_down);
     RUN_TEST(test_attr_add_by_name_creates_int_attr);
+    RUN_TEST(test_attr_add_by_name_persisted_targets_persisted_set);
+    RUN_TEST(test_attr_add_by_name_runtime_targets_runtime_set);
     RUN_TEST(test_attr_add_by_name_duplicate_returns_false);
     RUN_TEST(test_fuzzy_finder_contains_found);
     RUN_TEST(test_fuzzy_finder_contains_not_found);

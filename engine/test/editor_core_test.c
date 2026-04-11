@@ -305,6 +305,104 @@ void test_editor_attr_at_display_index_blueprint(void)
     test_blueprint_table_free_local(&state.gamedata.blueprints);
 }
 
+/* ---- attr_row_at -------------------------------------------------------- */
+
+/* Walk every display index for a top-level entity with persisted(1) + runtime(2)
+ * + blueprint(1) and assert the returned kind/section/index_in_section for each
+ * row. Layout:
+ *   [0]=persisted attr 0
+ *   [1]=persisted ADD
+ *   [2]=runtime attr 0
+ *   [3]=runtime attr 1
+ *   [4]=runtime ADD
+ *   [5]=blueprint attr 0
+ *   [6]=blueprint ADD
+ */
+void test_editor_attr_row_at_walks_sections(void)
+{
+    GameState state = {0};
+    state.gamedata.blueprints.entries.alloc = test_heap_alloc;
+    TEST_ASSERT_TRUE(vec_blueprint_push(&state.gamedata.blueprints.entries, (Blueprint){0}));
+    Blueprint *blueprint = &state.gamedata.blueprints.entries.data[0];
+    TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, &blueprint->attrs, "bp_val", 7));
+
+    Entity entity = {.parent_index = -1};
+    TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, &entity.persisted_attrs, "hp", 50));
+    TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, &entity.attrs, "speed", 10));
+    TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, &entity.attrs, "damage", 20));
+    entity_resolve_defaults_fake.return_val = &blueprint->attrs;
+
+    AttrRow row;
+
+    row = attr_row_at(&state, &entity, 0);
+    TEST_ASSERT_EQUAL_INT(ATTR_ROW_KIND_ATTR, row.kind);
+    TEST_ASSERT_EQUAL_INT(ATTR_SECTION_PERSISTED, row.section);
+    TEST_ASSERT_EQUAL_INT(0, row.index_in_section);
+
+    row = attr_row_at(&state, &entity, 1);
+    TEST_ASSERT_EQUAL_INT(ATTR_ROW_KIND_ADD, row.kind);
+    TEST_ASSERT_EQUAL_INT(ATTR_SECTION_PERSISTED, row.section);
+
+    row = attr_row_at(&state, &entity, 2);
+    TEST_ASSERT_EQUAL_INT(ATTR_ROW_KIND_ATTR, row.kind);
+    TEST_ASSERT_EQUAL_INT(ATTR_SECTION_RUNTIME, row.section);
+    TEST_ASSERT_EQUAL_INT(0, row.index_in_section);
+
+    row = attr_row_at(&state, &entity, 3);
+    TEST_ASSERT_EQUAL_INT(ATTR_ROW_KIND_ATTR, row.kind);
+    TEST_ASSERT_EQUAL_INT(ATTR_SECTION_RUNTIME, row.section);
+    TEST_ASSERT_EQUAL_INT(1, row.index_in_section);
+
+    row = attr_row_at(&state, &entity, 4);
+    TEST_ASSERT_EQUAL_INT(ATTR_ROW_KIND_ADD, row.kind);
+    TEST_ASSERT_EQUAL_INT(ATTR_SECTION_RUNTIME, row.section);
+
+    row = attr_row_at(&state, &entity, 5);
+    TEST_ASSERT_EQUAL_INT(ATTR_ROW_KIND_ATTR, row.kind);
+    TEST_ASSERT_EQUAL_INT(ATTR_SECTION_BLUEPRINT, row.section);
+    TEST_ASSERT_EQUAL_INT(0, row.index_in_section);
+
+    row = attr_row_at(&state, &entity, 6);
+    TEST_ASSERT_EQUAL_INT(ATTR_ROW_KIND_ADD, row.kind);
+    TEST_ASSERT_EQUAL_INT(ATTR_SECTION_BLUEPRINT, row.section);
+
+    /* Out of range → INVALID. */
+    row = attr_row_at(&state, &entity, 7);
+    TEST_ASSERT_EQUAL_INT(ATTR_ROW_KIND_INVALID, row.kind);
+
+    row = attr_row_at(&state, &entity, -1);
+    TEST_ASSERT_EQUAL_INT(ATTR_ROW_KIND_INVALID, row.kind);
+
+    entity_resolve_defaults_fake.return_val = nullptr;
+    test_attr_set_free_local(&entity.persisted_attrs);
+    test_attr_set_free_local(&entity.attrs);
+    test_blueprint_table_free_local(&state.gamedata.blueprints);
+}
+
+/* Child entity: no persisted section, first row is runtime attr 0. */
+void test_editor_attr_row_at_child_starts_at_runtime(void)
+{
+    GameState state = {0};
+    Entity entity = {.parent_index = 0};
+    TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, &entity.attrs, "hp", 5));
+    entity_resolve_defaults_fake.return_val = nullptr;
+
+    AttrRow row = attr_row_at(&state, &entity, 0);
+    TEST_ASSERT_EQUAL_INT(ATTR_ROW_KIND_ATTR, row.kind);
+    TEST_ASSERT_EQUAL_INT(ATTR_SECTION_RUNTIME, row.section);
+    TEST_ASSERT_EQUAL_INT(0, row.index_in_section);
+
+    row = attr_row_at(&state, &entity, 1);
+    TEST_ASSERT_EQUAL_INT(ATTR_ROW_KIND_ADD, row.kind);
+    TEST_ASSERT_EQUAL_INT(ATTR_SECTION_RUNTIME, row.section);
+
+    row = attr_row_at(&state, &entity, 2);
+    TEST_ASSERT_EQUAL_INT(ATTR_ROW_KIND_ADD, row.kind);
+    TEST_ASSERT_EQUAL_INT(ATTR_SECTION_BLUEPRINT, row.section);
+
+    test_attr_set_free_local(&entity.attrs);
+}
+
 void test_editor_attr_at_display_index_out_of_range(void)
 {
     GameState state = {0};
@@ -666,6 +764,8 @@ int main(void)
     RUN_TEST(test_editor_attr_at_display_index_runtime);
     RUN_TEST(test_editor_attr_at_display_index_blueprint);
     RUN_TEST(test_editor_attr_at_display_index_out_of_range);
+    RUN_TEST(test_editor_attr_row_at_walks_sections);
+    RUN_TEST(test_editor_attr_row_at_child_starts_at_runtime);
     RUN_TEST(test_editor_mark_deleted_root_marks_child);
     RUN_TEST(test_editor_mark_deleted_chain);
     RUN_TEST(test_editor_mark_deleted_sibling_untouched);
