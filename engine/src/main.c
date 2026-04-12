@@ -165,8 +165,8 @@ static void draw_player_entity(const Entity *player)
     }
     Rectangle source = {(float)(player->frame_index * FRAME_SIZE), (float)(player->anim_row * FRAME_SIZE), source_width,
                         FRAME_SIZE};
-    Rectangle dest = {player->position.x - (FRAME_SIZE / 2.0F), player->position.y - (FRAME_SIZE / 2.0F), FRAME_SIZE,
-                      FRAME_SIZE};
+    Rectangle dest = {player->position.x - player->sprite_offset.x, player->position.y - player->sprite_offset.y,
+                      FRAME_SIZE, FRAME_SIZE};
     DrawTexturePro(*player->texture, source, dest, (Vector2){0, 0}, 0.0F, WHITE);
 }
 
@@ -186,7 +186,8 @@ static void draw_entity(const GameState *state, const Entity *entity)
         return;
     }
     const AttrSet *defaults = entity_resolve_defaults(state, entity->id);
-    DrawTextureRec(*entity->texture, get_source_rect(&entity->attrs, defaults), entity->position, WHITE);
+    Vector2 draw_pos = {entity->position.x - entity->sprite_offset.x, entity->position.y - entity->sprite_offset.y};
+    DrawTextureRec(*entity->texture, get_source_rect(&entity->attrs, defaults), draw_pos, WHITE);
 }
 
 static void log_gamepad_changes(GameState *state, int *prev_gamepads, int frame)
@@ -224,13 +225,11 @@ static void draw_background_tiles(Texture2D texture, RectU32 bounds, Color tint)
 
 static void draw_debug_collision_boxes(const Level *level, int player_index)
 {
-    /* Player collision box (green) */
+    /* Player collision box (green) + sprite bounds (yellow) */
     if (player_index >= 0 && player_index < level->entities.count) {
         const Entity *player = &level->entities.data[player_index];
         DrawRectangleLinesEx(player->collision, 1, GREEN);
-
-        /* Player sprite bounds (yellow) */
-        Rectangle sprite = {player->position.x - (FRAME_SIZE / 2.0F), player->position.y - (FRAME_SIZE / 2.0F),
+        Rectangle sprite = {player->position.x - player->sprite_offset.x, player->position.y - player->sprite_offset.y,
                             FRAME_SIZE, FRAME_SIZE};
         DrawRectangleLinesEx(sprite, 1, YELLOW);
     }
@@ -241,6 +240,12 @@ static void draw_debug_collision_boxes(const Level *level, int player_index)
             continue;
         }
         DrawRectangleLinesEx(level->entities.data[index].collision, 1, RED);
+    }
+
+    /* Position dots (white) for all entities */
+    for (int index = 0; index < level->entities.count; index++) {
+        Vector2 pos = level->entities.data[index].position;
+        DrawRectangle((int)pos.x - 1, (int)pos.y - 1, 3, 3, WHITE);
     }
 }
 

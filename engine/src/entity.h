@@ -16,6 +16,7 @@ typedef struct {
     Strv blueprint_name;
     Vector2 collision_offset;
     Vector2 collision_size;
+    Vector2 sprite_offset;
     Texture2D *texture;
 } EntitySpec;
 
@@ -38,6 +39,7 @@ typedef struct {
     Vector2 position;
     Vector2 collision_offset;
     Vector2 collision_size;
+    Vector2 sprite_offset;
     Vector2 offset;
 
     /* Rectangles (16 bytes each) */

@@ -83,6 +83,8 @@ static bool is_internal_bp_attr(const char *name)
                                      "collision_offset_y",
                                      "collision_w",
                                      "collision_h",
+                                     "sprite_offset_x",
+                                     "sprite_offset_y",
                                      "health",
                                      "max_health",
                                      nullptr};
@@ -349,6 +351,7 @@ static int emit_blueprints(char *buffer, int capacity, int offset, const Bluepri
         Rectangle source = blueprint_get_source(blueprint);
         Vector2 col_offset = blueprint_get_collision_offset(blueprint);
         Vector2 col_size = blueprint_get_collision_size(blueprint);
+        Vector2 spr_offset = blueprint_get_sprite_offset(blueprint);
 
         offset = emit_append(buffer, capacity, offset, "[[blueprint]]\n");
         offset = emit_append(buffer, capacity, offset, "name = \"%s\"\n", attr_get_string(&blueprint->attrs, "name"));
@@ -361,6 +364,10 @@ static int emit_blueprints(char *buffer, int capacity, int offset, const Bluepri
         offset = emit_append(buffer, capacity, offset, "collision_offset = [%d, %d]\n", (int)col_offset.x,
                              (int)col_offset.y);
         offset = emit_append(buffer, capacity, offset, "collision_size = [%d, %d]\n", (int)col_size.x, (int)col_size.y);
+        if (spr_offset.x != 0.0F || spr_offset.y != 0.0F) {
+            offset = emit_append(buffer, capacity, offset, "sprite_offset = [%d, %d]\n", (int)spr_offset.x,
+                                 (int)spr_offset.y);
+        }
         offset = emit_health_if_present(buffer, capacity, offset, &blueprint->attrs);
         offset = emit_custom_bp_attrs(buffer, capacity, offset, &blueprint->attrs);
         offset = emit_append(buffer, capacity, offset, "\n");

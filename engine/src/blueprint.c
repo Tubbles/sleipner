@@ -45,8 +45,9 @@ static bool parse_float_array(toml_array_t *array, float *out, int expected_coun
 /* Keys with dedicated parsing — not treated as custom attributes */
 static bool is_known_key(const char *key)
 {
-    static const char *known[] = {"name", "src",  "collision_offset", "collision_size", "health", "animation", "child",
-                                  "rule", nullptr};
+    static const char *known[] = {"name",          "src",    "collision_offset", "collision_size",
+                                  "sprite_offset", "health", "animation",        "child",
+                                  "rule",          nullptr};
     for (int index = 0; known[index]; index++) {
         if (strcmp(key, known[index]) == 0) {
             return true;
@@ -184,6 +185,17 @@ static bool parse_geometry(Allocator *alloc, Blueprint *blueprint, toml_table_t 
             return false;
         }
         if (!attr_set_float(alloc, &blueprint->attrs, "collision_h", size_values[1])) {
+            return false;
+        }
+    }
+
+    float sprite_offset_values[2] = {0};
+    toml_array_t *sprite_offset = toml_array_in(entry, "sprite_offset");
+    if (parse_float_array(sprite_offset, sprite_offset_values, 2)) {
+        if (!attr_set_float(alloc, &blueprint->attrs, "sprite_offset_x", sprite_offset_values[0])) {
+            return false;
+        }
+        if (!attr_set_float(alloc, &blueprint->attrs, "sprite_offset_y", sprite_offset_values[1])) {
             return false;
         }
     }
@@ -355,6 +367,14 @@ Vector2 blueprint_get_collision_size(const Blueprint *blp)
     return (Vector2){
         attr_get_float(&blp->attrs, "collision_w", 0.0F),
         attr_get_float(&blp->attrs, "collision_h", 0.0F),
+    };
+}
+
+Vector2 blueprint_get_sprite_offset(const Blueprint *blp)
+{
+    return (Vector2){
+        attr_get_float(&blp->attrs, "sprite_offset_x", 0.0F),
+        attr_get_float(&blp->attrs, "sprite_offset_y", 0.0F),
     };
 }
 

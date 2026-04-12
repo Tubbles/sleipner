@@ -24,6 +24,7 @@ bool entity_init(Entity *entity, EntitySpec spec, Vector2 position, Allocator *a
     entity->texture = spec.texture;
     entity->collision_offset = spec.collision_offset;
     entity->collision_size = spec.collision_size;
+    entity->sprite_offset = spec.sprite_offset;
     entity->collision = (Rectangle){
         position.x + spec.collision_offset.x,
         position.y + spec.collision_offset.y,

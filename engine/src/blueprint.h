@@ -37,6 +37,7 @@ struct BlueprintTable {
 Rectangle blueprint_get_source(const Blueprint *blp);
 Vector2 blueprint_get_collision_offset(const Blueprint *blp);
 Vector2 blueprint_get_collision_size(const Blueprint *blp);
+Vector2 blueprint_get_sprite_offset(const Blueprint *blp);
 
 /* Parse all [[blueprint]] entries from a tomlc99 root table into the blueprint table.
  * Arena is used for variable-length data (rule arrays).

@@ -136,6 +136,7 @@ static bool spawn_children_for(ErrorState *err,
             .blueprint_name = strv_from_cstr(attr_get_string(&child_blueprint->attrs, "name")),
             .collision_offset = blueprint_get_collision_offset(child_blueprint),
             .collision_size = blueprint_get_collision_size(child_blueprint),
+            .sprite_offset = blueprint_get_sprite_offset(child_blueprint),
             .texture = texture,
         };
 
@@ -238,6 +239,7 @@ static void parse_entity(Diag *diag,
         .blueprint_name = strv_from_cstr(attr_get_string(&blueprint->attrs, "name")),
         .collision_offset = blueprint_get_collision_offset(blueprint),
         .collision_size = blueprint_get_collision_size(blueprint),
+        .sprite_offset = blueprint_get_sprite_offset(blueprint),
         .texture = texture,
     };
     int parent_index = level->entities.count;
@@ -304,6 +306,7 @@ bool level_spawn_single_child(Diag *diag,
         .blueprint_name = strv_from_cstr(attr_get_string(&child_blueprint->attrs, "name")),
         .collision_offset = blueprint_get_collision_offset(child_blueprint),
         .collision_size = blueprint_get_collision_size(child_blueprint),
+        .sprite_offset = blueprint_get_sprite_offset(child_blueprint),
         .texture = texture,
     };
     Entity child = {0};
@@ -349,6 +352,7 @@ bool level_spawn_entity(Diag *diag,
         .blueprint_name = strv_from_cstr(attr_get_string(&blueprint->attrs, "name")),
         .collision_offset = blueprint_get_collision_offset(blueprint),
         .collision_size = blueprint_get_collision_size(blueprint),
+        .sprite_offset = blueprint_get_sprite_offset(blueprint),
         .texture = texture,
     };
     int entity_index = level->entities.count;
