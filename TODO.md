@@ -69,8 +69,6 @@
   "Test ergonomics for black-box integration testing" and CLAUDE.md Bug
   Investigation Discipline rule 3.
 - add persisted attrs for children in toml emit and editor ui
-- camera shouldn't be "big pixel" locked, it should pan smoothly to decrease
-  motion sickness
 - for some reason, when running against the wall while indoors significantly
   warps the sprite. but curiously not while running north direction, only south
   east and west
