@@ -9,13 +9,19 @@
 
 #define STICK_DEADZONE 0.15F
 
-static Vector2 apply_deadzone(Vector2 stick, float deadzone)
+Vector2 input_apply_deadzone(Vector2 stick, float deadzone)
 {
     float magnitude = sqrtf((stick.x * stick.x) + (stick.y * stick.y));
-    if (magnitude < deadzone) {
+    if (magnitude <= deadzone) {
         return (Vector2){0, 0};
     }
-    float scale = ((magnitude - deadzone) / (1.0F - deadzone)) / magnitude;
+    /* Clamp to the unit disc — sticks that report into the square corner
+     * (magnitude up to sqrt(2)) or 8-way keyboard diagonals would
+     * otherwise produce output vectors with magnitude > 1, making
+     * diagonal movement faster than cardinal. */
+    float clamped = (magnitude > 1.0F) ? 1.0F : magnitude;
+    float mapped = (clamped - deadzone) / (1.0F - deadzone);
+    float scale = mapped / magnitude;
     return (Vector2){stick.x * scale, stick.y * scale};
 }
 
@@ -45,8 +51,8 @@ InputState input_read(int gamepad_id)
                     GetGamepadAxisMovement(gamepad_id, GAMEPAD_AXIS_LEFT_Y)};
     Vector2 right = {GetGamepadAxisMovement(gamepad_id, GAMEPAD_AXIS_RIGHT_X),
                      GetGamepadAxisMovement(gamepad_id, GAMEPAD_AXIS_RIGHT_Y)};
-    state.left_stick = apply_deadzone(left, STICK_DEADZONE);
-    state.right_stick = apply_deadzone(right, STICK_DEADZONE);
+    state.left_stick = input_apply_deadzone(left, STICK_DEADZONE);
+    state.right_stick = input_apply_deadzone(right, STICK_DEADZONE);
 
     state.buttons[0] = IsGamepadButtonPressed(gamepad_id, GAMEPAD_BUTTON_RIGHT_FACE_DOWN);
     state.buttons[1] = IsGamepadButtonPressed(gamepad_id, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT);
@@ -101,6 +107,12 @@ InputState input_read_keyboard(void)
     if (IsKeyDown(KEY_X)) {
         state.right_trigger = 1.0F;
     }
+
+    /* 8-way digital input produces magnitude sqrt(2) on diagonals.
+     * Clamp through the shared deadzone helper with deadzone=0 so
+     * keyboard diagonal speed matches cardinal speed. */
+    state.left_stick = input_apply_deadzone(state.left_stick, 0.0F);
+    state.right_stick = input_apply_deadzone(state.right_stick, 0.0F);
 
     return state;
 }

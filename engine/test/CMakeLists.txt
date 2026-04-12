@@ -12,6 +12,7 @@ endfunction()
 
 add_unit_test(stub_test)
 add_unit_test(strv_test)
+add_unit_test(input_test)
 add_unit_test(error_test)
 add_unit_test(shape_test)
 add_unit_test(str_test)

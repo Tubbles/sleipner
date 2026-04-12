@@ -18,3 +18,8 @@ InputState input_read(int gamepad_id);
 InputState input_read_keyboard(void);
 int input_count_gamepads(void);
 bool input_exit_requested(int gamepad_id);
+
+/* Pure helper: apply radial deadzone and clamp the output to the unit
+ * disc. Exposed for unit testing. Returns (0, 0) when magnitude is at or
+ * below the deadzone, so passing deadzone=0 is safe on a zero vector. */
+Vector2 input_apply_deadzone(Vector2 stick, float deadzone);
