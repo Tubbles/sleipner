@@ -69,7 +69,6 @@
   "Test ergonomics for black-box integration testing" and CLAUDE.md Bug
   Investigation Discipline rule 3.
 - add persisted attrs for children in toml emit and editor ui
-- normalize stick input to unit circle
 - pressing escape on a computer exits the game, not "b/esc back" as described in
   various places
 - handle sprite z-fighting
