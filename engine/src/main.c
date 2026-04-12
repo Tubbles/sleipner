@@ -947,6 +947,7 @@ int main(void)
     InitWindow(SCREEN_WIDTH_DEFAULT, SCREEN_HEIGHT_DEFAULT, "Sleipner");
 #endif
     debug_log(&state->debug, "InitWindow done");
+    SetExitKey(KEY_NULL);
     HideCursor();
 
 #ifndef __ANDROID__
@@ -1056,6 +1057,9 @@ int main(void)
         log_gamepad_changes(state, &prev_gamepads, state->frame);
 
         if (any_gamepad_exit_requested()) {
+            goto quit;
+        }
+        if (IsKeyDown(KEY_LEFT_CONTROL) && IsKeyPressed(KEY_Q)) {
             goto quit;
         }
 
