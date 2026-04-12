@@ -8,20 +8,27 @@
 typedef struct {
     int index;
     float sort_y;
+    float sort_x;
 } DrawOrder;
 
 // NOLINTNEXTLINE(bugprone-easily-swappable-parameters) — signature dictated by qsort
 static int compare_draw_order(const void *left, const void *right)
 {
-    float left_y = ((const DrawOrder *)left)->sort_y;
-    float right_y = ((const DrawOrder *)right)->sort_y;
-    if (left_y < right_y) {
+    const DrawOrder *lhs = (const DrawOrder *)left;
+    const DrawOrder *rhs = (const DrawOrder *)right;
+    if (lhs->sort_y < rhs->sort_y) {
         return -1;
     }
-    if (left_y > right_y) {
+    if (lhs->sort_y > rhs->sort_y) {
         return 1;
     }
-    return 0;
+    if (lhs->sort_x < rhs->sort_x) {
+        return -1;
+    }
+    if (lhs->sort_x > rhs->sort_x) {
+        return 1;
+    }
+    return (lhs->index > rhs->index) - (lhs->index < rhs->index);
 }
 
 int *sort_entities_by_depth(const Entity *entities, int count, Allocator *alloc)
@@ -31,7 +38,8 @@ int *sort_entities_by_depth(const Entity *entities, int count, Allocator *alloc)
     for (int index = 0; index < count; index++) {
         order[index] = (DrawOrder){
             .index = index,
-            .sort_y = entities[index].collision.y + entities[index].collision.height,
+            .sort_y = entities[index].position.y,
+            .sort_x = entities[index].position.x,
         };
     }
 
