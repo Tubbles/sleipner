@@ -7,6 +7,7 @@
 #include "audio.h"
 #include "blueprint.h"
 #include "debug.h"
+#include "depth_sort.h"
 #include "editor/editor.h"
 #include "entity.h"
 #include "diag.h"
@@ -657,39 +658,25 @@ static void handle_hot_reload(
     }
 }
 
-static void draw_entities_depth_sorted(const GameState *state)
+static void draw_entities_depth_sorted(GameState *state)
 {
-    const Entity *player = game_get_player_const(state);
-    float player_sort_y = player ? player->position.y + 16 : 0;
+    SCRATCH_SCOPE(&state->scratch_arena);
+    Allocator alloc = allocator_arena(&state->scratch_arena);
 
-    for (int index = 0; index < state->gamedata.current_level.entities.count; index++) {
-        if (index == state->gamedata.player_index) {
-            continue;
-        }
-        float entity_sort_y = state->gamedata.current_level.entities.data[index].collision.y +
-                              state->gamedata.current_level.entities.data[index].collision.height;
-        if (entity_sort_y <= player_sort_y) {
-            draw_entity(state, &state->gamedata.current_level.entities.data[index]);
-        }
-    }
+    const Level *level = &state->gamedata.current_level;
+    int *sorted = sort_entities_by_depth(level->entities.data, level->entities.count, &alloc);
 
-    if (player) {
-        draw_player_entity(player);
-    }
-
-    for (int index = 0; index < state->gamedata.current_level.entities.count; index++) {
-        if (index == state->gamedata.player_index) {
-            continue;
-        }
-        float entity_sort_y = state->gamedata.current_level.entities.data[index].collision.y +
-                              state->gamedata.current_level.entities.data[index].collision.height;
-        if (entity_sort_y > player_sort_y) {
-            draw_entity(state, &state->gamedata.current_level.entities.data[index]);
+    for (int draw_index = 0; draw_index < level->entities.count; draw_index++) {
+        int entity_index = sorted[draw_index];
+        if (entity_index == state->gamedata.player_index) {
+            draw_player_entity(&level->entities.data[entity_index]);
+        } else {
+            draw_entity(state, &level->entities.data[entity_index]);
         }
     }
 
     if (state->debug_enabled) {
-        draw_debug_collision_boxes(&state->gamedata.current_level, state->gamedata.player_index);
+        draw_debug_collision_boxes(level, state->gamedata.player_index);
     }
 }
 

@@ -20,6 +20,7 @@ set(ENGINE_SOURCE_FILES
     blueprint.c
     collision.c
     debug.c
+    depth_sort.c
     editor/attr.c
     editor/blueprint.c
     editor/child.c
