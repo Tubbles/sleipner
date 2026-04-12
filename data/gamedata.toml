@@ -75,16 +75,20 @@ solid = true
 
 [[level]]
 name = "overworld"
-size = [480, 270]
+size = [960, 540]
 music = "bgm.mp3"
 
 [[level.entity]]
 blueprint = "player"
-pos = [240, 135]
+pos = [480, 270]
 
 [[level.entity]]
 blueprint = "house"
 pos = [30, 15]
+
+[[level.entity]]
+blueprint = "house"
+pos = [700, 400]
 
 [[level.entity]]
 blueprint = "tree"
@@ -107,6 +111,38 @@ blueprint = "tree"
 pos = [375, 165]
 
 [[level.entity]]
+blueprint = "tree"
+pos = [520, 80]
+
+[[level.entity]]
+blueprint = "tree"
+pos = [610, 200]
+
+[[level.entity]]
+blueprint = "tree"
+pos = [750, 120]
+
+[[level.entity]]
+blueprint = "tree"
+pos = [830, 300]
+
+[[level.entity]]
+blueprint = "tree"
+pos = [200, 350]
+
+[[level.entity]]
+blueprint = "tree"
+pos = [450, 450]
+
+[[level.entity]]
+blueprint = "tree"
+pos = [680, 480]
+
+[[level.entity]]
+blueprint = "tree"
+pos = [100, 480]
+
+[[level.entity]]
 blueprint = "chest"
 pos = [225, 75]
 
@@ -115,12 +151,28 @@ blueprint = "chest"
 pos = [120, 210]
 
 [[level.entity]]
+blueprint = "chest"
+pos = [580, 350]
+
+[[level.entity]]
+blueprint = "chest"
+pos = [850, 150]
+
+[[level.entity]]
 blueprint = "fence_v"
 pos = [195, 38]
 
 [[level.entity]]
 blueprint = "fence_v"
 pos = [195, 74]
+
+[[level.entity]]
+blueprint = "fence_v"
+pos = [600, 38]
+
+[[level.entity]]
+blueprint = "fence_v"
+pos = [600, 74]
 
 [[blueprint]]
 name = "switch"
