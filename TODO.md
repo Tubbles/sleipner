@@ -69,7 +69,6 @@
   "Test ergonomics for black-box integration testing" and CLAUDE.md Bug
   Investigation Discipline rule 3.
 - add persisted attrs for children in toml emit and editor ui
-- handle sprite z-fighting
 - camera shouldn't be "big pixel" locked, it should pan smoothly to decrease
   motion sickness
 - for some reason, when running against the wall while indoors significantly
