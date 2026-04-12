@@ -26,6 +26,7 @@
 #include "error.h"
 
 #include <errno.h>
+#include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -821,15 +822,22 @@ static void render_frame(GameState *state, RenderParams params)
     BeginTextureMode(params.target);
     ClearBackground(BLACK);
 
-    /* Gameplay camera: follows player, clamped to level bounds */
+    /* Gameplay camera: split into integer target (pixel-perfect in low-res buffer)
+     * and fractional remainder (applied as sub-pixel offset during upscale blit).
+     * Without this, camera jumps in PIXEL_SCALE-sized steps on screen. */
+    Vector2 cam = state->gamedata.camera_target;
+    Vector2 int_cam = {floorf(cam.x), floorf(cam.y)};
+    Vector2 frac_cam = {cam.x - int_cam.x, cam.y - int_cam.y};
+
     Camera2D gameplay_camera = {
         .offset = {(float)params.game_bounds.width / 2.0F, (float)params.game_bounds.height / 2.0F},
-        .target = state->gamedata.camera_target,
+        .target = int_cam,
         .zoom = 1.0F,
     };
 
     if (state->editor_mode) {
         BeginMode2D(params.editor_camera);
+        frac_cam = (Vector2){0};
     } else {
         BeginMode2D(gameplay_camera);
     }
@@ -854,9 +862,11 @@ static void render_frame(GameState *state, RenderParams params)
     EndTextureMode();
 
     BeginDrawing();
-    DrawTexturePro(
-        params.target.texture, (Rectangle){0, 0, (float)params.game_bounds.width, -(float)params.game_bounds.height},
-        (Rectangle){0, 0, (float)state->screen_width, (float)state->screen_height}, (Vector2){0, 0}, 0.0F, WHITE);
+    DrawTexturePro(params.target.texture,
+                   (Rectangle){0, 0, (float)params.game_bounds.width, -(float)params.game_bounds.height},
+                   (Rectangle){-frac_cam.x * PIXEL_SCALE, -frac_cam.y * PIXEL_SCALE,
+                               (float)state->screen_width + PIXEL_SCALE, (float)state->screen_height + PIXEL_SCALE},
+                   (Vector2){0, 0}, 0.0F, WHITE);
     if (state->debug_enabled) {
         draw_debug_info(state, params.game_bounds);
     }
