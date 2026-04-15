@@ -36,10 +36,13 @@ int *sort_entities_by_depth(const Entity *entities, int count, Allocator *alloc)
     DrawOrder *order = alloc->malloc_fn(alloc->ctx, (size_t)count * sizeof(DrawOrder));
 
     for (int index = 0; index < count; index++) {
+        const Entity *entity = &entities[index];
+        float sort_y =
+            entity->collision_size.y > 0.0F ? entity->collision.y + entity->collision.height : entity->position.y;
         order[index] = (DrawOrder){
             .index = index,
-            .sort_y = entities[index].position.y,
-            .sort_x = entities[index].position.x,
+            .sort_y = sort_y,
+            .sort_x = entity->position.x,
         };
     }
 
