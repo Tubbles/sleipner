@@ -59,6 +59,14 @@
   IDs) instead and resolve via getter functions, eliminating the invalidation
   edge cases entirely.
 
+## Toolchain
+
+- **Investigate replacing Docker with Nix** — current Docker-based toolchain
+  has brittle cache invalidation (any COPY dependency not listed in the
+  workflow trigger silently breaks reproducibility). Nix flakes provide
+  hermetic, content-addressed environments that are inherently reproducible
+  without a separate image build step.
+
 ## misc
 
 - improve integration test framework / ergonomics for black-box bug-repro
