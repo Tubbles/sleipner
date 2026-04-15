@@ -8,12 +8,10 @@ set(CMAKE_C_EXTENSIONS OFF)
 # Project root (5 levels up from this CMakeLists.txt)
 set(PROJECT_ROOT "${CMAKE_SOURCE_DIR}/../../../../..")
 
-# Find Conan-generated raylib from ci.sh output
-set(CONAN_GENERATORS "${PROJECT_ROOT}/build/android/arm64-v8a/build/Release/generators")
-list(PREPEND CMAKE_PREFIX_PATH "${CONAN_GENERATORS}")
-set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE BOTH)
-
-find_package(raylib REQUIRED)
+set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(USE_EXTERNAL_GLFW OFF CACHE BOOL "" FORCE)
+set(PLATFORM "Android" CACHE STRING "" FORCE)
+add_subdirectory(${PROJECT_ROOT}/engine/vendor/raylib ${CMAKE_BINARY_DIR}/raylib)
 
 include(${PROJECT_ROOT}/engine/sources.cmake)
 

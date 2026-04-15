@@ -13,36 +13,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Cache Docker layers
-        uses: actions/cache@v4
+      - uses: cachix/install-nix-action@v27
         with:
-          path: /tmp/.buildx-cache
-          key: ${{ runner.os }}-docker-${{ hashFiles('Dockerfile') }}
-          restore-keys: |
-            ${{ runner.os }}-docker-
+          nix_path: nixpkgs=channel:nixos-unstable
 
-      - name: Build toolchain image with cache
-        run: |
-          docker buildx create --use
-          docker buildx build --cache-from=type=local,src=/tmp/.buildx-cache --cache-to=type=local,dest=/tmp/.buildx-cache --load -t sleipner-toolchain .
-
-      - name: Cache Conan build
-        uses: actions/cache@v4
+      - uses: nix-community/cache-nix-action@v5
         with:
-          path: build/.conan2
-          key: ${{ runner.os }}-conan-windows-${{ hashFiles('conanfile.py') }}
-          restore-keys: |
-            ${{ runner.os }}-conan-windows-
+          primary-key: nix-win-${{ runner.os }}-${{ hashFiles('flake.lock') }}
+          restore-prefixes-first-match: nix-win-${{ runner.os }}-
+          gc-max-store-size-linux: 5G
+          purge: true
+          purge-prefixes: nix-win-${{ runner.os }}-
+          purge-created: 0
+          purge-last-accessed: 0
+          purge-primary-key: never
 
-      - name: Build Windows exe
-        run: CONTAINER_CMD=docker ./ci.sh windows windows.log
+      - name: Configure
+        run: nix develop .#windows -c cmake -S . -B build/windows -G Ninja -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/mingw-w64.cmake -DCMAKE_BUILD_TYPE=Release
 
-      - name: Show log
-        if: always()
-        run: cat tmp/windows.log
+      - name: Build
+        run: nix develop .#windows -c cmake --build build/windows
 
       - name: Upload exe
         uses: actions/upload-artifact@v4
         with:
           name: sleipner-windows-x86_64
-          path: build/windows/build/Release/engine/sleipner.exe
+          path: build/windows/engine/sleipner.exe

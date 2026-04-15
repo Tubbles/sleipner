@@ -628,6 +628,7 @@ void test_add_blueprint_child_spawns_for_instances(void)
     TEST_ASSERT_EQUAL_INT(2, level_spawn_single_child_fake.call_count);
     TEST_ASSERT_EQUAL_INT(1, undo_history_new_entry_fake.call_count);
 
+    find_blueprint_by_name_fake.return_val = nullptr;
     test_attr_set_free_local(&blueprint.attrs);
     arena_free(&state.gamedata_arena);
 }

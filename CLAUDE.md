@@ -14,35 +14,50 @@ Sleipner is a top-down Zelda-like action RPG written in C using raylib. The game
 
 ## Building
 
-The project uses a containerized toolchain (Podman/Docker) for reproducible builds. All build steps run via `ci.sh`, which wraps `podman run` against the toolchain image.
+The project uses a Nix flake (`flake.nix`) for the reproducible toolchain. Enter a dev shell and invoke CMake directly — there is no `ci.sh` wrapper.
 
 ```bash
-# Full pipeline: format check + build + test + lint
-./ci.sh all
+# Native (Linux desktop)
+nix develop
+cmake -S . -B build/Release -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build/Release
+ctest --test-dir build/Release --output-on-failure
 
-# Individual steps
-./ci.sh format    # Auto-format source files in-place
-./ci.sh check     # Check formatting (dry-run, fails on violations)
-./ci.sh build     # Install deps + compile
-./ci.sh test      # Run unit tests
-./ci.sh lint      # Run clang-tidy
+# Format check / auto-format
+clang-format --dry-run --Werror engine/src/*.c engine/src/*.h engine/test/*.c
+clang-format -i engine/src/*.c engine/src/*.h engine/test/*.c
 
-# Native build (if no container runtime available)
-conan install . --output-folder=build --build=missing
-conan build .
+# Lint
+cd build/Release && clang-tidy -p . $(ls ../../engine/src/*.c ../../engine/test/*.c | grep -v arena_win32)
+
+# Cppcheck forward-decl addon + pytest
+cppcheck --enable=warning --addon=tools/cppcheck/no_forward_decl.py --suppress=unknownMacro --error-exitcode=1 engine/src/*.h engine/src/*.c
+pytest tools/cppcheck/test_no_forward_decl.py -v
+
+# Windows cross-compile (mingw-w64 via pkgsCross)
+nix develop .#windows -c cmake -S . -B build/windows -G Ninja \
+    -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/mingw-w64.cmake \
+    -DCMAKE_BUILD_TYPE=Release
+nix develop .#windows -c cmake --build build/windows
+
+# Android APK (NDK + Gradle via androidenv)
+nix develop .#android -c bash -c 'cd android && gradle wrapper --gradle-version 8.11.1 && ./gradlew assembleRelease'
 
 # Run
 ./build/Release/engine/sleipner
 ```
 
+macOS contributors can use `nix develop` directly; Windows contributors need WSL2.
+
 ## Dependencies
 
-- C23 compiler (clang-22 in container)
-- Conan 2 (package manager — drives CMake)
-- CMake (generated/invoked by Conan)
-- raylib (graphics, input, audio)
-- Unity (ThrowTheSwitch — unit test framework)
-- fff.h (Fake Function Framework — mocking)
+- Nix (flake-based toolchain; enter with `nix develop`)
+- C23 compiler (clang-22 via `llvmPackages_22` in the flake)
+- CMake (invoked directly; no package manager layer)
+- raylib (graphics, input, audio — vendored at `engine/vendor/raylib/`)
+- Unity (ThrowTheSwitch — unit test framework, vendored at `engine/vendor/unity/`)
+- fff.h (Fake Function Framework — mocking, vendored at `engine/vendor/fff/`)
+- tomlc99 (TOML parser, vendored at `engine/vendor/tomlc99/`)
 
 ## Coding Style
 
@@ -54,7 +69,7 @@ conan build .
 - **Full descriptive names always.** No single-letter variables anywhere, including loop counters (`i` → `index`, `j` → `next`). No small abbreviations either (`pt` → `particle`, `dx` → `delta_x`, `wp` → `world_pos`). The codebase should be self-documenting through clear naming.
 - **Vendor libraries go in `engine/vendor/`.** Not the top-level `vendor/`.
 - **Prefer `vec` over fixed-size arrays with `MAX_*` constants.** Whenever you need a dynamic collection, reach for a `vec` type backed by the appropriate arena — not a `Type array[MAX_SOMETHING]` with a companion count. Fixed-size arrays are only justified for truly fixed-size data (e.g. a 4-button input state). If you find yourself defining a `MAX_*` constant to size a buffer, stop and ask whether a `vec` fits instead.
-- **No opaque cross-module forward declarations.** Never use `struct Foo;` or `typedef struct Foo Foo;` in a header to avoid including the header that defines `Foo`. This hides circular dependencies and obscures the include hierarchy. If a circular dependency appears, fix the architecture — extract a common lower-level definition, use dependency injection, or split the type — rather than hiding the cycle with an opaque pointer. There is no clang-tidy check for this; enforcement is via the cppcheck addon `tools/cppcheck/no_forward_decl.py` (run via `./ci.sh cppcheck`). Use `// cppcheck-suppress noForwardDecl-noForwardDecl` for known exceptions. Exceptions: self-referential structs within the same file (e.g. `struct Node { struct Node *next; }`) are necessary and fine.
+- **No opaque cross-module forward declarations.** Never use `struct Foo;` or `typedef struct Foo Foo;` in a header to avoid including the header that defines `Foo`. This hides circular dependencies and obscures the include hierarchy. If a circular dependency appears, fix the architecture — extract a common lower-level definition, use dependency injection, or split the type — rather than hiding the cycle with an opaque pointer. There is no clang-tidy check for this; enforcement is via the cppcheck addon `tools/cppcheck/no_forward_decl.py` (run via `nix develop -c cppcheck --addon=tools/cppcheck/no_forward_decl.py ...`). Use `// cppcheck-suppress noForwardDecl-noForwardDecl` for known exceptions. Exceptions: self-referential structs within the same file (e.g. `struct Node { struct Node *next; }`) are necessary and fine.
 
 ## Core Types: Str, Strv, vec, map
 
@@ -397,7 +412,7 @@ If `data/gamedata.toml` and `~/Sync/sleipner/gamedata.toml` have diverged (both 
 
 ## Toolchain Reference
 
-- LLVM/Clang 22.1.0 (installed via apt.llvm.org llvm.sh script in Dockerfile)
+- LLVM/Clang 22.1.0 (provided by `llvmPackages_22` in `flake.nix`)
 - Clang Static Analyzer checkers: https://releases.llvm.org/22.1.0/tools/clang/docs/analyzer/checkers.html
 - LLVM 22 release docs root: https://releases.llvm.org/22.1.0/
 - Note: `ReportMode` for `security.insecureAPI.DeprecatedOrUnsafeBufferHandling` is NOT available in LLVM 22 — trunk-only feature (LLVM 23+).
@@ -416,7 +431,7 @@ If `data/gamedata.toml` and `~/Sync/sleipner/gamedata.toml` have diverged (both 
 Android requires APK updates to be signed with the same key as the original installation. The project uses a development keystore (`android/keystore.jks`) for consistent signing:
 
 - **Keystore location:** `android/keystore.jks`
-- **Password:** `sleipner` (hardcoded in ci.sh for development)
+- **Password:** `sleipner` (hardcoded in `.github/workflows/android.yml` for development)
 - **Keystore tracking:** The keystore is tracked in git to ensure consistent signing across different machines and CI runs.
 
 **Important:** This development keystore uses a public password and is suitable only for development builds. For production releases:
@@ -445,18 +460,18 @@ Android requires APK updates to be signed with the same key as the original inst
 - Never add "Co-Authored-By" lines or email addresses to commit messages.
 - Push freely without asking, but never use `git push --force` or any force-push variant.
 - **Keep all documentation up to date.** When changing behavior, update CLAUDE.md and code comments in the same commit. Stale docs are worse than no docs.
-- **Run `./ci.sh format` before committing.** Always auto-format code before creating commits to avoid CI failures from clang-format violations. The formatter handles line wrapping, indentation, and other style rules automatically.
-- **Run `./ci.sh lint` before committing.** Always run the linter before creating commits. The most common lint failure is `misc-include-cleaner` — if you use a type or function, its providing header must be directly included, not reached transitively. Fix lint errors before committing; do not push code that fails lint.
+- **Run `nix develop -c clang-format -i engine/src/*.c engine/src/*.h engine/test/*.c` before committing.** Always auto-format code before creating commits to avoid CI failures from clang-format violations. The formatter handles line wrapping, indentation, and other style rules automatically.
+- **Run clang-tidy before committing.** `nix develop -c bash -c "cd build/Release && clang-tidy -p . $(ls ../../engine/src/*.c ../../engine/test/*.c | grep -v arena_win32)"`. The most common lint failure is `misc-include-cleaner` — if you use a type or function, its providing header must be directly included, not reached transitively. Fix lint errors before committing; do not push code that fails lint.
 
 ## Claude Code Guidelines
 
 Rules for how Claude Code should operate in this project. Keep adding to this list as new patterns emerge.
 
 - **Only do what was asked.** Never carry out unrequested changes — no bundling extra fixes, no proactively addressing future improvements. If something seems worth doing, ask first.
-- **Use the project Dockerfile for tooling.** Don't spin up ad-hoc containers — if a tool is needed, it should be in the existing Dockerfile or added to it.
-- **Always use `./ci.sh`** without specifying `CONTAINER_CMD`. The script auto-detects Docker/Podman. Never run conan/cmake commands directly.
-- **Skip `ci.sh` for small/trivial changes.** Let GitHub Actions CI catch issues instead — time is precious. Only run locally when the change is non-trivial.
-- **Log long-running commands to `tmp/`.** Redirect output of commands like `./ci.sh` to log files: `./ci.sh test > tmp/test.log 2>&1`, then read/tail the log. Use descriptive names: `tmp/test.log`, `tmp/lint.log`, `tmp/build.log`.
+- **Use `nix develop` for tooling.** Don't install compilers, libraries, or build tools globally — if something's missing, add it to `flake.nix`. Use `nix develop .#windows` or `nix develop .#android` for the cross-compile shells.
+- **Never run cmake, clang-tidy, cppcheck, etc. outside a Nix shell.** Always prefix with `nix develop -c ...` (or enter the shell first) so the toolchain is reproducible.
+- **Skip local builds for small/trivial changes.** Let GitHub Actions CI catch issues instead — time is precious. Only run locally when the change is non-trivial.
+- **Log long-running commands to `tmp/`.** Redirect output of long builds to log files: `nix develop -c cmake --build build/Release > tmp/build.log 2>&1`, then read/tail the log. Use descriptive names: `tmp/test.log`, `tmp/lint.log`, `tmp/build.log`.
 - **No comments in bash commands.** Use the Bash tool's `description` field for context, not inline `#` comments.
 - **Don't use `-C` or `cd` unnecessarily.** If already in the right working directory, don't pass `-C` flags to git or other commands. Equally, never use `cd` to move around the active session — prefer subshells `(cd foo && make)` or `-C` flags only when the target directory differs from the current working directory.
 - **Read documentation before probing.** Use WebFetch/WebSearch to read library docs rather than running exploratory commands in containers.

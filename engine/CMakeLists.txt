@@ -1,10 +1,10 @@
 include(${CMAKE_CURRENT_SOURCE_DIR}/sources.cmake)
 
 add_library(unity STATIC vendor/unity/unity.c)
-target_include_directories(unity PUBLIC vendor/unity)
+target_include_directories(unity SYSTEM PUBLIC vendor/unity)
 
 add_library(tomlc99 STATIC vendor/tomlc99/toml.c)
-target_include_directories(tomlc99 PUBLIC vendor/tomlc99)
+target_include_directories(tomlc99 SYSTEM PUBLIC vendor/tomlc99)
 
 foreach(src ${ENGINE_SOURCE_FILES})
     list(APPEND engine_srcs src/${src})

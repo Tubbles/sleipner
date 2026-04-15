@@ -13,51 +13,48 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build toolchain image with cache
-        uses: docker/build-push-action@v6
+      - uses: cachix/install-nix-action@v27
         with:
-          context: .
-          load: true
-          tags: sleipner-toolchain
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          nix_path: nixpkgs=channel:nixos-unstable
 
-      # Cache conan packages
-      - name: Cache Conan build
-        uses: actions/cache@v4
+      - uses: nix-community/cache-nix-action@v5
         with:
-          path: build/.conan2
-          key: ${{ runner.os }}-conan-${{ hashFiles('conanfile.py') }}
-          restore-keys: |
-            ${{ runner.os }}-conan-
+          primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.lock') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-
+          gc-max-store-size-linux: 5G
+          purge: true
+          purge-prefixes: nix-${{ runner.os }}-
+          purge-created: 0
+          purge-last-accessed: 0
+          purge-primary-key: never
 
       - name: Check formatting
-        run: CONTAINER_CMD=docker ./ci.sh check check.log
+        run: nix develop -c clang-format --dry-run --Werror engine/src/*.c engine/src/*.h engine/test/*.c
+
+      - name: Configure
+        run: nix develop -c cmake -S . -B build/Release -G Ninja -DCMAKE_BUILD_TYPE=Release
 
       - name: Build
-        run: CONTAINER_CMD=docker ./ci.sh build build.log
+        run: nix develop -c cmake --build build/Release
 
       - name: Test
-        run: CONTAINER_CMD=docker ./ci.sh test test.log
+        env:
+          ASAN_OPTIONS: detect_leaks=1
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+        run: nix develop -c ctest --test-dir build/Release --output-on-failure
 
       - name: Lint
-        run: CONTAINER_CMD=docker ./ci.sh lint lint.log
+        run: |
+          nix develop -c bash -c '
+            cd build/Release && \
+            clang-tidy -p . $(ls ../../engine/src/*.c ../../engine/test/*.c | grep -v arena_win32)
+          '
 
       - name: Cppcheck forward-decl addon
-        run: CONTAINER_CMD=docker ./ci.sh cppcheck cppcheck.log
+        run: nix develop -c cppcheck --enable=warning --addon=tools/cppcheck/no_forward_decl.py --suppress=unknownMacro --suppress=normalCheckLevelMaxBranches --error-exitcode=1 engine/src/*.h engine/src/*.c
 
       - name: Pytest addon tests
-        run: CONTAINER_CMD=docker ./ci.sh pytest pytest.log
-
-      - name: Show logs
-        if: always()
-        run: |
-          for log in tmp/check.log tmp/build.log tmp/test.log tmp/lint.log tmp/cppcheck.log tmp/pytest.log; do
-            [ -f "$log" ] && echo "=== $log ===" && cat "$log" || true
-          done
+        run: nix develop -c pytest tools/cppcheck/test_no_forward_decl.py -v
 
       - name: Upload binary
         uses: actions/upload-artifact@v4

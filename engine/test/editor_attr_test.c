@@ -467,6 +467,7 @@ void test_confirm_child_tag_edit_updates_tag(void)
     TEST_ASSERT_EQUAL_INT(1, propagate_child_tag_fake.call_count);
     TEST_ASSERT_EQUAL_INT(1, undo_history_new_entry_fake.call_count);
 
+    find_blueprint_by_name_fake.return_val = nullptr;
     test_attr_set_free_local(&blueprint.attrs);
     arena_free(&state.gamedata_arena);
 }

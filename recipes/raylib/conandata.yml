@@ -1,7 +1,0 @@
-patches:
-  '5.5':
-  - patch_file: patches/5.5-0001-fix-android-shared.patch
-sources:
-  '5.5':
-    sha256: aea98ecf5bc5c5e0b789a76de0083a21a70457050ea4cc2aec7566935f5e258e
-    url: https://github.com/raysan5/raylib/archive/refs/tags/5.5.tar.gz

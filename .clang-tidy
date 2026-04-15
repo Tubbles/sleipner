@@ -39,5 +39,5 @@ CheckOptions:
   readability-magic-numbers.IgnoredFloatingPointValues: '0.0;0.5;1.0;2.0;3.0;-1.0;-0.5'
   readability-magic-numbers.IgnoredIntegerValues: '0;1;2;3;4;8;16;255'
 
-HeaderFilterRegex: '.*/src/.*\.h$'
+HeaderFilterRegex: '.*/engine/(src|test)/.*\.h$'
 WarningsAsErrors: '*'
