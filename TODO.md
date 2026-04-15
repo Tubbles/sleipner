@@ -61,22 +61,21 @@
 
 ## Toolchain
 
-- **Investigate replacing Docker with Nix** — current Docker-based toolchain
-  has brittle cache invalidation (any COPY dependency not listed in the
-  workflow trigger silently breaks reproducibility). Nix flakes provide
-  hermetic, content-addressed environments that are inherently reproducible
-  without a separate image build step.
+- **Investigate replacing Docker with Nix** — current Docker-based toolchain has
+  brittle cache invalidation (any COPY dependency not listed in the workflow
+  trigger silently breaks reproducibility). Nix flakes provide hermetic,
+  content-addressed environments that are inherently reproducible without a
+  separate image build step.
 
 ## misc
 
-- improve integration test framework / ergonomics for black-box bug-repro
-  tests: today the editor's button bindings read raylib globals directly
-  and there is no headless frame entry point, so driving a bug like "press
-  LEFT in the editor, assert the player didn't move" end-to-end is
-  prohibitively painful. Make it cheap and idiomatic. See DESIGN.md §
-  "Test ergonomics for black-box integration testing" and CLAUDE.md Bug
-  Investigation Discipline rule 3.
+- improve integration test framework / ergonomics for black-box bug-repro tests:
+  today the editor's button bindings read raylib globals directly and there is
+  no headless frame entry point, so driving a bug like "press LEFT in the
+  editor, assert the player didn't move" end-to-end is prohibitively painful.
+  Make it cheap and idiomatic. See DESIGN.md § "Test ergonomics for black-box
+  integration testing" and CLAUDE.md Bug Investigation Discipline rule 3.
 - add persisted attrs for children in toml emit and editor ui
-- for some reason, when running against the wall while indoors significantly
-  warps the sprite. but curiously not while running north direction, only south
-  east and west
+- for some reason, when running against the walls significantly warps the
+  sprite. could be related to float position not scaling up correctly or other
+  scaling issue.
