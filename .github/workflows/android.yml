@@ -29,9 +29,13 @@ jobs:
           purge-primary-key: never
 
       - name: Build APK
+        env:
+          ANDROID_SDK_ROOT: ""
         run: |
+          unset ANDROID_SDK_ROOT
           nix develop .#android -c bash -c '
             set -e
+            unset ANDROID_SDK_ROOT
             cd android
             gradle wrapper --gradle-version 8.11.1
             ./gradlew assembleRelease
