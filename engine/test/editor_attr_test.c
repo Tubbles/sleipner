@@ -18,8 +18,10 @@ VEC_IMPL(blueprint_child, BlueprintChild)
 FAKE_VALUE_FUNC(bool, IsKeyDown, int);
 FAKE_VALUE_FUNC(bool, IsGamepadButtonDown, int, int);
 
-/* Cross-file editor fakes: draw.c */
-FAKE_VALUE_FUNC(bool, toggle_pressed, ToggleBinding);
+/* Cross-file editor fakes: keybindings.c */
+FAKE_VALUE_FUNC(bool, binding_pressed, const EditorBinding *);
+FAKE_VALUE_FUNC(bool, binding_held, const EditorBinding *);
+FAKE_VALUE_FUNC(bool, binding_modifier_down, const EditorBinding *);
 
 /* Cross-file editor fakes: core.c */
 FAKE_VALUE_FUNC(Blueprint *, find_blueprint_by_name, GameState *, const char *);
@@ -56,28 +58,28 @@ static void reset_input_fakes(void)
 {
     RESET_FAKE(IsKeyDown);
     RESET_FAKE(IsGamepadButtonDown);
-    RESET_FAKE(toggle_pressed);
+    RESET_FAKE(binding_pressed);
+    RESET_FAKE(binding_held);
+    RESET_FAKE(binding_modifier_down);
     FFF_RESET_HISTORY(); // NOLINT(bugprone-multi-level-implicit-pointer-conversion)
 }
 
 static int target_key_for_press;
-static bool press_specific_toggle(ToggleBinding binding)
+static bool press_specific_binding(const EditorBinding *action)
 {
-    return binding.key == target_key_for_press;
+    return action->binding.key == target_key_for_press;
 }
 
 static int target_key_for_down;
-static bool down_specific_key(int key)
+static bool held_specific_key(const EditorBinding *action)
 {
-    return key == target_key_for_down;
+    return action->binding.key == target_key_for_down;
 }
 
 static int target_button_for_down;
-// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
-static bool down_specific_button(int gamepad, int button)
+static bool held_specific_button(const EditorBinding *action)
 {
-    (void)gamepad;
-    return button == target_button_for_down;
+    return action->binding.gamepad_button == target_button_for_down;
 }
 
 /* ---- apply_attr_delta --------------------------------------------------- */
@@ -150,7 +152,7 @@ void test_editor_read_value_delta_large_minus(void)
 {
     reset_input_fakes();
     target_key_for_press = KEY_LEFT_BRACKET;
-    toggle_pressed_fake.custom_fake = press_specific_toggle;
+    binding_pressed_fake.custom_fake = press_specific_binding;
     TEST_ASSERT_EQUAL_INT(-EDITOR_ATTR_LARGE_STEP, read_value_delta());
 }
 
@@ -158,7 +160,7 @@ void test_editor_read_value_delta_large_plus(void)
 {
     reset_input_fakes();
     target_key_for_press = KEY_RIGHT_BRACKET;
-    toggle_pressed_fake.custom_fake = press_specific_toggle;
+    binding_pressed_fake.custom_fake = press_specific_binding;
     TEST_ASSERT_EQUAL_INT(EDITOR_ATTR_LARGE_STEP, read_value_delta());
 }
 
@@ -166,14 +168,14 @@ void test_editor_read_value_delta_huge_minus(void)
 {
     reset_input_fakes();
     target_key_for_press = KEY_PAGE_DOWN;
-    toggle_pressed_fake.custom_fake = press_specific_toggle;
+    binding_pressed_fake.custom_fake = press_specific_binding;
     TEST_ASSERT_EQUAL_INT(-EDITOR_ATTR_HUGE_STEP, read_value_delta());
 }
 
 void test_editor_read_value_delta_combined(void)
 {
     reset_input_fakes();
-    toggle_pressed_fake.return_val = true;
+    binding_pressed_fake.return_val = true;
     int expected = -EDITOR_ATTR_LARGE_STEP + EDITOR_ATTR_LARGE_STEP - EDITOR_ATTR_HUGE_STEP + EDITOR_ATTR_HUGE_STEP;
     TEST_ASSERT_EQUAL_INT(expected, read_value_delta());
 }
@@ -184,7 +186,7 @@ void test_editor_read_held_dir_left_key(void)
 {
     reset_input_fakes();
     target_key_for_down = KEY_LEFT;
-    IsKeyDown_fake.custom_fake = down_specific_key;
+    binding_held_fake.custom_fake = held_specific_key;
     TEST_ASSERT_EQUAL_INT(-1, read_held_dir());
 }
 
@@ -192,7 +194,7 @@ void test_editor_read_held_dir_right_gamepad(void)
 {
     reset_input_fakes();
     target_button_for_down = GAMEPAD_BUTTON_LEFT_FACE_RIGHT;
-    IsGamepadButtonDown_fake.custom_fake = down_specific_button;
+    binding_held_fake.custom_fake = held_specific_button;
     TEST_ASSERT_EQUAL_INT(1, read_held_dir());
 }
 

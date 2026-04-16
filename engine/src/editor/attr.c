@@ -1,6 +1,7 @@
 #include "editor/internal.h"
 
 #include "alloc.h"
+#include "editor/keybindings.h"
 #include "str.h"
 #include "strv.h"
 
@@ -9,19 +10,34 @@
 
 #define RADIX_DECIMAL 10
 
+enum {
+    ATTR_EDIT_ACT_CONFIRM,
+    ATTR_EDIT_ACT_CANCEL,
+    ATTR_EDIT_ACT_DEC_ONE,
+    ATTR_EDIT_ACT_INC_ONE,
+    ATTR_EDIT_ACT_DEC_TEN,
+    ATTR_EDIT_ACT_INC_TEN,
+    ATTR_EDIT_ACT_DEC_HUNDRED,
+    ATTR_EDIT_ACT_INC_HUNDRED,
+    ATTR_EDIT_ACT_COUNT
+};
+
+static const EditorBinding attr_edit_actions[ATTR_EDIT_ACT_COUNT];
+static const EditorBindingTable attr_edit_table;
+
 static int read_value_delta(void)
 {
     int delta = 0;
-    if (toggle_pressed((ToggleBinding){KEY_LEFT_BRACKET, GAMEPAD_BUTTON_LEFT_TRIGGER_1})) {
+    if (binding_pressed(&attr_edit_actions[ATTR_EDIT_ACT_DEC_TEN])) {
         delta -= EDITOR_ATTR_LARGE_STEP;
     }
-    if (toggle_pressed((ToggleBinding){KEY_RIGHT_BRACKET, GAMEPAD_BUTTON_RIGHT_TRIGGER_1})) {
+    if (binding_pressed(&attr_edit_actions[ATTR_EDIT_ACT_INC_TEN])) {
         delta += EDITOR_ATTR_LARGE_STEP;
     }
-    if (toggle_pressed((ToggleBinding){KEY_PAGE_DOWN, GAMEPAD_BUTTON_LEFT_TRIGGER_2})) {
+    if (binding_pressed(&attr_edit_actions[ATTR_EDIT_ACT_DEC_HUNDRED])) {
         delta -= EDITOR_ATTR_HUGE_STEP;
     }
-    if (toggle_pressed((ToggleBinding){KEY_PAGE_UP, GAMEPAD_BUTTON_RIGHT_TRIGGER_2})) {
+    if (binding_pressed(&attr_edit_actions[ATTR_EDIT_ACT_INC_HUNDRED])) {
         delta += EDITOR_ATTR_HUGE_STEP;
     }
     return delta;
@@ -29,10 +45,10 @@ static int read_value_delta(void)
 
 static int read_held_dir(void)
 {
-    if (IsKeyDown(KEY_LEFT) || IsGamepadButtonDown(0, GAMEPAD_BUTTON_LEFT_FACE_LEFT)) {
+    if (binding_held(&attr_edit_actions[ATTR_EDIT_ACT_DEC_ONE])) {
         return -1;
     }
-    if (IsKeyDown(KEY_RIGHT) || IsGamepadButtonDown(0, GAMEPAD_BUTTON_LEFT_FACE_RIGHT)) {
+    if (binding_held(&attr_edit_actions[ATTR_EDIT_ACT_INC_ONE])) {
         return 1;
     }
     return 0;
@@ -281,13 +297,13 @@ static void reset_attr_hold(EditorState *editor_state)
 static void
 handle_child_offset_edit(GameState *state, EditorState *editor_state, UndoHistory *undo_history, float delta_time)
 {
-    if (toggle_pressed((ToggleBinding){KEY_ENTER, GAMEPAD_BUTTON_RIGHT_FACE_DOWN})) {
+    if (binding_pressed(&attr_edit_actions[ATTR_EDIT_ACT_CONFIRM])) {
         confirm_child_offset_edit(state, editor_state, undo_history, editor_state->saved_attr_int);
         reset_attr_hold(editor_state);
         editor_state->sub_mode = EDITOR_SUB_BROWSE;
         return;
     }
-    if (toggle_pressed((ToggleBinding){KEY_ESCAPE, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT})) {
+    if (binding_pressed(&attr_edit_actions[ATTR_EDIT_ACT_CANCEL])) {
         editor_state->editing_child_offset = false;
         reset_attr_hold(editor_state);
         editor_state->sub_mode = EDITOR_SUB_BROWSE;
@@ -342,11 +358,11 @@ void handle_attr_edit_input(GameState *state, EditorState *editor_state, UndoHis
         editor_state->sub_mode = EDITOR_SUB_BROWSE;
         return;
     }
-    if (toggle_pressed((ToggleBinding){KEY_ENTER, GAMEPAD_BUTTON_RIGHT_FACE_DOWN})) {
+    if (binding_pressed(&attr_edit_actions[ATTR_EDIT_ACT_CONFIRM])) {
         attr_edit_confirm(state, editor_state, undo_history);
         return;
     }
-    if (toggle_pressed((ToggleBinding){KEY_ESCAPE, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT})) {
+    if (binding_pressed(&attr_edit_actions[ATTR_EDIT_ACT_CANCEL])) {
         if (current_attr->type == ATTR_INT) {
             current_attr->value.i = editor_state->saved_attr_int;
         } else if (current_attr->type == ATTR_FLOAT) {
@@ -383,4 +399,60 @@ void handle_attr_edit_input(GameState *state, EditorState *editor_state, UndoHis
         editor_state->attr_hold_subtick -= period;
         apply_attr_delta(state, editor_state, held);
     }
+}
+
+/* --- Binding table --- */
+
+static const EditorBinding attr_edit_actions[ATTR_EDIT_ACT_COUNT] = {
+    [ATTR_EDIT_ACT_CONFIRM] =
+        {
+            .binding = {KEY_ENTER, GAMEPAD_BUTTON_RIGHT_FACE_DOWN},
+            .description = "Confirm",
+        },
+    [ATTR_EDIT_ACT_CANCEL] =
+        {
+            .binding = {KEY_ESCAPE, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT},
+            .description = "Cancel",
+        },
+    [ATTR_EDIT_ACT_DEC_ONE] =
+        {
+            .binding = {KEY_LEFT, GAMEPAD_BUTTON_LEFT_FACE_LEFT},
+            .description = "-1 (hold)",
+        },
+    [ATTR_EDIT_ACT_INC_ONE] =
+        {
+            .binding = {KEY_RIGHT, GAMEPAD_BUTTON_LEFT_FACE_RIGHT},
+            .description = "+1 (hold)",
+        },
+    [ATTR_EDIT_ACT_DEC_TEN] =
+        {
+            .binding = {KEY_LEFT_BRACKET, GAMEPAD_BUTTON_LEFT_TRIGGER_1},
+            .description = "-10",
+        },
+    [ATTR_EDIT_ACT_INC_TEN] =
+        {
+            .binding = {KEY_RIGHT_BRACKET, GAMEPAD_BUTTON_RIGHT_TRIGGER_1},
+            .description = "+10",
+        },
+    [ATTR_EDIT_ACT_DEC_HUNDRED] =
+        {
+            .binding = {KEY_PAGE_DOWN, GAMEPAD_BUTTON_LEFT_TRIGGER_2},
+            .description = "-100",
+        },
+    [ATTR_EDIT_ACT_INC_HUNDRED] =
+        {
+            .binding = {KEY_PAGE_UP, GAMEPAD_BUTTON_RIGHT_TRIGGER_2},
+            .description = "+100",
+        },
+};
+
+static const EditorBindingTable attr_edit_table = {
+    .actions = attr_edit_actions,
+    .count = ATTR_EDIT_ACT_COUNT,
+    .mode_label = "Adjust value",
+};
+
+const EditorBindingTable *attr_edit_bindings(void)
+{
+    return &attr_edit_table;
 }

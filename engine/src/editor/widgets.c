@@ -3,6 +3,7 @@
 #include "alloc.h"
 #include "arena.h"
 #include "debug.h"
+#include "editor/keybindings.h"
 #include "error.h"
 #include "str.h"
 #include "strv.h"
@@ -10,6 +11,40 @@
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
+
+enum { RADIAL_ACT_CONFIRM, RADIAL_ACT_CANCEL, RADIAL_ACT_COUNT };
+
+enum {
+    WORD_BUILDER_ACT_UP,
+    WORD_BUILDER_ACT_DOWN,
+    WORD_BUILDER_ACT_PAGE_UP,
+    WORD_BUILDER_ACT_PAGE_DOWN,
+    WORD_BUILDER_ACT_CONFIRM,
+    WORD_BUILDER_ACT_KEYBOARD,
+    WORD_BUILDER_ACT_CANCEL,
+    WORD_BUILDER_ACT_COUNT
+};
+
+enum {
+    FUZZY_FINDER_ACT_UP,
+    FUZZY_FINDER_ACT_DOWN,
+    FUZZY_FINDER_ACT_PAGE_UP,
+    FUZZY_FINDER_ACT_PAGE_DOWN,
+    FUZZY_FINDER_ACT_CONFIRM,
+    FUZZY_FINDER_ACT_CANCEL,
+    FUZZY_FINDER_ACT_COUNT
+};
+
+enum { GAMEPAD_KB_ACT_CONFIRM, GAMEPAD_KB_ACT_CANCEL, GAMEPAD_KB_ACT_SWITCH, GAMEPAD_KB_ACT_COUNT };
+
+static const EditorBinding radial_actions[RADIAL_ACT_COUNT];
+static const EditorBindingTable radial_table;
+static const EditorBinding word_builder_actions[WORD_BUILDER_ACT_COUNT];
+static const EditorBindingTable word_builder_table;
+static const EditorBinding fuzzy_finder_actions[FUZZY_FINDER_ACT_COUNT];
+static const EditorBindingTable fuzzy_finder_table;
+static const EditorBinding gamepad_kb_actions[GAMEPAD_KB_ACT_COUNT];
+static const EditorBindingTable gamepad_kb_table;
 
 /* --- Radial picker --- */
 
@@ -83,12 +118,12 @@ void draw_radial_picker(ScreenSize screen, const EditorState *editor_state, Font
 void handle_radial_input(EditorState *editor_state, InputState input)
 {
     editor_state->radial_selected = radial_sector_from_stick(input.left_stick, editor_state->radial_item_count);
-    if (toggle_pressed((ToggleBinding){KEY_ESCAPE, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT})) {
+    if (binding_pressed(&radial_actions[RADIAL_ACT_CANCEL])) {
         editor_state->radial_confirmed = -1;
         editor_state->sub_mode = EDITOR_SUB_BROWSE;
         return;
     }
-    if (toggle_pressed((ToggleBinding){KEY_ENTER, GAMEPAD_BUTTON_RIGHT_FACE_DOWN})) {
+    if (binding_pressed(&radial_actions[RADIAL_ACT_CONFIRM])) {
         editor_state->radial_confirmed = editor_state->radial_selected;
         editor_state->sub_mode = EDITOR_SUB_BROWSE;
     }
@@ -217,8 +252,8 @@ static bool add_attr_by_name(Diag *diag, GameState *state, EditorState *editor_s
             if (sel < 0) {
                 return false;
             }
-            Blueprint *blueprint = find_blueprint_by_name(
-                state, state->gamedata.current_level.entities.data[sel].blueprint_name.ptr);
+            Blueprint *blueprint =
+                find_blueprint_by_name(state, state->gamedata.current_level.entities.data[sel].blueprint_name.ptr);
             if (!blueprint) {
                 return false;
             }
@@ -292,21 +327,21 @@ static void word_builder_confirm(Diag *diag, GameState *state, EditorState *edit
 
 static void word_builder_navigate(EditorState *editor_state, int total)
 {
-    if (toggle_pressed((ToggleBinding){KEY_UP, GAMEPAD_BUTTON_LEFT_FACE_UP})) {
+    if (binding_pressed(&word_builder_actions[WORD_BUILDER_ACT_UP])) {
         if (editor_state->word_builder_scroll > 0) {
             editor_state->word_builder_scroll--;
         }
     }
-    if (toggle_pressed((ToggleBinding){KEY_DOWN, GAMEPAD_BUTTON_LEFT_FACE_DOWN})) {
+    if (binding_pressed(&word_builder_actions[WORD_BUILDER_ACT_DOWN])) {
         if (editor_state->word_builder_scroll < total - 1) {
             editor_state->word_builder_scroll++;
         }
     }
-    if (toggle_pressed((ToggleBinding){KEY_Q, GAMEPAD_BUTTON_LEFT_TRIGGER_1})) {
+    if (binding_pressed(&word_builder_actions[WORD_BUILDER_ACT_PAGE_UP])) {
         int new_scroll = editor_state->word_builder_scroll - WORD_BUILDER_PAGE_SIZE;
         editor_state->word_builder_scroll = (new_scroll < 0) ? 0 : new_scroll;
     }
-    if (toggle_pressed((ToggleBinding){KEY_E, GAMEPAD_BUTTON_RIGHT_TRIGGER_1})) {
+    if (binding_pressed(&word_builder_actions[WORD_BUILDER_ACT_PAGE_DOWN])) {
         int new_scroll = editor_state->word_builder_scroll + WORD_BUILDER_PAGE_SIZE;
         editor_state->word_builder_scroll = (new_scroll >= total) ? total - 1 : new_scroll;
     }
@@ -316,7 +351,7 @@ void handle_word_builder_input(Diag *diag, GameState *state, EditorState *editor
 {
     int total = word_builder_total_count(state);
     word_builder_navigate(editor_state, total);
-    if (toggle_pressed((ToggleBinding){KEY_ENTER, GAMEPAD_BUTTON_RIGHT_FACE_DOWN})) {
+    if (binding_pressed(&word_builder_actions[WORD_BUILDER_ACT_CONFIRM])) {
         if (editor_state->word_builder_scroll == 0 && editor_state->creating_blueprint) {
             create_blank_blueprint(state, editor_state, undo_history, editor_state->word_builder_buf);
             editor_state->creating_blueprint = false;
@@ -347,13 +382,13 @@ void handle_word_builder_input(Diag *diag, GameState *state, EditorState *editor
             word_builder_append(editor_state, word_builder_item(state, editor_state->word_builder_scroll));
         }
     }
-    if (toggle_pressed((ToggleBinding){KEY_DELETE, GAMEPAD_BUTTON_RIGHT_FACE_LEFT})) {
+    if (binding_pressed(&word_builder_actions[WORD_BUILDER_ACT_KEYBOARD])) {
         editor_state->keyboard_group = -1;
         editor_state->keyboard_selected = -1;
         editor_state->sub_mode = EDITOR_SUB_GAMEPAD_KB;
         return;
     }
-    if (toggle_pressed((ToggleBinding){KEY_ESCAPE, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT})) {
+    if (binding_pressed(&word_builder_actions[WORD_BUILDER_ACT_CANCEL])) {
         if (editor_state->word_builder_len > 0) {
             word_builder_pop(editor_state);
         } else {
@@ -534,21 +569,21 @@ void draw_fuzzy_finder_panel(ScreenSize screen, const GameState *state, const Ed
 
 static void fuzzy_finder_navigate(EditorState *editor_state, int total)
 {
-    if (toggle_pressed((ToggleBinding){KEY_UP, GAMEPAD_BUTTON_LEFT_FACE_UP})) {
+    if (binding_pressed(&fuzzy_finder_actions[FUZZY_FINDER_ACT_UP])) {
         if (editor_state->fuzzy_finder_scroll > 0) {
             editor_state->fuzzy_finder_scroll--;
         }
     }
-    if (toggle_pressed((ToggleBinding){KEY_DOWN, GAMEPAD_BUTTON_LEFT_FACE_DOWN})) {
+    if (binding_pressed(&fuzzy_finder_actions[FUZZY_FINDER_ACT_DOWN])) {
         if (editor_state->fuzzy_finder_scroll < total - 1) {
             editor_state->fuzzy_finder_scroll++;
         }
     }
-    if (toggle_pressed((ToggleBinding){KEY_Q, GAMEPAD_BUTTON_LEFT_TRIGGER_1})) {
+    if (binding_pressed(&fuzzy_finder_actions[FUZZY_FINDER_ACT_PAGE_UP])) {
         int new_scroll = editor_state->fuzzy_finder_scroll - FUZZY_FINDER_PAGE_SIZE;
         editor_state->fuzzy_finder_scroll = (new_scroll < 0) ? 0 : new_scroll;
     }
-    if (toggle_pressed((ToggleBinding){KEY_E, GAMEPAD_BUTTON_RIGHT_TRIGGER_1})) {
+    if (binding_pressed(&fuzzy_finder_actions[FUZZY_FINDER_ACT_PAGE_DOWN])) {
         int new_scroll = editor_state->fuzzy_finder_scroll + FUZZY_FINDER_PAGE_SIZE;
         editor_state->fuzzy_finder_scroll = (new_scroll >= total) ? total - 1 : new_scroll;
     }
@@ -628,7 +663,7 @@ void handle_fuzzy_finder_input(Diag *diag,
 {
     int total = fuzzy_finder_total_count(editor_state);
     fuzzy_finder_navigate(editor_state, total);
-    if (toggle_pressed((ToggleBinding){KEY_ENTER, GAMEPAD_BUTTON_RIGHT_FACE_DOWN})) {
+    if (binding_pressed(&fuzzy_finder_actions[FUZZY_FINDER_ACT_CONFIRM])) {
         if (editor_state->adding_child) {
             if (editor_state->fuzzy_finder_scroll == 0) {
                 fuzzy_finder_enter_word_builder(state, editor_state);
@@ -661,7 +696,7 @@ void handle_fuzzy_finder_input(Diag *diag,
             editor_state->sub_mode = EDITOR_SUB_BROWSE;
         }
     }
-    if (toggle_pressed((ToggleBinding){KEY_ESCAPE, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT})) {
+    if (binding_pressed(&fuzzy_finder_actions[FUZZY_FINDER_ACT_CANCEL])) {
         editor_state->adding_attr = false;
         editor_state->adding_child = false;
         editor_state->adding_blueprint_attr = false;
@@ -782,7 +817,7 @@ void handle_gamepad_kb_input(EditorState *editor_state, InputState input)
 {
     int total = keyboard_item_count(editor_state);
     editor_state->keyboard_selected = radial_sector_from_stick(input.left_stick, total);
-    if (toggle_pressed((ToggleBinding){KEY_ENTER, GAMEPAD_BUTTON_RIGHT_FACE_DOWN})) {
+    if (binding_pressed(&gamepad_kb_actions[GAMEPAD_KB_ACT_CONFIRM])) {
         if (editor_state->keyboard_selected >= 0) {
             if (editor_state->keyboard_group < 0) {
                 editor_state->keyboard_group = editor_state->keyboard_selected;
@@ -796,7 +831,7 @@ void handle_gamepad_kb_input(EditorState *editor_state, InputState input)
             }
         }
     }
-    if (toggle_pressed((ToggleBinding){KEY_ESCAPE, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT})) {
+    if (binding_pressed(&gamepad_kb_actions[GAMEPAD_KB_ACT_CANCEL])) {
         if (editor_state->keyboard_group >= 0) {
             editor_state->keyboard_group = -1;
         } else if (editor_state->word_builder_len > 0) {
@@ -805,7 +840,155 @@ void handle_gamepad_kb_input(EditorState *editor_state, InputState input)
             editor_state->sub_mode = EDITOR_SUB_WORD_BUILDER;
         }
     }
-    if (toggle_pressed((ToggleBinding){KEY_DELETE, GAMEPAD_BUTTON_RIGHT_FACE_LEFT})) {
+    if (binding_pressed(&gamepad_kb_actions[GAMEPAD_KB_ACT_SWITCH])) {
         editor_state->sub_mode = EDITOR_SUB_WORD_BUILDER;
     }
+}
+
+/* --- Binding tables --- */
+
+static const EditorBinding radial_actions[RADIAL_ACT_COUNT] = {
+    [RADIAL_ACT_CONFIRM] =
+        {
+            .binding = {KEY_ENTER, GAMEPAD_BUTTON_RIGHT_FACE_DOWN},
+            .description = "Confirm",
+        },
+    [RADIAL_ACT_CANCEL] =
+        {
+            .binding = {KEY_ESCAPE, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT},
+            .description = "Cancel",
+        },
+};
+
+static const EditorBindingTable radial_table = {
+    .actions = radial_actions,
+    .count = RADIAL_ACT_COUNT,
+    .mode_label = "Radial picker",
+};
+
+const EditorBindingTable *radial_bindings(void)
+{
+    return &radial_table;
+}
+
+static const EditorBinding word_builder_actions[WORD_BUILDER_ACT_COUNT] = {
+    [WORD_BUILDER_ACT_UP] =
+        {
+            .binding = {KEY_UP, GAMEPAD_BUTTON_LEFT_FACE_UP},
+            .description = "Prev",
+        },
+    [WORD_BUILDER_ACT_DOWN] =
+        {
+            .binding = {KEY_DOWN, GAMEPAD_BUTTON_LEFT_FACE_DOWN},
+            .description = "Next",
+        },
+    [WORD_BUILDER_ACT_PAGE_UP] =
+        {
+            .binding = {KEY_Q, GAMEPAD_BUTTON_LEFT_TRIGGER_1},
+            .description = "Page up",
+        },
+    [WORD_BUILDER_ACT_PAGE_DOWN] =
+        {
+            .binding = {KEY_E, GAMEPAD_BUTTON_RIGHT_TRIGGER_1},
+            .description = "Page down",
+        },
+    [WORD_BUILDER_ACT_CONFIRM] =
+        {
+            .binding = {KEY_ENTER, GAMEPAD_BUTTON_RIGHT_FACE_DOWN},
+            .description = "Append / Done",
+        },
+    [WORD_BUILDER_ACT_KEYBOARD] =
+        {
+            .binding = {KEY_DELETE, GAMEPAD_BUTTON_RIGHT_FACE_LEFT},
+            .description = "Keyboard",
+        },
+    [WORD_BUILDER_ACT_CANCEL] =
+        {
+            .binding = {KEY_ESCAPE, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT},
+            .description = "Pop / Cancel",
+        },
+};
+
+static const EditorBindingTable word_builder_table = {
+    .actions = word_builder_actions,
+    .count = WORD_BUILDER_ACT_COUNT,
+    .mode_label = "Word builder",
+};
+
+const EditorBindingTable *word_builder_bindings(void)
+{
+    return &word_builder_table;
+}
+
+static const EditorBinding fuzzy_finder_actions[FUZZY_FINDER_ACT_COUNT] = {
+    [FUZZY_FINDER_ACT_UP] =
+        {
+            .binding = {KEY_UP, GAMEPAD_BUTTON_LEFT_FACE_UP},
+            .description = "Prev",
+        },
+    [FUZZY_FINDER_ACT_DOWN] =
+        {
+            .binding = {KEY_DOWN, GAMEPAD_BUTTON_LEFT_FACE_DOWN},
+            .description = "Next",
+        },
+    [FUZZY_FINDER_ACT_PAGE_UP] =
+        {
+            .binding = {KEY_Q, GAMEPAD_BUTTON_LEFT_TRIGGER_1},
+            .description = "Page up",
+        },
+    [FUZZY_FINDER_ACT_PAGE_DOWN] =
+        {
+            .binding = {KEY_E, GAMEPAD_BUTTON_RIGHT_TRIGGER_1},
+            .description = "Page down",
+        },
+    [FUZZY_FINDER_ACT_CONFIRM] =
+        {
+            .binding = {KEY_ENTER, GAMEPAD_BUTTON_RIGHT_FACE_DOWN},
+            .description = "Pick",
+        },
+    [FUZZY_FINDER_ACT_CANCEL] =
+        {
+            .binding = {KEY_ESCAPE, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT},
+            .description = "Cancel",
+        },
+};
+
+static const EditorBindingTable fuzzy_finder_table = {
+    .actions = fuzzy_finder_actions,
+    .count = FUZZY_FINDER_ACT_COUNT,
+    .mode_label = "Name picker",
+};
+
+const EditorBindingTable *fuzzy_finder_bindings(void)
+{
+    return &fuzzy_finder_table;
+}
+
+static const EditorBinding gamepad_kb_actions[GAMEPAD_KB_ACT_COUNT] = {
+    [GAMEPAD_KB_ACT_CONFIRM] =
+        {
+            .binding = {KEY_ENTER, GAMEPAD_BUTTON_RIGHT_FACE_DOWN},
+            .description = "Select",
+        },
+    [GAMEPAD_KB_ACT_CANCEL] =
+        {
+            .binding = {KEY_ESCAPE, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT},
+            .description = "Back / Bksp",
+        },
+    [GAMEPAD_KB_ACT_SWITCH] =
+        {
+            .binding = {KEY_DELETE, GAMEPAD_BUTTON_RIGHT_FACE_LEFT},
+            .description = "Word builder",
+        },
+};
+
+static const EditorBindingTable gamepad_kb_table = {
+    .actions = gamepad_kb_actions,
+    .count = GAMEPAD_KB_ACT_COUNT,
+    .mode_label = "Keyboard",
+};
+
+const EditorBindingTable *gamepad_kb_bindings(void)
+{
+    return &gamepad_kb_table;
 }

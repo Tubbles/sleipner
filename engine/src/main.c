@@ -9,6 +9,8 @@
 #include "debug.h"
 #include "depth_sort.h"
 #include "editor/editor.h"
+#include "editor/keybindings.h"
+#include "editor/main_bindings.h"
 #include "entity.h"
 #include "diag.h"
 #include "game.h"
@@ -696,7 +698,7 @@ static void draw_entities_depth_sorted(GameState *state)
 
 static void handle_save_input(Diag *diag, GameState *state, UndoHistory *undo_history)
 {
-    if (toggle_pressed((ToggleBinding){KEY_F9, GAMEPAD_BUTTON_RIGHT_FACE_UP})) {
+    if (binding_pressed(&play_mode_actions[PLAY_ACT_SAVE])) {
         if (!save_gamedata(state)) {
             debug_log(diag->debug, "save error: %s", error_get(diag->error));
             error_clear(diag->error);
@@ -715,7 +717,7 @@ static void handle_save_input(Diag *diag, GameState *state, UndoHistory *undo_hi
 static void handle_load_input(
     Diag *diag, GameState *state, EditorState *editor_state, WatchList *watches, UndoHistory *undo_history)
 {
-    if (!toggle_pressed((ToggleBinding){KEY_F10, GAMEPAD_BUTTON_MIDDLE_LEFT})) {
+    if (!binding_pressed(&play_mode_actions[PLAY_ACT_RELOAD])) {
         return;
     }
     bool was_dirty = undo_history_is_dirty(undo_history);
@@ -738,7 +740,7 @@ static void handle_place_input(Diag *diag,
         editor_state->sub_mode = EDITOR_SUB_BROWSE;
         return;
     }
-    if (toggle_pressed((ToggleBinding){KEY_ENTER, GAMEPAD_BUTTON_RIGHT_FACE_DOWN})) {
+    if (binding_pressed(&place_actions[PLACE_ACT_CONFIRM])) {
         int bp_index = editor_state->place_blueprint_index;
         const Blueprint *blueprint = &state->gamedata.blueprints.entries.data[bp_index];
         Allocator alloc = allocator_arena(&state->gamedata_arena);
@@ -762,22 +764,22 @@ static void handle_place_input(Diag *diag,
                                    strv_from_cstr("Place entity"));
         }
     }
-    if (toggle_pressed((ToggleBinding){KEY_ESCAPE, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT})) {
+    if (binding_pressed(&place_actions[PLACE_ACT_CANCEL])) {
         editor_state->sub_mode = EDITOR_SUB_BROWSE;
     }
-    if (toggle_pressed((ToggleBinding){KEY_UP, GAMEPAD_BUTTON_LEFT_FACE_UP})) {
+    if (binding_pressed(&place_actions[PLACE_ACT_UP])) {
         int count = state->gamedata.blueprints.entries.count;
         editor_state->place_blueprint_index = (editor_state->place_blueprint_index - 1 + count) % count;
     }
-    if (toggle_pressed((ToggleBinding){KEY_DOWN, GAMEPAD_BUTTON_LEFT_FACE_DOWN})) {
+    if (binding_pressed(&place_actions[PLACE_ACT_DOWN])) {
         int count = state->gamedata.blueprints.entries.count;
         editor_state->place_blueprint_index = (editor_state->place_blueprint_index + 1) % count;
     }
-    if (toggle_pressed((ToggleBinding){KEY_Q, GAMEPAD_BUTTON_LEFT_TRIGGER_1})) {
+    if (binding_pressed(&place_actions[PLACE_ACT_PAGE_UP])) {
         int new_index = editor_state->place_blueprint_index - EDITOR_PLACE_PAGE_SIZE;
         editor_state->place_blueprint_index = (new_index < 0) ? 0 : new_index;
     }
-    if (toggle_pressed((ToggleBinding){KEY_E, GAMEPAD_BUTTON_RIGHT_TRIGGER_1})) {
+    if (binding_pressed(&place_actions[PLACE_ACT_PAGE_DOWN])) {
         int count = state->gamedata.blueprints.entries.count;
         int new_index = editor_state->place_blueprint_index + EDITOR_PLACE_PAGE_SIZE;
         editor_state->place_blueprint_index = (new_index >= count) ? count - 1 : new_index;
@@ -921,10 +923,10 @@ static void handle_global_toggles(GameState *state, bool *font_preview_enabled)
         state->debug_enabled = !state->debug_enabled;
         debug_log(&state->debug, "debug %s (frame %d)", (int)state->debug_enabled ? "ON" : "OFF", state->frame);
     }
-    if (toggle_pressed((ToggleBinding){KEY_F4, GAMEPAD_BUTTON_RIGHT_THUMB})) {
+    if (binding_pressed(&play_mode_actions[PLAY_ACT_FONT_PREVIEW])) {
         *font_preview_enabled = !*font_preview_enabled;
     }
-    if (toggle_pressed((ToggleBinding){KEY_F5, GAMEPAD_BUTTON_MIDDLE_RIGHT})) {
+    if (binding_pressed(&play_mode_actions[PLAY_ACT_ENTER_EDITOR])) {
         state->editor_mode = !state->editor_mode;
         debug_log(&state->debug, "editor %s (frame %d)", (int)state->editor_mode ? "ON" : "OFF", state->frame);
     }

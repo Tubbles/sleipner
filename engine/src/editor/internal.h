@@ -35,9 +35,9 @@ typedef enum {
 } AttrSection;
 
 typedef enum {
-    ATTR_ROW_KIND_ATTR,     /* row is an attribute, index_in_section is the AttrSet index */
-    ATTR_ROW_KIND_ADD,      /* row is an ADD sentinel for the section */
-    ATTR_ROW_KIND_INVALID,  /* row index is out of range */
+    ATTR_ROW_KIND_ATTR,    /* row is an attribute, index_in_section is the AttrSet index */
+    ATTR_ROW_KIND_ADD,     /* row is an ADD sentinel for the section */
+    ATTR_ROW_KIND_INVALID, /* row index is out of range */
 } AttrRowKind;
 
 typedef struct {

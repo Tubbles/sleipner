@@ -12,6 +12,11 @@
 
 DEFINE_FFF_GLOBALS;
 
+/* Cross-file editor fakes: keybindings.c */
+FAKE_VALUE_FUNC(bool, binding_pressed, const EditorBinding *);
+FAKE_VALUE_FUNC(bool, binding_held, const EditorBinding *);
+FAKE_VALUE_FUNC(bool, binding_modifier_down, const EditorBinding *);
+
 /* Cross-file editor fakes: draw.c */
 FAKE_VALUE_FUNC(bool, toggle_pressed, ToggleBinding);
 FAKE_VOID_FUNC(update_editor_camera, Camera2D *, InputState, float);

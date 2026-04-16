@@ -17,6 +17,11 @@ FAKE_VOID_FUNC(DrawCircle, int, int, float, Color);
 FAKE_VOID_FUNC(DrawRing, Vector2, float, float, float, float, int, Color);
 FAKE_VOID_FUNC(DrawRectangle, int, int, int, int, Color);
 
+/* Cross-file editor fakes: keybindings.c */
+FAKE_VALUE_FUNC(bool, binding_pressed, const EditorBinding *);
+FAKE_VALUE_FUNC(bool, binding_held, const EditorBinding *);
+FAKE_VALUE_FUNC(bool, binding_modifier_down, const EditorBinding *);
+
 /* Cross-file editor fakes: draw.c */
 FAKE_VALUE_FUNC(bool, toggle_pressed, ToggleBinding);
 FAKE_VOID_FUNC(draw_ui_text, Font, const char *, int, int, int, Color);
@@ -110,6 +115,9 @@ static Blueprint make_named_blueprint(const char *name)
 static void reset_input_fakes(void)
 {
     RESET_FAKE(toggle_pressed);
+    RESET_FAKE(binding_pressed);
+    RESET_FAKE(binding_held);
+    RESET_FAKE(binding_modifier_down);
     FFF_RESET_HISTORY(); // NOLINT(bugprone-multi-level-implicit-pointer-conversion)
 }
 
@@ -117,6 +125,11 @@ static int target_key_for_press;
 static bool press_specific_toggle(ToggleBinding binding)
 {
     return binding.key == target_key_for_press;
+}
+
+static bool press_specific_binding(const EditorBinding *action)
+{
+    return action->binding.key == target_key_for_press;
 }
 
 /* ---- radial_sector_from_stick ------------------------------------------- */
@@ -337,7 +350,7 @@ void test_editor_word_builder_nav_up(void)
 {
     reset_input_fakes();
     target_key_for_press = KEY_UP;
-    toggle_pressed_fake.custom_fake = press_specific_toggle;
+    binding_pressed_fake.custom_fake = press_specific_binding;
 
     EditorState editor_state = {.word_builder_scroll = 5};
     word_builder_navigate(&editor_state, 10);
@@ -348,7 +361,7 @@ void test_editor_word_builder_nav_up_clamped(void)
 {
     reset_input_fakes();
     target_key_for_press = KEY_UP;
-    toggle_pressed_fake.custom_fake = press_specific_toggle;
+    binding_pressed_fake.custom_fake = press_specific_binding;
 
     EditorState editor_state = {.word_builder_scroll = 0};
     word_builder_navigate(&editor_state, 10);
@@ -359,7 +372,7 @@ void test_editor_word_builder_nav_down(void)
 {
     reset_input_fakes();
     target_key_for_press = KEY_DOWN;
-    toggle_pressed_fake.custom_fake = press_specific_toggle;
+    binding_pressed_fake.custom_fake = press_specific_binding;
 
     EditorState editor_state = {.word_builder_scroll = 0};
     word_builder_navigate(&editor_state, 10);
@@ -370,7 +383,7 @@ void test_editor_word_builder_nav_down_clamped(void)
 {
     reset_input_fakes();
     target_key_for_press = KEY_DOWN;
-    toggle_pressed_fake.custom_fake = press_specific_toggle;
+    binding_pressed_fake.custom_fake = press_specific_binding;
 
     EditorState editor_state = {.word_builder_scroll = 9};
     word_builder_navigate(&editor_state, 10);
@@ -381,7 +394,7 @@ void test_editor_word_builder_nav_page_up(void)
 {
     reset_input_fakes();
     target_key_for_press = KEY_Q;
-    toggle_pressed_fake.custom_fake = press_specific_toggle;
+    binding_pressed_fake.custom_fake = press_specific_binding;
 
     EditorState editor_state = {.word_builder_scroll = 8};
     word_builder_navigate(&editor_state, 20);
@@ -392,7 +405,7 @@ void test_editor_word_builder_nav_page_down(void)
 {
     reset_input_fakes();
     target_key_for_press = KEY_E;
-    toggle_pressed_fake.custom_fake = press_specific_toggle;
+    binding_pressed_fake.custom_fake = press_specific_binding;
 
     EditorState editor_state = {.word_builder_scroll = 0};
     word_builder_navigate(&editor_state, 20);
@@ -558,7 +571,7 @@ void test_fuzzy_finder_navigate_up_clamped(void)
 {
     reset_input_fakes();
     target_key_for_press = KEY_UP;
-    toggle_pressed_fake.custom_fake = press_specific_toggle;
+    binding_pressed_fake.custom_fake = press_specific_binding;
 
     EditorState editor_state = {.fuzzy_finder_scroll = 0};
     fuzzy_finder_navigate(&editor_state, 10);
@@ -569,7 +582,7 @@ void test_fuzzy_finder_navigate_down_clamped(void)
 {
     reset_input_fakes();
     target_key_for_press = KEY_DOWN;
-    toggle_pressed_fake.custom_fake = press_specific_toggle;
+    binding_pressed_fake.custom_fake = press_specific_binding;
 
     EditorState editor_state = {.fuzzy_finder_scroll = 9};
     fuzzy_finder_navigate(&editor_state, 10);
@@ -580,7 +593,7 @@ void test_fuzzy_finder_navigate_page_up(void)
 {
     reset_input_fakes();
     target_key_for_press = KEY_Q;
-    toggle_pressed_fake.custom_fake = press_specific_toggle;
+    binding_pressed_fake.custom_fake = press_specific_binding;
 
     EditorState editor_state = {.fuzzy_finder_scroll = 8};
     fuzzy_finder_navigate(&editor_state, 20);
@@ -591,7 +604,7 @@ void test_fuzzy_finder_navigate_page_down(void)
 {
     reset_input_fakes();
     target_key_for_press = KEY_E;
-    toggle_pressed_fake.custom_fake = press_specific_toggle;
+    binding_pressed_fake.custom_fake = press_specific_binding;
 
     EditorState editor_state = {.fuzzy_finder_scroll = 0};
     fuzzy_finder_navigate(&editor_state, 20);

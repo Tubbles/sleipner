@@ -2,11 +2,42 @@
 
 #include "alloc.h"
 #include "arena.h"
+#include "editor/keybindings.h"
 #include "map.h"
 #include "rule.h"
 #include "strv.h"
 
 #include <string.h>
+
+/* --- Binding tables (declared below, defined at end of file) --- */
+
+enum {
+    BROWSE_ACT_TOOLS,
+    BROWSE_ACT_CONFIRM,
+    BROWSE_ACT_CANCEL,
+    BROWSE_ACT_NAV_DOWN,
+    BROWSE_ACT_NAV_UP,
+    BROWSE_ACT_WATCH,
+    BROWSE_ACT_DELETE,
+    BROWSE_ACT_PLACE,
+    BROWSE_ACT_TYPE_PROPS,
+    BROWSE_ACT_GRAB,
+    BROWSE_ACT_HANDLES,
+    BROWSE_ACT_UNDO,
+    BROWSE_ACT_REDO,
+    BROWSE_ACT_COUNT
+};
+
+enum { DRAG_ACT_CONFIRM, DRAG_ACT_CANCEL, DRAG_ACT_COUNT };
+
+enum { HANDLES_ACT_CONFIRM, HANDLES_ACT_CANCEL, HANDLES_ACT_COUNT };
+
+static const EditorBinding browse_actions[BROWSE_ACT_COUNT];
+static const EditorBindingTable browse_table;
+static const EditorBinding drag_actions[DRAG_ACT_COUNT];
+static const EditorBindingTable drag_table;
+static const EditorBinding handles_actions[HANDLES_ACT_COUNT];
+static const EditorBindingTable handles_table;
 
 /* --- Shared helpers (declared in internal.h) --- */
 
@@ -541,7 +572,7 @@ void handle_browse_input(GameState *state,
         dispatch_radial_confirm(state, editor_state, watches, undo_history);
         return;
     }
-    if (toggle_pressed((ToggleBinding){KEY_TAB, GAMEPAD_BUTTON_MIDDLE_LEFT})) {
+    if (binding_pressed(&browse_actions[BROWSE_ACT_TOOLS])) {
         editor_state->radial_selected = -1;
         editor_state->radial_confirmed = -1;
         editor_state->radial_item_count = EDITOR_TOOLS_ITEM_COUNT;
@@ -549,31 +580,49 @@ void handle_browse_input(GameState *state,
         editor_state->sub_mode = EDITOR_SUB_RADIAL;
         return;
     }
-    if (toggle_pressed((ToggleBinding){KEY_ENTER, GAMEPAD_BUTTON_RIGHT_FACE_DOWN})) {
+    /* Chord bindings (undo/redo) run BEFORE navigation/delete checks so that
+     * L1+Left doesn't also trigger "Handles" on bare L1 — Handles has been
+     * moved off the L1 tap shortcut to avoid this, but the order also matters
+     * for any future chord additions. */
+    if (binding_pressed(&browse_actions[BROWSE_ACT_UNDO])) {
+        undo_history_step_back(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base);
+        reset_editor_selection(editor_state, watches);
+        editor_state->toast_text = undo_history_description(undo_history);
+        editor_state->toast_timer = TOAST_DURATION;
+        return;
+    }
+    if (binding_pressed(&browse_actions[BROWSE_ACT_REDO])) {
+        undo_history_step_forward(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base);
+        reset_editor_selection(editor_state, watches);
+        editor_state->toast_text = undo_history_description(undo_history);
+        editor_state->toast_timer = TOAST_DURATION;
+        return;
+    }
+    if (binding_pressed(&browse_actions[BROWSE_ACT_CONFIRM])) {
         handle_browse_select(state, camera, editor_state, undo_history);
     }
-    if (toggle_pressed((ToggleBinding){KEY_ESCAPE, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT})) {
+    if (binding_pressed(&browse_actions[BROWSE_ACT_CANCEL])) {
         handle_browse_cancel(editor_state);
     }
-    if (toggle_pressed((ToggleBinding){KEY_DOWN, GAMEPAD_BUTTON_LEFT_FACE_DOWN})) {
+    if (binding_pressed(&browse_actions[BROWSE_ACT_NAV_DOWN])) {
         handle_browse_navigate(state, editor_state, 1);
     }
-    if (toggle_pressed((ToggleBinding){KEY_UP, GAMEPAD_BUTTON_LEFT_FACE_UP})) {
+    if (binding_pressed(&browse_actions[BROWSE_ACT_NAV_UP])) {
         handle_browse_navigate(state, editor_state, -1);
     }
-    if (toggle_pressed((ToggleBinding){KEY_LEFT_SHIFT, GAMEPAD_BUTTON_LEFT_TRIGGER_2})) {
+    if (binding_pressed(&browse_actions[BROWSE_ACT_WATCH])) {
         toggle_watch(editor_state, watches);
     }
-    if (toggle_pressed((ToggleBinding){KEY_DELETE, GAMEPAD_BUTTON_RIGHT_FACE_LEFT})) {
+    if (binding_pressed(&browse_actions[BROWSE_ACT_DELETE])) {
         handle_browse_delete(state, editor_state, watches, undo_history);
     }
-    if (toggle_pressed((ToggleBinding){KEY_P, GAMEPAD_BUTTON_RIGHT_TRIGGER_1})) {
+    if (binding_pressed(&browse_actions[BROWSE_ACT_PLACE])) {
         if (state->gamedata.blueprints.entries.count > 0) {
             editor_state->place_blueprint_index = find_place_blueprint_index(state, editor_state);
             editor_state->sub_mode = EDITOR_SUB_PLACE;
         }
     }
-    if (toggle_pressed((ToggleBinding){KEY_RIGHT_BRACKET, GAMEPAD_BUTTON_RIGHT_TRIGGER_2})) {
+    if (binding_pressed(&browse_actions[BROWSE_ACT_TYPE_PROPS])) {
         if (editor_state->selected_attr_index >= 0) {
             editor_state->radial_selected = -1;
             editor_state->radial_confirmed = -1;
@@ -595,18 +644,6 @@ void handle_browse_input(GameState *state,
             }
         }
     }
-    if (toggle_pressed((ToggleBinding){KEY_LEFT, GAMEPAD_BUTTON_LEFT_FACE_LEFT})) {
-        undo_history_step_back(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base);
-        reset_editor_selection(editor_state, watches);
-        editor_state->toast_text = undo_history_description(undo_history);
-        editor_state->toast_timer = TOAST_DURATION;
-    }
-    if (toggle_pressed((ToggleBinding){KEY_RIGHT, GAMEPAD_BUTTON_LEFT_FACE_RIGHT})) {
-        undo_history_step_forward(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base);
-        reset_editor_selection(editor_state, watches);
-        editor_state->toast_text = undo_history_description(undo_history);
-        editor_state->toast_timer = TOAST_DURATION;
-    }
     update_editor_camera(camera, input, delta_time);
 }
 
@@ -620,11 +657,15 @@ void handle_mode_transitions(GameState *state, EditorState *editor_state)
         return;
     }
     const Entity *entity = &state->gamedata.current_level.entities.data[sel];
-    if (toggle_pressed((ToggleBinding){KEY_G, GAMEPAD_BUTTON_LEFT_THUMB})) {
+    if (binding_pressed(&browse_actions[BROWSE_ACT_GRAB])) {
         editor_state->saved_position = entity->position;
         editor_state->sub_mode = EDITOR_SUB_DRAG;
     }
-    if (toggle_pressed((ToggleBinding){KEY_H, GAMEPAD_BUTTON_LEFT_TRIGGER_1})) {
+    /* Handles shortcut: keyboard-only (H). Gamepad users reach Handles via
+     * Tools radial. L1 is reserved as the undo/redo chord modifier and
+     * firing Handles on L1-press would race the chord check — simplest fix
+     * is to drop the gamepad L1 shortcut entirely. */
+    if (binding_pressed(&browse_actions[BROWSE_ACT_HANDLES])) {
         const AttrSet *handle_defaults = entity_resolve_defaults(state, entity->id);
         editor_state->saved_col_offset = (Vector2){
             attr_get_scoped_float(&entity->attrs, handle_defaults, "collision_offset_x", 0.0F),
@@ -646,13 +687,13 @@ void handle_drag_input(
         return;
     }
     Entity *entity = &state->gamedata.current_level.entities.data[sel];
-    if (toggle_pressed((ToggleBinding){KEY_ENTER, GAMEPAD_BUTTON_RIGHT_FACE_DOWN})) {
+    if (binding_pressed(&drag_actions[DRAG_ACT_CONFIRM])) {
         undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
                                strv_from_cstr("Move entity"));
         editor_state->sub_mode = EDITOR_SUB_BROWSE;
         return;
     }
-    if (toggle_pressed((ToggleBinding){KEY_ESCAPE, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT})) {
+    if (binding_pressed(&drag_actions[DRAG_ACT_CANCEL])) {
         entity->position = editor_state->saved_position;
         editor_state->sub_mode = EDITOR_SUB_BROWSE;
         return;
@@ -670,13 +711,11 @@ void handle_handle_input(
     }
     Entity *entity = &state->gamedata.current_level.entities.data[sel];
     Allocator alloc = allocator_arena(&state->gamedata_arena);
-    if (toggle_pressed((ToggleBinding){KEY_ENTER, GAMEPAD_BUTTON_RIGHT_FACE_DOWN})) {
+    if (binding_pressed(&handles_actions[HANDLES_ACT_CONFIRM])) {
         Blueprint *blueprint = find_blueprint_by_name(state, entity->blueprint_name.ptr);
         if (blueprint != nullptr) {
-            (void)attr_set_float(&alloc, &blueprint->attrs, "collision_offset_x",
-                                 editor_state->saved_col_offset.x);
-            (void)attr_set_float(&alloc, &blueprint->attrs, "collision_offset_y",
-                                 editor_state->saved_col_offset.y);
+            (void)attr_set_float(&alloc, &blueprint->attrs, "collision_offset_x", editor_state->saved_col_offset.x);
+            (void)attr_set_float(&alloc, &blueprint->attrs, "collision_offset_y", editor_state->saved_col_offset.y);
             (void)attr_set_float(&alloc, &blueprint->attrs, "collision_w", editor_state->saved_col_size.x);
             (void)attr_set_float(&alloc, &blueprint->attrs, "collision_h", editor_state->saved_col_size.y);
         }
@@ -689,7 +728,7 @@ void handle_handle_input(
         editor_state->sub_mode = EDITOR_SUB_BROWSE;
         return;
     }
-    if (toggle_pressed((ToggleBinding){KEY_ESCAPE, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT})) {
+    if (binding_pressed(&handles_actions[HANDLES_ACT_CANCEL])) {
         attr_remove(&alloc, &entity->attrs, "collision_offset_x");
         attr_remove(&alloc, &entity->attrs, "collision_offset_y");
         attr_remove(&alloc, &entity->attrs, "collision_w");
@@ -711,4 +750,137 @@ void handle_handle_input(
     (void)attr_set_float(&alloc, &entity->attrs, "collision_offset_y", editor_state->saved_col_offset.y);
     (void)attr_set_float(&alloc, &entity->attrs, "collision_w", editor_state->saved_col_size.x);
     (void)attr_set_float(&alloc, &entity->attrs, "collision_h", editor_state->saved_col_size.y);
+}
+
+/* --- Binding tables --- */
+
+static const EditorBinding browse_actions[BROWSE_ACT_COUNT] = {
+    [BROWSE_ACT_TOOLS] =
+        {
+            .binding = {KEY_TAB, GAMEPAD_BUTTON_MIDDLE_LEFT},
+            .description = "Tools",
+        },
+    [BROWSE_ACT_CONFIRM] =
+        {
+            .binding = {KEY_ENTER, GAMEPAD_BUTTON_RIGHT_FACE_DOWN},
+            .description = "Select / Edit",
+        },
+    [BROWSE_ACT_CANCEL] =
+        {
+            .binding = {KEY_ESCAPE, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT},
+            .description = "Back / Deselect",
+        },
+    [BROWSE_ACT_NAV_DOWN] =
+        {
+            .binding = {KEY_DOWN, GAMEPAD_BUTTON_LEFT_FACE_DOWN},
+            .description = "Next",
+        },
+    [BROWSE_ACT_NAV_UP] =
+        {
+            .binding = {KEY_UP, GAMEPAD_BUTTON_LEFT_FACE_UP},
+            .description = "Prev",
+        },
+    [BROWSE_ACT_WATCH] =
+        {
+            .binding = {KEY_LEFT_SHIFT, GAMEPAD_BUTTON_LEFT_TRIGGER_2},
+            .description = "Watch",
+        },
+    [BROWSE_ACT_DELETE] =
+        {
+            .binding = {KEY_DELETE, GAMEPAD_BUTTON_RIGHT_FACE_LEFT},
+            .description = "Delete",
+        },
+    [BROWSE_ACT_PLACE] =
+        {
+            .binding = {KEY_P, GAMEPAD_BUTTON_RIGHT_TRIGGER_1},
+            .description = "Place",
+        },
+    [BROWSE_ACT_TYPE_PROPS] =
+        {
+            .binding = {KEY_RIGHT_BRACKET, GAMEPAD_BUTTON_RIGHT_TRIGGER_2},
+            .description = "Type / Props",
+        },
+    [BROWSE_ACT_GRAB] =
+        {
+            .binding = {KEY_G, GAMEPAD_BUTTON_LEFT_THUMB},
+            .description = "Grab",
+        },
+    [BROWSE_ACT_HANDLES] =
+        {
+            /* Keyboard-only: gamepad Handles is reached via Tools radial so
+             * L1 stays free for the undo/redo chord. */
+            .binding = {KEY_H, GAMEPAD_BUTTON_UNKNOWN},
+            .description = "Handles",
+        },
+    [BROWSE_ACT_UNDO] =
+        {
+            .binding = {KEY_Z, GAMEPAD_BUTTON_LEFT_FACE_LEFT},
+            .modifier = {KEY_LEFT_CONTROL, GAMEPAD_BUTTON_LEFT_TRIGGER_1},
+            .description = "Undo",
+        },
+    [BROWSE_ACT_REDO] =
+        {
+            .binding = {KEY_Y, GAMEPAD_BUTTON_LEFT_FACE_RIGHT},
+            .modifier = {KEY_LEFT_CONTROL, GAMEPAD_BUTTON_LEFT_TRIGGER_1},
+            .description = "Redo",
+        },
+};
+
+static const EditorBindingTable browse_table = {
+    .actions = browse_actions,
+    .count = BROWSE_ACT_COUNT,
+    .mode_label = "Scene",
+};
+
+static const EditorBinding drag_actions[DRAG_ACT_COUNT] = {
+    [DRAG_ACT_CONFIRM] =
+        {
+            .binding = {KEY_ENTER, GAMEPAD_BUTTON_RIGHT_FACE_DOWN},
+            .description = "Confirm move",
+        },
+    [DRAG_ACT_CANCEL] =
+        {
+            .binding = {KEY_ESCAPE, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT},
+            .description = "Cancel",
+        },
+};
+
+static const EditorBindingTable drag_table = {
+    .actions = drag_actions,
+    .count = DRAG_ACT_COUNT,
+    .mode_label = "Drag  (stick: move entity)",
+};
+
+static const EditorBinding handles_actions[HANDLES_ACT_COUNT] = {
+    [HANDLES_ACT_CONFIRM] =
+        {
+            .binding = {KEY_ENTER, GAMEPAD_BUTTON_RIGHT_FACE_DOWN},
+            .description = "Confirm resize",
+        },
+    [HANDLES_ACT_CANCEL] =
+        {
+            .binding = {KEY_ESCAPE, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT},
+            .description = "Cancel",
+        },
+};
+
+static const EditorBindingTable handles_table = {
+    .actions = handles_actions,
+    .count = HANDLES_ACT_COUNT,
+    .mode_label = "Handles  (L-stick: offset, R-stick: size)",
+};
+
+const EditorBindingTable *browse_bindings(void)
+{
+    return &browse_table;
+}
+
+const EditorBindingTable *drag_bindings(void)
+{
+    return &drag_table;
+}
+
+const EditorBindingTable *handles_bindings(void)
+{
+    return &handles_table;
 }

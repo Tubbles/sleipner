@@ -2,11 +2,39 @@
 
 #include "alloc.h"
 #include "arena.h"
+#include "editor/keybindings.h"
 #include "map.h"
 #include "str.h"
 #include "strv.h"
 
 #include <string.h>
+
+enum {
+    BP_LIST_ACT_CANCEL,
+    BP_LIST_ACT_DOWN,
+    BP_LIST_ACT_UP,
+    BP_LIST_ACT_CONFIRM,
+    BP_LIST_ACT_DELETE,
+    BP_LIST_ACT_COUNT
+};
+
+enum {
+    BP_DETAIL_ACT_CANCEL,
+    BP_DETAIL_ACT_DOWN,
+    BP_DETAIL_ACT_UP,
+    BP_DETAIL_ACT_CONFIRM,
+    BP_DETAIL_ACT_DELETE,
+    BP_DETAIL_ACT_TYPE_RADIAL,
+    BP_DETAIL_ACT_DUPLICATE,
+    BP_DETAIL_ACT_UNDO,
+    BP_DETAIL_ACT_REDO,
+    BP_DETAIL_ACT_COUNT
+};
+
+static const EditorBinding blueprint_list_actions[BP_LIST_ACT_COUNT];
+static const EditorBindingTable blueprint_list_table;
+static const EditorBinding blueprint_detail_actions[BP_DETAIL_ACT_COUNT];
+static const EditorBindingTable blueprint_detail_table;
 
 /* --- Helpers --- */
 
@@ -365,7 +393,7 @@ handle_blueprint_list_input(GameState *state, EditorState *editor_state, UndoHis
 {
     (void)input;
 
-    if (toggle_pressed((ToggleBinding){KEY_ESCAPE, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT})) {
+    if (binding_pressed(&blueprint_list_actions[BP_LIST_ACT_CANCEL])) {
         editor_state->top_mode = EDITOR_TOP_SCENE;
         editor_state->selected_blueprint_index = -1;
         editor_state->blueprint_list_scroll = 0;
@@ -375,14 +403,14 @@ handle_blueprint_list_input(GameState *state, EditorState *editor_state, UndoHis
     int count = state->gamedata.blueprints.entries.count;
     int total = count + 1; /* +1 for "+NEW" sentinel */
 
-    if (toggle_pressed((ToggleBinding){KEY_DOWN, GAMEPAD_BUTTON_LEFT_FACE_DOWN})) {
+    if (binding_pressed(&blueprint_list_actions[BP_LIST_ACT_DOWN])) {
         editor_state->blueprint_list_scroll = (editor_state->blueprint_list_scroll + 1) % total;
     }
-    if (toggle_pressed((ToggleBinding){KEY_UP, GAMEPAD_BUTTON_LEFT_FACE_UP})) {
+    if (binding_pressed(&blueprint_list_actions[BP_LIST_ACT_UP])) {
         editor_state->blueprint_list_scroll = (editor_state->blueprint_list_scroll - 1 + total) % total;
     }
 
-    if (toggle_pressed((ToggleBinding){KEY_ENTER, GAMEPAD_BUTTON_RIGHT_FACE_DOWN})) {
+    if (binding_pressed(&blueprint_list_actions[BP_LIST_ACT_CONFIRM])) {
         if (editor_state->blueprint_list_scroll == count) {
             /* "+NEW" sentinel — create new blueprint via word builder */
             editor_state->creating_blueprint = true;
@@ -393,7 +421,7 @@ handle_blueprint_list_input(GameState *state, EditorState *editor_state, UndoHis
             editor_state->blueprint_tree_index = -1;
         }
     }
-    if (toggle_pressed((ToggleBinding){KEY_DELETE, GAMEPAD_BUTTON_RIGHT_FACE_LEFT})) {
+    if (binding_pressed(&blueprint_list_actions[BP_LIST_ACT_DELETE])) {
         if (editor_state->blueprint_list_scroll < count) {
             delete_blueprint(state, editor_state, undo_history);
         }
@@ -425,36 +453,38 @@ handle_blueprint_detail_input(GameState *state, EditorState *editor_state, UndoH
         return;
     }
 
-    if (toggle_pressed((ToggleBinding){KEY_ESCAPE, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT})) {
+    /* Undo/redo runs before other actions so chord (L1+Left/Right, Ctrl+Z/Y) is not
+     * masked by the plain Left/Right navigate bindings. */
+    if (binding_pressed(&blueprint_detail_actions[BP_DETAIL_ACT_UNDO])) {
+        undo_history_step_back(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base);
+        return;
+    }
+    if (binding_pressed(&blueprint_detail_actions[BP_DETAIL_ACT_REDO])) {
+        undo_history_step_forward(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base);
+        return;
+    }
+    if (binding_pressed(&blueprint_detail_actions[BP_DETAIL_ACT_CANCEL])) {
         handle_blueprint_cancel(editor_state);
         return;
     }
-    if (toggle_pressed((ToggleBinding){KEY_DOWN, GAMEPAD_BUTTON_LEFT_FACE_DOWN})) {
+    if (binding_pressed(&blueprint_detail_actions[BP_DETAIL_ACT_DOWN])) {
         handle_blueprint_navigate(blueprint, editor_state, 1);
     }
-    if (toggle_pressed((ToggleBinding){KEY_UP, GAMEPAD_BUTTON_LEFT_FACE_UP})) {
+    if (binding_pressed(&blueprint_detail_actions[BP_DETAIL_ACT_UP])) {
         handle_blueprint_navigate(blueprint, editor_state, -1);
     }
-    if (toggle_pressed((ToggleBinding){KEY_ENTER, GAMEPAD_BUTTON_RIGHT_FACE_DOWN})) {
+    if (binding_pressed(&blueprint_detail_actions[BP_DETAIL_ACT_CONFIRM])) {
         handle_blueprint_select(state, editor_state, undo_history);
     }
-    if (toggle_pressed((ToggleBinding){KEY_DELETE, GAMEPAD_BUTTON_RIGHT_FACE_LEFT})) {
+    if (binding_pressed(&blueprint_detail_actions[BP_DETAIL_ACT_DELETE])) {
         handle_blueprint_delete(state, editor_state, undo_history);
     }
-    if (toggle_pressed((ToggleBinding){KEY_RIGHT_BRACKET, GAMEPAD_BUTTON_RIGHT_TRIGGER_2})) {
+    if (binding_pressed(&blueprint_detail_actions[BP_DETAIL_ACT_TYPE_RADIAL])) {
         open_type_radial(editor_state);
     }
-    /* Duplicate blueprint */
-    if (toggle_pressed((ToggleBinding){KEY_LEFT_BRACKET, GAMEPAD_BUTTON_LEFT_TRIGGER_2})) {
+    if (binding_pressed(&blueprint_detail_actions[BP_DETAIL_ACT_DUPLICATE])) {
         editor_state->duplicating_blueprint = true;
         enter_word_builder_empty(editor_state);
-    }
-    /* Undo / Redo */
-    if (toggle_pressed((ToggleBinding){KEY_LEFT, GAMEPAD_BUTTON_LEFT_FACE_LEFT})) {
-        undo_history_step_back(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base);
-    }
-    if (toggle_pressed((ToggleBinding){KEY_RIGHT, GAMEPAD_BUTTON_LEFT_FACE_RIGHT})) {
-        undo_history_step_forward(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base);
     }
 }
 
@@ -470,4 +500,106 @@ void handle_blueprint_browse_input(GameState *state,
     } else {
         handle_blueprint_detail_input(state, editor_state, undo_history, input);
     }
+}
+
+/* --- Binding tables --- */
+
+static const EditorBinding blueprint_list_actions[BP_LIST_ACT_COUNT] = {
+    [BP_LIST_ACT_CANCEL] =
+        {
+            .binding = {KEY_ESCAPE, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT},
+            .description = "Back to scene",
+        },
+    [BP_LIST_ACT_DOWN] =
+        {
+            .binding = {KEY_DOWN, GAMEPAD_BUTTON_LEFT_FACE_DOWN},
+            .description = "Next",
+        },
+    [BP_LIST_ACT_UP] =
+        {
+            .binding = {KEY_UP, GAMEPAD_BUTTON_LEFT_FACE_UP},
+            .description = "Prev",
+        },
+    [BP_LIST_ACT_CONFIRM] =
+        {
+            .binding = {KEY_ENTER, GAMEPAD_BUTTON_RIGHT_FACE_DOWN},
+            .description = "Open / New",
+        },
+    [BP_LIST_ACT_DELETE] =
+        {
+            .binding = {KEY_DELETE, GAMEPAD_BUTTON_RIGHT_FACE_LEFT},
+            .description = "Delete",
+        },
+};
+
+static const EditorBindingTable blueprint_list_table = {
+    .actions = blueprint_list_actions,
+    .count = BP_LIST_ACT_COUNT,
+    .mode_label = "Blueprint list",
+};
+
+const EditorBindingTable *blueprint_list_bindings(void)
+{
+    return &blueprint_list_table;
+}
+
+static const EditorBinding blueprint_detail_actions[BP_DETAIL_ACT_COUNT] = {
+    [BP_DETAIL_ACT_CANCEL] =
+        {
+            .binding = {KEY_ESCAPE, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT},
+            .description = "Back",
+        },
+    [BP_DETAIL_ACT_DOWN] =
+        {
+            .binding = {KEY_DOWN, GAMEPAD_BUTTON_LEFT_FACE_DOWN},
+            .description = "Next",
+        },
+    [BP_DETAIL_ACT_UP] =
+        {
+            .binding = {KEY_UP, GAMEPAD_BUTTON_LEFT_FACE_UP},
+            .description = "Prev",
+        },
+    [BP_DETAIL_ACT_CONFIRM] =
+        {
+            .binding = {KEY_ENTER, GAMEPAD_BUTTON_RIGHT_FACE_DOWN},
+            .description = "Edit",
+        },
+    [BP_DETAIL_ACT_DELETE] =
+        {
+            .binding = {KEY_DELETE, GAMEPAD_BUTTON_RIGHT_FACE_LEFT},
+            .description = "Remove",
+        },
+    [BP_DETAIL_ACT_TYPE_RADIAL] =
+        {
+            .binding = {KEY_RIGHT_BRACKET, GAMEPAD_BUTTON_RIGHT_TRIGGER_2},
+            .description = "Type",
+        },
+    [BP_DETAIL_ACT_DUPLICATE] =
+        {
+            .binding = {KEY_LEFT_BRACKET, GAMEPAD_BUTTON_LEFT_TRIGGER_2},
+            .description = "Duplicate",
+        },
+    [BP_DETAIL_ACT_UNDO] =
+        {
+            .binding = {KEY_Z, GAMEPAD_BUTTON_LEFT_FACE_LEFT},
+            .modifier = {KEY_LEFT_CONTROL, GAMEPAD_BUTTON_LEFT_TRIGGER_1},
+            .description = "Undo",
+        },
+    [BP_DETAIL_ACT_REDO] =
+        {
+            .binding = {KEY_Y, GAMEPAD_BUTTON_LEFT_FACE_RIGHT},
+            .modifier = {KEY_LEFT_CONTROL, GAMEPAD_BUTTON_LEFT_TRIGGER_1},
+            .description = "Redo",
+        },
+};
+
+static const EditorBindingTable blueprint_detail_table = {
+    .actions = blueprint_detail_actions,
+    .count = BP_DETAIL_ACT_COUNT,
+    .mode_label = "Blueprint detail",
+};
+
+const EditorBindingTable *blueprint_detail_bindings(void)
+{
+    return &blueprint_detail_table;
 }

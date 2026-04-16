@@ -1,17 +1,21 @@
 #include "editor/internal.h"
 
+#include "editor/keybindings.h"
+
 #include <string.h>
+
+#define HINTS_BAR_BUF_CAP 512
 
 const Color debug_text_color = {200, 220, 240, 255};
 const Color debug_log_color = {180, 210, 180, 255};
 const Color debug_bg_color = {20, 25, 35, DEBUG_BG_ALPHA};
 
-static const Color handle_color = {0, 255, 255, 255};            /* cyan: collision handles */
-static const int place_preview_alpha = 128;                      /* alpha for texture ghost during placement */
-static const Color place_ghost_color = {100, 255, 100, 180};     /* semi-transparent green: place preview */
-static const Color attr_override_color = {255, 200, 50, 255};    /* amber: overrides blueprint default */
-static const Color attr_custom_color = {100, 220, 100, 255};     /* green: instance-only attribute */
-static const Color attr_dimmed_color = {120, 130, 140, 255};     /* gray: overridden by instance */
+static const Color handle_color = {0, 255, 255, 255};         /* cyan: collision handles */
+static const int place_preview_alpha = 128;                   /* alpha for texture ghost during placement */
+static const Color place_ghost_color = {100, 255, 100, 180};  /* semi-transparent green: place preview */
+static const Color attr_override_color = {255, 200, 50, 255}; /* amber: overrides blueprint default */
+static const Color attr_custom_color = {100, 220, 100, 255};  /* green: instance-only attribute */
+static const Color attr_dimmed_color = {120, 130, 140, 255};  /* gray: overridden by instance */
 
 void draw_ui_text(Font font, const char *text, int pos_x, int pos_y, int font_size, Color color)
 {
@@ -45,44 +49,45 @@ void draw_editor_crosshair(RectU32 game_bounds)
     DrawLine(center_x, center_y - EDITOR_CROSSHAIR_HALF, center_x, center_y + EDITOR_CROSSHAIR_HALF, WHITE);
 }
 
+static const EditorBindingTable *hints_table_for(bool editor_mode, const EditorState *editor_state)
+{
+    if (!editor_mode) {
+        return play_mode_bindings();
+    }
+    switch (editor_state->sub_mode) {
+    case EDITOR_SUB_DRAG:
+        return drag_bindings();
+    case EDITOR_SUB_HANDLES:
+        return handles_bindings();
+    case EDITOR_SUB_PLACE:
+        return place_bindings();
+    case EDITOR_SUB_ATTR_EDIT:
+        return attr_edit_bindings();
+    case EDITOR_SUB_RADIAL:
+        return radial_bindings();
+    case EDITOR_SUB_WORD_BUILDER:
+        return word_builder_bindings();
+    case EDITOR_SUB_GAMEPAD_KB:
+        return gamepad_kb_bindings();
+    case EDITOR_SUB_FUZZY_FINDER:
+        return fuzzy_finder_bindings();
+    case EDITOR_SUB_BROWSE:
+        if (editor_state->top_mode == EDITOR_TOP_BLUEPRINT) {
+            return editor_state->selected_blueprint_index >= 0 ? blueprint_detail_bindings()
+                                                               : blueprint_list_bindings();
+        }
+        return browse_bindings();
+    }
+    return browse_bindings();
+}
+
 void draw_hints_bar(bool editor_mode, const EditorState *editor_state, bool is_dirty, ScreenSize screen, Font ui_font)
 {
     int bar_y = screen.height - HINTS_BAR_HEIGHT;
     DrawRectangle(0, bar_y, screen.width, HINTS_BAR_HEIGHT, debug_bg_color);
-    const char *hints;
-    if (editor_mode) {
-        if (editor_state->sub_mode == EDITOR_SUB_DRAG) {
-            hints = "F9/Y: Save  |  A/Ent: Confirm  |  B/Esc: Cancel  |  Stick: Move entity";
-        } else if (editor_state->sub_mode == EDITOR_SUB_HANDLES) {
-            hints = "F9/Y: Save  |  A/Ent: Confirm  |  B/Esc: Cancel  |  Stick: Move  |  R-Stick: Resize";
-        } else if (editor_state->sub_mode == EDITOR_SUB_PLACE) {
-            hints = "A/Ent: Spawn  |  B/Esc: Cancel  |  Up/Down: Scroll  |  L1/Q: PgUp  |  R1/E: PgDn  |  Stick: Pan";
-        } else if (editor_state->sub_mode == EDITOR_SUB_ATTR_EDIT) {
-            hints = "A/Ent: Confirm  |  B/Esc: Cancel  |  Left/Right: ±1 (hold: repeat)  |  [/L1: ±10  |  PgDn/L2: "
-                    "-100  |  PgUp/R2: +100";
-        } else if (editor_state->sub_mode == EDITOR_SUB_RADIAL) {
-            hints = "Stick: Pick tool  |  A/Ent: Confirm  |  B/Esc: Cancel";
-        } else if (editor_state->sub_mode == EDITOR_SUB_WORD_BUILDER) {
-            hints =
-                "A/Ent: Pick / Done  |  B/Esc: Undo / Cancel  |  X/Del: Keyboard  |  Up/Dn: Scroll  |  L1/Q R1/E: Pg";
-        } else if (editor_state->sub_mode == EDITOR_SUB_GAMEPAD_KB) {
-            hints = "Stick: Pick  |  A/Ent: Select  |  B/Esc: Back / Backspace  |  X/Del: Exit to Words";
-        } else if (editor_state->sub_mode == EDITOR_SUB_FUZZY_FINDER) {
-            hints = "A/Ent: Pick / New  |  B/Esc: Cancel  |  Up/Dn: Scroll  |  L1/Q: PgUp  |  R1/E: PgDn";
-        } else if (editor_state->top_mode == EDITOR_TOP_BLUEPRINT) {
-            if (editor_state->selected_blueprint_index >= 0) {
-                hints = "F9/Y: Save  |  A: Edit  |  B: Back  |  Up/Down: Nav  |  X: Del/Rm  |  ]/R2: Type  |  "
-                        "[/L2: Dup";
-            } else {
-                hints = "F9/Y: Save  |  A: Select/New  |  B/Esc: Exit  |  Up/Down: Scroll";
-            }
-        } else {
-            hints = "F5: Play  |  F9/Y: Save  |  Tab/Sel: Tools  |  A: Sel/Drill  |  B: Desel  |  Up/Down: Nav  |  "
-                    "X: Del/Rm  |  ]/R2: Type/Props  |  L2: Watch  |  P/R1: Place  |  Stick: Pan";
-        }
-    } else {
-        hints = "F5: Editor  |  F3: Debug  |  F4: Fonts";
-    }
+    const EditorBindingTable *table = hints_table_for(editor_mode, editor_state);
+    char hints[HINTS_BAR_BUF_CAP];
+    (void)binding_table_render(table, hints, (int)sizeof(hints));
     int text_y = bar_y + ((HINTS_BAR_HEIGHT - HINTS_FONT_SIZE) / 2);
     draw_ui_text(ui_font, hints, DEBUG_MARGIN, text_y, HINTS_FONT_SIZE, debug_text_color);
     if (editor_mode && is_dirty) {
@@ -221,8 +226,8 @@ static void draw_scene_attr_section(Font font,
     for (int index = 0; index < set->entries.count; index++) {
         const Attribute *attr = &set->entries.data[index];
         bool selected = (base_index + index == selected_attr_index);
-        bool exists_in_other = (other_a && attr_get(other_a, attr->name.ptr)) ||
-                               (other_b && attr_get(other_b, attr->name.ptr));
+        bool exists_in_other =
+            (other_a && attr_get(other_a, attr->name.ptr)) || (other_b && attr_get(other_b, attr->name.ptr));
         const char *prefix = "  ";
         Color base_color = debug_text_color;
         if (section == ATTR_SECTION_BLUEPRINT) {
@@ -471,7 +476,8 @@ void draw_blueprint_list_panel(ScreenSize screen, const GameState *state, const 
     DrawRectangle(panel_x, 0, EDITOR_PANEL_WIDTH, screen.height, debug_bg_color);
     Font font = state->assets.ui_font;
     int y_offset = 0;
-    draw_ui_text(font, "[ Blueprint Mode ]", panel_x + DEBUG_MARGIN, y_offset, EDITOR_PANEL_FONT_SIZE, debug_text_color);
+    draw_ui_text(font, "[ Blueprint Mode ]", panel_x + DEBUG_MARGIN, y_offset, EDITOR_PANEL_FONT_SIZE,
+                 debug_text_color);
     y_offset += EDITOR_PANEL_LINE_HEIGHT;
 
     int total = count + 1; /* +1 for "+NEW" sentinel */

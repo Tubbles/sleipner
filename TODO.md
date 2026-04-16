@@ -59,6 +59,50 @@
   IDs) instead and resolve via getter functions, eliminating the invalidation
   edge cases entirely.
 
+## Editor: missing top-level modes
+
+Phase 6 of the keybinding audit (`work/keybinding-audit.md`) enumerated five
+editor modes that DESIGN.md specifies but the engine does not yet implement.
+The keybinding registry is now the place to plug each one in — each item
+below is a new set of submodes plus their handlers, pickers, and hint tables.
+
+- **Tile mode** (DESIGN.md §26) — `EDITOR_SUB_TILE_PAINT`,
+  `EDITOR_SUB_TILE_PALETTE` (radial/scroll picker of tile kinds), ground /
+  overlay layer toggle.
+- **Atlas mode** (§27) — `EDITOR_SUB_ATLAS_BROWSE`,
+  `EDITOR_SUB_ATLAS_REGION_EDIT` (source-rect drag, like HANDLES but on the
+  atlas image).
+- **Animation mode** (§28) — `EDITOR_SUB_ANIM_FRAMES` (scrub),
+  `EDITOR_SUB_ANIM_EDIT` (frame count / speed via the existing value
+  adjuster).
+- **Rule mode** (§29, §100-104) — `EDITOR_SUB_RULE_LIST`,
+  `EDITOR_SUB_RULE_TRIGGER_PICK`, `EDITOR_SUB_RULE_COND_PICK`,
+  `EDITOR_SUB_RULE_ACTION_PICK` (all radial). Reuses existing FUZZY_FINDER
+  for flag / item refs.
+- **Level mode** (§30) — `EDITOR_SUB_LEVEL_LIST`,
+  `EDITOR_SUB_LEVEL_TRANSITIONS` (edit transitions + spawn points), music
+  picker (fuzzy finder over embedded assets).
+
+## Editor: missing pickers inside existing modes
+
+- **Watch-list picker** — `Shift / L2` in BROWSE toggles watch on the focused
+  entity but there is no UI to view / clear the full watch set. Add
+  `EDITOR_SUB_WATCH_LIST` (scroll picker; A removes, B closes). New Tools
+  radial entry.
+- **Level switcher from editor** — swapping levels in the editor currently
+  requires editing gamedata. Add a "Switch level" entry to the Tools radial
+  that opens a scroll picker of level names.
+
+## Editor: small residual keybinding issues
+
+Carried over from `work/keybinding-audit.md`:
+
+- **ATTR_EDIT ±100 labels.** Hint text shows `PgDn/L2: -100 | PgUp/R2: +100`,
+  but `L2 / R2` are already bound to `-10 / +10`. Either drop the `L2 / R2`
+  labels for ±100 or rebind ±100 to a different gamepad combo.
+- **Play-mode Select-button conflict.** Both F3 (Debug) and F10 (Reload) map
+  to the gamepad Select button. Pick one.
+
 ## misc
 
 - improve integration test framework / ergonomics for black-box bug-repro tests:

@@ -42,6 +42,21 @@ FAKE_VALUE_FUNC(int, total_attr_count, const GameState *, const Entity *);
 FAKE_VALUE_FUNC(bool, entity_has_persisted_section, const Entity *);
 FAKE_VALUE_FUNC(int, place_visible_count, int);
 
+/* Cross-file editor fakes: keybindings.c (used by draw_hints_bar) */
+FAKE_VALUE_FUNC(int, binding_table_render, const EditorBindingTable *, char *, int);
+FAKE_VALUE_FUNC(const EditorBindingTable *, browse_bindings);
+FAKE_VALUE_FUNC(const EditorBindingTable *, drag_bindings);
+FAKE_VALUE_FUNC(const EditorBindingTable *, handles_bindings);
+FAKE_VALUE_FUNC(const EditorBindingTable *, place_bindings);
+FAKE_VALUE_FUNC(const EditorBindingTable *, attr_edit_bindings);
+FAKE_VALUE_FUNC(const EditorBindingTable *, radial_bindings);
+FAKE_VALUE_FUNC(const EditorBindingTable *, word_builder_bindings);
+FAKE_VALUE_FUNC(const EditorBindingTable *, fuzzy_finder_bindings);
+FAKE_VALUE_FUNC(const EditorBindingTable *, gamepad_kb_bindings);
+FAKE_VALUE_FUNC(const EditorBindingTable *, blueprint_list_bindings);
+FAKE_VALUE_FUNC(const EditorBindingTable *, blueprint_detail_bindings);
+FAKE_VALUE_FUNC(const EditorBindingTable *, play_mode_bindings);
+
 #include "test_heap_alloc.h"
 
 void setUp(void) {}

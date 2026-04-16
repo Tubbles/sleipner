@@ -12,6 +12,11 @@
 
 DEFINE_FFF_GLOBALS;
 
+/* Cross-file editor fakes: keybindings.c */
+FAKE_VALUE_FUNC(bool, binding_pressed, const EditorBinding *);
+FAKE_VALUE_FUNC(bool, binding_held, const EditorBinding *);
+FAKE_VALUE_FUNC(bool, binding_modifier_down, const EditorBinding *);
+
 /* Cross-file editor fakes: draw.c */
 FAKE_VALUE_FUNC(bool, toggle_pressed, ToggleBinding);
 
@@ -60,6 +65,9 @@ MAP_IMPL(entity_ruleset, int, vec_rule, map_hash_int, map_eq_int)
 void setUp(void)
 {
     RESET_FAKE(toggle_pressed);
+    RESET_FAKE(binding_pressed);
+    RESET_FAKE(binding_held);
+    RESET_FAKE(binding_modifier_down);
     RESET_FAKE(dispatch_attr_type_change);
     RESET_FAKE(dispatch_child_props);
     RESET_FAKE(remove_blueprint_child);
