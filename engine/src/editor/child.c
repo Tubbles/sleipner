@@ -64,7 +64,6 @@ void propagate_child_offset(GameState *state, const Blueprint *blueprint, int ch
             Entity *child_ent = &state->gamedata.current_level.entities.data[child_entity];
             child_ent->position.x = parent->position.x + child->offset.x;
             child_ent->position.y = parent->position.y + child->offset.y;
-            entity_update_collision(child_ent);
         }
     }
 }

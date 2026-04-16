@@ -341,12 +341,6 @@ handle_browse_select(GameState *state, Camera2D *camera, EditorState *editor_sta
     }
     if (attr->type == ATTR_BOOL) {
         attr->value.b = !attr->value.b;
-        if (is_blueprint_attr(state, entity, attr_idx)) {
-            Blueprint *blueprint = find_blueprint_by_name(state, entity->blueprint_name.ptr);
-            if (blueprint) {
-                propagate_collision_to_entities(state, blueprint);
-            }
-        }
         undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
                                strv_from_cstr("Toggle attribute"));
     } else if (attr->type == ATTR_INT) {
@@ -503,8 +497,16 @@ dispatch_radial_confirm(GameState *state, EditorState *editor_state, WatchList *
                 editor_state->sub_mode = EDITOR_SUB_PLACE;
             }
         } else if (confirmed == 2 && sel >= 0) { /* Handles */
-            editor_state->saved_col_offset = state->gamedata.current_level.entities.data[sel].collision_offset;
-            editor_state->saved_col_size = state->gamedata.current_level.entities.data[sel].collision_size;
+            const Entity *handle_entity = &state->gamedata.current_level.entities.data[sel];
+            const AttrSet *handle_defaults = entity_resolve_defaults(state, handle_entity->id);
+            editor_state->saved_col_offset = (Vector2){
+                attr_get_scoped_float(&handle_entity->attrs, handle_defaults, "collision_offset_x", 0.0F),
+                attr_get_scoped_float(&handle_entity->attrs, handle_defaults, "collision_offset_y", 0.0F),
+            };
+            editor_state->saved_col_size = (Vector2){
+                attr_get_scoped_float(&handle_entity->attrs, handle_defaults, "collision_w", 0.0F),
+                attr_get_scoped_float(&handle_entity->attrs, handle_defaults, "collision_h", 0.0F),
+            };
             editor_state->sub_mode = EDITOR_SUB_HANDLES;
         } else if (confirmed == 3) { /* Delete */
             delete_selected_entity(state, editor_state, watches);
@@ -623,8 +625,15 @@ void handle_mode_transitions(GameState *state, EditorState *editor_state)
         editor_state->sub_mode = EDITOR_SUB_DRAG;
     }
     if (toggle_pressed((ToggleBinding){KEY_H, GAMEPAD_BUTTON_LEFT_TRIGGER_1})) {
-        editor_state->saved_col_offset = entity->collision_offset;
-        editor_state->saved_col_size = entity->collision_size;
+        const AttrSet *handle_defaults = entity_resolve_defaults(state, entity->id);
+        editor_state->saved_col_offset = (Vector2){
+            attr_get_scoped_float(&entity->attrs, handle_defaults, "collision_offset_x", 0.0F),
+            attr_get_scoped_float(&entity->attrs, handle_defaults, "collision_offset_y", 0.0F),
+        };
+        editor_state->saved_col_size = (Vector2){
+            attr_get_scoped_float(&entity->attrs, handle_defaults, "collision_w", 0.0F),
+            attr_get_scoped_float(&entity->attrs, handle_defaults, "collision_h", 0.0F),
+        };
         editor_state->sub_mode = EDITOR_SUB_HANDLES;
     }
 }
@@ -645,13 +654,11 @@ void handle_drag_input(
     }
     if (toggle_pressed((ToggleBinding){KEY_ESCAPE, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT})) {
         entity->position = editor_state->saved_position;
-        entity_update_collision(entity);
         editor_state->sub_mode = EDITOR_SUB_BROWSE;
         return;
     }
     entity->position.x += input.left_stick.x * EDITOR_CAMERA_SPEED * delta_time;
     entity->position.y += input.left_stick.y * EDITOR_CAMERA_SPEED * delta_time;
-    entity_update_collision(entity);
 }
 
 void handle_handle_input(
@@ -662,38 +669,46 @@ void handle_handle_input(
         return;
     }
     Entity *entity = &state->gamedata.current_level.entities.data[sel];
+    Allocator alloc = allocator_arena(&state->gamedata_arena);
     if (toggle_pressed((ToggleBinding){KEY_ENTER, GAMEPAD_BUTTON_RIGHT_FACE_DOWN})) {
         Blueprint *blueprint = find_blueprint_by_name(state, entity->blueprint_name.ptr);
         if (blueprint != nullptr) {
-            Allocator alloc = allocator_arena(&state->gamedata_arena);
-            /* Attrs already exist on this blueprint; attr_set_float updates in-place, no arena growth. */
-            (void)attr_set_float(&alloc, &blueprint->attrs, "collision_offset_x", entity->collision_offset.x);
-            (void)attr_set_float(&alloc, &blueprint->attrs, "collision_offset_y", entity->collision_offset.y);
-            (void)attr_set_float(&alloc, &blueprint->attrs, "collision_w", entity->collision_size.x);
-            (void)attr_set_float(&alloc, &blueprint->attrs, "collision_h", entity->collision_size.y);
-            propagate_collision_to_entities(state, blueprint);
+            (void)attr_set_float(&alloc, &blueprint->attrs, "collision_offset_x",
+                                 editor_state->saved_col_offset.x);
+            (void)attr_set_float(&alloc, &blueprint->attrs, "collision_offset_y",
+                                 editor_state->saved_col_offset.y);
+            (void)attr_set_float(&alloc, &blueprint->attrs, "collision_w", editor_state->saved_col_size.x);
+            (void)attr_set_float(&alloc, &blueprint->attrs, "collision_h", editor_state->saved_col_size.y);
         }
+        attr_remove(&alloc, &entity->attrs, "collision_offset_x");
+        attr_remove(&alloc, &entity->attrs, "collision_offset_y");
+        attr_remove(&alloc, &entity->attrs, "collision_w");
+        attr_remove(&alloc, &entity->attrs, "collision_h");
         undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
                                strv_from_cstr("Resize collision"));
         editor_state->sub_mode = EDITOR_SUB_BROWSE;
         return;
     }
     if (toggle_pressed((ToggleBinding){KEY_ESCAPE, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT})) {
-        entity->collision_offset = editor_state->saved_col_offset;
-        entity->collision_size = editor_state->saved_col_size;
-        entity_update_collision(entity);
+        attr_remove(&alloc, &entity->attrs, "collision_offset_x");
+        attr_remove(&alloc, &entity->attrs, "collision_offset_y");
+        attr_remove(&alloc, &entity->attrs, "collision_w");
+        attr_remove(&alloc, &entity->attrs, "collision_h");
         editor_state->sub_mode = EDITOR_SUB_BROWSE;
         return;
     }
-    entity->collision_offset.x += input.left_stick.x * EDITOR_HANDLE_SPEED * delta_time;
-    entity->collision_offset.y += input.left_stick.y * EDITOR_HANDLE_SPEED * delta_time;
-    entity->collision_size.x += input.right_stick.x * EDITOR_HANDLE_SPEED * delta_time;
-    entity->collision_size.y += input.right_stick.y * EDITOR_HANDLE_SPEED * delta_time;
-    if (entity->collision_size.x < 0.0F) {
-        entity->collision_size.x = 0.0F;
+    editor_state->saved_col_offset.x += input.left_stick.x * EDITOR_HANDLE_SPEED * delta_time;
+    editor_state->saved_col_offset.y += input.left_stick.y * EDITOR_HANDLE_SPEED * delta_time;
+    editor_state->saved_col_size.x += input.right_stick.x * EDITOR_HANDLE_SPEED * delta_time;
+    editor_state->saved_col_size.y += input.right_stick.y * EDITOR_HANDLE_SPEED * delta_time;
+    if (editor_state->saved_col_size.x < 0.0F) {
+        editor_state->saved_col_size.x = 0.0F;
     }
-    if (entity->collision_size.y < 0.0F) {
-        entity->collision_size.y = 0.0F;
+    if (editor_state->saved_col_size.y < 0.0F) {
+        editor_state->saved_col_size.y = 0.0F;
     }
-    entity_update_collision(entity);
+    (void)attr_set_float(&alloc, &entity->attrs, "collision_offset_x", editor_state->saved_col_offset.x);
+    (void)attr_set_float(&alloc, &entity->attrs, "collision_offset_y", editor_state->saved_col_offset.y);
+    (void)attr_set_float(&alloc, &entity->attrs, "collision_w", editor_state->saved_col_size.x);
+    (void)attr_set_float(&alloc, &entity->attrs, "collision_h", editor_state->saved_col_size.y);
 }

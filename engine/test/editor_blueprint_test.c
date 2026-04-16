@@ -18,8 +18,6 @@ FAKE_VALUE_FUNC(bool, toggle_pressed, ToggleBinding);
 /* Cross-file editor fakes: attr.c */
 FAKE_VOID_FUNC(dispatch_attr_type_change, GameState *, EditorState *, int, UndoHistory *);
 FAKE_VOID_FUNC(dispatch_child_props, GameState *, EditorState *, int);
-FAKE_VOID_FUNC(propagate_collision_to_entities, GameState *, const Blueprint *);
-
 /* Cross-file editor fakes: child.c */
 FAKE_VOID_FUNC(remove_blueprint_child, GameState *, EditorState *, UndoHistory *, int);
 
@@ -64,7 +62,6 @@ void setUp(void)
     RESET_FAKE(toggle_pressed);
     RESET_FAKE(dispatch_attr_type_change);
     RESET_FAKE(dispatch_child_props);
-    RESET_FAKE(propagate_collision_to_entities);
     RESET_FAKE(remove_blueprint_child);
     RESET_FAKE(find_blueprint_by_name);
     RESET_FAKE(mark_deleted_descendants);

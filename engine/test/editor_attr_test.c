@@ -31,8 +31,6 @@ FAKE_VOID_FUNC(propagate_child_tag, GameState *, const Blueprint *, int, const c
 FAKE_VOID_FUNC(propagate_child_offset, GameState *, const Blueprint *, int);
 
 /* External module fakes */
-FAKE_VALUE_FUNC(Vector2, blueprint_get_collision_offset, const Blueprint *);
-FAKE_VALUE_FUNC(Vector2, blueprint_get_collision_size, const Blueprint *);
 FAKE_VOID_FUNC(undo_history_new_entry, UndoHistory *, GamedataState *, Arena *, ArenaCheckpoint, Strv);
 
 /* TextFormat stub — variadic, cannot use FAKE_VALUE_FUNC */
@@ -286,59 +284,6 @@ void test_attr_remove_instance_attr(void)
     test_attr_set_free_local(&entity.attrs);
 }
 
-/* ---- propagate_collision_to_entities ------------------------------------- */
-
-void test_propagate_collision_updates_matching(void)
-{
-    GameState state = {0};
-    state.gamedata.current_level.entities.alloc = test_heap_alloc;
-    Entity entity = {.parent_index = -1, .position = {10.0F, 20.0F}};
-    entity.blueprint_name = str_new(test_heap_alloc);
-    (void)str_from_cstr(&entity.blueprint_name, "chest");
-    TEST_ASSERT_TRUE(vec_entity_push(&state.gamedata.current_level.entities, entity));
-
-    AttrSet bp_attrs = {0};
-    TEST_ASSERT_TRUE(attr_set_string(&test_heap_alloc, &bp_attrs, (AttrStringPair){"name", "chest"}));
-    Blueprint blueprint = {.attrs = bp_attrs};
-
-    blueprint_get_collision_offset_fake.return_val = (Vector2){2.0F, 3.0F};
-    blueprint_get_collision_size_fake.return_val = (Vector2){16.0F, 16.0F};
-
-    propagate_collision_to_entities(&state, &blueprint);
-
-    Entity *updated = &state.gamedata.current_level.entities.data[0];
-    TEST_ASSERT_EQUAL_FLOAT(2.0F, updated->collision_offset.x);
-    TEST_ASSERT_EQUAL_FLOAT(3.0F, updated->collision_offset.y);
-    TEST_ASSERT_EQUAL_FLOAT(16.0F, updated->collision_size.x);
-    TEST_ASSERT_EQUAL_FLOAT(16.0F, updated->collision_size.y);
-
-    str_free(&state.gamedata.current_level.entities.data[0].blueprint_name);
-    vec_entity_free(&state.gamedata.current_level.entities);
-    test_attr_set_free_local(&bp_attrs);
-}
-
-void test_propagate_collision_skips_nonmatching(void)
-{
-    GameState state = {0};
-    state.gamedata.current_level.entities.alloc = test_heap_alloc;
-    Entity entity = {.parent_index = -1, .collision_offset = {99.0F, 99.0F}};
-    entity.blueprint_name = str_new(test_heap_alloc);
-    (void)str_from_cstr(&entity.blueprint_name, "tree");
-    TEST_ASSERT_TRUE(vec_entity_push(&state.gamedata.current_level.entities, entity));
-
-    AttrSet bp_attrs = {0};
-    TEST_ASSERT_TRUE(attr_set_string(&test_heap_alloc, &bp_attrs, (AttrStringPair){"name", "chest"}));
-    Blueprint blueprint = {.attrs = bp_attrs};
-
-    propagate_collision_to_entities(&state, &blueprint);
-
-    TEST_ASSERT_EQUAL_FLOAT(99.0F, state.gamedata.current_level.entities.data[0].collision_offset.x);
-
-    str_free(&state.gamedata.current_level.entities.data[0].blueprint_name);
-    vec_entity_free(&state.gamedata.current_level.entities);
-    test_attr_set_free_local(&bp_attrs);
-}
-
 /* ---- dispatch_child_props ----------------------------------------------- */
 
 void test_dispatch_child_props_tag_mode(void)
@@ -528,8 +473,6 @@ int main(void)
     RUN_TEST(test_attr_type_change_string_to_int);
     RUN_TEST(test_attr_type_radial_order_matches_enum);
     RUN_TEST(test_attr_remove_instance_attr);
-    RUN_TEST(test_propagate_collision_updates_matching);
-    RUN_TEST(test_propagate_collision_skips_nonmatching);
     RUN_TEST(test_dispatch_child_props_tag_mode);
     RUN_TEST(test_dispatch_child_props_offset_x);
     RUN_TEST(test_dispatch_child_props_invalid);

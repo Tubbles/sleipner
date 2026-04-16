@@ -79,6 +79,10 @@ void test_toml_emit_rules(void);
 void test_integration_sprite_offset_edit_updates_entity_live(void);
 void test_integration_sprite_offset_edit_emitted_to_toml(void);
 
+/* collision_offset_integration_test.c */
+void test_integration_collision_offset_edit_updates_entity_live(void);
+void test_integration_collision_offset_edit_emitted_to_toml(void);
+
 /* undo_test.c */
 void test_undo_new_entry_and_step_back(void);
 void test_undo_step_forward(void);
@@ -190,6 +194,9 @@ int main(void)
 
     RUN_TEST(test_integration_sprite_offset_edit_updates_entity_live);
     RUN_TEST(test_integration_sprite_offset_edit_emitted_to_toml);
+
+    RUN_TEST(test_integration_collision_offset_edit_updates_entity_live);
+    RUN_TEST(test_integration_collision_offset_edit_emitted_to_toml);
 
     RUN_TEST(test_undo_new_entry_and_step_back);
     RUN_TEST(test_undo_step_forward);

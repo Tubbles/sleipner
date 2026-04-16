@@ -229,8 +229,8 @@ static void draw_debug_collision_boxes(const GameState *state, const Level *leve
     /* Player collision box (green) + sprite bounds (yellow) */
     if (player_index >= 0 && player_index < level->entities.count) {
         const Entity *player = &level->entities.data[player_index];
-        DrawRectangleLinesEx(player->collision, 1, GREEN);
         const AttrSet *defaults = entity_resolve_defaults(state, player->id);
+        DrawRectangleLinesEx(entity_collision_rect(player, defaults), 1, GREEN);
         Vector2 draw_pos = entity_draw_position(player, defaults);
         Rectangle sprite = {draw_pos.x, draw_pos.y, FRAME_SIZE, FRAME_SIZE};
         DrawRectangleLinesEx(sprite, 1, YELLOW);
@@ -241,7 +241,8 @@ static void draw_debug_collision_boxes(const GameState *state, const Level *leve
         if (index == player_index) {
             continue;
         }
-        DrawRectangleLinesEx(level->entities.data[index].collision, 1, RED);
+        const AttrSet *defaults = entity_resolve_defaults(state, level->entities.data[index].id);
+        DrawRectangleLinesEx(entity_collision_rect(&level->entities.data[index], defaults), 1, RED);
     }
 
     /* Position dots (white) for all entities */
@@ -283,9 +284,11 @@ static void draw_debug_info(GameState *state, RectU32 game_bounds)
         draw_ui_text(
             font, TextFormat("player: %.1f, %.1f  row: %d", player->position.x, player->position.y, player->anim_row),
             DEBUG_MARGIN, DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, debug_text_color);
+        const AttrSet *player_defaults = entity_resolve_defaults(state, player->id);
+        Rectangle player_col = entity_collision_rect(player, player_defaults);
         draw_ui_text(font,
-                     TextFormat("collision: %.0f,%.0f %.0fx%.0f", player->collision.x, player->collision.y,
-                                player->collision.width, player->collision.height),
+                     TextFormat("collision: %.0f,%.0f %.0fx%.0f", player_col.x, player_col.y, player_col.width,
+                                player_col.height),
                      DEBUG_MARGIN, DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, debug_text_color);
     }
 
@@ -616,16 +619,19 @@ static void handle_transition(Diag *diag, GameState *state, UndoHistory *undo_hi
     Entity *player = game_get_player(state);
     if (player) {
         player->position = (Vector2){spawn_x, spawn_y};
-        entity_update_collision(player);
         game_snap_camera(state);
 
         /* Pre-seed overlap tracking so enter triggers don't fire for entities
          * the player already overlaps at the spawn position. */
+        const AttrSet *player_defaults = entity_resolve_defaults(state, player->id);
         for (int index = 0;
              index < state->gamedata.current_level.entities.count && index < state->gamedata.prev_player_overlaps.count;
              index++) {
-            state->gamedata.prev_player_overlaps.data[index] =
-                CheckCollisionRecs(player->collision, state->gamedata.current_level.entities.data[index].collision);
+            const AttrSet *defaults =
+                entity_resolve_defaults(state, state->gamedata.current_level.entities.data[index].id);
+            state->gamedata.prev_player_overlaps.data[index] = CheckCollisionRecs(
+                entity_collision_rect(player, player_defaults),
+                entity_collision_rect(&state->gamedata.current_level.entities.data[index], defaults));
         }
     }
     undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,

@@ -211,10 +211,12 @@ void test_game_player_collision_from_blueprint(void)
     TEST_ASSERT_NOT_NULL(player);
 
     /* Player at (160, 120) with collision_offset [-5, 6] and size [10, 10] */
-    TEST_ASSERT_FLOAT_WITHIN(0.1F, 155.0F, player->collision.x);
-    TEST_ASSERT_FLOAT_WITHIN(0.1F, 126.0F, player->collision.y);
-    TEST_ASSERT_FLOAT_WITHIN(0.1F, 10.0F, player->collision.width);
-    TEST_ASSERT_FLOAT_WITHIN(0.1F, 10.0F, player->collision.height);
+    const AttrSet *defaults = entity_resolve_defaults(&state, player->id);
+    Rectangle col = entity_collision_rect(player, defaults);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 155.0F, col.x);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 126.0F, col.y);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 10.0F, col.width);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 10.0F, col.height);
 
     game_free(&diag, &state);
 }
@@ -238,7 +240,9 @@ void test_game_update_resolves_obstacle_collision(void)
 
     /* Player collision should not overlap the obstacle */
     const Entity *player = game_get_player_const(&state);
-    TEST_ASSERT_TRUE(player->collision.x + player->collision.width <= 170.0F + 0.1F);
+    const AttrSet *player_defaults = entity_resolve_defaults(&state, player->id);
+    Rectangle player_col = entity_collision_rect(player, player_defaults);
+    TEST_ASSERT_TRUE(player_col.x + player_col.width <= 170.0F + 0.1F);
 
     game_free(&diag, &state);
 }

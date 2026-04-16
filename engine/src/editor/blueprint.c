@@ -164,10 +164,6 @@ static void handle_blueprint_delete(GameState *state, EditorState *editor_state,
         Allocator alloc = allocator_arena(&state->gamedata_arena);
         attr_remove(&alloc, &blueprint->attrs, attr_name);
         editor_state->blueprint_attr_index = -1;
-        if (strcmp(attr_name, "collision_offset_x") == 0 || strcmp(attr_name, "collision_offset_y") == 0 ||
-            strcmp(attr_name, "collision_w") == 0 || strcmp(attr_name, "collision_h") == 0) {
-            propagate_collision_to_entities(state, blueprint);
-        }
         undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
                                strv_from_cstr("Remove blueprint attr"));
     }

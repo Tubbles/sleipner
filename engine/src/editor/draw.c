@@ -141,11 +141,11 @@ static Rectangle get_source_rect(const AttrSet *instance, const AttrSet *default
 
 static Rectangle entity_outline_rect(const GameState *state, const Entity *entity)
 {
-    Rectangle col = entity->collision;
+    const AttrSet *defaults = entity_resolve_defaults(state, entity->id);
+    Rectangle col = entity_collision_rect(entity, defaults);
     if (col.width > 0.0F && col.height > 0.0F) {
         return col;
     }
-    const AttrSet *defaults = entity_resolve_defaults(state, entity->id);
     Rectangle src = get_source_rect(&entity->attrs, defaults);
     return (Rectangle){entity->position.x, entity->position.y, src.width, src.height};
 }
@@ -374,7 +374,9 @@ void draw_collision_handles(const GameState *state, const EditorState *editor_st
     if (sel < 0 || sel >= state->gamedata.current_level.entities.count) {
         return;
     }
-    Rectangle col = state->gamedata.current_level.entities.data[sel].collision;
+    const Entity *handle_entity = &state->gamedata.current_level.entities.data[sel];
+    const AttrSet *handle_defaults = entity_resolve_defaults(state, handle_entity->id);
+    Rectangle col = entity_collision_rect(handle_entity, handle_defaults);
     DrawRectangleLinesEx(col, 2.0F, handle_color);
     int half = EDITOR_HANDLE_SIZE / 2;
     DrawRectangle((int)col.x - half, (int)col.y - half, EDITOR_HANDLE_SIZE, EDITOR_HANDLE_SIZE, handle_color);

@@ -38,8 +38,6 @@ static EntitySpec spec_from_attrs(const AttrSet *attrs, Texture2D *texture)
 {
     return (EntitySpec){
         .blueprint_name = strv_from_cstr(attr_get_string(attrs, "name")),
-        .collision_offset = get_collision_offset(attrs),
-        .collision_size = get_collision_size(attrs),
         .texture = texture,
     };
 }
@@ -88,17 +86,16 @@ void test_entity_init_from_blueprint(void)
     TEST_ASSERT_EQUAL_STRING("chest", entity.blueprint_name.ptr);
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 100.0F, entity.position.x);
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 200.0F, entity.position.y);
-    TEST_ASSERT_FLOAT_WITHIN(0.1F, 102.0F, entity.collision.x);
-    TEST_ASSERT_FLOAT_WITHIN(0.1F, 204.0F, entity.collision.y);
-    TEST_ASSERT_FLOAT_WITHIN(0.1F, 12.0F, entity.collision.width);
-    TEST_ASSERT_FLOAT_WITHIN(0.1F, 8.0F, entity.collision.height);
     const AttrSet *defaults = &bp_attrs;
+    Rectangle col = entity_collision_rect(&entity, defaults);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 102.0F, col.x);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 204.0F, col.y);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 12.0F, col.width);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 8.0F, col.height);
     TEST_ASSERT_EQUAL_INT(3, attr_get_scoped_int(&entity.attrs, defaults, "health", 0));
     TEST_ASSERT_EQUAL_INT(5, attr_get_scoped_int(&entity.attrs, defaults, "max_health", 0));
     TEST_ASSERT_TRUE(attr_get_scoped_bool(&entity.attrs, defaults, "visible", true));
     TEST_ASSERT_TRUE(attr_get_scoped_bool(&entity.attrs, defaults, "active", true));
-    /* solid is no longer auto-derived anywhere — blueprints declare it explicitly */
-    TEST_ASSERT_TRUE(spec.collision_size.x > 0.0F || spec.collision_size.y > 0.0F);
     TEST_ASSERT_EQUAL_INT(-1, entity.parent_index);
     attr_set_free(&test_heap_alloc, &bp_attrs);
     free_test_entity(&entity);

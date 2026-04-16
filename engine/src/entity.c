@@ -22,23 +22,23 @@ bool entity_init(Entity *entity, EntitySpec spec, Vector2 position, Allocator *a
 
     entity->position = position;
     entity->texture = spec.texture;
-    entity->collision_offset = spec.collision_offset;
-    entity->collision_size = spec.collision_size;
-    entity->collision = (Rectangle){
-        position.x + spec.collision_offset.x,
-        position.y + spec.collision_offset.y,
-        spec.collision_size.x,
-        spec.collision_size.y,
-    };
 
     entity->parent_index = -1;
     return true;
 }
 
-void entity_update_collision(Entity *entity)
+Rectangle entity_collision_rect(const Entity *entity, const AttrSet *defaults)
 {
-    entity->collision.x = entity->position.x + entity->collision_offset.x;
-    entity->collision.y = entity->position.y + entity->collision_offset.y;
+    float offset_x = attr_get_scoped_float(&entity->attrs, defaults, "collision_offset_x", 0.0F);
+    float offset_y = attr_get_scoped_float(&entity->attrs, defaults, "collision_offset_y", 0.0F);
+    float width = attr_get_scoped_float(&entity->attrs, defaults, "collision_w", 0.0F);
+    float height = attr_get_scoped_float(&entity->attrs, defaults, "collision_h", 0.0F);
+    return (Rectangle){
+        entity->position.x + offset_x,
+        entity->position.y + offset_y,
+        width,
+        height,
+    };
 }
 
 static int find_entity_index(const Entity *entity, const Entity *entities, int entity_count)

@@ -242,9 +242,13 @@ void test_integration_walk_and_collide(void)
 
     /* Player collision must not overlap the rock */
     const Entity *player = game_get_player_const(&state);
+    const AttrSet *player_defaults = entity_resolve_defaults(&state, player->id);
+    Rectangle player_col = entity_collision_rect(player, player_defaults);
     /* Rock is entity index 1 (player is 0) */
-    Rectangle rock = state.gamedata.current_level.entities.data[1].collision;
-    TEST_ASSERT_TRUE(player->collision.x + player->collision.width <= rock.x + 0.1F);
+    const Entity *rock_entity = &state.gamedata.current_level.entities.data[1];
+    const AttrSet *rock_defaults = entity_resolve_defaults(&state, rock_entity->id);
+    Rectangle rock = entity_collision_rect(rock_entity, rock_defaults);
+    TEST_ASSERT_TRUE(player_col.x + player_col.width <= rock.x + 0.1F);
 
     game_free(&diag, &state);
 }

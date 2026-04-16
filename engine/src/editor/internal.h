@@ -73,8 +73,6 @@ int find_child_entity(const Level *level, int parent_index, const char *blueprin
 
 void dispatch_attr_type_change(GameState *state, EditorState *editor_state, int confirmed, UndoHistory *undo_history);
 void dispatch_child_props(GameState *state, EditorState *editor_state, int confirmed);
-void propagate_collision_to_entities(GameState *state, const Blueprint *blueprint);
-
 /* --- Cross-file calls: attr.c (called from widgets.c) --- */
 
 void confirm_child_tag_edit(Diag *diag, GameState *state, EditorState *editor_state, UndoHistory *undo_history);

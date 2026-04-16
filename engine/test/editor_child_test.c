@@ -344,7 +344,8 @@ void test_propagate_child_offset_updates_collision(void)
     parent.position = (Vector2){50.0F, 60.0F};
     (void)vec_entity_push(&state.gamedata.current_level.entities, parent);
     Entity child_entity = make_entity(alloc, 2, "weapon", 0, "");
-    child_entity.collision_offset = (Vector2){5.0F, 5.0F};
+    TEST_ASSERT_TRUE(attr_set_float(&alloc, &child_entity.attrs, "collision_offset_x", 5.0F));
+    TEST_ASSERT_TRUE(attr_set_float(&alloc, &child_entity.attrs, "collision_offset_y", 5.0F));
     (void)vec_entity_push(&state.gamedata.current_level.entities, child_entity);
 
     Blueprint blueprint = make_named_blueprint("npc");
@@ -358,8 +359,9 @@ void test_propagate_child_offset_updates_collision(void)
     propagate_child_offset(&state, &blueprint, 0);
 
     Entity *updated = &state.gamedata.current_level.entities.data[1];
-    TEST_ASSERT_EQUAL_FLOAT(65.0F, updated->collision.x);
-    TEST_ASSERT_EQUAL_FLOAT(75.0F, updated->collision.y);
+    Rectangle col = entity_collision_rect(updated, nullptr);
+    TEST_ASSERT_EQUAL_FLOAT(65.0F, col.x);
+    TEST_ASSERT_EQUAL_FLOAT(75.0F, col.y);
 
     test_blueprint_free_local(&blueprint);
     arena_free(&state.gamedata_arena);

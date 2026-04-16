@@ -231,22 +231,21 @@ update_player(Entity *player, const AttrSet *player_defaults, InputState input, 
         player->frame_index = 0;
         player->frame_timer = 0.0F;
     }
-
-    entity_update_collision(player);
 }
 
 static void resolve_player_obstacles(GameState *state, int player_index)
 {
     Level *level = &state->gamedata.current_level;
     Entity *player = &level->entities.data[player_index];
+    const AttrSet *player_defaults = entity_resolve_defaults(state, player->id);
     for (int index = 0; index < level->entities.count; index++) {
         const AttrSet *defaults = entity_resolve_defaults(state, level->entities.data[index].id);
         if (index == player_index ||
             !attr_get_scoped_bool(&level->entities.data[index].attrs, defaults, "solid", false)) {
             continue;
         }
-        Rectangle hitbox = player->collision;
-        Rectangle obstacle = level->entities.data[index].collision;
+        Rectangle hitbox = entity_collision_rect(player, player_defaults);
+        Rectangle obstacle = entity_collision_rect(&level->entities.data[index], defaults);
         if (!CheckCollisionRecs(hitbox, obstacle)) {
             continue;
         }
@@ -278,8 +277,6 @@ static void resolve_player_obstacles(GameState *state, int player_index)
         } else {
             player->position.y += push_down;
         }
-
-        entity_update_collision(player);
     }
 }
 
@@ -349,7 +346,6 @@ static void update_child_positions(Level *level)
         const Entity *parent = &level->entities.data[entity->parent_index];
         entity->position.x = parent->position.x + entity->offset.x;
         entity->position.y = parent->position.y + entity->offset.y;
-        entity_update_collision(entity);
     }
 }
 
@@ -391,7 +387,9 @@ static void detect_enter_targets(const GameState *state,
             overlaps->data[index] = false;
             continue;
         }
-        bool currently_overlapping = CheckCollisionRecs(player->collision, entities[index].collision);
+        const AttrSet *player_defaults = entity_resolve_defaults(state, player->id);
+        bool currently_overlapping = CheckCollisionRecs(entity_collision_rect(player, player_defaults),
+                                                        entity_collision_rect(&entities[index], defaults));
         bool was_overlapping = overlaps->data[index];
         overlaps->data[index] = currently_overlapping;
         if (currently_overlapping && !was_overlapping) {
@@ -419,7 +417,8 @@ detect_solid_collisions(const GameState *state, Level *level, vec_bool *prev_col
                 continue;
             }
             int pair_index = (entity_a * entity_count) + entity_b;
-            bool currently = CheckCollisionRecs(entities[entity_a].collision, entities[entity_b].collision);
+            bool currently = CheckCollisionRecs(entity_collision_rect(&entities[entity_a], defaults_a),
+                                                entity_collision_rect(&entities[entity_b], defaults_b));
             bool was = prev_collisions->data[pair_index];
             prev_collisions->data[pair_index] = currently;
             if (currently && !was) {

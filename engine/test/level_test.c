@@ -185,17 +185,23 @@ void test_level_entity_positions(void)
     /* Tree at (200, 60) with collision_offset (20, 60) and collision_size (24, 16) */
     TEST_ASSERT_FLOAT_WITHIN(0.1f, 200.0f, level.entities.data[0].position.x);
     TEST_ASSERT_FLOAT_WITHIN(0.1f, 60.0f, level.entities.data[0].position.y);
-    TEST_ASSERT_FLOAT_WITHIN(0.1f, 220.0f, level.entities.data[0].collision.x);
-    TEST_ASSERT_FLOAT_WITHIN(0.1f, 120.0f, level.entities.data[0].collision.y);
-    TEST_ASSERT_FLOAT_WITHIN(0.1f, 24.0f, level.entities.data[0].collision.width);
-    TEST_ASSERT_FLOAT_WITHIN(0.1f, 16.0f, level.entities.data[0].collision.height);
+    Rectangle tree_col = entity_collision_rect(
+        &level.entities.data[0],
+        blueprint_find(&blueprints, "tree") ? &blueprint_find(&blueprints, "tree")->attrs : nullptr);
+    TEST_ASSERT_FLOAT_WITHIN(0.1f, 220.0f, tree_col.x);
+    TEST_ASSERT_FLOAT_WITHIN(0.1f, 120.0f, tree_col.y);
+    TEST_ASSERT_FLOAT_WITHIN(0.1f, 24.0f, tree_col.width);
+    TEST_ASSERT_FLOAT_WITHIN(0.1f, 16.0f, tree_col.height);
     TEST_ASSERT_TRUE(level.entities.data[0].texture == &dummy_tree_texture);
 
     /* Chest at (300, 100) with collision_offset (0, 0) and collision_size (16, 16) */
     TEST_ASSERT_FLOAT_WITHIN(0.1f, 300.0f, level.entities.data[1].position.x);
     TEST_ASSERT_FLOAT_WITHIN(0.1f, 100.0f, level.entities.data[1].position.y);
-    TEST_ASSERT_FLOAT_WITHIN(0.1f, 300.0f, level.entities.data[1].collision.x);
-    TEST_ASSERT_FLOAT_WITHIN(0.1f, 100.0f, level.entities.data[1].collision.y);
+    Rectangle chest_col = entity_collision_rect(
+        &level.entities.data[1],
+        blueprint_find(&blueprints, "chest") ? &blueprint_find(&blueprints, "chest")->attrs : nullptr);
+    TEST_ASSERT_FLOAT_WITHIN(0.1f, 300.0f, chest_col.x);
+    TEST_ASSERT_FLOAT_WITHIN(0.1f, 100.0f, chest_col.y);
     TEST_ASSERT_TRUE(level.entities.data[1].texture == &dummy_chest_texture);
 
     test_level_free(&level);

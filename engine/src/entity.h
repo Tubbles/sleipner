@@ -14,8 +14,6 @@
  * beyond that call. */
 typedef struct {
     Strv blueprint_name;
-    Vector2 collision_offset;
-    Vector2 collision_size;
     Texture2D *texture;
 } EntitySpec;
 
@@ -36,12 +34,7 @@ typedef struct {
 
     /* Vectors (8 bytes each) */
     Vector2 position;
-    Vector2 collision_offset;
-    Vector2 collision_size;
     Vector2 offset;
-
-    /* Rectangles (16 bytes each) */
-    Rectangle collision;
 
     /* Bools (1 byte each, packed at end) */
     bool flip;
@@ -52,9 +45,9 @@ typedef struct {
  * Returns false on allocation failure. */
 [[nodiscard]] bool entity_init(Entity *entity, EntitySpec spec, Vector2 position, Allocator *alloc);
 
-/* Recompute collision rect from position + entity's stored collision_offset.
- * Call after moving an entity. */
-void entity_update_collision(Entity *entity);
+/* Compute the collision rectangle for an entity. Uses scoped attr lookup so
+ * blueprint edits to collision_offset/size are reflected immediately. */
+Rectangle entity_collision_rect(const Entity *entity, const AttrSet *defaults);
 
 /* Find an entity by tag within the same composition tree as source.
  * Handles implicit tags: "self", "parent", "root".

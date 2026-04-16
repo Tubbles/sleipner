@@ -20,7 +20,6 @@ FAKE_VALUE_FUNC(int, find_nearest_entity, const Level *, Vector2);
 /* Cross-file editor fakes: attr.c */
 FAKE_VOID_FUNC(dispatch_attr_type_change, GameState *, EditorState *, int, UndoHistory *);
 FAKE_VOID_FUNC(dispatch_child_props, GameState *, EditorState *, int);
-FAKE_VOID_FUNC(propagate_collision_to_entities, GameState *, const Blueprint *);
 
 /* Cross-file editor fakes: child.c */
 FAKE_VOID_FUNC(remove_blueprint_child, GameState *, EditorState *, UndoHistory *, int);

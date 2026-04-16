@@ -139,13 +139,19 @@ void test_editor_entity_outline_rect_with_collision(void)
 {
     GameState state = {0};
     Entity entity = {0};
-    entity.collision = (Rectangle){10.0F, 20.0F, 32.0F, 16.0F};
+    entity.position = (Vector2){10.0F, 20.0F};
+    TEST_ASSERT_TRUE(attr_set_float(&test_heap_alloc, &entity.attrs, "collision_offset_x", 0.0F));
+    TEST_ASSERT_TRUE(attr_set_float(&test_heap_alloc, &entity.attrs, "collision_offset_y", 0.0F));
+    TEST_ASSERT_TRUE(attr_set_float(&test_heap_alloc, &entity.attrs, "collision_w", 32.0F));
+    TEST_ASSERT_TRUE(attr_set_float(&test_heap_alloc, &entity.attrs, "collision_h", 16.0F));
 
     Rectangle rect = entity_outline_rect(&state, &entity);
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 10.0F, rect.x);
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 20.0F, rect.y);
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 32.0F, rect.width);
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 16.0F, rect.height);
+
+    test_attr_set_free_local(&entity.attrs);
 }
 
 void test_editor_entity_outline_rect_without_collision(void)
