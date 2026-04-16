@@ -102,8 +102,14 @@ bool attr_set_string(Allocator *alloc, AttrSet *set, AttrStringPair pair)
 float attr_get_float(const AttrSet *set, const char *name, float fallback)
 {
     const Attribute *entry = attr_get(set, name);
-    if (entry && entry->type == ATTR_FLOAT) {
+    if (!entry) {
+        return fallback;
+    }
+    if (entry->type == ATTR_FLOAT) {
         return entry->value.f;
+    }
+    if (entry->type == ATTR_INT) {
+        return (float)entry->value.i;
     }
     return fallback;
 }

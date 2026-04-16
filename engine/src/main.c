@@ -157,7 +157,7 @@ static InputState read_all_input(void)
     return input;
 }
 
-static void draw_player_entity(const Entity *player)
+static void draw_player_entity(const GameState *state, const Entity *player)
 {
     float source_width = (float)FRAME_SIZE;
     if (player->flip) {
@@ -165,8 +165,9 @@ static void draw_player_entity(const Entity *player)
     }
     Rectangle source = {(float)(player->frame_index * FRAME_SIZE), (float)(player->anim_row * FRAME_SIZE), source_width,
                         FRAME_SIZE};
-    Rectangle dest = {player->position.x - player->sprite_offset.x, player->position.y - player->sprite_offset.y,
-                      FRAME_SIZE, FRAME_SIZE};
+    const AttrSet *defaults = entity_resolve_defaults(state, player->id);
+    Vector2 draw_pos = entity_draw_position(player, defaults);
+    Rectangle dest = {draw_pos.x, draw_pos.y, FRAME_SIZE, FRAME_SIZE};
     DrawTexturePro(*player->texture, source, dest, (Vector2){0, 0}, 0.0F, WHITE);
 }
 
@@ -186,7 +187,7 @@ static void draw_entity(const GameState *state, const Entity *entity)
         return;
     }
     const AttrSet *defaults = entity_resolve_defaults(state, entity->id);
-    Vector2 draw_pos = {entity->position.x - entity->sprite_offset.x, entity->position.y - entity->sprite_offset.y};
+    Vector2 draw_pos = entity_draw_position(entity, defaults);
     DrawTextureRec(*entity->texture, get_source_rect(&entity->attrs, defaults), draw_pos, WHITE);
 }
 
@@ -223,14 +224,15 @@ static void draw_background_tiles(Texture2D texture, RectU32 bounds, Color tint)
     }
 }
 
-static void draw_debug_collision_boxes(const Level *level, int player_index)
+static void draw_debug_collision_boxes(const GameState *state, const Level *level, int player_index)
 {
     /* Player collision box (green) + sprite bounds (yellow) */
     if (player_index >= 0 && player_index < level->entities.count) {
         const Entity *player = &level->entities.data[player_index];
         DrawRectangleLinesEx(player->collision, 1, GREEN);
-        Rectangle sprite = {player->position.x - player->sprite_offset.x, player->position.y - player->sprite_offset.y,
-                            FRAME_SIZE, FRAME_SIZE};
+        const AttrSet *defaults = entity_resolve_defaults(state, player->id);
+        Vector2 draw_pos = entity_draw_position(player, defaults);
+        Rectangle sprite = {draw_pos.x, draw_pos.y, FRAME_SIZE, FRAME_SIZE};
         DrawRectangleLinesEx(sprite, 1, YELLOW);
     }
 
@@ -675,14 +677,14 @@ static void draw_entities_depth_sorted(GameState *state)
     for (int draw_index = 0; draw_index < level->entities.count; draw_index++) {
         int entity_index = sorted[draw_index];
         if (entity_index == state->gamedata.player_index) {
-            draw_player_entity(&level->entities.data[entity_index]);
+            draw_player_entity(state, &level->entities.data[entity_index]);
         } else {
             draw_entity(state, &level->entities.data[entity_index]);
         }
     }
 
     if (state->debug_enabled) {
-        draw_debug_collision_boxes(level, state->gamedata.player_index);
+        draw_debug_collision_boxes(state, level, state->gamedata.player_index);
     }
 }
 

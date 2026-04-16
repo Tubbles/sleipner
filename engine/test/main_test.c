@@ -75,6 +75,10 @@ void test_toml_emit_persisted_attrs(void);
 void test_toml_emit_no_persisted_attrs(void);
 void test_toml_emit_rules(void);
 
+/* sprite_offset_integration_test.c */
+void test_integration_sprite_offset_edit_updates_entity_live(void);
+void test_integration_sprite_offset_edit_emitted_to_toml(void);
+
 /* undo_test.c */
 void test_undo_new_entry_and_step_back(void);
 void test_undo_step_forward(void);
@@ -183,6 +187,9 @@ int main(void)
     RUN_TEST(test_integration_on_destroy_fires);
     RUN_TEST(test_integration_defeat_fires_when_health_drops_to_zero);
     RUN_TEST(test_integration_collide_fires_on_overlap);
+
+    RUN_TEST(test_integration_sprite_offset_edit_updates_entity_live);
+    RUN_TEST(test_integration_sprite_offset_edit_emitted_to_toml);
 
     RUN_TEST(test_undo_new_entry_and_step_back);
     RUN_TEST(test_undo_step_forward);

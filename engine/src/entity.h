@@ -16,7 +16,6 @@ typedef struct {
     Strv blueprint_name;
     Vector2 collision_offset;
     Vector2 collision_size;
-    Vector2 sprite_offset;
     Texture2D *texture;
 } EntitySpec;
 
@@ -39,7 +38,6 @@ typedef struct {
     Vector2 position;
     Vector2 collision_offset;
     Vector2 collision_size;
-    Vector2 sprite_offset;
     Vector2 offset;
 
     /* Rectangles (16 bytes each) */
@@ -71,5 +69,9 @@ bool entity_is_visible(int entity_index, const Entity *entities, const AttrSet *
 
 /* Effective active state: own active AND all ancestors active. */
 bool entity_is_active(int entity_index, const Entity *entities, const AttrSet *const *entity_defaults);
+
+/* Compute the draw position for an entity. Uses scoped attr lookup so
+ * blueprint edits to sprite_offset are reflected immediately. */
+Vector2 entity_draw_position(const Entity *entity, const AttrSet *defaults);
 
 VEC_DECL(entity, Entity)

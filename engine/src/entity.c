@@ -24,7 +24,6 @@ bool entity_init(Entity *entity, EntitySpec spec, Vector2 position, Allocator *a
     entity->texture = spec.texture;
     entity->collision_offset = spec.collision_offset;
     entity->collision_size = spec.collision_size;
-    entity->sprite_offset = spec.sprite_offset;
     entity->collision = (Rectangle){
         position.x + spec.collision_offset.x,
         position.y + spec.collision_offset.y,
@@ -124,4 +123,11 @@ bool entity_is_active(int entity_index, const Entity *entities, const AttrSet *c
         current = entities[current].parent_index;
     }
     return true;
+}
+
+Vector2 entity_draw_position(const Entity *entity, const AttrSet *defaults)
+{
+    float offset_x = attr_get_scoped_float(&entity->attrs, defaults, "sprite_offset_x", 0.0F);
+    float offset_y = attr_get_scoped_float(&entity->attrs, defaults, "sprite_offset_y", 0.0F);
+    return (Vector2){entity->position.x - offset_x, entity->position.y - offset_y};
 }
