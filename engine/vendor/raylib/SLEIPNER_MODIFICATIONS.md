@@ -20,11 +20,22 @@ the Zig build scripts are intentionally omitted.
   `recipes/raylib/patches/5.5-0001-fix-android-shared.patch` for
   provenance and for re-application after an upstream bump.
 
+- `src/platforms/rcore_desktop_glfw.c` — Wayland framebuffer-scaling
+  fix from upstream PR #4909 (merge commit
+  `5c954c1f52cb04631c118f67b36b0b768a1f40b2`). Forces
+  `GLFW_SCALE_FRAMEBUFFER=FALSE` before window creation so GLFW 3.4
+  does not opt the Wayland surface into compositor-driven fractional
+  scaling that raylib's `CORE.Window.screen` / `CORE.Window.render`
+  bookkeeping does not handle. Without this, desktop Wayland builds
+  render a black screen after `SetWindowSize` / `ToggleBorderlessWindowed`
+  while audio and input continue working. The original patch file is at
+  `recipes/raylib/patches/5.5-0002-wayland-scale-framebuffer.patch`.
+
 ## Updating upstream
 
 1. Download the new raylib tarball.
 2. Replace `engine/vendor/raylib/` contents (same subset).
-3. Re-apply the patch from
-   `recipes/raylib/patches/5.5-0001-fix-android-shared.patch` (or
-   whichever version-stamped patch replaces it).
+3. Re-apply the patches from `recipes/raylib/patches/` in numeric
+   order (or drop any that have been absorbed upstream, and update
+   this file accordingly).
 4. Update this file with the new upstream version and sha256.

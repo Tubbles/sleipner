@@ -1,0 +1,62 @@
+From 5c954c1f52cb04631c118f67b36b0b768a1f40b2 Mon Sep 17 00:00:00 2001
+From: raylib maintainers
+Date: Fri, 27 Dec 2025 00:00:00 +0000
+Subject: [PATCH] Revert GLFW_SCALE_FRAMEBUFFER to pre-GLFW 4.3 behavior
+
+Cherry-picked from raylib PR #4909 (merge commit
+5c954c1f52cb04631c118f67b36b0b768a1f40b2) on top of raylib 5.5.
+
+GLFW 3.4 switched GLFW_SCALE_FRAMEBUFFER to default TRUE, which on
+Wayland opts the surface into compositor-driven fractional scaling.
+raylib's CORE.Window.screen / CORE.Window.render bookkeeping was
+written before this hint existed and does not reconcile correctly
+after SetWindowSize / ToggleBorderlessWindowed. Result on Wayland:
+GetScreenWidth reports the new size while GetRenderWidth stays at
+the initial InitWindow size, the viewport is out of sync with the
+blit destination, and the game renders outside the framebuffer
+(black screen, audio keeps playing).
+
+This patch forces GLFW_SCALE_FRAMEBUFFER=FALSE unconditionally, and
+re-enables it only on Apple + FLAG_WINDOW_HIGHDPI (the old Cocoa
+retina path), restoring the pre-3.4 behavior expected by raylib's
+internal scaling code.
+---
+ src/platforms/rcore_desktop_glfw.c | 10 ++++++++--
+ 1 file changed, 8 insertions(+), 2 deletions(-)
+
+diff --git a/src/platforms/rcore_desktop_glfw.c b/src/platforms/rcore_desktop_glfw.c
+--- a/src/platforms/rcore_desktop_glfw.c
++++ b/src/platforms/rcore_desktop_glfw.c
+@@ -1348,6 +1348,12 @@ int InitPlatform(void)
+     if ((CORE.Window.flags & FLAG_WINDOW_TRANSPARENT) > 0) glfwWindowHint(GLFW_TRANSPARENT_FRAMEBUFFER, GLFW_TRUE);     // Transparent framebuffer
+     else glfwWindowHint(GLFW_TRANSPARENT_FRAMEBUFFER, GLFW_FALSE);  // Opaque framebuffer
+
++    // HACK: Most of this was written before GLFW_SCALE_FRAMEBUFFER existed and
++    // was enabled by default. Disabling it gets back the old behavior. A
++    // complete fix will require removing a lot of CORE.Window.render
++    // manipulation code.
++    glfwWindowHint(GLFW_SCALE_FRAMEBUFFER, GLFW_FALSE);
++
+     if ((CORE.Window.flags & FLAG_WINDOW_HIGHDPI) > 0)
+     {
+         // Resize window content area based on the monitor content scale.
+@@ -1355,7 +1361,7 @@ int InitPlatform(void)
+         // On platforms like macOS the resolution of the framebuffer is changed independently of the window size.
+         glfwWindowHint(GLFW_SCALE_TO_MONITOR, GLFW_TRUE);   // Scale content area based on the monitor content scale where window is placed on
+ #if defined(__APPLE__)
+-        glfwWindowHint(GLFW_COCOA_RETINA_FRAMEBUFFER, GLFW_TRUE);
++        glfwWindowHint(GLFW_SCALE_FRAMEBUFFER, GLFW_TRUE);
+ #endif
+     }
+     else glfwWindowHint(GLFW_SCALE_TO_MONITOR, GLFW_FALSE);
+@@ -1567,7 +1573,7 @@ int InitPlatform(void)
+         if ((CORE.Window.flags & FLAG_WINDOW_HIGHDPI) > 0)
+         {
+             // NOTE: On APPLE platforms system should manage window/input scaling and also framebuffer scaling.
+-            // Framebuffer scaling should be activated with: glfwWindowHint(GLFW_COCOA_RETINA_FRAMEBUFFER, GLFW_TRUE);
++            // Framebuffer scaling should be activated with: glfwWindowHint(GLFW_SCALE_FRAMEBUFFER, GLFW_TRUE);
+     #if !defined(__APPLE__)
+             glfwGetFramebufferSize(platform.handle, &fbWidth, &fbHeight);
+
+--
+2.0
