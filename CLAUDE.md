@@ -43,9 +43,16 @@ nix develop .#windows -c cmake --build build/windows
 # Android APK (NDK + Gradle via androidenv)
 nix develop .#android -c bash -c 'cd android && gradle wrapper --gradle-version 8.11.1 && ./gradlew assembleRelease'
 
-# Run
+# Run (from any shell, inside or outside `nix develop`)
 ./build/Release/engine/sleipner
 ```
+
+The Linux build post-processes the `sleipner` binary with `patchelf` so it
+uses the distro-standard dynamic linker (`/lib64/ld-linux-x86-64.so.2`) and
+carries no Nix-store paths in `DT_RUNPATH`. The binary runs on any
+x86-64 Linux with glibc >= 2.38 and the usual desktop graphics stack
+(libGL/libX11/libwayland-client/libxkbcommon). No Nix is required on the
+target machine. See `engine/CMakeLists.txt` for the post-build step.
 
 macOS contributors can use `nix develop` directly; Windows contributors need WSL2.
 

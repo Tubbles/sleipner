@@ -22,6 +22,24 @@ target_link_libraries(engine PUBLIC raylib tomlc99)
 add_executable(sleipner src/main.c)
 target_link_libraries(sleipner PRIVATE engine)
 
+if(NOT WIN32 AND NOT APPLE AND NOT CMAKE_CROSSCOMPILING)
+    # Post-process the binary so it runs on any x86-64 Linux with a
+    # recent-enough glibc, not only inside this Nix dev shell.
+    #   * -static-libgcc drops libgcc_s.so.1 from DT_NEEDED.
+    #   * patchelf rewrites the interpreter to the distro-standard
+    #     /lib64/ld-linux-x86-64.so.2 and strips the Nix-store RUNPATH
+    #     entries, forcing the loader to resolve libs via the target
+    #     system's /etc/ld.so.cache.
+    target_link_options(sleipner PRIVATE -static-libgcc)
+    find_program(PATCHELF patchelf REQUIRED)
+    add_custom_command(TARGET sleipner POST_BUILD
+        COMMAND ${PATCHELF} --set-interpreter /lib64/ld-linux-x86-64.so.2 $<TARGET_FILE:sleipner>
+        COMMAND ${PATCHELF} --remove-rpath $<TARGET_FILE:sleipner>
+        VERBATIM
+        COMMENT "Rewriting sleipner interpreter + RPATH for non-Nix portability"
+    )
+endif()
+
 include(${CMAKE_SOURCE_DIR}/cmake/GitVersion.cmake)
 target_compile_definitions(sleipner PRIVATE SLEIPNER_VERSION="${SLEIPNER_GIT_VERSION}")
 
