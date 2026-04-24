@@ -57,6 +57,7 @@
           libGL
           mesa
           wayland
+          wayland-scanner
           libxkbcommon
         ];
         clangStdenv = pkgs.llvmPackages_22.stdenv;
