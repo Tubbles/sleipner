@@ -27,6 +27,7 @@ Checks: >
   -zircon-*,
   -portability-avoid-pragma-once,
   -readability-implicit-bool-conversion,
+  -readability-use-concise-preprocessor-directives,
 
 CheckOptions:
   readability-identifier-naming.FunctionCase: lower_case
