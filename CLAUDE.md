@@ -49,10 +49,14 @@ nix develop .#android -c bash -c 'cd android && gradle wrapper --gradle-version 
 
 The Linux build post-processes the `sleipner` binary with `patchelf` so it
 uses the distro-standard dynamic linker (`/lib64/ld-linux-x86-64.so.2`) and
-carries no Nix-store paths in `DT_RUNPATH`. The binary runs on any
-x86-64 Linux with glibc >= 2.38 and the usual desktop graphics stack
-(libGL/libX11/libwayland-client/libxkbcommon). No Nix is required on the
-target machine. See `engine/CMakeLists.txt` for the post-build step.
+carries no Nix-store paths in `DT_RUNPATH`. `engine/src/glibc_compat.h` is
+force-included into every C translation unit and pins `fmod`/`fmodf` back
+to `GLIBC_2.2.5`, so the highest glibc symbol version in the final binary
+is `GLIBC_2.35`. The binary runs on any x86-64 Linux with glibc >= 2.36
+(Debian bookworm, Ubuntu 22.04, Fedora 36, or newer) and the usual desktop
+graphics stack (libGL/libX11/libwayland-client/libxkbcommon). No Nix is
+required on the target machine. See the top-level `CMakeLists.txt` and
+`engine/CMakeLists.txt` for the compile-option and post-build wiring.
 
 macOS contributors can use `nix develop` directly; Windows contributors need WSL2.
 

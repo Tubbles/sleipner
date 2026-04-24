@@ -11,6 +11,16 @@ if(NOT WIN32)
     add_link_options(-fsanitize=address,undefined,leak)
 endif()
 
+if(NOT WIN32 AND NOT APPLE AND NOT CMAKE_CROSSCOMPILING)
+    # Force-include glibc_compat.h in every C translation unit (engine
+    # and vendored raylib/glfw alike) so .symver directives bind newer
+    # math symbols back to their GLIBC_2.2.5 ABI. Keeps the final binary
+    # runnable on glibc 2.36 (Debian bookworm). Scoped to C via the
+    # generator expression so the embedded-asset .S files still
+    # assemble cleanly.
+    add_compile_options($<$<COMPILE_LANGUAGE:C>:-include${CMAKE_SOURCE_DIR}/engine/src/glibc_compat.h>)
+endif()
+
 set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(CUSTOMIZE_BUILD OFF CACHE BOOL "" FORCE)
 set(USE_EXTERNAL_GLFW OFF CACHE BOOL "" FORCE)
