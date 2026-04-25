@@ -1,5 +1,9 @@
 #include "raylib.h"
 
+#if defined(__linux__) && !defined(__ANDROID__)
+#include <GLFW/glfw3.h>
+#endif
+
 #include "alloc.h"
 #include "arena.h"
 #include "assets.h"
@@ -949,6 +953,16 @@ int main(void)
     (void)freopen(TRACE_LOG_PATH, FOPEN_APPEND, stdout);
 #endif
 
+#if defined(__linux__) && !defined(__ANDROID__)
+    /* Skip libdecor on Wayland. We run borderless-fullscreen so the
+     * decoration title bar is never drawn, and libdecor-gtk pulls in
+     * GTK + Pango + Fontconfig (~535 KB of process-lifetime allocations
+     * those libraries do not free on shutdown). With this hint, GLFW
+     * uses xdg-decoration-unstable-v1 server-side decorations when the
+     * compositor offers them, otherwise its own bare fallback. No-op
+     * on X11. */
+    glfwInitHint(GLFW_WAYLAND_LIBDECOR, GLFW_WAYLAND_DISABLE_LIBDECOR);
+#endif
     debug_log(&state->debug, "calling InitWindow");
 #ifdef __ANDROID__
     SetConfigFlags(FLAG_FULLSCREEN_MODE);

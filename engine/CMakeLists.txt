@@ -21,6 +21,13 @@ target_link_libraries(engine PUBLIC raylib tomlc99)
 
 add_executable(sleipner src/main.c)
 target_link_libraries(sleipner PRIVATE engine)
+if(NOT WIN32 AND NOT APPLE AND NOT CMAKE_CROSSCOMPILING)
+    # Linux desktop build links the bundled GLFW. main.c calls
+    # glfwInitHint to disable libdecor on Wayland, which needs the
+    # GLFW header on the include path.
+    target_include_directories(sleipner PRIVATE
+        ${CMAKE_SOURCE_DIR}/engine/vendor/raylib/src/external/glfw/include)
+endif()
 
 if(NOT WIN32 AND NOT APPLE AND NOT CMAKE_CROSSCOMPILING)
     # patchelf rewrites the interpreter to the distro-standard
