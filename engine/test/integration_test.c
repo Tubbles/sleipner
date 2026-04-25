@@ -5,6 +5,7 @@
 #include "editor/internal.h"
 #include "entity.h"
 #include "game.h"
+#include "menu.h"
 #include "strv.h"
 #include "test_input_mock.h"
 #include "undo.h"
@@ -941,4 +942,90 @@ void test_integration_editor_attr_edit_hold_repeats_after_delay(void)
 
     undo_history_free(&undo_history);
     game_free(&diag, &state);
+}
+
+/* Drive the pause menu through the real binding system: a single tap of
+ * KEY_DOWN must advance the selection by one because binding_pressed
+ * reads __wrap_IsKeyPressed (mocked) and feeds menu_handle_input.
+ *
+ * The selected-entry transitions and final returned MenuAction are
+ * what the user observes (highlight moves, then pressing A fires the
+ * named entry). A regression that swaps two MENU_ENTRY_* values, or
+ * silently no-ops binding_pressed for KEY_DOWN, has to break this
+ * test. */
+void test_integration_menu_navigation_and_quit(void)
+{
+    test_input_reset();
+    MenuState menu = {0};
+    menu_init(&menu);
+    menu_open(&menu);
+    TEST_ASSERT_EQUAL_INT(MENU_ENTRY_RESUME, menu.selected);
+
+    /* Walk to QUIT (4 down-presses from RESUME). One tap per frame. */
+    for (int step = 0; step < 4; step++) {
+        test_input_tap_key(KEY_DOWN);
+        MenuAction action = menu_handle_input(&menu);
+        TEST_ASSERT_EQUAL_INT(MENU_ACTION_NONE, action);
+        test_input_frame_advance();
+    }
+    TEST_ASSERT_EQUAL_INT(MENU_ENTRY_QUIT, menu.selected);
+
+    /* Pressing past the last entry must clamp, not wrap. */
+    test_input_tap_key(KEY_DOWN);
+    (void)menu_handle_input(&menu);
+    test_input_frame_advance();
+    TEST_ASSERT_EQUAL_INT(MENU_ENTRY_QUIT, menu.selected);
+
+    /* Confirm fires QUIT. */
+    test_input_tap_key(KEY_ENTER);
+    MenuAction quit_action = menu_handle_input(&menu);
+    test_input_frame_advance();
+    TEST_ASSERT_EQUAL_INT(MENU_ACTION_QUIT, quit_action);
+
+    menu_cleanup(&menu);
+}
+
+/* Cancel (B / Escape) returns RESUME regardless of where the cursor
+ * sits — equivalent to confirming the Resume entry. */
+void test_integration_menu_escape_returns_resume(void)
+{
+    test_input_reset();
+    MenuState menu = {0};
+    menu_init(&menu);
+    menu_open(&menu);
+    /* Move off Resume so the assertion is meaningful. */
+    test_input_tap_key(KEY_DOWN);
+    test_input_tap_key(KEY_DOWN);
+    (void)menu_handle_input(&menu);
+    test_input_frame_advance();
+    TEST_ASSERT_NOT_EQUAL(MENU_ENTRY_RESUME, menu.selected);
+
+    test_input_tap_key(KEY_ESCAPE);
+    MenuAction action = menu_handle_input(&menu);
+    test_input_frame_advance();
+    TEST_ASSERT_EQUAL_INT(MENU_ACTION_RESUME, action);
+
+    menu_cleanup(&menu);
+}
+
+/* D-pad LEFT_FACE_DOWN navigates same as KEY_DOWN — the binding for
+ * MENU_ACT_DOWN couples both halves. */
+void test_integration_menu_gamepad_navigation(void)
+{
+    test_input_reset();
+    MenuState menu = {0};
+    menu_init(&menu);
+    menu_open(&menu);
+
+    test_input_tap_gamepad_button(0, GAMEPAD_BUTTON_LEFT_FACE_DOWN);
+    (void)menu_handle_input(&menu);
+    test_input_frame_advance();
+    TEST_ASSERT_EQUAL_INT(MENU_ENTRY_SAVE, menu.selected);
+
+    test_input_tap_gamepad_button(0, GAMEPAD_BUTTON_RIGHT_FACE_DOWN);
+    MenuAction action = menu_handle_input(&menu);
+    test_input_frame_advance();
+    TEST_ASSERT_EQUAL_INT(MENU_ACTION_SAVE, action);
+
+    menu_cleanup(&menu);
 }

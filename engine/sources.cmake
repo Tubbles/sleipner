@@ -18,6 +18,7 @@ set(ENGINE_SOURCE_FILES
     attribute.c
     audio.c
     blueprint.c
+    blur.c
     collision.c
     debug.c
     depth_sort.c
@@ -35,6 +36,7 @@ set(ENGINE_SOURCE_FILES
     input.c
     level.c
     map.c
+    menu.c
     particle.c
     render.c
     rule.c

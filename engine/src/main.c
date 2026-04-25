@@ -39,6 +39,7 @@ const char *__lsan_default_suppressions(void)
 #include "attribute.h"
 #include "audio.h"
 #include "blueprint.h"
+#include "blur.h"
 #include "debug.h"
 #include "depth_sort.h"
 #include "editor/editor.h"
@@ -50,6 +51,7 @@ const char *__lsan_default_suppressions(void)
 #include "input.h"
 #include "level.h"
 #include "map.h"
+#include "menu.h"
 #include "rect.h"
 #include "rule.h"
 #include "str.h"
@@ -729,34 +731,32 @@ static void draw_entities_depth_sorted(GameState *state)
     }
 }
 
-static void handle_save_input(Diag *diag, GameState *state, UndoHistory *undo_history)
+/* Save and reload are dispatched from the pause menu (engine/src/menu.c).
+ * Their direct keybindings (formerly F9 / F10 + Select) were removed
+ * when the menu took ownership; see menu_dispatch_save and
+ * menu_dispatch_restore below for the live call sites. */
+static void menu_dispatch_save(Diag *diag, GameState *state, EditorState *editor_state, UndoHistory *undo_history)
 {
-    if (binding_pressed(&play_mode_actions[PLAY_ACT_SAVE])) {
-        if (!save_gamedata(state)) {
-            debug_log(diag->debug, "save error: %s", error_get(diag->error));
-            error_clear(diag->error);
-        } else {
-            state->gamedata_mtime = GetFileModTime(GAMEDATA_PATH);
-            undo_history_mark_saved(undo_history);
-            debug_log(diag->debug, "gamedata saved");
-        }
+    if (!save_gamedata(state)) {
+        debug_log(diag->debug, "save error: %s", error_get(diag->error));
+        error_clear(diag->error);
+        editor_state->toast_text = strv_from_cstr("Save failed");
+    } else {
+        state->gamedata_mtime = GetFileModTime(GAMEDATA_PATH);
+        undo_history_mark_saved(undo_history);
+        debug_log(diag->debug, "gamedata saved");
+        editor_state->toast_text = strv_from_cstr("Saved");
     }
+    editor_state->toast_timer = 2.0F;
 }
 
-/* Manual reload: discard in-memory edits and re-read gamedata from disk.
- * The automatic hot-reload only fires on external mtime changes; this
- * binding covers the "revert my in-game edits" case. Dirty state is
- * logged but not confirmed — matches save's no-confirmation policy. */
-static void handle_load_input(
+static void menu_dispatch_restore(
     Diag *diag, GameState *state, EditorState *editor_state, WatchList *watches, UndoHistory *undo_history)
 {
-    if (!binding_pressed(&play_mode_actions[PLAY_ACT_RELOAD])) {
-        return;
-    }
     bool was_dirty = undo_history_is_dirty(undo_history);
-    debug_log(diag->debug, "gamedata: manual reload requested (dirty=%s)", was_dirty ? "yes" : "no");
+    debug_log(diag->debug, "gamedata: menu reload requested (dirty=%s)", was_dirty ? "yes" : "no");
     load_gamedata(diag, state, nullptr);
-    reset_editor_after_reload(state, editor_state, watches, undo_history, strv_from_cstr("Manual reload"));
+    reset_editor_after_reload(state, editor_state, watches, undo_history, strv_from_cstr("Menu reload"));
     editor_state->toast_text = strv_from_cstr("Reloaded from disk");
     editor_state->toast_timer = 2.0F;
 }
@@ -829,8 +829,6 @@ static void handle_editor_input(Diag *diag,
                                 InputState input,
                                 float delta_time)
 {
-    handle_save_input(diag, state, undo_history);
-    handle_load_input(diag, state, editor_state, watches, undo_history);
     handle_mode_transitions(state, editor_state);
     if (editor_state->sub_mode == EDITOR_SUB_DRAG) {
         handle_drag_input(state, editor_state, undo_history, input, delta_time);
@@ -863,6 +861,8 @@ typedef struct {
     bool is_dirty;
     EditorState editor_state;
     const WatchList *watches;
+    const MenuState *menu;
+    const BlurPipeline *blur;
 } RenderParams;
 
 static void render_frame(GameState *state, RenderParams params)
@@ -947,21 +947,84 @@ static void render_frame(GameState *state, RenderParams params)
         draw_toast(&params.editor_state, screen, state->assets.ui_font);
     }
     draw_hints_bar(state->editor_mode, &params.editor_state, params.is_dirty, screen, state->assets.ui_font);
+    menu_render(params.menu, params.blur, state->screen_width, state->screen_height);
     EndDrawing();
 }
 
 static void handle_global_toggles(GameState *state, bool *font_preview_enabled)
 {
-    if (IsKeyPressed(KEY_F3) || (!state->editor_mode && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_MIDDLE_LEFT))) {
-        state->debug_enabled = !state->debug_enabled;
-        debug_log(&state->debug, "debug %s (frame %d)", (int)state->debug_enabled ? "ON" : "OFF", state->frame);
-    }
     if (binding_pressed(&play_mode_actions[PLAY_ACT_FONT_PREVIEW])) {
         *font_preview_enabled = !*font_preview_enabled;
     }
     if (binding_pressed(&play_mode_actions[PLAY_ACT_ENTER_EDITOR])) {
         state->editor_mode = !state->editor_mode;
         debug_log(&state->debug, "editor %s (frame %d)", (int)state->editor_mode ? "ON" : "OFF", state->frame);
+    }
+}
+
+typedef struct {
+    Diag *diag;
+    GameState *state;
+    EditorState *editor_state;
+    WatchList *watches;
+    UndoHistory *undo_history;
+    MenuState *menu;
+    bool *quit_requested;
+} MenuDispatchCtx;
+
+static void run_active_frame(Diag *diag,
+                             GameState *state,
+                             Camera2D *editor_camera,
+                             EditorState *editor_state,
+                             WatchList *watches,
+                             UndoHistory *undo_history,
+                             InputState input,
+                             float delta_time)
+{
+    if (state->editor_mode) {
+        handle_editor_input(diag, state, editor_camera, editor_state, watches, undo_history, input, delta_time);
+        if (editor_state->toast_timer > 0.0F) {
+            editor_state->toast_timer -= delta_time;
+        }
+    }
+    game_update(diag, state, input, delta_time);
+    handle_transition(diag, state, undo_history);
+}
+
+static void toggle_menu_open(MenuState *menu, BlurPipeline *blur, RenderTexture2D scene)
+{
+    if (menu->open) {
+        menu_close(menu);
+    } else {
+        blur_capture(blur, scene.texture);
+        menu_open(menu);
+    }
+}
+
+static void dispatch_menu_action(MenuDispatchCtx ctx, MenuAction action)
+{
+    switch (action) {
+    case MENU_ACTION_RESUME:
+        menu_close(ctx.menu);
+        break;
+    case MENU_ACTION_SAVE:
+        menu_dispatch_save(ctx.diag, ctx.state, ctx.editor_state, ctx.undo_history);
+        menu_close(ctx.menu);
+        break;
+    case MENU_ACTION_RESTORE:
+        menu_dispatch_restore(ctx.diag, ctx.state, ctx.editor_state, ctx.watches, ctx.undo_history);
+        menu_close(ctx.menu);
+        break;
+    case MENU_ACTION_TOGGLE_DEBUG_OVERLAY:
+        ctx.state->debug_enabled = !ctx.state->debug_enabled;
+        debug_log(&ctx.state->debug, "debug %s (frame %d)", ctx.state->debug_enabled ? "ON" : "OFF", ctx.state->frame);
+        menu_close(ctx.menu);
+        break;
+    case MENU_ACTION_QUIT:
+        *ctx.quit_requested = true;
+        break;
+    case MENU_ACTION_NONE:
+        break;
     }
 }
 
@@ -1097,7 +1160,19 @@ int main(void)
     undo_history_new_entry(&undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
                            strv_from_cstr("Initial"));
 
-    while (!WindowShouldClose()) {
+    /* Pause-overlay menu and its blur backdrop. Blur is sized to the
+     * low-res scene render-texture so blur_capture can sample the
+     * already-rendered scene directly. */
+    MenuState menu = {0};
+    menu_init(&menu);
+    EmbeddedAsset menu_font_asset = ASSET(cardboardcrown_ttf);
+    menu_set_font(&menu,
+                  LoadFontFromMemory(".ttf", menu_font_asset.data, menu_font_asset.size, MENU_FONT_SIZE, nullptr, 0));
+    BlurPipeline blur = {0};
+    blur_init(&blur, (int)game_bounds.width, (int)game_bounds.height);
+    bool quit_requested = false;
+
+    while (!WindowShouldClose() && !quit_requested) {
         float delta_time = GetFrameTime();
 
         UpdateMusicStream(bgm);
@@ -1108,6 +1183,14 @@ int main(void)
         }
 
         handle_global_toggles(state, &font_preview_enabled);
+
+        /* Pause menu open/close. Same press toggles. Capture the blur
+         * snapshot at open time and freeze it until the menu closes —
+         * the underlying scene is suspended while the menu is up so
+         * re-capturing each frame would just produce the same image. */
+        if (binding_pressed(&play_mode_actions[PLAY_ACT_OPEN_MENU])) {
+            toggle_menu_open(&menu, &blur, target);
+        }
 
         log_gamepad_changes(state, &prev_gamepads, state->frame);
 
@@ -1120,18 +1203,21 @@ int main(void)
 
         InputState input = read_all_input();
 
-        /* Handle editor-only actions: save, entity browse, and camera pan */
-        if (state->editor_mode) {
-            handle_editor_input(diag, state, &editor_camera, &editor_state, &watches, &undo_history, input, delta_time);
+        if (menu.open) {
+            dispatch_menu_action((MenuDispatchCtx){.diag = diag,
+                                                   .state = state,
+                                                   .editor_state = &editor_state,
+                                                   .watches = &watches,
+                                                   .undo_history = &undo_history,
+                                                   .menu = &menu,
+                                                   .quit_requested = &quit_requested},
+                                 menu_handle_input(&menu));
             if (editor_state.toast_timer > 0.0F) {
                 editor_state.toast_timer -= delta_time;
             }
+        } else {
+            run_active_frame(diag, state, &editor_camera, &editor_state, &watches, &undo_history, input, delta_time);
         }
-
-        /* Update (pure logic — no rendering) */
-        game_update(diag, state, input, delta_time);
-
-        handle_transition(diag, state, &undo_history);
 
         render_frame(state, (RenderParams){
                                 .target = target,
@@ -1141,12 +1227,16 @@ int main(void)
                                 .is_dirty = undo_history_is_dirty(&undo_history),
                                 .editor_state = editor_state,
                                 .watches = &watches,
+                                .menu = &menu,
+                                .blur = &blur,
                             });
     }
 
 quit:
     debug_log(&state->debug, "exiting game loop (frame=%d t=%.1fs)", state->frame, state->elapsed);
 
+    blur_cleanup(&blur);
+    menu_cleanup(&menu);
     undo_history_free(&undo_history);
     UnloadMusicStream(bgm);
     UnloadRenderTexture(target);

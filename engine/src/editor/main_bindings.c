@@ -48,10 +48,10 @@ const EditorBindingTable *place_bindings(void)
 }
 
 const EditorBinding play_mode_actions[PLAY_ACT_COUNT] = {
-    [PLAY_ACT_DEBUG] =
+    [PLAY_ACT_OPEN_MENU] =
         {
             .binding = {KEY_F3, GAMEPAD_BUTTON_MIDDLE_LEFT},
-            .description = "Debug",
+            .description = "Menu",
         },
     [PLAY_ACT_FONT_PREVIEW] =
         {
@@ -62,16 +62,6 @@ const EditorBinding play_mode_actions[PLAY_ACT_COUNT] = {
         {
             .binding = {KEY_F5, GAMEPAD_BUTTON_MIDDLE_RIGHT},
             .description = "Editor",
-        },
-    [PLAY_ACT_SAVE] =
-        {
-            .binding = {KEY_F9, GAMEPAD_BUTTON_RIGHT_FACE_UP},
-            .description = "Save",
-        },
-    [PLAY_ACT_RELOAD] =
-        {
-            .binding = {KEY_F10, GAMEPAD_BUTTON_MIDDLE_LEFT},
-            .description = "Reload",
         },
 };
 

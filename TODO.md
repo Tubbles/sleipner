@@ -100,8 +100,6 @@ Carried over from `work/keybinding-audit.md`:
 - **ATTR_EDIT ±100 labels.** Hint text shows `PgDn/L2: -100 | PgUp/R2: +100`,
   but `L2 / R2` are already bound to `-10 / +10`. Either drop the `L2 / R2`
   labels for ±100 or rebind ±100 to a different gamepad combo.
-- **Play-mode Select-button conflict.** Both F3 (Debug) and F10 (Reload) map
-  to the gamepad Select button. Pick one.
 
 ## misc
 
@@ -115,3 +113,6 @@ Carried over from `work/keybinding-audit.md`:
 - for some reason, when running against the walls significantly warps the
   sprite. could be related to float position not scaling up correctly or other
   scaling issue.
+- pressing select to bring up the tools radial menu with a gamepad also triggers a reload
+- the radial menu is hard to use using a keyboard, not all directions are easily representable
+- full fledged main menu, move some actions to it (save, restore)
