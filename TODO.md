@@ -113,6 +113,33 @@ Carried over from `work/keybinding-audit.md`:
 - for some reason, when running against the walls significantly warps the
   sprite. could be related to float position not scaling up correctly or other
   scaling issue.
-- pressing select to bring up the tools radial menu with a gamepad also triggers a reload
 - the radial menu is hard to use using a keyboard, not all directions are easily representable
-- full fledged main menu, move some actions to it (save, restore)
+
+## Pause menu follow-ups
+
+Carried over from the pause-overlay menu landing:
+
+- **Toasts from menu Save / Restore are invisible in play mode.**
+  `menu_dispatch_save` and `menu_dispatch_restore` set
+  `editor_state.toast_text`, but `draw_toast` is gated on
+  `state->editor_mode` (`engine/src/main.c:947`). Save / Restore from
+  the pause menu in play mode succeeds silently. Either ungate
+  `draw_toast` or move the toast to a play-mode-aware surface.
+- **`blur_resize` is implemented but never called.** Resizing the
+  window while the menu is open leaves the blur backdrop stretched
+  over a stale capture at the old game-bounds size. Wire it from the
+  resize path (or call it lazily from the next `blur_capture` if
+  dimensions diverge).
+- **CardboardCrown is loaded twice.** Once at `FONT_PREVIEW_SIZE`
+  (32px) for the font preview panel, again at `MENU_FONT_SIZE` (64px)
+  for the menu. Wasteful; the asset bytes are identical. Add a tiny
+  font cache keyed on (asset, size) and share.
+- **Engine-lib text assets can't use `embed_asset()`.** The blur
+  shader source had to live as a C string literal in `blur.c` because
+  `embed_*_start` symbols are only resolved on the `sleipner`
+  executable target via `embed_all_assets`, and `engine_tests` does
+  not provide them. Adding more shaders or GLSL fragments to engine
+  code will keep hitting this. Options: provide stub symbols on the
+  test target, restructure `embed_all_assets` to apply to any target
+  that links the engine lib, or formalise inline C strings as the
+  engine-lib-internal convention for text assets and document it.
