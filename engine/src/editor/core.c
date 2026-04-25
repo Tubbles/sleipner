@@ -757,7 +757,11 @@ void handle_handle_input(
 static const EditorBinding browse_actions[BROWSE_ACT_COUNT] = {
     [BROWSE_ACT_TOOLS] =
         {
-            .binding = {KEY_TAB, GAMEPAD_BUTTON_MIDDLE_LEFT},
+            /* Gamepad Y (RIGHT_FACE_UP), formerly the direct Save binding
+             * before the pause menu took ownership of Save / Restore.
+             * Moved off Select to free MIDDLE_LEFT for the pause menu,
+             * which opens in both play and editor mode. */
+            .binding = {KEY_TAB, GAMEPAD_BUTTON_RIGHT_FACE_UP},
             .description = "Tools",
         },
     [BROWSE_ACT_CONFIRM] =
