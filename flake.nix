@@ -29,7 +29,7 @@
           buildToolsVersions = [ "35.0.0" "34.0.0" ];
           includeNDK = true;
           ndkVersions = [ "28.0.13004108" ];
-          cmakeVersions = [ "3.22.1" ];
+          cmakeVersions = [ "3.31.4" ];
         }).androidsdk;
 
         commonNative = with pkgs; [
