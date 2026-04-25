@@ -480,6 +480,7 @@ Android requires APK updates to be signed with the same key as the original inst
 Rules for how Claude Code should operate in this project. Keep adding to this list as new patterns emerge.
 
 - **Only do what was asked.** Never carry out unrequested changes — no bundling extra fixes, no proactively addressing future improvements. If something seems worth doing, ask first.
+- **This is a proof-of-concept project, not a shipping product. Do not weight options on "muscle memory", "user retraining", "convention familiarity", "established workflows", or any similar continuity argument.** No one is depending on a stable UX here, so reframing those concerns as decision criteria pollutes the analysis. Weight options on actual technical merit: clarity, footprint, conflict-freeness, idiomatic placement within the codebase. If only continuity-style reasons remain to prefer one option over another, treat the options as equivalent and pick whichever is simpler to implement.
 - **Use `nix develop` for tooling.** Don't install compilers, libraries, or build tools globally — if something's missing, add it to `flake.nix`. Use `nix develop .#windows` or `nix develop .#android` for the cross-compile shells.
 - **Never run cmake, clang-tidy, cppcheck, etc. outside a Nix shell.** Always prefix with `nix develop -c ...` (or enter the shell first) so the toolchain is reproducible.
 - **Skip local builds for small/trivial changes.** Let GitHub Actions CI catch issues instead — time is precious. Only run locally when the change is non-trivial.
