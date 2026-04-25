@@ -1,7 +1,36 @@
 #include "raylib.h"
 
 #if defined(__linux__) && !defined(__ANDROID__)
+/* We only need glfwInitHint and two GLFW_WAYLAND_* macros from this
+ * header. GLFW_INCLUDE_NONE skips its <GL/gl.h> include so the file
+ * does not need the system OpenGL headers on the include path. */
+#define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
+#endif
+
+#if defined(__SANITIZE_ADDRESS__) || (defined(__has_feature) && __has_feature(address_sanitizer))
+/* LSan picks up this weak symbol at runtime and uses its return value as
+ * the suppressions list (same mechanism as __asan_default_options). Each
+ * "leak:<substring>" entry matches when any frame in the leak's stack
+ * trace contains <substring>. Suppressing the residual Wayland leaks
+ * here means the binary is leak-clean out of the box, with no
+ * LSAN_OPTIONS env var or external file required.
+ *
+ * Suppressed: _glfwInitEGL pthread_once allocations from Mesa EGL driver
+ * dlopen and _glfwCreateWindowWayland wl_proxy_marshal protocol object
+ * allocations. Both are vendor process-lifetime state that GLFW's
+ * Wayland teardown does not reclaim. */
+/* Name, signature, and external linkage are dictated by the LSan ABI:
+ * the runtime calls the weak symbol literally named
+ * __lsan_default_suppressions, so it cannot be renamed and cannot be
+ * static. The reserved-identifier, naming, and internal-linkage checks
+ * have to be silenced for this one declaration. */
+// NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp,readability-identifier-naming,misc-use-internal-linkage)
+const char *__lsan_default_suppressions(void)
+{
+    return "leak:_glfwInitEGL\n"
+           "leak:_glfwCreateWindowWayland\n";
+}
 #endif
 
 #include "alloc.h"
