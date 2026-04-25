@@ -14,14 +14,16 @@ Sleipner is a top-down Zelda-like action RPG written in C using raylib. The game
 
 ## Building
 
-The project uses a Nix flake (`flake.nix`) for the reproducible toolchain. Enter a dev shell and invoke CMake directly — there is no `ci.sh` wrapper.
+The project uses a Nix flake (`flake.nix`) for the reproducible toolchain and CMake presets (`CMakePresets.json`) for build-target shapes. Enter a dev shell and invoke a workflow preset; there is no `ci.sh` wrapper.
 
 ```bash
-# Native (Linux desktop)
-nix develop
-cmake -S . -B build/Release -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build build/Release
-ctest --test-dir build/Release --output-on-failure
+# Native (Linux desktop) — configure + build + test in one go
+nix develop -c cmake --workflow --preset linux --fresh
+
+# Or step by step against the same preset
+nix develop -c cmake --preset linux             # configure
+nix develop -c cmake --build --preset linux     # build
+nix develop -c ctest --preset linux             # test
 
 # Format check / auto-format
 clang-format --dry-run --Werror engine/src/*.c engine/src/*.h engine/test/*.c
@@ -34,18 +36,17 @@ cd build/Release && clang-tidy -p . $(ls ../../engine/src/*.c ../../engine/test/
 cppcheck --enable=warning --addon=tools/cppcheck/no_forward_decl.py --suppress=unknownMacro --error-exitcode=1 engine/src/*.h engine/src/*.c
 pytest tools/cppcheck/test_no_forward_decl.py -v
 
-# Windows cross-compile (mingw-w64 via pkgsCross)
-nix develop .#windows -c cmake -S . -B build/windows -G Ninja \
-    -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/mingw-w64.cmake \
-    -DCMAKE_BUILD_TYPE=Release
-nix develop .#windows -c cmake --build build/windows
+# Windows cross-compile (mingw-w64 via pkgsCross). Tests are skipped: cross binaries can't run on the host.
+nix develop .#windows -c cmake --workflow --preset windows --fresh
 
-# Android APK (NDK + Gradle via androidenv)
+# Android APK (NDK + Gradle via androidenv) — Gradle-driven, no CMake preset.
 nix develop .#android -c bash -c 'cd android && gradle wrapper --gradle-version 8.11.1 && ./gradlew assembleRelease'
 
 # Run (from any shell, inside or outside `nix develop`)
 ./build/Release/engine/sleipner
 ```
+
+Preset definitions live in `CMakePresets.json` at the repo root: `linux` builds into `build/Release/`, `windows` into `build/windows/` with the in-tree mingw toolchain. Add a new platform by adding a configure preset, a matching build preset, optionally a test preset, and a workflow preset that chains them.
 
 The Linux build post-processes the `sleipner` binary with `patchelf` so it
 uses the distro-standard dynamic linker (`/lib64/ld-linux-x86-64.so.2`) and

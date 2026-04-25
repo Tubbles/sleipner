@@ -1,0 +1,55 @@
+{
+    "version": 6,
+    "cmakeMinimumRequired": { "major": 3, "minor": 25, "patch": 0 },
+    "configurePresets": [
+        {
+            "name": "linux",
+            "displayName": "Linux desktop (Release)",
+            "description": "Native Linux x86_64 build with Ninja. ASan/UBSan/LSan are wired in by the top-level CMakeLists; this preset only fixes generator, build type, and output dir. Run inside `nix develop`.",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build/Release",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release"
+            }
+        },
+        {
+            "name": "windows",
+            "displayName": "Windows cross-compile (Release)",
+            "description": "MinGW-w64 cross-compile via the .#windows nix shell. Selects the in-tree mingw toolchain file. Tests are skipped here because cross-compiled binaries cannot run on the host.",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build/windows",
+            "toolchainFile": "${sourceDir}/cmake/toolchains/mingw-w64.cmake",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release"
+            }
+        }
+    ],
+    "buildPresets": [
+        { "name": "linux", "configurePreset": "linux" },
+        { "name": "windows", "configurePreset": "windows" }
+    ],
+    "testPresets": [
+        {
+            "name": "linux",
+            "configurePreset": "linux",
+            "output": { "outputOnFailure": true }
+        }
+    ],
+    "workflowPresets": [
+        {
+            "name": "linux",
+            "steps": [
+                { "type": "configure", "name": "linux" },
+                { "type": "build",     "name": "linux" },
+                { "type": "test",      "name": "linux" }
+            ]
+        },
+        {
+            "name": "windows",
+            "steps": [
+                { "type": "configure", "name": "windows" },
+                { "type": "build",     "name": "windows" }
+            ]
+        }
+    ]
+}

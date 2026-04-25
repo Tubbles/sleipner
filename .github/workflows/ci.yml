@@ -32,16 +32,16 @@ jobs:
         run: nix develop -c clang-format --dry-run --Werror engine/src/*.c engine/src/*.h engine/test/*.c
 
       - name: Configure
-        run: nix develop -c cmake -S . -B build/Release -G Ninja -DCMAKE_BUILD_TYPE=Release
+        run: nix develop -c cmake --preset linux
 
       - name: Build
-        run: nix develop -c cmake --build build/Release
+        run: nix develop -c cmake --build --preset linux
 
       - name: Test
         env:
           ASAN_OPTIONS: detect_leaks=1
           UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
-        run: nix develop -c ctest --test-dir build/Release --output-on-failure
+        run: nix develop -c ctest --preset linux
 
       - name: Lint
         run: |

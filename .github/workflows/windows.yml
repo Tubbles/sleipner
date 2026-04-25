@@ -29,10 +29,10 @@ jobs:
           purge-primary-key: never
 
       - name: Configure
-        run: nix develop .#windows -c cmake -S . -B build/windows -G Ninja -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/mingw-w64.cmake -DCMAKE_BUILD_TYPE=Release
+        run: nix develop .#windows -c cmake --preset windows
 
       - name: Build
-        run: nix develop .#windows -c cmake --build build/windows
+        run: nix develop .#windows -c cmake --build --preset windows
 
       - name: Upload exe
         uses: actions/upload-artifact@v4
