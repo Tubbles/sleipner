@@ -318,6 +318,9 @@ handle_child_offset_edit(GameState *state, EditorState *editor_state, UndoHistor
         editor_state->attr_hold_dir = held;
         editor_state->attr_hold_total = 0.0F;
         editor_state->attr_hold_subtick = 0.0F;
+        if (held != 0) {
+            editor_state->saved_attr_int += held;
+        }
     }
     if (held == 0) {
         return;
@@ -381,6 +384,9 @@ void handle_attr_edit_input(GameState *state, EditorState *editor_state, UndoHis
         editor_state->attr_hold_dir = held;
         editor_state->attr_hold_total = 0.0F;
         editor_state->attr_hold_subtick = 0.0F;
+        if (held != 0) {
+            apply_attr_delta(state, editor_state, held);
+        }
     }
     if (held == 0) {
         return;
@@ -417,12 +423,12 @@ static const EditorBinding attr_edit_actions[ATTR_EDIT_ACT_COUNT] = {
     [ATTR_EDIT_ACT_DEC_ONE] =
         {
             .binding = {KEY_LEFT, GAMEPAD_BUTTON_LEFT_FACE_LEFT},
-            .description = "-1 (hold)",
+            .description = "-1 (tap or hold)",
         },
     [ATTR_EDIT_ACT_INC_ONE] =
         {
             .binding = {KEY_RIGHT, GAMEPAD_BUTTON_LEFT_FACE_RIGHT},
-            .description = "+1 (hold)",
+            .description = "+1 (tap or hold)",
         },
     [ATTR_EDIT_ACT_DEC_TEN] =
         {

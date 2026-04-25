@@ -1,6 +1,8 @@
 #include "unity.h"
+#include "attribute.h"
 #include "diag.h"
 #include "editor/editor.h"
+#include "editor/internal.h"
 #include "entity.h"
 #include "game.h"
 #include "strv.h"
@@ -777,6 +779,165 @@ void test_integration_editor_undo_at_left_edge_preserves_play_state(void)
     player = game_get_player_const(&state);
     TEST_ASSERT_FLOAT_WITHIN(0.1F, walked_x, player->position.x);
     TEST_ASSERT_FLOAT_WITHIN(0.1F, walked_y, player->position.y);
+
+    undo_history_free(&undo_history);
+    game_free(&diag, &state);
+}
+
+/* Helper: locate the display index of a named INT attribute on the player
+ * entity, mirroring the path the editor walks when the user navigates the
+ * attribute panel. Returns -1 if not found. */
+static int find_int_attr_display_index(GameState *state, Entity *entity, const char *name)
+{
+    int probe_limit = 64;
+    size_t name_len = strlen(name);
+    for (int idx = 0; idx < probe_limit; idx++) {
+        Attribute *attr = attr_at_display_index(state, entity, idx);
+        if (!attr) {
+            continue;
+        }
+        if (attr->type == ATTR_INT && attr->name.len == name_len && strncmp(attr->name.ptr, name, name_len) == 0) {
+            return idx;
+        }
+    }
+    return -1;
+}
+
+/* Bug repro: in editor ATTR_EDIT, a single tap of LEFT/RIGHT on either
+ * keyboard or D-pad must change a numeric attribute by ±1 immediately.
+ *
+ * The original implementation routed ±1 through binding_held + a 0.4s
+ * ATTR_REPEAT_DELAY wait before the first fire, so a single-frame tap
+ * produced no observable change — the user reported "left and right does
+ * not work". The fix is to fire the delta on the press edge (the frame
+ * the held direction transitions from 0 to ±1) and let the existing
+ * timer drive the held repeat after the delay.
+ *
+ * The test taps each binding for one frame via the input mock — the
+ * --wrap shim makes IsKeyDown / IsGamepadButtonDown return true exactly
+ * for that frame — and asserts on the entity-side attribute value, the
+ * same observable the user is acting on. A regression that no-ops
+ * binding_held without changing observable behaviour will still fail
+ * this test. */
+void test_integration_editor_attr_edit_tap_decrements_by_one(void)
+{
+    test_input_reset();
+
+    GameState state = {0};
+    Diag diag = {&state.error, &state.debug};
+    TEST_ASSERT_TRUE(game_init(&diag, &state, (RectU32){320, 240}));
+    TEST_ASSERT_TRUE(game_load_gamedata(
+        &diag, &state, (GamedataParams){.toml_string = fixture_gamedata, .texture_lookup = dummy_lookup}));
+
+    UndoHistory undo_history = {0};
+    TEST_ASSERT_TRUE(undo_history_init(&state.error, &undo_history));
+    undo_history_new_entry(&undo_history, &state.gamedata, &state.gamedata_arena, state.gamedata_base,
+                           strv_from_cstr("Initial"));
+
+    Entity *player_entity = &state.gamedata.current_level.entities.data[state.gamedata.player_index];
+    int speed_attr_index = find_int_attr_display_index(&state, player_entity, "speed");
+    TEST_ASSERT_TRUE_MESSAGE(speed_attr_index >= 0, "could not locate INT attr 'speed' on player");
+
+    Attribute *speed_attr = attr_at_display_index(&state, player_entity, speed_attr_index);
+    TEST_ASSERT_NOT_NULL(speed_attr);
+    int starting_speed = speed_attr->value.i;
+    TEST_ASSERT_EQUAL_INT(80, starting_speed);
+
+    /* Drop directly into ATTR_EDIT on speed, mirroring what
+     * handle_browse_select does when the user confirms on an INT row
+     * (engine/src/editor/core.c:377-379). The black-box portion is the
+     * input simulation and dispatch below, not this setup. */
+    EditorState editor_state = {.top_mode = EDITOR_TOP_SCENE,
+                                .selected_entity_index = state.gamedata.player_index,
+                                .selected_attr_index = speed_attr_index,
+                                .sub_mode = EDITOR_SUB_ATTR_EDIT,
+                                .saved_attr_int = starting_speed,
+                                .radial_confirmed = -1,
+                                .radial_selected = -1,
+                                .selected_blueprint_index = -1,
+                                .blueprint_attr_index = -1,
+                                .blueprint_tree_index = -1,
+                                .selected_tree_index = -1};
+
+    test_input_tap_key(KEY_LEFT);
+    handle_attr_edit_input(&state, &editor_state, &undo_history, 1.0F / 60.0F);
+    test_input_frame_advance();
+    speed_attr = attr_at_display_index(&state, player_entity, speed_attr_index);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(starting_speed - 1, speed_attr->value.i,
+                                  "tap KEY_LEFT should decrement speed by 1 in ATTR_EDIT");
+
+    test_input_tap_key(KEY_RIGHT);
+    handle_attr_edit_input(&state, &editor_state, &undo_history, 1.0F / 60.0F);
+    test_input_frame_advance();
+    speed_attr = attr_at_display_index(&state, player_entity, speed_attr_index);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(starting_speed, speed_attr->value.i,
+                                  "tap KEY_RIGHT should restore speed to starting value");
+
+    test_input_tap_gamepad_button(0, GAMEPAD_BUTTON_LEFT_FACE_LEFT);
+    handle_attr_edit_input(&state, &editor_state, &undo_history, 1.0F / 60.0F);
+    test_input_frame_advance();
+    speed_attr = attr_at_display_index(&state, player_entity, speed_attr_index);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(starting_speed - 1, speed_attr->value.i,
+                                  "tap D-pad LEFT should decrement speed by 1 in ATTR_EDIT");
+
+    test_input_tap_gamepad_button(0, GAMEPAD_BUTTON_LEFT_FACE_RIGHT);
+    handle_attr_edit_input(&state, &editor_state, &undo_history, 1.0F / 60.0F);
+    test_input_frame_advance();
+    speed_attr = attr_at_display_index(&state, player_entity, speed_attr_index);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(starting_speed, speed_attr->value.i,
+                                  "tap D-pad RIGHT should restore speed to starting value");
+
+    undo_history_free(&undo_history);
+    game_free(&diag, &state);
+}
+
+/* Regression guard: the existing hold-then-repeat behaviour must survive
+ * the immediate-fire fix. Hold KEY_LEFT for one simulated second and
+ * confirm the attribute drops by enough to cover the initial fire plus
+ * several timer-driven repeats after ATTR_REPEAT_DELAY (0.4s). */
+void test_integration_editor_attr_edit_hold_repeats_after_delay(void)
+{
+    test_input_reset();
+
+    GameState state = {0};
+    Diag diag = {&state.error, &state.debug};
+    TEST_ASSERT_TRUE(game_init(&diag, &state, (RectU32){320, 240}));
+    TEST_ASSERT_TRUE(game_load_gamedata(
+        &diag, &state, (GamedataParams){.toml_string = fixture_gamedata, .texture_lookup = dummy_lookup}));
+
+    UndoHistory undo_history = {0};
+    TEST_ASSERT_TRUE(undo_history_init(&state.error, &undo_history));
+    undo_history_new_entry(&undo_history, &state.gamedata, &state.gamedata_arena, state.gamedata_base,
+                           strv_from_cstr("Initial"));
+
+    Entity *player_entity = &state.gamedata.current_level.entities.data[state.gamedata.player_index];
+    int speed_attr_index = find_int_attr_display_index(&state, player_entity, "speed");
+    TEST_ASSERT_TRUE(speed_attr_index >= 0);
+
+    Attribute *speed_attr = attr_at_display_index(&state, player_entity, speed_attr_index);
+    int starting_speed = speed_attr->value.i;
+
+    EditorState editor_state = {.top_mode = EDITOR_TOP_SCENE,
+                                .selected_entity_index = state.gamedata.player_index,
+                                .selected_attr_index = speed_attr_index,
+                                .sub_mode = EDITOR_SUB_ATTR_EDIT,
+                                .saved_attr_int = starting_speed,
+                                .radial_confirmed = -1,
+                                .radial_selected = -1,
+                                .selected_blueprint_index = -1,
+                                .blueprint_attr_index = -1,
+                                .blueprint_tree_index = -1,
+                                .selected_tree_index = -1};
+
+    test_input_hold_key(KEY_LEFT);
+    for (int iter = 0; iter < 60; iter++) {
+        handle_attr_edit_input(&state, &editor_state, &undo_history, 1.0F / 60.0F);
+        test_input_frame_advance();
+    }
+    test_input_release_key(KEY_LEFT);
+    speed_attr = attr_at_display_index(&state, player_entity, speed_attr_index);
+    int total_drop = starting_speed - speed_attr->value.i;
+    TEST_ASSERT_TRUE_MESSAGE(total_drop >= 3, "holding KEY_LEFT for 1s should fire several decrements");
 
     undo_history_free(&undo_history);
     game_free(&diag, &state);

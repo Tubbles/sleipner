@@ -61,5 +61,7 @@ target_link_libraries(engine_tests PRIVATE engine unity m)
 # as future tests need them.
 target_link_options(engine_tests PRIVATE
     -Wl,--wrap=IsKeyPressed
-    -Wl,--wrap=IsGamepadButtonPressed)
+    -Wl,--wrap=IsGamepadButtonPressed
+    -Wl,--wrap=IsKeyDown
+    -Wl,--wrap=IsGamepadButtonDown)
 add_test(NAME engine_tests COMMAND engine_tests)

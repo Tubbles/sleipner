@@ -60,6 +60,8 @@ void test_integration_real_gamedata_all_levels_load(void);
 void test_integration_transition_changes_level(void);
 void test_integration_editor_pan_does_not_reset_player_position(void);
 void test_integration_editor_undo_at_left_edge_preserves_play_state(void);
+void test_integration_editor_attr_edit_tap_decrements_by_one(void);
+void test_integration_editor_attr_edit_hold_repeats_after_delay(void);
 
 /* toml_emitter_test.c */
 void test_toml_emit_blueprints(void);
@@ -163,6 +165,8 @@ int main(void)
     RUN_TEST(test_integration_transition_changes_level);
     RUN_TEST(test_integration_editor_pan_does_not_reset_player_position);
     RUN_TEST(test_integration_editor_undo_at_left_edge_preserves_play_state);
+    RUN_TEST(test_integration_editor_attr_edit_tap_decrements_by_one);
+    RUN_TEST(test_integration_editor_attr_edit_hold_repeats_after_delay);
 
     RUN_TEST(test_level_load_first);
     RUN_TEST(test_level_load_by_name);
