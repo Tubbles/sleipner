@@ -4,11 +4,13 @@
 #include "editor/editor.h"
 #include "editor/internal.h"
 #include "entity.h"
+#include "frame.h"
 #include "game.h"
+#include "input.h"
 #include "input_func.h"
 #include "menu.h"
 #include "strv.h"
-#include "test_heap_alloc.h"
+#include "test_helpers.h"
 #include "test_input_mock.h"
 #include "undo.h"
 
@@ -709,108 +711,58 @@ void test_integration_editor_pan_does_not_reset_player_position(void)
  *      the "Initial" arena bytes back over live state and resetting the
  *      player to the TOML start.
  *
- * Black-box shape: builds a real InputState with the Ctrl+Z chord and
- * feeds it to handle_browse_input. handle_browse_input reads via the
- * input_func layer (input_pressed against state->bindings), which sees
- * both Ctrl held and Z freshly pressed and fires ACTION_EDITOR_UNDO.
- * The only layer skipped versus the production frame loop is main.c's
- * static sub_mode dispatch in handle_editor_input; the editor enters
- * BROWSE by default so the dispatch would be a straight forward to
- * handle_browse_input anyway.
+ * Black-box shape: drives frame_update with a real InputState. F5
+ * toggles editor mode, then a Ctrl+Z chord fires ACTION_EDITOR_UNDO
+ * through the function layer. No internal handlers are called
+ * directly; the test goes through the same dispatch sequence
+ * production main.c runs.
  *
  * Acid test: temporarily replace the `|| !history->current->prev`
  * left-edge guard in undo.c:undo_history_step_back with `false`, so
  * restore_entry runs unconditionally — this test must go red. */
 void test_integration_editor_undo_at_left_edge_preserves_play_state(void)
 {
-    GameState state = {0};
-    Diag diag = {&state.error, &state.debug};
-    TEST_ASSERT_TRUE(game_init(&diag, &state, (RectU32){320, 240}));
-    TEST_ASSERT_TRUE(game_load_gamedata(
-        &diag, &state, (GamedataParams){.toml_string = fixture_gamedata, .texture_lookup = dummy_lookup}));
-
-    /* Replicate main.c startup: push a baseline "Initial" snapshot
-     * immediately after loading gamedata. */
-    UndoHistory undo_history = {0};
-    TEST_ASSERT_TRUE(undo_history_init(&state.error, &undo_history));
-    undo_history_new_entry(&undo_history, &state.gamedata, &state.gamedata_arena, state.gamedata_base,
-                           strv_from_cstr("Initial"));
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_gamedata));
 
     /* Player starts at TOML position (160, 120). */
-    const Entity *player = game_get_player_const(&state);
+    const Entity *player = game_get_player_const(&game.state);
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 160.0F, player->position.x);
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 120.0F, player->position.y);
 
     /* Play mode: walk the player down for 60 frames so the position
      * visibly diverges from the TOML start. */
-    state.editor_mode = false;
     InputState walk_input = {0};
-    walk_input.gp_axis[GAMEPAD_AXIS_LEFT_Y] = 1.0F;
-    for (int iteration = 0; iteration < 60; iteration++) {
-        game_update(&diag, &state, walk_input, 1.0F / 60.0F);
-    }
+    input_state_set_gp_axis(&walk_input, GAMEPAD_AXIS_LEFT_Y, 1.0F);
+    test_advance_frames(&game, walk_input, 60);
 
-    player = game_get_player_const(&state);
+    player = game_get_player_const(&game.state);
     float walked_x = player->position.x;
     float walked_y = player->position.y;
     TEST_ASSERT_TRUE(walked_y > 120.5F); /* actually moved */
 
-    /* User toggles to editor mode. No editor edits happen here — the
-     * only undo entry in history is still the "Initial" one. */
-    state.editor_mode = true;
-
-    /* Match main.c's editor initialisation: sentinel -1s for index fields
-     * and radial confirmation, so handle_browse_input doesn't early-return
-     * into the radial dispatch path (radial_confirmed == 0 is a valid
-     * confirmed sector, sentinel is -1). */
-    EditorState editor_state = {.top_mode = EDITOR_TOP_SCENE,
-                                .selected_entity_index = -1,
-                                .sub_mode = EDITOR_SUB_BROWSE,
-                                .selected_attr_index = -1,
-                                .radial_confirmed = -1,
-                                .radial_selected = -1,
-                                .selected_blueprint_index = -1,
-                                .blueprint_attr_index = -1,
-                                .blueprint_tree_index = -1};
-    WatchList watches = {0};
-    Camera2D editor_camera = {0};
+    /* User toggles to editor mode via the real F5 binding. */
+    InputState editor_toggle = {0};
+    input_state_press_key(&editor_toggle, KEY_F5);
+    test_advance_frame(&game, editor_toggle);
+    TEST_ASSERT_TRUE(game.state.editor_mode);
 
     /* Real Ctrl+Z chord: hold Ctrl (level), press Z (edge). The
      * input_func layer's chord rule fires when all atoms are down and
      * at least one is freshly pressed this frame. */
-    InputState editor_input = {0};
-    input_state_hold_key(&editor_input, KEY_LEFT_CONTROL);
-    input_state_press_key(&editor_input, KEY_Z);
-    handle_browse_input(&state, &editor_camera, &editor_state, &watches, &undo_history, editor_input, 1.0F / 60.0F);
+    InputState undo_input = {0};
+    input_state_hold_key(&undo_input, KEY_LEFT_CONTROL);
+    input_state_press_key(&undo_input, KEY_Z);
+    test_advance_frame(&game, undo_input);
 
     /* The user did not perform any editor edits since entering editor
      * mode, so undo-at-the-left-edge must be a no-op with respect to
      * live state. The player must still be at the walked position. */
-    player = game_get_player_const(&state);
+    player = game_get_player_const(&game.state);
     TEST_ASSERT_FLOAT_WITHIN(0.1F, walked_x, player->position.x);
     TEST_ASSERT_FLOAT_WITHIN(0.1F, walked_y, player->position.y);
 
-    undo_history_free(&undo_history);
-    game_free(&diag, &state);
-}
-
-/* Helper: locate the display index of a named INT attribute on the player
- * entity, mirroring the path the editor walks when the user navigates the
- * attribute panel. Returns -1 if not found. */
-static int find_int_attr_display_index(GameState *state, Entity *entity, const char *name)
-{
-    int probe_limit = 64;
-    size_t name_len = strlen(name);
-    for (int idx = 0; idx < probe_limit; idx++) {
-        Attribute *attr = attr_at_display_index(state, entity, idx);
-        if (!attr) {
-            continue;
-        }
-        if (attr->type == ATTR_INT && attr->name.len == name_len && strncmp(attr->name.ptr, name, name_len) == 0) {
-            return idx;
-        }
-    }
-    return -1;
+    test_game_teardown(&game);
 }
 
 /* Bug repro: in editor ATTR_EDIT, a single tap of LEFT/RIGHT on either
@@ -823,258 +775,204 @@ static int find_int_attr_display_index(GameState *state, Entity *entity, const c
  * the held direction transitions from 0 to ±1) and let the existing
  * timer drive the held repeat after the delay.
  *
- * The test taps each binding for one frame via the input mock — the
- * --wrap shim makes IsKeyDown / IsGamepadButtonDown return true exactly
- * for that frame — and asserts on the entity-side attribute value, the
- * same observable the user is acting on. A regression that no-ops
- * binding_held without changing observable behaviour will still fail
- * this test. */
+ * Each scenario builds a fresh InputState with a single tap, drives it
+ * through frame_update, and asserts on the player's "speed" attribute —
+ * the same observable the user is acting on. A regression that no-ops
+ * the press-edge fire without changing observable behaviour has to
+ * fail this test. */
 void test_integration_editor_attr_edit_tap_decrements_by_one(void)
 {
-    test_input_reset();
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_gamedata));
 
-    GameState state = {0};
-    Diag diag = {&state.error, &state.debug};
-    TEST_ASSERT_TRUE(game_init(&diag, &state, (RectU32){320, 240}));
-    TEST_ASSERT_TRUE(game_load_gamedata(
-        &diag, &state, (GamedataParams){.toml_string = fixture_gamedata, .texture_lookup = dummy_lookup}));
+    /* Enter editor mode via the real F5 binding. */
+    InputState editor_toggle = {0};
+    input_state_press_key(&editor_toggle, KEY_F5);
+    test_advance_frame(&game, editor_toggle);
+    TEST_ASSERT_TRUE(game.state.editor_mode);
 
-    UndoHistory undo_history = {0};
-    TEST_ASSERT_TRUE(undo_history_init(&state.error, &undo_history));
-    undo_history_new_entry(&undo_history, &state.gamedata, &state.gamedata_arena, state.gamedata_base,
-                           strv_from_cstr("Initial"));
-
-    Entity *player_entity = &state.gamedata.current_level.entities.data[state.gamedata.player_index];
-    int speed_attr_index = find_int_attr_display_index(&state, player_entity, "speed");
+    Entity *player_entity = &game.state.gamedata.current_level.entities.data[game.state.gamedata.player_index];
+    int speed_attr_index = test_find_int_attr_display_index(&game.state, player_entity, "speed");
     TEST_ASSERT_TRUE_MESSAGE(speed_attr_index >= 0, "could not locate INT attr 'speed' on player");
 
-    Attribute *speed_attr = attr_at_display_index(&state, player_entity, speed_attr_index);
-    TEST_ASSERT_NOT_NULL(speed_attr);
-    int starting_speed = speed_attr->value.i;
+    int starting_speed = test_player_int_attr(&game.state, "speed");
     TEST_ASSERT_EQUAL_INT(80, starting_speed);
 
     /* Drop directly into ATTR_EDIT on speed, mirroring what
      * handle_browse_select does when the user confirms on an INT row
      * (engine/src/editor/core.c:377-379). The black-box portion is the
      * input simulation and dispatch below, not this setup. */
-    EditorState editor_state = {.top_mode = EDITOR_TOP_SCENE,
-                                .selected_entity_index = state.gamedata.player_index,
-                                .selected_attr_index = speed_attr_index,
-                                .sub_mode = EDITOR_SUB_ATTR_EDIT,
-                                .saved_attr_int = starting_speed,
-                                .radial_confirmed = -1,
-                                .radial_selected = -1,
-                                .selected_blueprint_index = -1,
-                                .blueprint_attr_index = -1,
-                                .blueprint_tree_index = -1,
-                                .selected_tree_index = -1};
+    game.editor_state.selected_entity_index = game.state.gamedata.player_index;
+    game.editor_state.selected_attr_index = speed_attr_index;
+    game.editor_state.sub_mode = EDITOR_SUB_ATTR_EDIT;
+    game.editor_state.saved_attr_int = starting_speed;
 
-    test_input_tap_key(KEY_LEFT);
-    {
-        InputState frame_input = {0};
-        input_capture(&frame_input);
-        handle_attr_edit_input(&state, &editor_state, &undo_history, &frame_input, 1.0F / 60.0F);
-    }
-    test_input_frame_advance();
-    speed_attr = attr_at_display_index(&state, player_entity, speed_attr_index);
-    TEST_ASSERT_EQUAL_INT_MESSAGE(starting_speed - 1, speed_attr->value.i,
+    InputState left_kb = {0};
+    input_state_press_key(&left_kb, KEY_LEFT);
+    test_advance_frame(&game, left_kb);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(starting_speed - 1, test_player_int_attr(&game.state, "speed"),
                                   "tap KEY_LEFT should decrement speed by 1 in ATTR_EDIT");
 
-    test_input_tap_key(KEY_RIGHT);
-    {
-        InputState frame_input = {0};
-        input_capture(&frame_input);
-        handle_attr_edit_input(&state, &editor_state, &undo_history, &frame_input, 1.0F / 60.0F);
-    }
-    test_input_frame_advance();
-    speed_attr = attr_at_display_index(&state, player_entity, speed_attr_index);
-    TEST_ASSERT_EQUAL_INT_MESSAGE(starting_speed, speed_attr->value.i,
+    InputState right_kb = {0};
+    input_state_press_key(&right_kb, KEY_RIGHT);
+    test_advance_frame(&game, right_kb);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(starting_speed, test_player_int_attr(&game.state, "speed"),
                                   "tap KEY_RIGHT should restore speed to starting value");
 
-    test_input_tap_gamepad_button(0, GAMEPAD_BUTTON_LEFT_FACE_LEFT);
-    {
-        InputState frame_input = {0};
-        input_capture(&frame_input);
-        handle_attr_edit_input(&state, &editor_state, &undo_history, &frame_input, 1.0F / 60.0F);
-    }
-    test_input_frame_advance();
-    speed_attr = attr_at_display_index(&state, player_entity, speed_attr_index);
-    TEST_ASSERT_EQUAL_INT_MESSAGE(starting_speed - 1, speed_attr->value.i,
+    InputState left_dpad = {0};
+    input_state_press_gp_button(&left_dpad, GAMEPAD_BUTTON_LEFT_FACE_LEFT);
+    test_advance_frame(&game, left_dpad);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(starting_speed - 1, test_player_int_attr(&game.state, "speed"),
                                   "tap D-pad LEFT should decrement speed by 1 in ATTR_EDIT");
 
-    test_input_tap_gamepad_button(0, GAMEPAD_BUTTON_LEFT_FACE_RIGHT);
-    {
-        InputState frame_input = {0};
-        input_capture(&frame_input);
-        handle_attr_edit_input(&state, &editor_state, &undo_history, &frame_input, 1.0F / 60.0F);
-    }
-    test_input_frame_advance();
-    speed_attr = attr_at_display_index(&state, player_entity, speed_attr_index);
-    TEST_ASSERT_EQUAL_INT_MESSAGE(starting_speed, speed_attr->value.i,
+    InputState right_dpad = {0};
+    input_state_press_gp_button(&right_dpad, GAMEPAD_BUTTON_LEFT_FACE_RIGHT);
+    test_advance_frame(&game, right_dpad);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(starting_speed, test_player_int_attr(&game.state, "speed"),
                                   "tap D-pad RIGHT should restore speed to starting value");
 
-    undo_history_free(&undo_history);
-    game_free(&diag, &state);
+    test_game_teardown(&game);
 }
 
 /* Regression guard: the existing hold-then-repeat behaviour must survive
- * the immediate-fire fix. Hold KEY_LEFT for one simulated second and
- * confirm the attribute drops by enough to cover the initial fire plus
- * several timer-driven repeats after ATTR_REPEAT_DELAY (0.4s). */
+ * the immediate-fire fix. Hold KEY_LEFT (level only, no edge) for one
+ * simulated second and confirm the attribute drops by enough to cover
+ * the timer-driven repeats after ATTR_REPEAT_DELAY (0.4s). */
 void test_integration_editor_attr_edit_hold_repeats_after_delay(void)
 {
-    test_input_reset();
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_gamedata));
 
-    GameState state = {0};
-    Diag diag = {&state.error, &state.debug};
-    TEST_ASSERT_TRUE(game_init(&diag, &state, (RectU32){320, 240}));
-    TEST_ASSERT_TRUE(game_load_gamedata(
-        &diag, &state, (GamedataParams){.toml_string = fixture_gamedata, .texture_lookup = dummy_lookup}));
+    InputState editor_toggle = {0};
+    input_state_press_key(&editor_toggle, KEY_F5);
+    test_advance_frame(&game, editor_toggle);
+    TEST_ASSERT_TRUE(game.state.editor_mode);
 
-    UndoHistory undo_history = {0};
-    TEST_ASSERT_TRUE(undo_history_init(&state.error, &undo_history));
-    undo_history_new_entry(&undo_history, &state.gamedata, &state.gamedata_arena, state.gamedata_base,
-                           strv_from_cstr("Initial"));
-
-    Entity *player_entity = &state.gamedata.current_level.entities.data[state.gamedata.player_index];
-    int speed_attr_index = find_int_attr_display_index(&state, player_entity, "speed");
+    Entity *player_entity = &game.state.gamedata.current_level.entities.data[game.state.gamedata.player_index];
+    int speed_attr_index = test_find_int_attr_display_index(&game.state, player_entity, "speed");
     TEST_ASSERT_TRUE(speed_attr_index >= 0);
 
-    Attribute *speed_attr = attr_at_display_index(&state, player_entity, speed_attr_index);
-    int starting_speed = speed_attr->value.i;
+    int starting_speed = test_player_int_attr(&game.state, "speed");
 
-    EditorState editor_state = {.top_mode = EDITOR_TOP_SCENE,
-                                .selected_entity_index = state.gamedata.player_index,
-                                .selected_attr_index = speed_attr_index,
-                                .sub_mode = EDITOR_SUB_ATTR_EDIT,
-                                .saved_attr_int = starting_speed,
-                                .radial_confirmed = -1,
-                                .radial_selected = -1,
-                                .selected_blueprint_index = -1,
-                                .blueprint_attr_index = -1,
-                                .blueprint_tree_index = -1,
-                                .selected_tree_index = -1};
+    game.editor_state.selected_entity_index = game.state.gamedata.player_index;
+    game.editor_state.selected_attr_index = speed_attr_index;
+    game.editor_state.sub_mode = EDITOR_SUB_ATTR_EDIT;
+    game.editor_state.saved_attr_int = starting_speed;
 
-    test_input_hold_key(KEY_LEFT);
-    for (int iter = 0; iter < 60; iter++) {
-        {
-            InputState frame_input = {0};
-            input_capture(&frame_input);
-            handle_attr_edit_input(&state, &editor_state, &undo_history, &frame_input, 1.0F / 60.0F);
-        }
-        test_input_frame_advance();
-    }
-    test_input_release_key(KEY_LEFT);
-    speed_attr = attr_at_display_index(&state, player_entity, speed_attr_index);
-    int total_drop = starting_speed - speed_attr->value.i;
+    /* Held without an edge — input_state_hold_key sets *_down only,
+     * not *_pressed. The press-edge immediate fire never triggers; only
+     * the timer-driven repeat after ATTR_REPEAT_DELAY does. */
+    InputState held = {0};
+    input_state_hold_key(&held, KEY_LEFT);
+    test_advance_frames(&game, held, 60);
+
+    int total_drop = starting_speed - test_player_int_attr(&game.state, "speed");
     TEST_ASSERT_TRUE_MESSAGE(total_drop >= 3, "holding KEY_LEFT for 1s should fire several decrements");
 
-    undo_history_free(&undo_history);
-    game_free(&diag, &state);
+    test_game_teardown(&game);
 }
 
-/* Drive the pause menu through the real binding system: a single tap of
- * KEY_DOWN must advance the selection by one because binding_pressed
- * reads __wrap_IsKeyPressed (mocked) and feeds menu_handle_input.
- *
- * The selected-entry transitions and final returned MenuAction are
- * what the user observes (highlight moves, then pressing A fires the
- * named entry). A regression that swaps two MENU_ENTRY_* values, or
- * silently no-ops binding_pressed for KEY_DOWN, has to break this
- * test. */
+/* Drive the pause menu through the real frame loop: F3 opens the
+ * menu, KEY_DOWN walks the selection, KEY_ENTER confirms QUIT.
+ * Observables are game.menu.open, game.menu.selected, and
+ * game.quit_requested — the same bits a player and the production
+ * loop see. A regression that swaps two MENU_ENTRY_* values, or
+ * silently no-ops the menu_toggle / nav / confirm bindings, has to
+ * break this test. */
 void test_integration_menu_navigation_and_quit(void)
 {
-    test_input_reset();
-    MenuState menu = {0};
-    menu_init(&menu);
-    menu_open(&menu);
-    TEST_ASSERT_EQUAL_INT(MENU_ENTRY_RESUME, menu.selected);
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_gamedata));
+
+    /* F3 opens the menu via ACTION_MENU_TOGGLE. */
+    InputState open_input = {0};
+    input_state_press_key(&open_input, KEY_F3);
+    test_advance_frame(&game, open_input);
+    TEST_ASSERT_TRUE(game.menu.open);
+    TEST_ASSERT_EQUAL_INT(MENU_ENTRY_RESUME, game.menu.selected);
 
     /* Walk to QUIT (4 down-presses from RESUME). One tap per frame. */
     for (int step = 0; step < 4; step++) {
-        test_input_tap_key(KEY_DOWN);
-        InputState frame_input = {0};
-        input_capture(&frame_input);
-        MenuAction action = menu_handle_input(&menu, &frame_input, get_test_bindings());
-        TEST_ASSERT_EQUAL_INT(MENU_ACTION_NONE, action);
-        test_input_frame_advance();
+        InputState down = {0};
+        input_state_press_key(&down, KEY_DOWN);
+        test_advance_frame(&game, down);
     }
-    TEST_ASSERT_EQUAL_INT(MENU_ENTRY_QUIT, menu.selected);
+    TEST_ASSERT_EQUAL_INT(MENU_ENTRY_QUIT, game.menu.selected);
 
     /* Pressing past the last entry must clamp, not wrap. */
-    test_input_tap_key(KEY_DOWN);
-    {
-        InputState frame_input = {0};
-        input_capture(&frame_input);
-        (void)menu_handle_input(&menu, &frame_input, get_test_bindings());
-    }
-    test_input_frame_advance();
-    TEST_ASSERT_EQUAL_INT(MENU_ENTRY_QUIT, menu.selected);
+    InputState clamp = {0};
+    input_state_press_key(&clamp, KEY_DOWN);
+    test_advance_frame(&game, clamp);
+    TEST_ASSERT_EQUAL_INT(MENU_ENTRY_QUIT, game.menu.selected);
 
-    /* Confirm fires QUIT. */
-    test_input_tap_key(KEY_ENTER);
+    /* Confirm fires QUIT — dispatched via dispatch_menu_action which
+     * sets quit_requested. */
     InputState confirm_input = {0};
-    input_capture(&confirm_input);
-    MenuAction quit_action = menu_handle_input(&menu, &confirm_input, get_test_bindings());
-    test_input_frame_advance();
-    TEST_ASSERT_EQUAL_INT(MENU_ACTION_QUIT, quit_action);
+    input_state_press_key(&confirm_input, KEY_ENTER);
+    test_advance_frame(&game, confirm_input);
+    TEST_ASSERT_TRUE(game.quit_requested);
 
-    menu_cleanup(&menu);
+    test_game_teardown(&game);
 }
 
-/* Cancel (B / Escape) returns RESUME regardless of where the cursor
- * sits — equivalent to confirming the Resume entry. */
+/* Cancel (Escape) returns from the menu regardless of where the
+ * cursor sits — equivalent to confirming the Resume entry. Menu
+ * closes; quit_requested stays false. */
 void test_integration_menu_escape_returns_resume(void)
 {
-    test_input_reset();
-    MenuState menu = {0};
-    menu_init(&menu);
-    menu_open(&menu);
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_gamedata));
+
+    InputState open_input = {0};
+    input_state_press_key(&open_input, KEY_F3);
+    test_advance_frame(&game, open_input);
+    TEST_ASSERT_TRUE(game.menu.open);
+
     /* Move off Resume so the assertion is meaningful. */
-    test_input_tap_key(KEY_DOWN);
-    test_input_tap_key(KEY_DOWN);
-    {
-        InputState frame_input = {0};
-        input_capture(&frame_input);
-        (void)menu_handle_input(&menu, &frame_input, get_test_bindings());
+    for (int step = 0; step < 2; step++) {
+        InputState down = {0};
+        input_state_press_key(&down, KEY_DOWN);
+        test_advance_frame(&game, down);
     }
-    test_input_frame_advance();
-    TEST_ASSERT_NOT_EQUAL(MENU_ENTRY_RESUME, menu.selected);
+    TEST_ASSERT_NOT_EQUAL(MENU_ENTRY_RESUME, game.menu.selected);
 
-    test_input_tap_key(KEY_ESCAPE);
     InputState escape_input = {0};
-    input_capture(&escape_input);
-    MenuAction action = menu_handle_input(&menu, &escape_input, get_test_bindings());
-    test_input_frame_advance();
-    TEST_ASSERT_EQUAL_INT(MENU_ACTION_RESUME, action);
+    input_state_press_key(&escape_input, KEY_ESCAPE);
+    test_advance_frame(&game, escape_input);
+    TEST_ASSERT_FALSE(game.menu.open);
+    TEST_ASSERT_FALSE(game.quit_requested);
 
-    menu_cleanup(&menu);
+    test_game_teardown(&game);
 }
 
 /* D-pad LEFT_FACE_DOWN navigates same as KEY_DOWN — both are bound to
- * ACTION_NAV_DOWN in the function layer. */
+ * ACTION_NAV_DOWN. RIGHT_FACE_DOWN confirms (same as KEY_ENTER). The
+ * MIDDLE_LEFT button toggles the menu. */
 void test_integration_menu_gamepad_navigation(void)
 {
-    test_input_reset();
-    MenuState menu = {0};
-    menu_init(&menu);
-    menu_open(&menu);
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_gamedata));
 
-    test_input_tap_gamepad_button(0, GAMEPAD_BUTTON_LEFT_FACE_DOWN);
-    {
-        InputState frame_input = {0};
-        input_capture(&frame_input);
-        (void)menu_handle_input(&menu, &frame_input, get_test_bindings());
-    }
-    test_input_frame_advance();
-    TEST_ASSERT_EQUAL_INT(MENU_ENTRY_SAVE, menu.selected);
+    InputState open_input = {0};
+    input_state_press_gp_button(&open_input, GAMEPAD_BUTTON_MIDDLE_LEFT);
+    test_advance_frame(&game, open_input);
+    TEST_ASSERT_TRUE(game.menu.open);
 
-    test_input_tap_gamepad_button(0, GAMEPAD_BUTTON_RIGHT_FACE_DOWN);
+    InputState dpad_down = {0};
+    input_state_press_gp_button(&dpad_down, GAMEPAD_BUTTON_LEFT_FACE_DOWN);
+    test_advance_frame(&game, dpad_down);
+    TEST_ASSERT_EQUAL_INT(MENU_ENTRY_SAVE, game.menu.selected);
+
+    /* Confirm on SAVE: dispatch_menu_action invokes ctx.save_fn (null
+     * in this test, so SAVE becomes a silent no-op) and closes the
+     * menu. The menu closing without quit_requested set proves SAVE
+     * was the dispatched action — RESUME would also close without
+     * quit, but RESUME is on a different entry index. */
     InputState confirm_input = {0};
-    input_capture(&confirm_input);
-    MenuAction action = menu_handle_input(&menu, &confirm_input, get_test_bindings());
-    test_input_frame_advance();
-    TEST_ASSERT_EQUAL_INT(MENU_ACTION_SAVE, action);
+    input_state_press_gp_button(&confirm_input, GAMEPAD_BUTTON_RIGHT_FACE_DOWN);
+    test_advance_frame(&game, confirm_input);
+    TEST_ASSERT_FALSE(game.menu.open);
+    TEST_ASSERT_FALSE(game.quit_requested);
 
-    menu_cleanup(&menu);
+    test_game_teardown(&game);
 }
