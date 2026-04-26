@@ -817,7 +817,7 @@ static void handle_place_input(Diag *diag,
         int new_index = editor_state->place_blueprint_index + EDITOR_PLACE_PAGE_SIZE;
         editor_state->place_blueprint_index = (new_index >= count) ? count - 1 : new_index;
     }
-    update_editor_camera(camera, input, delta_time);
+    update_editor_camera(camera, &input, &state->bindings, delta_time);
 }
 
 static void handle_editor_input(Diag *diag,
@@ -829,7 +829,7 @@ static void handle_editor_input(Diag *diag,
                                 InputState input,
                                 float delta_time)
 {
-    handle_mode_transitions(state, editor_state);
+    handle_mode_transitions(state, editor_state, &input);
     if (editor_state->sub_mode == EDITOR_SUB_DRAG) {
         handle_drag_input(state, editor_state, undo_history, input, delta_time);
     } else if (editor_state->sub_mode == EDITOR_SUB_HANDLES) {

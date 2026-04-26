@@ -35,10 +35,11 @@ bool toggle_pressed(ToggleBinding binding)
     return IsGamepadButtonPressed(0, binding.gamepad_button);
 }
 
-void update_editor_camera(Camera2D *camera, InputState input, float delta_time)
+void update_editor_camera(Camera2D *camera, const InputState *input, const BindingStore *bindings, float delta_time)
 {
-    camera->target.x += input.left_stick.x * EDITOR_CAMERA_SPEED * delta_time;
-    camera->target.y += input.left_stick.y * EDITOR_CAMERA_SPEED * delta_time;
+    Vector2 pan = input_axis_pair(input, bindings, AXIS_PRIMARY_X, AXIS_PRIMARY_Y);
+    camera->target.x += pan.x * EDITOR_CAMERA_SPEED * delta_time;
+    camera->target.y += pan.y * EDITOR_CAMERA_SPEED * delta_time;
 }
 
 void draw_editor_crosshair(RectU32 game_bounds)

@@ -38,6 +38,7 @@ FAKE_VALUE_FUNC(const AttrSet *, entity_resolve_defaults, const GameState *, int
 FAKE_VALUE_FUNC(const Blueprint *, blueprint_find, const BlueprintTable *, const char *);
 
 /* Cross-file editor fakes (functions from other editor split files) */
+FAKE_VALUE_FUNC(Vector2, input_axis_pair, const InputState *, const BindingStore *, InputAxis, InputAxis);
 FAKE_VALUE_FUNC(int, total_attr_count, const GameState *, const Entity *);
 FAKE_VALUE_FUNC(bool, entity_has_persisted_section, const Entity *);
 FAKE_VALUE_FUNC(int, place_visible_count, int);

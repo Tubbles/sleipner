@@ -138,7 +138,7 @@ typedef struct {
 } WatchList;
 
 bool toggle_pressed(ToggleBinding binding);
-void update_editor_camera(Camera2D *camera, InputState input, float delta_time);
+void update_editor_camera(Camera2D *camera, const InputState *input, const BindingStore *bindings, float delta_time);
 void draw_editor_crosshair(RectU32 game_bounds);
 void draw_hints_bar(bool editor_mode, const EditorState *editor_state, bool is_dirty, ScreenSize screen, Font ui_font);
 void draw_toast(const EditorState *editor_state, ScreenSize screen, Font ui_font);
@@ -156,7 +156,7 @@ void handle_browse_input(GameState *state,
                          float delta_time);
 void draw_place_panel(ScreenSize screen, const GameState *state, const EditorState *editor_state);
 void draw_place_preview(const GameState *state, const EditorState *editor_state, Camera2D camera);
-void handle_mode_transitions(GameState *state, EditorState *editor_state);
+void handle_mode_transitions(GameState *state, EditorState *editor_state, const InputState *input);
 void handle_drag_input(
     GameState *state, EditorState *editor_state, UndoHistory *undo_history, InputState input, float delta_time);
 void handle_handle_input(

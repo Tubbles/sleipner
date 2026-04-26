@@ -572,7 +572,7 @@ void handle_browse_input(GameState *state,
         dispatch_radial_confirm(state, editor_state, watches, undo_history);
         return;
     }
-    if (binding_pressed(&browse_actions[BROWSE_ACT_TOOLS])) {
+    if (input_pressed(&input, &state->bindings, ACTION_EDITOR_OPEN_TOOLS)) {
         editor_state->radial_selected = -1;
         editor_state->radial_confirmed = -1;
         editor_state->radial_item_count = EDITOR_TOOLS_ITEM_COUNT;
@@ -583,46 +583,47 @@ void handle_browse_input(GameState *state,
     /* Chord bindings (undo/redo) run BEFORE navigation/delete checks so that
      * L1+Left doesn't also trigger "Handles" on bare L1 — Handles has been
      * moved off the L1 tap shortcut to avoid this, but the order also matters
-     * for any future chord additions. */
-    if (binding_pressed(&browse_actions[BROWSE_ACT_UNDO])) {
+     * for any future chord additions. The function layer does not resolve
+     * priority; callers must check chords first and early-return. */
+    if (input_pressed(&input, &state->bindings, ACTION_EDITOR_UNDO)) {
         undo_history_step_back(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base);
         reset_editor_selection(editor_state, watches);
         editor_state->toast_text = undo_history_description(undo_history);
         editor_state->toast_timer = TOAST_DURATION;
         return;
     }
-    if (binding_pressed(&browse_actions[BROWSE_ACT_REDO])) {
+    if (input_pressed(&input, &state->bindings, ACTION_EDITOR_REDO)) {
         undo_history_step_forward(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base);
         reset_editor_selection(editor_state, watches);
         editor_state->toast_text = undo_history_description(undo_history);
         editor_state->toast_timer = TOAST_DURATION;
         return;
     }
-    if (binding_pressed(&browse_actions[BROWSE_ACT_CONFIRM])) {
+    if (input_pressed(&input, &state->bindings, ACTION_CONFIRM)) {
         handle_browse_select(state, camera, editor_state, undo_history);
     }
-    if (binding_pressed(&browse_actions[BROWSE_ACT_CANCEL])) {
+    if (input_pressed(&input, &state->bindings, ACTION_CANCEL)) {
         handle_browse_cancel(editor_state);
     }
-    if (binding_pressed(&browse_actions[BROWSE_ACT_NAV_DOWN])) {
+    if (input_pressed(&input, &state->bindings, ACTION_NAV_DOWN)) {
         handle_browse_navigate(state, editor_state, 1);
     }
-    if (binding_pressed(&browse_actions[BROWSE_ACT_NAV_UP])) {
+    if (input_pressed(&input, &state->bindings, ACTION_NAV_UP)) {
         handle_browse_navigate(state, editor_state, -1);
     }
-    if (binding_pressed(&browse_actions[BROWSE_ACT_WATCH])) {
+    if (input_pressed(&input, &state->bindings, ACTION_EDITOR_WATCH)) {
         toggle_watch(editor_state, watches);
     }
-    if (binding_pressed(&browse_actions[BROWSE_ACT_DELETE])) {
+    if (input_pressed(&input, &state->bindings, ACTION_EDITOR_DELETE)) {
         handle_browse_delete(state, editor_state, watches, undo_history);
     }
-    if (binding_pressed(&browse_actions[BROWSE_ACT_PLACE])) {
+    if (input_pressed(&input, &state->bindings, ACTION_EDITOR_PLACE)) {
         if (state->gamedata.blueprints.entries.count > 0) {
             editor_state->place_blueprint_index = find_place_blueprint_index(state, editor_state);
             editor_state->sub_mode = EDITOR_SUB_PLACE;
         }
     }
-    if (binding_pressed(&browse_actions[BROWSE_ACT_TYPE_PROPS])) {
+    if (input_pressed(&input, &state->bindings, ACTION_EDITOR_TYPE_PROPS)) {
         if (editor_state->selected_attr_index >= 0) {
             editor_state->radial_selected = -1;
             editor_state->radial_confirmed = -1;
@@ -644,10 +645,10 @@ void handle_browse_input(GameState *state,
             }
         }
     }
-    update_editor_camera(camera, input, delta_time);
+    update_editor_camera(camera, &input, &state->bindings, delta_time);
 }
 
-void handle_mode_transitions(GameState *state, EditorState *editor_state)
+void handle_mode_transitions(GameState *state, EditorState *editor_state, const InputState *input)
 {
     if (editor_state->sub_mode != EDITOR_SUB_BROWSE) {
         return;
@@ -657,7 +658,7 @@ void handle_mode_transitions(GameState *state, EditorState *editor_state)
         return;
     }
     const Entity *entity = &state->gamedata.current_level.entities.data[sel];
-    if (binding_pressed(&browse_actions[BROWSE_ACT_GRAB])) {
+    if (input_pressed(input, &state->bindings, ACTION_EDITOR_GRAB)) {
         editor_state->saved_position = entity->position;
         editor_state->sub_mode = EDITOR_SUB_DRAG;
     }
@@ -665,7 +666,7 @@ void handle_mode_transitions(GameState *state, EditorState *editor_state)
      * Tools radial. L1 is reserved as the undo/redo chord modifier and
      * firing Handles on L1-press would race the chord check — simplest fix
      * is to drop the gamepad L1 shortcut entirely. */
-    if (binding_pressed(&browse_actions[BROWSE_ACT_HANDLES])) {
+    if (input_pressed(input, &state->bindings, ACTION_EDITOR_HANDLES)) {
         const AttrSet *handle_defaults = entity_resolve_defaults(state, entity->id);
         editor_state->saved_col_offset = (Vector2){
             attr_get_scoped_float(&entity->attrs, handle_defaults, "collision_offset_x", 0.0F),

@@ -17,9 +17,15 @@ FAKE_VALUE_FUNC(bool, binding_pressed, const EditorBinding *);
 FAKE_VALUE_FUNC(bool, binding_held, const EditorBinding *);
 FAKE_VALUE_FUNC(bool, binding_modifier_down, const EditorBinding *);
 
+/* Cross-file editor fakes: input_func.c */
+FAKE_VALUE_FUNC(bool, input_pressed, const InputState *, const BindingStore *, InputAction);
+FAKE_VALUE_FUNC(bool, input_held, const InputState *, const BindingStore *, InputAction);
+FAKE_VALUE_FUNC(float, input_axis, const InputState *, const BindingStore *, InputAxis);
+FAKE_VALUE_FUNC(Vector2, input_axis_pair, const InputState *, const BindingStore *, InputAxis, InputAxis);
+
 /* Cross-file editor fakes: draw.c */
 FAKE_VALUE_FUNC(bool, toggle_pressed, ToggleBinding);
-FAKE_VOID_FUNC(update_editor_camera, Camera2D *, InputState, float);
+FAKE_VOID_FUNC(update_editor_camera, Camera2D *, const InputState *, const BindingStore *, float);
 FAKE_VALUE_FUNC(int, find_nearest_entity, const Level *, Vector2);
 
 /* Cross-file editor fakes: attr.c */
