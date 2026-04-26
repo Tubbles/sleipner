@@ -5,9 +5,143 @@
 #include "raylib.h"
 
 #include <math.h>
+#include <stdint.h>
 #include <string.h>
 
 #define STICK_DEADZONE 0.15F
+
+/* --- Bit helpers for the low-level InputState fields --------------------- */
+
+static bool key_in_range(int key)
+{
+    return key > 0 && key < INPUT_MAX_KEY_CODE;
+}
+
+static bool gp_button_in_range(int button)
+{
+    return button > 0 && button < INPUT_GP_BUTTON_COUNT;
+}
+
+static bool gp_axis_in_range(int axis)
+{
+    return axis >= 0 && axis < INPUT_GP_AXIS_COUNT;
+}
+
+void input_capture(InputState *state)
+{
+    /* Reset the low-level fields. The high-level fields are populated by
+     * the legacy read_all_input() path and intentionally left untouched. */
+    for (int word = 0; word < INPUT_KEY_BITSET_WORDS; word++) {
+        state->key_down[word] = 0;
+        state->key_pressed[word] = 0;
+    }
+    state->gp_button_down = 0;
+    state->gp_button_pressed = 0;
+    for (int axis = 0; axis < INPUT_GP_AXIS_COUNT; axis++) {
+        state->gp_axis[axis] = 0.0F;
+    }
+
+    /* Keyboard: poll every code in our supported range. raylib silently
+     * returns false for unsupported codes, so the loop is harmless on
+     * platforms with smaller keyboards. */
+    for (int key = 1; key < INPUT_MAX_KEY_CODE; key++) {
+        if (IsKeyDown(key)) {
+            state->key_down[key / INPUT_BITS_PER_WORD] |= (1ULL << (key % INPUT_BITS_PER_WORD));
+        }
+        if (IsKeyPressed(key)) {
+            state->key_pressed[key / INPUT_BITS_PER_WORD] |= (1ULL << (key % INPUT_BITS_PER_WORD));
+        }
+    }
+
+    /* Gamepad 0 only — multi-pad fan-out is future work. */
+    state->gp_connected = IsGamepadAvailable(0);
+    if (state->gp_connected) {
+        for (int button = 1; button < INPUT_GP_BUTTON_COUNT; button++) {
+            if (IsGamepadButtonDown(0, button)) {
+                state->gp_button_down |= (1U << button);
+            }
+            if (IsGamepadButtonPressed(0, button)) {
+                state->gp_button_pressed |= (1U << button);
+            }
+        }
+        for (int axis = 0; axis < INPUT_GP_AXIS_COUNT; axis++) {
+            state->gp_axis[axis] = GetGamepadAxisMovement(0, axis);
+        }
+    }
+}
+
+void input_state_press_key(InputState *state, int key)
+{
+    if (!key_in_range(key)) {
+        return;
+    }
+    uint64_t mask = (1ULL << (key % INPUT_BITS_PER_WORD));
+    state->key_down[key / INPUT_BITS_PER_WORD] |= mask;
+    state->key_pressed[key / INPUT_BITS_PER_WORD] |= mask;
+}
+
+void input_state_hold_key(InputState *state, int key)
+{
+    if (!key_in_range(key)) {
+        return;
+    }
+    state->key_down[key / INPUT_BITS_PER_WORD] |= (1ULL << (key % INPUT_BITS_PER_WORD));
+}
+
+void input_state_release_key(InputState *state, int key)
+{
+    if (!key_in_range(key)) {
+        return;
+    }
+    uint64_t mask = (1ULL << (key % INPUT_BITS_PER_WORD));
+    state->key_down[key / INPUT_BITS_PER_WORD] &= ~mask;
+    state->key_pressed[key / INPUT_BITS_PER_WORD] &= ~mask;
+}
+
+void input_state_press_gp_button(InputState *state, int button)
+{
+    if (!gp_button_in_range(button)) {
+        return;
+    }
+    state->gp_button_down |= (1U << button);
+    state->gp_button_pressed |= (1U << button);
+    state->gp_connected = true;
+}
+
+void input_state_hold_gp_button(InputState *state, int button)
+{
+    if (!gp_button_in_range(button)) {
+        return;
+    }
+    state->gp_button_down |= (1U << button);
+    state->gp_connected = true;
+}
+
+void input_state_release_gp_button(InputState *state, int button)
+{
+    if (!gp_button_in_range(button)) {
+        return;
+    }
+    state->gp_button_down &= ~(1U << button);
+    state->gp_button_pressed &= ~(1U << button);
+}
+
+void input_state_set_gp_axis(InputState *state, int axis, float value)
+{
+    if (!gp_axis_in_range(axis)) {
+        return;
+    }
+    state->gp_axis[axis] = value;
+    state->gp_connected = true;
+}
+
+void input_state_clear_edges(InputState *state)
+{
+    for (int word = 0; word < INPUT_KEY_BITSET_WORDS; word++) {
+        state->key_pressed[word] = 0;
+    }
+    state->gp_button_pressed = 0;
+}
 
 Vector2 input_apply_deadzone(Vector2 stick, float deadzone)
 {
