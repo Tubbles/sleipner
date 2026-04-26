@@ -879,28 +879,44 @@ void test_integration_editor_attr_edit_tap_decrements_by_one(void)
                                 .selected_tree_index = -1};
 
     test_input_tap_key(KEY_LEFT);
-    handle_attr_edit_input(&state, &editor_state, &undo_history, 1.0F / 60.0F);
+    {
+        InputState frame_input = {0};
+        input_capture(&frame_input);
+        handle_attr_edit_input(&state, &editor_state, &undo_history, &frame_input, 1.0F / 60.0F);
+    }
     test_input_frame_advance();
     speed_attr = attr_at_display_index(&state, player_entity, speed_attr_index);
     TEST_ASSERT_EQUAL_INT_MESSAGE(starting_speed - 1, speed_attr->value.i,
                                   "tap KEY_LEFT should decrement speed by 1 in ATTR_EDIT");
 
     test_input_tap_key(KEY_RIGHT);
-    handle_attr_edit_input(&state, &editor_state, &undo_history, 1.0F / 60.0F);
+    {
+        InputState frame_input = {0};
+        input_capture(&frame_input);
+        handle_attr_edit_input(&state, &editor_state, &undo_history, &frame_input, 1.0F / 60.0F);
+    }
     test_input_frame_advance();
     speed_attr = attr_at_display_index(&state, player_entity, speed_attr_index);
     TEST_ASSERT_EQUAL_INT_MESSAGE(starting_speed, speed_attr->value.i,
                                   "tap KEY_RIGHT should restore speed to starting value");
 
     test_input_tap_gamepad_button(0, GAMEPAD_BUTTON_LEFT_FACE_LEFT);
-    handle_attr_edit_input(&state, &editor_state, &undo_history, 1.0F / 60.0F);
+    {
+        InputState frame_input = {0};
+        input_capture(&frame_input);
+        handle_attr_edit_input(&state, &editor_state, &undo_history, &frame_input, 1.0F / 60.0F);
+    }
     test_input_frame_advance();
     speed_attr = attr_at_display_index(&state, player_entity, speed_attr_index);
     TEST_ASSERT_EQUAL_INT_MESSAGE(starting_speed - 1, speed_attr->value.i,
                                   "tap D-pad LEFT should decrement speed by 1 in ATTR_EDIT");
 
     test_input_tap_gamepad_button(0, GAMEPAD_BUTTON_LEFT_FACE_RIGHT);
-    handle_attr_edit_input(&state, &editor_state, &undo_history, 1.0F / 60.0F);
+    {
+        InputState frame_input = {0};
+        input_capture(&frame_input);
+        handle_attr_edit_input(&state, &editor_state, &undo_history, &frame_input, 1.0F / 60.0F);
+    }
     test_input_frame_advance();
     speed_attr = attr_at_display_index(&state, player_entity, speed_attr_index);
     TEST_ASSERT_EQUAL_INT_MESSAGE(starting_speed, speed_attr->value.i,
@@ -950,7 +966,11 @@ void test_integration_editor_attr_edit_hold_repeats_after_delay(void)
 
     test_input_hold_key(KEY_LEFT);
     for (int iter = 0; iter < 60; iter++) {
-        handle_attr_edit_input(&state, &editor_state, &undo_history, 1.0F / 60.0F);
+        {
+            InputState frame_input = {0};
+            input_capture(&frame_input);
+            handle_attr_edit_input(&state, &editor_state, &undo_history, &frame_input, 1.0F / 60.0F);
+        }
         test_input_frame_advance();
     }
     test_input_release_key(KEY_LEFT);

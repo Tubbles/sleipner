@@ -837,7 +837,7 @@ static void handle_editor_input(Diag *diag,
     } else if (editor_state->sub_mode == EDITOR_SUB_PLACE) {
         handle_place_input(diag, state, camera, editor_state, undo_history, input, delta_time);
     } else if (editor_state->sub_mode == EDITOR_SUB_ATTR_EDIT) {
-        handle_attr_edit_input(state, editor_state, undo_history, delta_time);
+        handle_attr_edit_input(state, editor_state, undo_history, &input, delta_time);
     } else if (editor_state->sub_mode == EDITOR_SUB_RADIAL) {
         handle_radial_input(editor_state, input);
     } else if (editor_state->sub_mode == EDITOR_SUB_WORD_BUILDER) {

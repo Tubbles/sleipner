@@ -1,24 +1,45 @@
 #include "fff.h"
 #include "unity.h"
 
+#include "raylib.h"
+
+DEFINE_FFF_GLOBALS;
+
 #include "../src/strv.c"        // NOLINT(bugprone-suspicious-include)
 #include "../src/str.c"         // NOLINT(bugprone-suspicious-include)
 #include "../src/error.c"       // NOLINT(bugprone-suspicious-include)
 #include "../src/arena_posix.c" // NOLINT(bugprone-suspicious-include)
 #include "../src/attribute.c"   // NOLINT(bugprone-suspicious-include)
 #include "../src/entity.c"      // NOLINT(bugprone-suspicious-include)
+#include "../src/input.c"       // NOLINT(bugprone-suspicious-include)
+#include "../src/input_func.c"  // NOLINT(bugprone-suspicious-include)
 #include "../src/map.c"         // NOLINT(bugprone-suspicious-include)
+#include "../src/vec.c"         // NOLINT(bugprone-suspicious-include)
 #include "../src/editor/attr.c" // NOLINT(bugprone-suspicious-include)
-
-DEFINE_FFF_GLOBALS;
 
 VEC_IMPL(blueprint_child, BlueprintChild)
 
-/* raylib input fakes (read_held_dir calls IsKeyDown/IsGamepadButtonDown directly) */
+/* Raylib input fakes — input_capture polls these but the unit tests
+ * construct InputState directly via input_state_* helpers, so the
+ * fakes never actually fire. Stubbing them keeps the link clean. */
+FAKE_VALUE_FUNC(int, SetGamepadMappings, const char *);
+FAKE_VALUE_FUNC(bool, IsGamepadAvailable, int);
+FAKE_VALUE_FUNC(float, GetGamepadAxisMovement, int, int);
+FAKE_VALUE_FUNC(bool, IsKeyPressed, int);
+FAKE_VALUE_FUNC(bool, IsGamepadButtonPressed, int, int);
 FAKE_VALUE_FUNC(bool, IsKeyDown, int);
 FAKE_VALUE_FUNC(bool, IsGamepadButtonDown, int, int);
 
-/* Cross-file editor fakes: keybindings.c */
+/* debug_log is variadic; provide a no-op stub. */
+void debug_log(DebugState *dbg, const char *format, ...)
+{
+    (void)dbg;
+    (void)format;
+}
+
+/* Cross-file editor fakes: keybindings.c (kept for HUD-hint table that
+ * still lives in attr.c — never actually called by the migrated input
+ * functions). */
 FAKE_VALUE_FUNC(bool, binding_pressed, const EditorBinding *);
 FAKE_VALUE_FUNC(bool, binding_held, const EditorBinding *);
 FAKE_VALUE_FUNC(bool, binding_modifier_down, const EditorBinding *);
@@ -44,6 +65,18 @@ const char *TextFormat(const char *text, ...)
 
 #include "test_heap_alloc.h"
 
+static BindingStore test_bindings;
+static bool test_bindings_loaded;
+static const BindingStore *get_test_bindings(void)
+{
+    if (!test_bindings_loaded) {
+        test_helpers_init();
+        input_func_load_defaults(&test_bindings, test_heap_alloc);
+        test_bindings_loaded = true;
+    }
+    return &test_bindings;
+}
+
 void setUp(void) {}
 void tearDown(void) {}
 
@@ -52,34 +85,6 @@ void tearDown(void) {}
 static void test_attr_set_free_local(AttrSet *set)
 {
     attr_set_free(&test_heap_alloc, set);
-}
-
-static void reset_input_fakes(void)
-{
-    RESET_FAKE(IsKeyDown);
-    RESET_FAKE(IsGamepadButtonDown);
-    RESET_FAKE(binding_pressed);
-    RESET_FAKE(binding_held);
-    RESET_FAKE(binding_modifier_down);
-    FFF_RESET_HISTORY(); // NOLINT(bugprone-multi-level-implicit-pointer-conversion)
-}
-
-static int target_key_for_press;
-static bool press_specific_binding(const EditorBinding *action)
-{
-    return action->binding.key == target_key_for_press;
-}
-
-static int target_key_for_down;
-static bool held_specific_key(const EditorBinding *action)
-{
-    return action->binding.key == target_key_for_down;
-}
-
-static int target_button_for_down;
-static bool held_specific_button(const EditorBinding *action)
-{
-    return action->binding.gamepad_button == target_button_for_down;
 }
 
 /* ---- apply_attr_delta --------------------------------------------------- */
@@ -144,64 +149,62 @@ void test_editor_apply_attr_delta_null_attr_no_crash(void)
 
 void test_editor_read_value_delta_no_input(void)
 {
-    reset_input_fakes();
-    TEST_ASSERT_EQUAL_INT(0, read_value_delta());
+    InputState input = {0};
+    TEST_ASSERT_EQUAL_INT(0, read_value_delta(&input, get_test_bindings()));
 }
 
 void test_editor_read_value_delta_large_minus(void)
 {
-    reset_input_fakes();
-    target_key_for_press = KEY_LEFT_BRACKET;
-    binding_pressed_fake.custom_fake = press_specific_binding;
-    TEST_ASSERT_EQUAL_INT(-EDITOR_ATTR_LARGE_STEP, read_value_delta());
+    InputState input = {0};
+    input_state_press_key(&input, KEY_LEFT_BRACKET);
+    TEST_ASSERT_EQUAL_INT(-EDITOR_ATTR_LARGE_STEP, read_value_delta(&input, get_test_bindings()));
 }
 
 void test_editor_read_value_delta_large_plus(void)
 {
-    reset_input_fakes();
-    target_key_for_press = KEY_RIGHT_BRACKET;
-    binding_pressed_fake.custom_fake = press_specific_binding;
-    TEST_ASSERT_EQUAL_INT(EDITOR_ATTR_LARGE_STEP, read_value_delta());
+    InputState input = {0};
+    input_state_press_key(&input, KEY_RIGHT_BRACKET);
+    TEST_ASSERT_EQUAL_INT(EDITOR_ATTR_LARGE_STEP, read_value_delta(&input, get_test_bindings()));
 }
 
 void test_editor_read_value_delta_huge_minus(void)
 {
-    reset_input_fakes();
-    target_key_for_press = KEY_PAGE_DOWN;
-    binding_pressed_fake.custom_fake = press_specific_binding;
-    TEST_ASSERT_EQUAL_INT(-EDITOR_ATTR_HUGE_STEP, read_value_delta());
+    InputState input = {0};
+    input_state_press_key(&input, KEY_PAGE_DOWN);
+    TEST_ASSERT_EQUAL_INT(-EDITOR_ATTR_HUGE_STEP, read_value_delta(&input, get_test_bindings()));
 }
 
 void test_editor_read_value_delta_combined(void)
 {
-    reset_input_fakes();
-    binding_pressed_fake.return_val = true;
+    InputState input = {0};
+    input_state_press_key(&input, KEY_LEFT_BRACKET);
+    input_state_press_key(&input, KEY_RIGHT_BRACKET);
+    input_state_press_key(&input, KEY_PAGE_DOWN);
+    input_state_press_key(&input, KEY_PAGE_UP);
     int expected = -EDITOR_ATTR_LARGE_STEP + EDITOR_ATTR_LARGE_STEP - EDITOR_ATTR_HUGE_STEP + EDITOR_ATTR_HUGE_STEP;
-    TEST_ASSERT_EQUAL_INT(expected, read_value_delta());
+    TEST_ASSERT_EQUAL_INT(expected, read_value_delta(&input, get_test_bindings()));
 }
 
 /* ---- read_held_dir ------------------------------------------------------ */
 
 void test_editor_read_held_dir_left_key(void)
 {
-    reset_input_fakes();
-    target_key_for_down = KEY_LEFT;
-    binding_held_fake.custom_fake = held_specific_key;
-    TEST_ASSERT_EQUAL_INT(-1, read_held_dir());
+    InputState input = {0};
+    input_state_hold_key(&input, KEY_LEFT);
+    TEST_ASSERT_EQUAL_INT(-1, read_held_dir(&input, get_test_bindings()));
 }
 
 void test_editor_read_held_dir_right_gamepad(void)
 {
-    reset_input_fakes();
-    target_button_for_down = GAMEPAD_BUTTON_LEFT_FACE_RIGHT;
-    binding_held_fake.custom_fake = held_specific_button;
-    TEST_ASSERT_EQUAL_INT(1, read_held_dir());
+    InputState input = {0};
+    input_state_hold_gp_button(&input, GAMEPAD_BUTTON_LEFT_FACE_RIGHT);
+    TEST_ASSERT_EQUAL_INT(1, read_held_dir(&input, get_test_bindings()));
 }
 
 void test_editor_read_held_dir_none(void)
 {
-    reset_input_fakes();
-    TEST_ASSERT_EQUAL_INT(0, read_held_dir());
+    InputState input = {0};
+    TEST_ASSERT_EQUAL_INT(0, read_held_dir(&input, get_test_bindings()));
 }
 
 /* ---- attr type conversion ----------------------------------------------- */

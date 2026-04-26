@@ -161,7 +161,8 @@ void handle_drag_input(
     GameState *state, EditorState *editor_state, UndoHistory *undo_history, InputState input, float delta_time);
 void handle_handle_input(
     GameState *state, EditorState *editor_state, UndoHistory *undo_history, InputState input, float delta_time);
-void handle_attr_edit_input(GameState *state, EditorState *editor_state, UndoHistory *undo_history, float delta_time);
+void handle_attr_edit_input(GameState *state, EditorState *editor_state, UndoHistory *undo_history,
+                            const InputState *input, float delta_time);
 void draw_radial_picker(ScreenSize screen, const EditorState *editor_state, Font ui_font);
 void handle_radial_input(EditorState *editor_state, InputState input);
 void handle_word_builder_input(Diag *diag, GameState *state, EditorState *editor_state, UndoHistory *undo_history);

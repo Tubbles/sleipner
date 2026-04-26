@@ -2,6 +2,8 @@
 
 #include "alloc.h"
 #include "editor/keybindings.h"
+#include "input.h"
+#include "input_func.h"
 #include "str.h"
 #include "strv.h"
 
@@ -10,6 +12,10 @@
 
 #define RADIX_DECIMAL 10
 
+/* Forward decls for the HUD-hint table (still walked by editor/draw.c).
+ * The binding fields are dead data after stage 6 of the input overhaul;
+ * the description fields remain in use for the hints bar until stage 9
+ * replaces the HUD layer wholesale. */
 enum {
     ATTR_EDIT_ACT_CONFIRM,
     ATTR_EDIT_ACT_CANCEL,
@@ -25,30 +31,30 @@ enum {
 static const EditorBinding attr_edit_actions[ATTR_EDIT_ACT_COUNT];
 static const EditorBindingTable attr_edit_table;
 
-static int read_value_delta(void)
+static int read_value_delta(const InputState *input, const BindingStore *bindings)
 {
     int delta = 0;
-    if (binding_pressed(&attr_edit_actions[ATTR_EDIT_ACT_DEC_TEN])) {
+    if (input_pressed(input, bindings, ACTION_ATTR_DEC_10)) {
         delta -= EDITOR_ATTR_LARGE_STEP;
     }
-    if (binding_pressed(&attr_edit_actions[ATTR_EDIT_ACT_INC_TEN])) {
+    if (input_pressed(input, bindings, ACTION_ATTR_INC_10)) {
         delta += EDITOR_ATTR_LARGE_STEP;
     }
-    if (binding_pressed(&attr_edit_actions[ATTR_EDIT_ACT_DEC_HUNDRED])) {
+    if (input_pressed(input, bindings, ACTION_ATTR_DEC_100)) {
         delta -= EDITOR_ATTR_HUGE_STEP;
     }
-    if (binding_pressed(&attr_edit_actions[ATTR_EDIT_ACT_INC_HUNDRED])) {
+    if (input_pressed(input, bindings, ACTION_ATTR_INC_100)) {
         delta += EDITOR_ATTR_HUGE_STEP;
     }
     return delta;
 }
 
-static int read_held_dir(void)
+static int read_held_dir(const InputState *input, const BindingStore *bindings)
 {
-    if (binding_held(&attr_edit_actions[ATTR_EDIT_ACT_DEC_ONE])) {
+    if (input_held(input, bindings, ACTION_ATTR_DEC_1)) {
         return -1;
     }
-    if (binding_held(&attr_edit_actions[ATTR_EDIT_ACT_INC_ONE])) {
+    if (input_held(input, bindings, ACTION_ATTR_INC_1)) {
         return 1;
     }
     return 0;
@@ -294,26 +300,26 @@ static void reset_attr_hold(EditorState *editor_state)
     editor_state->attr_hold_dir = 0;
 }
 
-static void
-handle_child_offset_edit(GameState *state, EditorState *editor_state, UndoHistory *undo_history, float delta_time)
+static void handle_child_offset_edit(GameState *state, EditorState *editor_state, UndoHistory *undo_history,
+                                     const InputState *input, float delta_time)
 {
-    if (binding_pressed(&attr_edit_actions[ATTR_EDIT_ACT_CONFIRM])) {
+    if (input_pressed(input, &state->bindings, ACTION_CONFIRM)) {
         confirm_child_offset_edit(state, editor_state, undo_history, editor_state->saved_attr_int);
         reset_attr_hold(editor_state);
         editor_state->sub_mode = EDITOR_SUB_BROWSE;
         return;
     }
-    if (binding_pressed(&attr_edit_actions[ATTR_EDIT_ACT_CANCEL])) {
+    if (input_pressed(input, &state->bindings, ACTION_CANCEL)) {
         editor_state->editing_child_offset = false;
         reset_attr_hold(editor_state);
         editor_state->sub_mode = EDITOR_SUB_BROWSE;
         return;
     }
-    int multi_delta = read_value_delta();
+    int multi_delta = read_value_delta(input, &state->bindings);
     if (multi_delta != 0) {
         editor_state->saved_attr_int += multi_delta;
     }
-    int held = read_held_dir();
+    int held = read_held_dir(input, &state->bindings);
     if (held != editor_state->attr_hold_dir) {
         editor_state->attr_hold_dir = held;
         editor_state->attr_hold_total = 0.0F;
@@ -349,10 +355,11 @@ static void attr_edit_confirm(GameState *state, EditorState *editor_state, UndoH
     editor_state->sub_mode = EDITOR_SUB_BROWSE;
 }
 
-void handle_attr_edit_input(GameState *state, EditorState *editor_state, UndoHistory *undo_history, float delta_time)
+void handle_attr_edit_input(GameState *state, EditorState *editor_state, UndoHistory *undo_history,
+                            const InputState *input, float delta_time)
 {
     if (editor_state->editing_child_offset) {
-        handle_child_offset_edit(state, editor_state, undo_history, delta_time);
+        handle_child_offset_edit(state, editor_state, undo_history, input, delta_time);
         return;
     }
     Attribute *current_attr = active_edit_attr(state, editor_state);
@@ -361,11 +368,11 @@ void handle_attr_edit_input(GameState *state, EditorState *editor_state, UndoHis
         editor_state->sub_mode = EDITOR_SUB_BROWSE;
         return;
     }
-    if (binding_pressed(&attr_edit_actions[ATTR_EDIT_ACT_CONFIRM])) {
+    if (input_pressed(input, &state->bindings, ACTION_CONFIRM)) {
         attr_edit_confirm(state, editor_state, undo_history);
         return;
     }
-    if (binding_pressed(&attr_edit_actions[ATTR_EDIT_ACT_CANCEL])) {
+    if (input_pressed(input, &state->bindings, ACTION_CANCEL)) {
         if (current_attr->type == ATTR_INT) {
             current_attr->value.i = editor_state->saved_attr_int;
         } else if (current_attr->type == ATTR_FLOAT) {
@@ -375,11 +382,11 @@ void handle_attr_edit_input(GameState *state, EditorState *editor_state, UndoHis
         editor_state->sub_mode = EDITOR_SUB_BROWSE;
         return;
     }
-    int multi_delta = read_value_delta();
+    int multi_delta = read_value_delta(input, &state->bindings);
     if (multi_delta != 0) {
         apply_attr_delta(state, editor_state, multi_delta);
     }
-    int held = read_held_dir();
+    int held = read_held_dir(input, &state->bindings);
     if (held != editor_state->attr_hold_dir) {
         editor_state->attr_hold_dir = held;
         editor_state->attr_hold_total = 0.0F;
