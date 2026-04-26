@@ -112,10 +112,24 @@ static Texture2D *test_dummy_texture_lookup(const char *texture_name, void *user
     return &dummy_texture;
 }
 
+/* In-memory level loader for the test fixture. Re-loads the held TOML
+ * string under the requested level_name. Mirrors production main.c's
+ * production_level_loader except it sources the TOML from the
+ * TestGame instead of GAMEDATA_PATH. */
+static bool test_level_loader(Diag *diag, GameState *state, const char *level_name, void *user_data)
+{
+    TestGame *game = (TestGame *)user_data;
+    return game_load_gamedata(diag, state,
+                              (GamedataParams){.toml_string = game->toml_string,
+                                               .level_name = level_name,
+                                               .texture_lookup = test_dummy_texture_lookup});
+}
+
 bool test_game_setup(TestGame *out, const char *toml_string)
 {
     *out = (TestGame){0};
     out->diag = (Diag){&out->state.error, &out->state.debug};
+    out->toml_string = toml_string;
 
     if (!game_init(&out->diag, &out->state, (RectU32){320, 240})) {
         return false;
@@ -152,6 +166,8 @@ bool test_game_setup(TestGame *out, const char *toml_string)
         .quit_requested = &out->quit_requested,
         .save_fn = nullptr,
         .restore_fn = nullptr,
+        .level_loader_fn = test_level_loader,
+        .level_loader_user_data = out,
     };
     return true;
 }
@@ -166,12 +182,14 @@ void test_game_teardown(TestGame *game)
 void test_advance_frame(TestGame *game, InputState input)
 {
     frame_update(&game->diag, &game->state, &game->frame_ctx, input, 1.0F / 60.0F);
+    handle_transition(&game->diag, &game->state, &game->frame_ctx);
 }
 
 void test_advance_frames(TestGame *game, InputState input, int frames)
 {
     for (int iteration = 0; iteration < frames; iteration++) {
         frame_update(&game->diag, &game->state, &game->frame_ctx, input, 1.0F / 60.0F);
+        handle_transition(&game->diag, &game->state, &game->frame_ctx);
     }
 }
 

@@ -35,6 +35,14 @@ typedef void (*MenuSaveFn)(Diag *diag, GameState *state, EditorState *editor_sta
 typedef void (*MenuRestoreFn)(
     Diag *diag, GameState *state, EditorState *editor_state, WatchList *watches, UndoHistory *undo_history);
 
+/* Pluggable level loader for handle_transition. Production wires this
+ * to a wrapper around its file-I/O load_gamedata; tests wire it to a
+ * wrapper around game_load_gamedata against an in-memory TOML
+ * string. Returning false logs an error but does not abort the
+ * frame; transitions to invalid level names degrade to "stay on the
+ * current level" rather than crash. */
+typedef bool (*LevelLoaderFn)(Diag *diag, GameState *state, const char *level_name, void *user_data);
+
 typedef struct {
     Diag *diag;
     GameState *state;
@@ -91,6 +99,8 @@ typedef struct {
     bool *quit_requested;
     MenuSaveFn save_fn;
     MenuRestoreFn restore_fn;
+    LevelLoaderFn level_loader_fn;
+    void *level_loader_user_data;
 } FrameContext;
 
 /* Run one full frame of input dispatch: global toggles, menu open /
@@ -100,3 +110,11 @@ typedef struct {
  * separately. The same function drives both production and
  * integration tests. */
 void frame_update(Diag *diag, GameState *state, FrameContext *ctx, InputState input, float delta_time);
+
+/* Apply a pending level transition. No-op when state->transition.pending
+ * is false; otherwise clears the flag, calls ctx->level_loader_fn to
+ * reload gamedata under the requested level name, places the player
+ * at the saved spawn point, snaps the camera, and pre-seeds player
+ * overlap tracking so newly-overlapped entities don't spuriously
+ * fire enter triggers. Pushes a "Level loaded" undo entry on success. */
+void handle_transition(Diag *diag, GameState *state, FrameContext *ctx);

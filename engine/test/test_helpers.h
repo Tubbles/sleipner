@@ -50,6 +50,10 @@ typedef struct {
     bool quit_requested;
     Diag diag;
     FrameContext frame_ctx;
+    /* Held TOML string. The frame_ctx.level_loader_fn re-loads from
+     * here on transitions, mirroring how production main.c re-reads
+     * gamedata.toml from disk. */
+    const char *toml_string;
 } TestGame;
 
 /* Initialise a TestGame from a TOML string. Mirrors main.c's startup:

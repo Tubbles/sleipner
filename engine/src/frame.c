@@ -2,6 +2,7 @@
 
 #include "alloc.h"
 #include "arena.h"
+#include "attribute.h"
 #include "blueprint.h"
 #include "debug.h"
 #include "diag.h"
@@ -182,6 +183,45 @@ void run_active_frame(Diag *diag,
         }
     }
     game_update(diag, state, input, delta_time);
+}
+
+void handle_transition(Diag *diag, GameState *state, FrameContext *ctx)
+{
+    if (!state->transition.pending) {
+        return;
+    }
+    undo_history_clear(ctx->undo_history);
+    state->transition.pending = false;
+    float spawn_x = state->transition.x;
+    float spawn_y = state->transition.y;
+    SCRATCH_SCOPE(&state->scratch_arena);
+    Allocator scratch_alloc = allocator_arena(&state->scratch_arena);
+    Str level_name = str_new(scratch_alloc);
+    (void)str_from_strv(&level_name, str_to_strv(state->transition.level));
+    debug_log(diag->debug, "transition to '%s' at (%.0f, %.0f)", level_name.ptr, spawn_x, spawn_y);
+    if (ctx->level_loader_fn) {
+        (void)ctx->level_loader_fn(diag, state, level_name.ptr, ctx->level_loader_user_data);
+    }
+    Entity *player = game_get_player(state);
+    if (player) {
+        player->position = (Vector2){spawn_x, spawn_y};
+        game_snap_camera(state);
+
+        /* Pre-seed overlap tracking so enter triggers don't fire for entities
+         * the player already overlaps at the spawn position. */
+        const AttrSet *player_defaults = entity_resolve_defaults(state, player->id);
+        for (int index = 0;
+             index < state->gamedata.current_level.entities.count && index < state->gamedata.prev_player_overlaps.count;
+             index++) {
+            const AttrSet *defaults =
+                entity_resolve_defaults(state, state->gamedata.current_level.entities.data[index].id);
+            state->gamedata.prev_player_overlaps.data[index] = CheckCollisionRecs(
+                entity_collision_rect(player, player_defaults),
+                entity_collision_rect(&state->gamedata.current_level.entities.data[index], defaults));
+        }
+    }
+    undo_history_new_entry(ctx->undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
+                           strv_from_cstr("Level loaded"));
 }
 
 void frame_update(Diag *diag, GameState *state, FrameContext *ctx, InputState input, float delta_time)
