@@ -93,3 +93,9 @@ void game_snap_camera(GameState *state);
 /* Resolve an entity's blueprint defaults via the entity→blueprint map.
  * Returns nullptr if entity has no blueprint mapping or blueprint not found. */
 const AttrSet *entity_resolve_defaults(const GameState *state, int entity_id);
+
+/* Linear-scan texture lookup against state->assets.textures.
+ * Matches the TextureLookupFn callback signature so it can be passed
+ * directly to level_spawn_entity, gamedata loaders, the editor's
+ * fuzzy finder, etc. user_data is the GameState pointer. */
+Texture2D *texture_registry_lookup(const char *filename, void *user_data);

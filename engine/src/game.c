@@ -560,3 +560,17 @@ void game_free(Diag *diag, GameState *state)
     arena_free(&state->scratch_arena);
     *state = (GameState){0};
 }
+
+Texture2D *texture_registry_lookup(const char *filename, void *user_data)
+{
+    GameState *state = (GameState *)user_data;
+    if (!state || !filename) {
+        return nullptr;
+    }
+    for (int index = 0; index < state->assets.textures.count; index++) {
+        if (strcmp(state->assets.textures.data[index].filename, filename) == 0) {
+            return &state->assets.textures.data[index].texture;
+        }
+    }
+    return nullptr;
+}

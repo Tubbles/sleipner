@@ -45,11 +45,11 @@ const char *__lsan_default_suppressions(void)
 #include "editor/editor.h"
 #include "entity.h"
 #include "diag.h"
+#include "frame.h"
 #include "game.h"
 #include "input.h"
 #include "input_func.h"
 #include "level.h"
-#include "map.h"
 #include "menu.h"
 #include "rect.h"
 #include "rule.h"
@@ -117,20 +117,6 @@ static void texture_registry_add(GameState *state, const char *filename, Texture
     entry.filename[MAX_TEXTURE_FILENAME - 1] = '\0';
     entry.texture = texture;
     (void)vec_texture_entry_push(&state->assets.textures, entry);
-}
-
-static Texture2D *texture_registry_lookup(const char *filename, void *user_data)
-{
-    GameState *state = (GameState *)user_data;
-    if (!state || !filename) {
-        return nullptr;
-    }
-    for (int index = 0; index < state->assets.textures.count; index++) {
-        if (strcmp(state->assets.textures.data[index].filename, filename) == 0) {
-            return &state->assets.textures.data[index].texture;
-        }
-    }
-    return nullptr;
 }
 
 static Texture2D load_embedded_texture(EmbeddedAsset asset)
@@ -733,98 +719,6 @@ static void menu_dispatch_restore(
     editor_state->toast_timer = 2.0F;
 }
 
-static void handle_place_input(Diag *diag,
-                               GameState *state,
-                               Camera2D *camera,
-                               EditorState *editor_state,
-                               UndoHistory *undo_history,
-                               InputState input,
-                               float delta_time)
-{
-    if (state->gamedata.blueprints.entries.count == 0) {
-        editor_state->sub_mode = EDITOR_SUB_BROWSE;
-        return;
-    }
-    if (input_pressed(&input, &state->bindings, ACTION_CONFIRM)) {
-        int bp_index = editor_state->place_blueprint_index;
-        const Blueprint *blueprint = &state->gamedata.blueprints.entries.data[bp_index];
-        Allocator alloc = allocator_arena(&state->gamedata_arena);
-        int count_before = state->gamedata.current_level.entities.count;
-        if (!level_spawn_entity(diag, &state->gamedata.current_level, blueprint, camera->target,
-                                &state->gamedata.blueprints, texture_registry_lookup, state, &alloc)) {
-            debug_log(diag->debug, "error: %s", error_get(diag->error));
-            error_clear(diag->error);
-        } else {
-            for (int index = count_before; index < state->gamedata.current_level.entities.count; index++) {
-                Entity *spawned = &state->gamedata.current_level.entities.data[index];
-                Str bp_name = str_new(alloc);
-                (void)str_from_strv(&bp_name, str_to_strv(spawned->blueprint_name));
-                (void)map_int_str_set(&state->gamedata.entity_blueprints, spawned->id, bp_name);
-                const Blueprint *spawned_bp = blueprint_find(&state->gamedata.blueprints, spawned->blueprint_name.ptr);
-                if (spawned_bp && spawned_bp->rules.count > 0) {
-                    (void)map_entity_ruleset_set(&state->gamedata.rule_table, spawned->id, spawned_bp->rules);
-                }
-            }
-            undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
-                                   strv_from_cstr("Place entity"));
-        }
-    }
-    if (input_pressed(&input, &state->bindings, ACTION_CANCEL)) {
-        editor_state->sub_mode = EDITOR_SUB_BROWSE;
-    }
-    if (input_pressed(&input, &state->bindings, ACTION_NAV_UP)) {
-        int count = state->gamedata.blueprints.entries.count;
-        editor_state->place_blueprint_index = (editor_state->place_blueprint_index - 1 + count) % count;
-    }
-    if (input_pressed(&input, &state->bindings, ACTION_NAV_DOWN)) {
-        int count = state->gamedata.blueprints.entries.count;
-        editor_state->place_blueprint_index = (editor_state->place_blueprint_index + 1) % count;
-    }
-    if (input_pressed(&input, &state->bindings, ACTION_PAGE_UP)) {
-        int new_index = editor_state->place_blueprint_index - EDITOR_PLACE_PAGE_SIZE;
-        editor_state->place_blueprint_index = (new_index < 0) ? 0 : new_index;
-    }
-    if (input_pressed(&input, &state->bindings, ACTION_PAGE_DOWN)) {
-        int count = state->gamedata.blueprints.entries.count;
-        int new_index = editor_state->place_blueprint_index + EDITOR_PLACE_PAGE_SIZE;
-        editor_state->place_blueprint_index = (new_index >= count) ? count - 1 : new_index;
-    }
-    update_editor_camera(camera, &input, &state->bindings, delta_time);
-}
-
-static void handle_editor_input(Diag *diag,
-                                GameState *state,
-                                Camera2D *camera,
-                                EditorState *editor_state,
-                                WatchList *watches,
-                                UndoHistory *undo_history,
-                                InputState input,
-                                float delta_time)
-{
-    handle_mode_transitions(state, editor_state, &input);
-    if (editor_state->sub_mode == EDITOR_SUB_DRAG) {
-        handle_drag_input(state, editor_state, undo_history, input, delta_time);
-    } else if (editor_state->sub_mode == EDITOR_SUB_HANDLES) {
-        handle_handle_input(state, editor_state, undo_history, input, delta_time);
-    } else if (editor_state->sub_mode == EDITOR_SUB_PLACE) {
-        handle_place_input(diag, state, camera, editor_state, undo_history, input, delta_time);
-    } else if (editor_state->sub_mode == EDITOR_SUB_ATTR_EDIT) {
-        handle_attr_edit_input(state, editor_state, undo_history, &input, delta_time);
-    } else if (editor_state->sub_mode == EDITOR_SUB_RADIAL) {
-        handle_radial_input(editor_state, &input, &state->bindings);
-    } else if (editor_state->sub_mode == EDITOR_SUB_WORD_BUILDER) {
-        handle_word_builder_input(diag, state, editor_state, undo_history, &input);
-    } else if (editor_state->sub_mode == EDITOR_SUB_FUZZY_FINDER) {
-        handle_fuzzy_finder_input(diag, state, editor_state, undo_history, texture_registry_lookup, state, &input);
-    } else if (editor_state->sub_mode == EDITOR_SUB_GAMEPAD_KB) {
-        handle_gamepad_kb_input(editor_state, &input, &state->bindings);
-    } else if (editor_state->top_mode == EDITOR_TOP_BLUEPRINT) {
-        handle_blueprint_browse_input(state, editor_state, undo_history, &input);
-    } else {
-        handle_browse_input(state, camera, editor_state, watches, undo_history, input, delta_time);
-    }
-}
-
 typedef struct {
     RenderTexture2D target;
     RectU32 game_bounds;
@@ -927,82 +821,6 @@ static void render_frame(GameState *state, RenderParams params)
     }
     menu_render(params.menu, params.blur, state->screen_width, state->screen_height);
     EndDrawing();
-}
-
-static void handle_global_toggles(GameState *state, const InputState *input, bool *font_preview_enabled)
-{
-    if (input_pressed(input, &state->bindings, ACTION_FONT_PREVIEW_TOGGLE)) {
-        *font_preview_enabled = !*font_preview_enabled;
-    }
-    if (input_pressed(input, &state->bindings, ACTION_EDITOR_TOGGLE)) {
-        state->editor_mode = !state->editor_mode;
-        debug_log(&state->debug, "editor %s (frame %d)", (int)state->editor_mode ? "ON" : "OFF", state->frame);
-    }
-}
-
-typedef struct {
-    Diag *diag;
-    GameState *state;
-    EditorState *editor_state;
-    WatchList *watches;
-    UndoHistory *undo_history;
-    MenuState *menu;
-    bool *quit_requested;
-} MenuDispatchCtx;
-
-static void run_active_frame(Diag *diag,
-                             GameState *state,
-                             Camera2D *editor_camera,
-                             EditorState *editor_state,
-                             WatchList *watches,
-                             UndoHistory *undo_history,
-                             InputState input,
-                             float delta_time)
-{
-    if (state->editor_mode) {
-        handle_editor_input(diag, state, editor_camera, editor_state, watches, undo_history, input, delta_time);
-        if (editor_state->toast_timer > 0.0F) {
-            editor_state->toast_timer -= delta_time;
-        }
-    }
-    game_update(diag, state, input, delta_time);
-    handle_transition(diag, state, undo_history);
-}
-
-static void toggle_menu_open(MenuState *menu)
-{
-    if (menu->open) {
-        menu_close(menu);
-    } else {
-        menu_open(menu);
-    }
-}
-
-static void dispatch_menu_action(MenuDispatchCtx ctx, MenuAction action)
-{
-    switch (action) {
-    case MENU_ACTION_RESUME:
-        menu_close(ctx.menu);
-        break;
-    case MENU_ACTION_SAVE:
-        menu_dispatch_save(ctx.diag, ctx.state, ctx.editor_state, ctx.undo_history);
-        menu_close(ctx.menu);
-        break;
-    case MENU_ACTION_RESTORE:
-        menu_dispatch_restore(ctx.diag, ctx.state, ctx.editor_state, ctx.watches, ctx.undo_history);
-        menu_close(ctx.menu);
-        break;
-    case MENU_ACTION_TOGGLE_DEBUG_OVERLAY:
-        ctx.state->debug_enabled = !ctx.state->debug_enabled;
-        debug_log(&ctx.state->debug, "debug %s (frame %d)", ctx.state->debug_enabled ? "ON" : "OFF", ctx.state->frame);
-        menu_close(ctx.menu);
-        break;
-    case MENU_ACTION_QUIT:
-        *ctx.quit_requested = true;
-        break;
-    case MENU_ACTION_NONE:
-        break;
-    }
 }
 
 int main(void)
@@ -1188,13 +1006,16 @@ int main(void)
                                                    .watches = &watches,
                                                    .undo_history = &undo_history,
                                                    .menu = &menu,
-                                                   .quit_requested = &quit_requested},
+                                                   .quit_requested = &quit_requested,
+                                                   .save_fn = menu_dispatch_save,
+                                                   .restore_fn = menu_dispatch_restore},
                                  menu_handle_input(&menu, &input, &state->bindings));
             if (editor_state.toast_timer > 0.0F) {
                 editor_state.toast_timer -= delta_time;
             }
         } else {
             run_active_frame(diag, state, &editor_camera, &editor_state, &watches, &undo_history, input, delta_time);
+            handle_transition(diag, state, &undo_history);
         }
 
         render_frame(state, (RenderParams){
