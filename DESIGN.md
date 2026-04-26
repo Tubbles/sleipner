@@ -1139,19 +1139,41 @@ the caller is responsible for checking the chord first and early-returning.
 
 **Intent.** Rule 3 above requires bug-repro tests to drive the game as a
 black box — inputs through the real input layer, outputs as observable game
-state. The function-layer overhaul in 2026-04 unblocked this: every binding
-site in the engine now reads from an `InputState` snapshot via
-`input_pressed` / `input_axis`, never raylib globals directly. Tests
-construct an `InputState` with `input_state_press_key` / `input_state_*`
-helpers and feed it to the relevant top-level handler.
+state. The function-layer overhaul in 2026-04 unblocked the input side:
+every binding site in the engine reads from an `InputState` snapshot via
+`input_pressed` / `input_axis`, never raylib globals directly.
 
-**Remaining open work item:** the legacy `test_input_mock.{h,c}` and its
-`--wrap` linker shim still exist alongside the new helpers. Integration
-tests that predate the overhaul still drive raylib polls through them and
-let `input_capture()` read the mocked state via the wraps. Rewriting each
-`test_input_tap_*` call as the equivalent `input_state_*` sequence is
-mechanical but bulky and lands in a follow-on commit. Until then, both
-styles coexist.
+**Public frame entry point.** `engine/src/frame.h` exposes `frame_update`
+plus `FrameContext`. Production main.c builds the context once and calls
+`frame_update` every loop iteration; headless tests build a `TestGame`
+fixture (engine/test/test_helpers.h) around the same fields and drive
+`test_advance_frame` / `test_advance_frames` through the same dispatcher.
+The cut leaves render, audio, gamepad polling, hot-reload, gamedata
+file I/O, and transition handling in main.c — those are production-only
+concerns. Save / restore handlers reach the menu via `MenuSaveFn` /
+`MenuRestoreFn` function pointers on `MenuDispatchCtx`; tests pass
+nullptr (SAVE / RESTORE close the menu without writing to disk).
+
+**Black-box pattern.** Tests use the `TestGame` fixture:
+
+```c
+TestGame game;
+TEST_ASSERT_TRUE(test_game_setup(&game, fixture_gamedata));
+
+InputState walk = {0};
+input_state_set_gp_axis(&walk, GAMEPAD_AXIS_LEFT_Y, 1.0F);
+test_advance_frames(&game, walk, 60);
+
+InputState toggle = {0};
+input_state_press_key(&toggle, KEY_F5);
+test_advance_frame(&game, toggle);
+
+TEST_ASSERT_TRUE(game.state.editor_mode);
+test_game_teardown(&game);
+```
+
+The fixture struct grows over time as new top-level state appears in
+main.c; new "sane defaults" go in `test_game_setup`.
 
 ## Roadmap
 

@@ -11,7 +11,6 @@
 #include "menu.h"
 #include "strv.h"
 #include "test_helpers.h"
-#include "test_input_mock.h"
 #include "undo.h"
 
 #include "raylib.h"

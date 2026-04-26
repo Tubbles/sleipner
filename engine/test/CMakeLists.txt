@@ -41,7 +41,6 @@ add_unit_test(menu_test)
 add_executable(engine_tests
     main_test.c
     test_helpers.c
-    test_input_mock.c
     blueprint_test.c
     game_test.c
     integration_test.c
@@ -56,14 +55,4 @@ target_compile_definitions(engine_tests PRIVATE _GNU_SOURCE
     GAMEDATA_PATH="${CMAKE_SOURCE_DIR}/data/gamedata.toml")
 target_include_directories(engine_tests SYSTEM PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../vendor/fff)
 target_link_libraries(engine_tests PRIVATE engine unity m)
-# Redirect raylib input polls in engine code to __wrap_* functions in
-# test_input_mock.c so integration tests can drive editor-side bindings
-# (e.g. toggle_pressed) as a black box. Production targets are not
-# affected: this flag only exists on engine_tests. Add more wraps here
-# as future tests need them.
-target_link_options(engine_tests PRIVATE
-    -Wl,--wrap=IsKeyPressed
-    -Wl,--wrap=IsGamepadButtonPressed
-    -Wl,--wrap=IsKeyDown
-    -Wl,--wrap=IsGamepadButtonDown)
 add_test(NAME engine_tests COMMAND engine_tests)
