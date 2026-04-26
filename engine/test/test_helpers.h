@@ -81,3 +81,18 @@ int test_find_int_attr_display_index(GameState *state, Entity *entity, const cha
  * presence of the attribute should use test_find_int_attr_display_index
  * directly. */
 int test_player_int_attr(GameState *state, const char *name);
+
+/* Locate the first entity in the current level whose blueprint name
+ * matches `blueprint_name`. Returns nullptr if none found. Lifts the
+ * raw `state.gamedata.current_level.entities.data[N]` index access
+ * out of test bodies. */
+Entity *test_find_entity_by_blueprint(GameState *state, const char *blueprint_name);
+
+/* Count entities in the current level with the given blueprint name. */
+int test_count_entities_by_blueprint(GameState *state, const char *blueprint_name);
+
+/* Compute the same collision Rectangle the engine uses for collision
+ * queries, by resolving the entity's blueprint defaults and applying
+ * collision_offset / collision_size. Reach for this instead of
+ * entity_resolve_defaults + entity_collision_rect in test bodies. */
+Rectangle test_entity_collision_rect(GameState *state, const Entity *entity);

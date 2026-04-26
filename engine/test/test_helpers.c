@@ -204,3 +204,36 @@ int test_player_int_attr(GameState *state, const char *name)
     }
     return attr->value.i;
 }
+
+Entity *test_find_entity_by_blueprint(GameState *state, const char *blueprint_name)
+{
+    size_t name_len = strlen(blueprint_name);
+    for (int index = 0; index < state->gamedata.current_level.entities.count; index++) {
+        Entity *entity = &state->gamedata.current_level.entities.data[index];
+        if (entity->blueprint_name.len == name_len &&
+            strncmp(entity->blueprint_name.ptr, blueprint_name, name_len) == 0) {
+            return entity;
+        }
+    }
+    return nullptr;
+}
+
+int test_count_entities_by_blueprint(GameState *state, const char *blueprint_name)
+{
+    size_t name_len = strlen(blueprint_name);
+    int count = 0;
+    for (int index = 0; index < state->gamedata.current_level.entities.count; index++) {
+        const Entity *entity = &state->gamedata.current_level.entities.data[index];
+        if (entity->blueprint_name.len == name_len &&
+            strncmp(entity->blueprint_name.ptr, blueprint_name, name_len) == 0) {
+            count++;
+        }
+    }
+    return count;
+}
+
+Rectangle test_entity_collision_rect(GameState *state, const Entity *entity)
+{
+    const AttrSet *defaults = entity_resolve_defaults(state, entity->id);
+    return entity_collision_rect(entity, defaults);
+}
