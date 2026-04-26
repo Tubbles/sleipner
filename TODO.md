@@ -101,19 +101,58 @@ Carried over from `work/keybinding-audit.md`:
   but `L2 / R2` are already bound to `-10 / +10`. Either drop the `L2 / R2`
   labels for ±100 or rebind ±100 to a different gamepad combo.
 
-## misc
+## Input system overhaul follow-ups
 
-- improve integration test framework / ergonomics for black-box bug-repro tests:
-  today the editor's button bindings read raylib globals directly and there is
-  no headless frame entry point, so driving a bug like "press LEFT in the
-  editor, assert the player didn't move" end-to-end is prohibitively painful.
-  Make it cheap and idiomatic. See DESIGN.md § "Test ergonomics for black-box
-  integration testing" and CLAUDE.md Bug Investigation Discipline rule 3.
+The function layer (input_pressed / input_held / input_axis /
+input_axis_pair against a BindingStore) shipped in stages 1-9. Two
+pieces of cleanup remain before the overhaul is fully done:
+
+- **HUD hint bar still walks the legacy EditorBinding tables.**
+  `editor/draw.c draw_hints_bar` calls `binding_table_render(...)` on
+  `EditorBindingTable` accessors (`browse_bindings()`, etc.) which still
+  hold every per-handler binding as dead data. Replace with a
+  `EditorActionHint { InputAction action; const char *description; }`
+  shape that consults `input_func_label(store, action, ...)` for the
+  rendered keys, then delete `editor/keybindings.{h,c}`,
+  `editor/main_bindings.{h,c}`, the `EditorBinding` / `ToggleBinding`
+  structs, and the per-handler `*_actions` tables. Keep
+  `keybindings_test.c`'s rendering tests by porting them to the new
+  label API (or delete — `input_func_test` already covers chord
+  rendering).
+- **`test_input_mock` and the `--wrap` linker shim still exist.**
+  Integration tests drive raylib polls through them and let
+  `input_capture()` read the mocked state via the wraps. Each
+  `test_input_tap_*` / `test_input_hold_*` / `test_input_press_*` call
+  in `engine/test/integration_test.c` and `rule_integration_test.c`
+  needs to become an `input_state_*` call on a per-iteration
+  `InputState` (the helpers already exist in `input.h`). After all
+  callers move, delete `test_input_mock.{h,c}` and the
+  `-Wl,--wrap=...` flags in `engine/test/CMakeLists.txt`. Resolves the
+  DESIGN.md "Test ergonomics for black-box integration testing" open
+  work bullet.
+
+## Input system future work
+
+- **Settings UI for rebinding.** The function layer was designed to
+  support runtime rebinding but no UI exists yet. Need an editor sub-mode
+  that walks the BindingStore and lets the user rebind one alternative
+  at a time, then writes the changes to `data/keybindings.toml`.
+- **TOML overlay loader.** `input_func_load_bindings_toml` is a stub
+  that returns true with no-op. Implement it: parse
+  `data/keybindings.toml`, walk the `[function.NAME]` tables, replace
+  the matching alternatives in the BindingStore. The shape is documented
+  in `plans/parsed-floating-dolphin.md`.
+- **Plugin-declared actions.** When a plugin/engine system arrives,
+  bindings need a parallel registry alongside the central enum. See
+  `plans/parsed-floating-dolphin.md` § "Forward-Looking Context".
+
+## misc
 - add persisted attrs for children in toml emit and editor ui
 - for some reason, when running against the walls significantly warps the
   sprite. could be related to float position not scaling up correctly or other
   scaling issue.
 - the radial menu is hard to use using a keyboard, not all directions are easily representable
+- right now i think our sanitisers write to stdout, is it possible to redirect this through our normal logging channels?
 
 ## Pause menu follow-ups
 

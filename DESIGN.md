@@ -1107,24 +1107,51 @@ See CLAUDE.md → *Bug Investigation Discipline* for the operational workflow,
 and § *Headless input and the test frame loop* below for the test
 infrastructure direction that makes rule 3 ergonomic to follow.
 
+## Input Architecture
+
+All gameplay, editor, menu, and widget code reads input through a high-level
+**function layer** (`engine/src/input_func.h`). Physical inputs (keys,
+gamepad buttons, sticks, triggers) map to action and axis enums via a
+`BindingStore` loaded once at startup. Game code calls
+`input_pressed(in, store, ACTION_EDITOR_UNDO)` or
+`input_axis_pair(in, store, AXIS_PRIMARY_X, AXIS_PRIMARY_Y)` and never
+touches raylib's input API directly.
+
+The action enum is a hybrid: shared verbs (`ACTION_CONFIRM`, `ACTION_NAV_*`,
+`ACTION_PAGE_*`) are reused across handlers; context-specific actions
+(`ACTION_EDITOR_OPEN_BLUEPRINTS`, `ACTION_ATTR_INC_100`,
+`ACTION_BLUEPRINT_DUPLICATE`) get a context prefix. Multiple handlers can
+check the same action — context is implicit in "who's currently running",
+not a central registry.
+
+A binding is a list of "physical inputs"; each physical input is a list of
+one or more atoms (key, gamepad button, axis, trigger, keyboard-synth
+axis). A 1-atom physical input is a single key; a 2+-atom physical input is
+a chord (all atoms must be held, one freshly pressed to fire). Chord and
+single-key bindings share one evaluation path. See CLAUDE.md § "Input
+Function Layer" for the API surface and test pattern.
+
+The function layer is a binding lookup, not a priority resolver. If a chord
+shares its trigger key with a single-key binding for a different action,
+the caller is responsible for checking the chord first and early-returning.
+
 ## Test ergonomics for black-box integration testing
 
 **Intent.** Rule 3 above requires bug-repro tests to drive the game as a
 black box — inputs through the real input layer, outputs as observable game
-state. Today, writing such a test for anything that touches the editor input
-path is prohibitively painful, because the editor's button bindings read
-raylib globals directly and there is no single headless frame entry point
-that tests can drive. As a result, the path of least resistance for any
-agent (human or otherwise) writing a bug-repro test is to skip layers — the
-exact anti-pattern rule 3 forbids.
+state. The function-layer overhaul in 2026-04 unblocked this: every binding
+site in the engine now reads from an `InputState` snapshot via
+`input_pressed` / `input_axis`, never raylib globals directly. Tests
+construct an `InputState` with `input_state_press_key` / `input_state_*`
+helpers and feed it to the relevant top-level handler.
 
-**Open work item:** improve the integration test framework and its
-ergonomics so that writing a black-box bug-repro test — "press KEY_LEFT for
-two seconds, assert the player didn't move" — is a few lines, reads like the
-bug report, and requires no knowledge of the engine's internal handler
-shape. The specific architecture is not pinned yet; it will be designed
-when we take the work on. Until it exists, we accept that bug-repro tests
-for editor-path bugs are going to be scoped narrowly or deferred.
+**Remaining open work item:** the legacy `test_input_mock.{h,c}` and its
+`--wrap` linker shim still exist alongside the new helpers. Integration
+tests that predate the overhaul still drive raylib polls through them and
+let `input_capture()` read the mocked state via the wraps. Rewriting each
+`test_input_tap_*` call as the equivalent `input_state_*` sequence is
+mechanical but bulky and lands in a follow-on commit. Until then, both
+styles coexist.
 
 ## Roadmap
 

@@ -160,6 +160,49 @@ Int-keyed maps (`map_int_bool`, `map_int_int`, `map_int_str`, etc.) are pre-decl
 
 **Critical rule:** `map_get` returns a pointer into the bucket array. Any `map_set` that triggers a rehash invalidates all previously returned pointers. Always call `map_get` immediately before use.
 
+## Input Function Layer
+
+All gameplay, editor, menu, and widget code reads input through a high-level **function layer** (`engine/src/input_func.h`) — never raw keys, gamepad buttons, or stick values. Two enums separate discrete actions from analog axes for static type safety:
+
+- **`InputAction`** — discrete events: `ACTION_CONFIRM`, `ACTION_CANCEL`, `ACTION_NAV_*`, `ACTION_PAGE_*`, `ACTION_INTERACT`, `ACTION_EDITOR_*`, `ACTION_ATTR_*`, `ACTION_BLUEPRINT_*`, `ACTION_WB_*`, `ACTION_MENU_TOGGLE`, `ACTION_FONT_PREVIEW_TOGGLE`, `ACTION_QUIT`. Hybrid naming: shared verbs unprefixed, context-specific actions prefixed.
+- **`InputAxis`** — analog scalars: `AXIS_PRIMARY_X/Y` (left stick / arrows-WASD), `AXIS_SECONDARY_X/Y` (right stick / Q-E), `AXIS_TRIGGER_LEFT/RIGHT`.
+
+Bindings live in a `BindingStore` on `GameState.bindings`, loaded once in `game_init` from baked-in defaults. The store is enum-indexed fixed-size arrays — a justified `MAX_*` exception per the "no MAX_*" rule because there is exactly one binding per enum value.
+
+### API
+
+```c
+[[nodiscard]] bool  input_pressed(in, store, ACTION_X);   /* edge — fires once per press */
+[[nodiscard]] bool  input_held(in, store, ACTION_X);      /* level — true while held */
+[[nodiscard]] float input_axis(in, store, AXIS_X);        /* sums alternatives, clamps to [-1, +1] */
+[[nodiscard]] Vector2 input_axis_pair(in, store, AXIS_X, AXIS_Y);  /* paired read with unit-disc clamp */
+```
+
+Use `input_axis_pair` for any (x, y) directional pair (player movement, editor camera pan, entity drag) — it preserves the "diagonals not faster than cardinals" guarantee.
+
+### Chord support
+
+A `PhysicalInput` is a list of one or more atoms (`AtomicInput`). One atom is a single key/button; two or more atoms is a chord (all must be held, one freshly pressed to fire). `ACTION_EDITOR_UNDO` is `[Ctrl, Z]` on keyboard or `[L1, Left]` on gamepad. Cross-device chord protection drops out of the data shape — no separate rule needed.
+
+### Order-sensitivity
+
+The function layer is a **binding lookup, not a priority resolver**. If `ACTION_NAV_LEFT` is bound to `LEFT_FACE_LEFT` and `ACTION_EDITOR_UNDO` is bound to chord `[L1, LEFT_FACE_LEFT]`, then pressing L1+Left fires *both* unless the caller checks UNDO first and early-returns on match. See `editor/core.c handle_browse_input` for the canonical pattern.
+
+### Tests
+
+Construct an `InputState` directly and use the helpers in `input.h`:
+
+```c
+InputState input = {0};
+input_state_press_key(&input, KEY_ENTER);          /* edge: sets both _pressed and _down */
+input_state_hold_key(&input, KEY_LEFT_CONTROL);    /* level: sets _down only */
+input_state_press_gp_button(&input, GAMEPAD_BUTTON_RIGHT_FACE_DOWN);
+input_state_set_gp_axis(&input, GAMEPAD_AXIS_LEFT_X, 0.5F);
+TEST_ASSERT_TRUE(input_pressed(&input, &store, ACTION_EDITOR_UNDO));
+```
+
+The legacy `test_input_mock` `--wrap` shim still exists for pre-existing integration tests but should not be the preferred path for new tests.
+
 ## Arena Architecture
 
 **ALL engine memory is arena-backed. Using `malloc`, `realloc`, or `free` anywhere in engine code is strictly forbidden — no exceptions, no workarounds, no "just this once".** The only permitted exemptions are: (1) the `NULL`-allocator fallback path inside the allocator infrastructure itself, and (2) `free(datum.u.s)` calls for TOML vendor string datums (a vendor limitation). If you find yourself reaching for `malloc`, the architecture is wrong — restructure to pass an arena allocator instead.
