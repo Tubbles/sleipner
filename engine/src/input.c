@@ -8,9 +8,7 @@
 #include <stdint.h>
 #include <string.h>
 
-#define STICK_DEADZONE 0.15F
-
-/* --- Bit helpers for the low-level InputState fields --------------------- */
+/* --- Bit helpers for InputState fields ----------------------------------- */
 
 static bool key_in_range(int key)
 {
@@ -29,8 +27,6 @@ static bool gp_axis_in_range(int axis)
 
 void input_capture(InputState *state)
 {
-    /* Reset the low-level fields. The high-level fields are populated by
-     * the legacy read_all_input() path and intentionally left untouched. */
     for (int word = 0; word < INPUT_KEY_BITSET_WORDS; word++) {
         state->key_down[word] = 0;
         state->key_pressed[word] = 0;
@@ -173,93 +169,4 @@ void input_load_mappings(DebugState *dbg, Allocator *alloc, const char *data, in
 
     int result = SetGamepadMappings(mappings);
     debug_log(dbg, "loaded gamepad mappings (%d bytes, result=%d)", size, result);
-}
-
-InputState input_read(int gamepad_id)
-{
-    InputState state = {0};
-
-    if (!IsGamepadAvailable(gamepad_id)) {
-        return state;
-    }
-
-    Vector2 left = {GetGamepadAxisMovement(gamepad_id, GAMEPAD_AXIS_LEFT_X),
-                    GetGamepadAxisMovement(gamepad_id, GAMEPAD_AXIS_LEFT_Y)};
-    Vector2 right = {GetGamepadAxisMovement(gamepad_id, GAMEPAD_AXIS_RIGHT_X),
-                     GetGamepadAxisMovement(gamepad_id, GAMEPAD_AXIS_RIGHT_Y)};
-    state.left_stick = input_apply_deadzone(left, STICK_DEADZONE);
-    state.right_stick = input_apply_deadzone(right, STICK_DEADZONE);
-
-    state.buttons[0] = IsGamepadButtonPressed(gamepad_id, GAMEPAD_BUTTON_RIGHT_FACE_DOWN);
-    state.buttons[1] = IsGamepadButtonPressed(gamepad_id, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT);
-    state.buttons[2] = IsGamepadButtonPressed(gamepad_id, GAMEPAD_BUTTON_RIGHT_FACE_LEFT);
-    state.buttons[3] = IsGamepadButtonPressed(gamepad_id, GAMEPAD_BUTTON_RIGHT_FACE_UP);
-
-    state.left_trigger = GetGamepadAxisMovement(gamepad_id, GAMEPAD_AXIS_LEFT_TRIGGER);
-    state.right_trigger = GetGamepadAxisMovement(gamepad_id, GAMEPAD_AXIS_RIGHT_TRIGGER);
-
-    /* Normalize triggers from -1..1 to 0..1 */
-    state.left_trigger = (state.left_trigger + 1.0F) * 0.5F;
-    state.right_trigger = (state.right_trigger + 1.0F) * 0.5F;
-
-    return state;
-}
-
-InputState input_read_keyboard(void)
-{
-    InputState state = {0};
-
-    state.left_stick.x = 0.0F;
-    state.left_stick.y = 0.0F;
-
-    if (IsKeyDown(KEY_LEFT) || IsKeyDown(KEY_A)) {
-        state.left_stick.x += -1.0F;
-    }
-    if (IsKeyDown(KEY_RIGHT) || IsKeyDown(KEY_D)) {
-        state.left_stick.x += 1.0F;
-    }
-    if (IsKeyDown(KEY_UP) || IsKeyDown(KEY_W)) {
-        state.left_stick.y += -1.0F;
-    }
-    if (IsKeyDown(KEY_DOWN) || IsKeyDown(KEY_S)) {
-        state.left_stick.y += 1.0F;
-    }
-
-    if (IsKeyDown(KEY_Q)) {
-        state.right_stick.x = -1.0F;
-    }
-    if (IsKeyDown(KEY_E)) {
-        state.right_stick.x = 1.0F;
-    }
-
-    state.buttons[0] = IsKeyPressed(KEY_SPACE);
-    state.buttons[1] = IsKeyPressed(KEY_TAB);
-    state.buttons[2] = IsKeyPressed(KEY_LEFT_SHIFT);
-    state.buttons[3] = IsKeyPressed(KEY_LEFT_CONTROL);
-
-    if (IsKeyDown(KEY_Z)) {
-        state.left_trigger = 1.0F;
-    }
-    if (IsKeyDown(KEY_X)) {
-        state.right_trigger = 1.0F;
-    }
-
-    /* 8-way digital input produces magnitude sqrt(2) on diagonals.
-     * Clamp through the shared deadzone helper with deadzone=0 so
-     * keyboard diagonal speed matches cardinal speed. */
-    state.left_stick = input_apply_deadzone(state.left_stick, 0.0F);
-    state.right_stick = input_apply_deadzone(state.right_stick, 0.0F);
-
-    return state;
-}
-
-int input_count_gamepads(void)
-{
-    int count = 0;
-    for (int index = 0; index < 4; index++) {
-        if (IsGamepadAvailable(index)) {
-            count++;
-        }
-    }
-    return count;
 }

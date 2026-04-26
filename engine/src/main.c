@@ -141,6 +141,17 @@ static Texture2D load_embedded_texture(EmbeddedAsset asset)
     return texture;
 }
 
+static int count_connected_gamepads(void)
+{
+    int count = 0;
+    for (int index = 0; index < 4; index++) {
+        if (IsGamepadAvailable(index)) {
+            count++;
+        }
+    }
+    return count;
+}
+
 static void font_preview_add(GameState *state, const char *name, EmbeddedAsset asset, Allocator *alloc)
 {
     FontPreviewEntry entry = {0};
@@ -154,43 +165,6 @@ static void font_preview_add(GameState *state, const char *name, EmbeddedAsset a
     }
     state->assets.font_previews.alloc = *alloc;
     (void)vec_font_preview_push(&state->assets.font_previews, entry);
-}
-
-static InputState merge_input(InputState base, InputState overlay)
-{
-    if (overlay.left_stick.x != 0.0F) {
-        base.left_stick.x = overlay.left_stick.x;
-    }
-    if (overlay.left_stick.y != 0.0F) {
-        base.left_stick.y = overlay.left_stick.y;
-    }
-    if (overlay.right_stick.x != 0.0F) {
-        base.right_stick.x = overlay.right_stick.x;
-    }
-    if (overlay.right_stick.y != 0.0F) {
-        base.right_stick.y = overlay.right_stick.y;
-    }
-    for (int index = 0; index < 4; index++) {
-        if (overlay.buttons[index]) {
-            base.buttons[index] = true;
-        }
-    }
-    if (overlay.left_trigger > base.left_trigger) {
-        base.left_trigger = overlay.left_trigger;
-    }
-    if (overlay.right_trigger > base.right_trigger) {
-        base.right_trigger = overlay.right_trigger;
-    }
-    return base;
-}
-
-static InputState read_all_input(void)
-{
-    InputState input = input_read_keyboard();
-    if (IsGamepadAvailable(0)) {
-        input = merge_input(input, input_read(0));
-    }
-    return input;
 }
 
 static void draw_player_entity(const GameState *state, const Entity *player)
@@ -229,7 +203,7 @@ static void draw_entity(const GameState *state, const Entity *entity)
 
 static void log_gamepad_changes(GameState *state, int *prev_gamepads, int frame)
 {
-    int gamepads = input_count_gamepads();
+    int gamepads = count_connected_gamepads();
     if (gamepads != *prev_gamepads) {
         debug_log(&state->debug, "gamepads %d -> %d (frame %d)", *prev_gamepads, gamepads, frame);
         for (int index = 0; index < 4; index++) {
@@ -318,7 +292,7 @@ static void draw_debug_info(GameState *state, RectU32 game_bounds)
                      DEBUG_MARGIN, DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, debug_text_color);
     }
 
-    draw_ui_text(font, TextFormat("gamepads: %d", input_count_gamepads()), DEBUG_MARGIN,
+    draw_ui_text(font, TextFormat("gamepads: %d", count_connected_gamepads()), DEBUG_MARGIN,
                  DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, debug_text_color);
 
     for (int index = 0; index < 4; index++) {
@@ -1180,10 +1154,7 @@ int main(void)
             handle_hot_reload(diag, state, &editor_state, &watches, &undo_history);
         }
 
-        InputState input = read_all_input();
-        /* Populate the function-layer fields alongside the legacy ones. The
-         * legacy left_stick/buttons/etc. die in stage 9 once every consumer
-         * has migrated to input_pressed/input_axis. */
+        InputState input = {0};
         input_capture(&input);
 
         handle_global_toggles(state, &input, &font_preview_enabled);
