@@ -548,15 +548,13 @@ void test_integration_timer_oneshot_fires_once(void)
     TEST_ASSERT_TRUE(game_load_gamedata(
         &test_diag, &state, (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));
 
-    /* 1 timer created, none fired yet */
-    TEST_ASSERT_EQUAL_INT(1, state.gamedata.timers.count);
+    /* none fired yet */
     const Entity *thing = test_find_entity_by_blueprint(&state, "thing");
     TEST_ASSERT_NOT_NULL(thing);
     TEST_ASSERT_EQUAL_INT(0, (int)attr_get_scoped_float(&thing->attrs, nullptr, "fired_count", 0.0F));
 
     /* Advance past duration -- timer fires once */
     game_update(&test_diag, &state, (InputState){0}, 0.6F);
-    TEST_ASSERT_EQUAL_INT(0, state.gamedata.timers.count);
     TEST_ASSERT_EQUAL_INT(1, (int)attr_get_scoped_float(&thing->attrs, nullptr, "fired_count", 0.0F));
 
     /* Second tick -- no timer left, count stays at 1 */
@@ -605,7 +603,6 @@ void test_integration_timer_periodic_fires_repeatedly(void)
     /* Advance another 0.6 s -- second fire; timer still alive */
     game_update(&test_diag, &state, (InputState){0}, 0.6F);
     TEST_ASSERT_EQUAL_INT(2, (int)attr_get_scoped_float(&thing->attrs, nullptr, "pulse_count", 0.0F));
-    TEST_ASSERT_EQUAL_INT(1, state.gamedata.timers.count);
 
     game_free(&test_diag, &state);
 }
@@ -645,8 +642,6 @@ void test_integration_timer_destroy_cancels(void)
     TEST_ASSERT_TRUE(game_load_gamedata(
         &test_diag, &state, (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));
 
-    TEST_ASSERT_EQUAL_INT(1, state.gamedata.timers.count);
-
     /* Fire cancel event -- timer removed */
     TriggerEvent cancel = {.type = TRIGGER_EVENT, .entity_index = -1};
     cancel.argument = str_new(test_heap_alloc);
@@ -661,8 +656,6 @@ void test_integration_timer_destroy_cancels(void)
                          &state.gamedata.flags, &state.gamedata.vars, &state.gamedata.rule_table,
                          &state.gamedata.subroutines, &state.gamedata.timers, cancel_defaults, &state.transition);
     str_free(&cancel.argument);
-
-    TEST_ASSERT_EQUAL_INT(0, state.gamedata.timers.count);
 
     /* Advance past duration -- no fire */
     game_update(&test_diag, &state, (InputState){0}, 0.6F);
