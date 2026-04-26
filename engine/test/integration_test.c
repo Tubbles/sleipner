@@ -255,7 +255,7 @@ void test_integration_walk_and_collide(void)
     /* Player starts at (160, 120), rock at (200, 120) with 16x16 collision.
      * Walk right into the rock. */
     InputState input = {0};
-    input.left_stick.x = 1.0F;
+    input.gp_axis[GAMEPAD_AXIS_LEFT_X] = 1.0F;
 
     for (int iteration = 0; iteration < 300; iteration++) {
         game_update(&diag, &state, input, 1.0F / 60.0F);
@@ -288,8 +288,8 @@ void test_integration_walk_freely(void)
 
     /* Walk down-left for 30 frames (away from obstacles) */
     InputState input = {0};
-    input.left_stick.x = -0.5F;
-    input.left_stick.y = 0.5F;
+    input.gp_axis[GAMEPAD_AXIS_LEFT_X] = -0.5F;
+    input.gp_axis[GAMEPAD_AXIS_LEFT_Y] = 0.5F;
 
     for (int iteration = 0; iteration < 30; iteration++) {
         game_update(&diag, &state, input, 1.0F / 60.0F);
@@ -315,29 +315,29 @@ void test_integration_boundary_all_directions(void)
     InputState input = {0};
 
     /* Push against each wall */
-    input.left_stick.x = -1.0F;
-    input.left_stick.y = 0.0F;
+    input.gp_axis[GAMEPAD_AXIS_LEFT_X] = -1.0F;
+    input.gp_axis[GAMEPAD_AXIS_LEFT_Y] = 0.0F;
     for (int iteration = 0; iteration < 500; iteration++) {
         game_update(&diag, &state, input, 1.0F / 60.0F);
     }
     TEST_ASSERT_FLOAT_WITHIN(0.1F, half, game_get_player_const(&state)->position.x);
 
-    input.left_stick.x = 0.0F;
-    input.left_stick.y = -1.0F;
+    input.gp_axis[GAMEPAD_AXIS_LEFT_X] = 0.0F;
+    input.gp_axis[GAMEPAD_AXIS_LEFT_Y] = -1.0F;
     for (int iteration = 0; iteration < 500; iteration++) {
         game_update(&diag, &state, input, 1.0F / 60.0F);
     }
     TEST_ASSERT_FLOAT_WITHIN(0.1F, half, game_get_player_const(&state)->position.y);
 
-    input.left_stick.x = 1.0F;
-    input.left_stick.y = 0.0F;
+    input.gp_axis[GAMEPAD_AXIS_LEFT_X] = 1.0F;
+    input.gp_axis[GAMEPAD_AXIS_LEFT_Y] = 0.0F;
     for (int iteration = 0; iteration < 500; iteration++) {
         game_update(&diag, &state, input, 1.0F / 60.0F);
     }
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 320.0F - half, game_get_player_const(&state)->position.x);
 
-    input.left_stick.x = 0.0F;
-    input.left_stick.y = 1.0F;
+    input.gp_axis[GAMEPAD_AXIS_LEFT_X] = 0.0F;
+    input.gp_axis[GAMEPAD_AXIS_LEFT_Y] = 1.0F;
     for (int iteration = 0; iteration < 500; iteration++) {
         game_update(&diag, &state, input, 1.0F / 60.0F);
     }
@@ -378,7 +378,7 @@ void test_integration_player_entity_spawns(void)
     /* Player must be controllable — move right for a few frames */
     float start_x = player->position.x;
     InputState input = {0};
-    input.left_stick.x = 1.0F;
+    input.gp_axis[GAMEPAD_AXIS_LEFT_X] = 1.0F;
     for (int iteration = 0; iteration < 10; iteration++) {
         game_update(&diag, &state, input, 1.0F / 60.0F);
     }
@@ -417,7 +417,7 @@ void test_integration_enter_trigger_fires_on_overlap(void)
      * Player right edge starts at 116, zone left edge at 200. Gap = 84px.
      * Speed = 80 px/s → need ~63 frames at 1/60s. Run 80 to be safe. */
     InputState input = {0};
-    input.left_stick.x = 1.0F;
+    input.gp_axis[GAMEPAD_AXIS_LEFT_X] = 1.0F;
     for (int iteration = 0; iteration < 80; iteration++) {
         game_update(&diag, &state, input, 1.0F / 60.0F);
     }
@@ -473,7 +473,7 @@ void test_integration_enter_trigger_fires_only_once(void)
 
     /* Walk into zone and keep walking through it for 200 frames total */
     InputState input = {0};
-    input.left_stick.x = 1.0F;
+    input.gp_axis[GAMEPAD_AXIS_LEFT_X] = 1.0F;
     for (int iteration = 0; iteration < 200; iteration++) {
         game_update(&diag, &state, input, 1.0F / 60.0F);
     }
@@ -596,7 +596,7 @@ void test_integration_transition_changes_level(void)
     /* Walk right into the door trigger: player at (100,100), door at (200,100).
      * Speed = 80 px/s, gap ~84px → ~63 frames. Run 80 to be safe. */
     InputState input = {0};
-    input.left_stick.x = 1.0F;
+    input.gp_axis[GAMEPAD_AXIS_LEFT_X] = 1.0F;
     for (int iteration = 0; iteration < 80; iteration++) {
         game_update(&diag, &state, input, 1.0F / 60.0F);
     }
@@ -652,8 +652,8 @@ void test_integration_editor_pan_does_not_reset_player_position(void)
      * and the tree at 50,50 — take a path clear of both.) */
     state.editor_mode = false;
     InputState walk_input = {0};
-    walk_input.left_stick.x = 0.0F;
-    walk_input.left_stick.y = 1.0F;
+    walk_input.gp_axis[GAMEPAD_AXIS_LEFT_X] = 0.0F;
+    walk_input.gp_axis[GAMEPAD_AXIS_LEFT_Y] = 1.0F;
     for (int iteration = 0; iteration < 60; iteration++) {
         game_update(&diag, &state, walk_input, 1.0F / 60.0F);
     }
@@ -677,8 +677,8 @@ void test_integration_editor_pan_does_not_reset_player_position(void)
      * player's position gets reset". This is the window in which the
      * reset is alleged to happen. */
     InputState pan_input = {0};
-    pan_input.left_stick.x = 1.0F;
-    pan_input.left_stick.y = 0.0F;
+    pan_input.gp_axis[GAMEPAD_AXIS_LEFT_X] = 1.0F;
+    pan_input.gp_axis[GAMEPAD_AXIS_LEFT_Y] = 0.0F;
     for (int iteration = 0; iteration < 600; iteration++) {
         game_update(&diag, &state, pan_input, 1.0F / 60.0F);
     }
@@ -748,7 +748,7 @@ void test_integration_editor_undo_at_left_edge_preserves_play_state(void)
      * visibly diverges from the TOML start. */
     state.editor_mode = false;
     InputState walk_input = {0};
-    walk_input.left_stick.y = 1.0F;
+    walk_input.gp_axis[GAMEPAD_AXIS_LEFT_Y] = 1.0F;
     for (int iteration = 0; iteration < 60; iteration++) {
         game_update(&diag, &state, walk_input, 1.0F / 60.0F);
     }

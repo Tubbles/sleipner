@@ -67,6 +67,9 @@ typedef enum {
     ACTION_WB_APPEND,
     ACTION_WB_POP,
 
+    /* Gameplay */
+    ACTION_INTERACT,
+
     /* Global */
     ACTION_MENU_TOGGLE,
     ACTION_FONT_PREVIEW_TOGGLE,

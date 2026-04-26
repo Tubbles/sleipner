@@ -581,6 +581,8 @@ void input_func_load_defaults(BindingStore *store, Allocator alloc)
     static const DefaultAtom wb_append[]        = { K(KEY_ENTER),  ATOM_END, GB(GAMEPAD_BUTTON_RIGHT_FACE_DOWN), ATOM_END, ALTS_END };
     static const DefaultAtom wb_pop[]           = { K(KEY_ESCAPE), ATOM_END, GB(GAMEPAD_BUTTON_RIGHT_FACE_RIGHT), ATOM_END, ALTS_END };
 
+    static const DefaultAtom interact[]            = { K(KEY_SPACE), ATOM_END, GB(GAMEPAD_BUTTON_RIGHT_FACE_DOWN), ATOM_END, ALTS_END };
+
     static const DefaultAtom menu_toggle[]         = { K(KEY_F3), ATOM_END, GB(GAMEPAD_BUTTON_MIDDLE_LEFT), ATOM_END, ALTS_END };
     static const DefaultAtom font_preview_toggle[] = { K(KEY_F4), ATOM_END, GB(GAMEPAD_BUTTON_RIGHT_THUMB), ATOM_END, ALTS_END };
     static const DefaultAtom quit[] = {
@@ -656,6 +658,8 @@ void input_func_load_defaults(BindingStore *store, Allocator alloc)
     (void)build_action(&store->actions[ACTION_WB_KEYBOARD_MODE], alloc, wb_keyboard_mode);
     (void)build_action(&store->actions[ACTION_WB_APPEND], alloc, wb_append);
     (void)build_action(&store->actions[ACTION_WB_POP], alloc, wb_pop);
+
+    (void)build_action(&store->actions[ACTION_INTERACT], alloc, interact);
 
     (void)build_action(&store->actions[ACTION_MENU_TOGGLE], alloc, menu_toggle);
     (void)build_action(&store->actions[ACTION_FONT_PREVIEW_TOGGLE], alloc, font_preview_toggle);

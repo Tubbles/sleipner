@@ -382,11 +382,10 @@ static void load_persistent_assets(GameState *state)
     debug_log(&state->debug, "ui_font: Golden Apple %dpx valid=%d", DEBUG_FONT_SIZE,
               IsFontValid(state->assets.ui_font));
 
-    /* Input bindings live alongside textures and fonts: persistent, below
-     * gamedata_base, freed only at game exit. The TOML overlay loader is a
-     * stub for now (defaults are the source of truth); a later stage adds
-     * file parsing on top. */
-    input_func_load_defaults(&state->bindings, gamedata_alloc);
+    /* Defaults are loaded in game_init. Overlay the TOML file (currently
+     * a stub) on top so user customizations win once that lands. Bindings
+     * live alongside textures and fonts: persistent, below gamedata_base,
+     * freed only at game exit. */
     if (!input_func_load_bindings_toml(&state->bindings, gamedata_alloc, &state->error, nullptr)) {
         debug_log(&state->debug, "input bindings: %s", error_get(&state->error));
         error_clear(&state->error);

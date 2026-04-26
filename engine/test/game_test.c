@@ -118,7 +118,7 @@ void test_game_update_player_moves_right(void)
     float start_x = player->position.x;
 
     InputState input = {0};
-    input.left_stick.x = 1.0F;
+    input.gp_axis[GAMEPAD_AXIS_LEFT_X] = 1.0F;
 
     game_update(&diag, &state, input, 1.0F / 60.0F);
 
@@ -140,7 +140,7 @@ void test_game_update_player_moves_left(void)
         &diag, &state, (GamedataParams){.toml_string = game_test_gamedata, .texture_lookup = dummy_lookup}));
 
     InputState input = {0};
-    input.left_stick.x = -1.0F;
+    input.gp_axis[GAMEPAD_AXIS_LEFT_X] = -1.0F;
 
     game_update(&diag, &state, input, 1.0F / 60.0F);
 
@@ -186,7 +186,7 @@ void test_game_player_clamps_to_bounds(void)
         &diag, &state, (GamedataParams){.toml_string = game_test_gamedata, .texture_lookup = dummy_lookup}));
 
     InputState input = {0};
-    input.left_stick.x = -1.0F;
+    input.gp_axis[GAMEPAD_AXIS_LEFT_X] = -1.0F;
 
     for (int iteration = 0; iteration < 1000; iteration++) {
         game_update(&diag, &state, input, 1.0F / 60.0F);
@@ -232,7 +232,7 @@ void test_game_update_resolves_obstacle_collision(void)
 
     /* Push player into the obstacle */
     InputState input = {0};
-    input.left_stick.x = 1.0F;
+    input.gp_axis[GAMEPAD_AXIS_LEFT_X] = 1.0F;
 
     for (int iteration = 0; iteration < 200; iteration++) {
         game_update(&diag, &state, input, 1.0F / 60.0F);
@@ -294,7 +294,7 @@ void test_camera_follows_player(void)
     float initial_x = state.gamedata.camera_target.x;
 
     InputState input = {0};
-    input.left_stick.x = 1.0F;
+    input.gp_axis[GAMEPAD_AXIS_LEFT_X] = 1.0F;
 
     for (int iteration = 0; iteration < 60; iteration++) {
         game_update(&diag, &state, input, 1.0F / 60.0F);
@@ -315,8 +315,8 @@ void test_camera_clamped_to_level_bounds(void)
 
     /* Push player to bottom-right for many frames */
     InputState input = {0};
-    input.left_stick.x = 1.0F;
-    input.left_stick.y = 1.0F;
+    input.gp_axis[GAMEPAD_AXIS_LEFT_X] = 1.0F;
+    input.gp_axis[GAMEPAD_AXIS_LEFT_Y] = 1.0F;
 
     for (int iteration = 0; iteration < 1000; iteration++) {
         game_update(&diag, &state, input, 1.0F / 60.0F);
@@ -341,7 +341,7 @@ void test_camera_centers_small_level(void)
 
     /* Move player around — camera should stay centered on the level */
     InputState input = {0};
-    input.left_stick.x = 1.0F;
+    input.gp_axis[GAMEPAD_AXIS_LEFT_X] = 1.0F;
 
     for (int iteration = 0; iteration < 60; iteration++) {
         game_update(&diag, &state, input, 1.0F / 60.0F);

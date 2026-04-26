@@ -9,6 +9,7 @@
 #include "error.h"
 #include "entity.h"
 #include "input.h"
+#include "input_func.h"
 #include "level.h"
 #include "rect.h"
 #include "rule.h"
@@ -39,6 +40,15 @@ bool game_init(Diag *diag, GameState *state, RectU32 game_bounds)
         error_wrap(diag->error, "game_init");
         return false;
     }
+    /* Default input bindings live in the gamedata arena. main.c overlays
+     * the TOML file on top once persistent assets are loaded. Bindings are
+     * loaded BEFORE the gamedata_base checkpoint is established so they
+     * sit below it and survive every game_load_gamedata arena_restore.
+     * gamedata_base is set here at the end of init so tests that skip
+     * load_persistent_assets still have a valid checkpoint above the
+     * bindings; production overwrites it after textures and fonts. */
+    input_func_load_defaults(&state->bindings, allocator_arena(&state->gamedata_arena));
+    state->gamedata_base = arena_save(&state->gamedata_arena);
     return true;
 }
 
@@ -183,22 +193,27 @@ const Entity *game_get_player_const(const GameState *state)
     return &state->gamedata.current_level.entities.data[state->gamedata.player_index];
 }
 
-static void
-update_player(Entity *player, const AttrSet *player_defaults, InputState input, float delta_time, RectU32 level_size)
+static void update_player(Entity *player,
+                          const AttrSet *player_defaults,
+                          const InputState *input,
+                          const BindingStore *bindings,
+                          float delta_time,
+                          RectU32 level_size)
 {
     player->moving = false;
 
     float speed = attr_get_scoped_float(&player->attrs, player_defaults, "speed", DEFAULT_PLAYER_SPEED);
+    Vector2 move = input_axis_pair(input, bindings, AXIS_PRIMARY_X, AXIS_PRIMARY_Y);
 
-    if (input.left_stick.x != 0.0F || input.left_stick.y != 0.0F) {
-        player->position.x += input.left_stick.x * speed * delta_time;
-        player->position.y += input.left_stick.y * speed * delta_time;
+    if (move.x != 0.0F || move.y != 0.0F) {
+        player->position.x += move.x * speed * delta_time;
+        player->position.y += move.y * speed * delta_time;
         player->moving = true;
 
-        if (fabsf(input.left_stick.x) > fabsf(input.left_stick.y)) {
+        if (fabsf(move.x) > fabsf(move.y)) {
             player->anim_row = ANIM_WALK_SIDE;
-            player->flip = input.left_stick.x < 0.0F;
-        } else if (input.left_stick.y > 0.0F) {
+            player->flip = move.x < 0.0F;
+        } else if (move.y > 0.0F) {
             player->anim_row = ANIM_WALK_DOWN;
         } else {
             player->anim_row = ANIM_WALK_UP;
@@ -433,17 +448,18 @@ detect_solid_collisions(const GameState *state, Level *level, vec_bool *prev_col
     }
 }
 
-static void collect_trigger_events(DebugState *dbg, GameState *state, InputState input, vec_trigger_event *out_events)
+static void
+collect_trigger_events(DebugState *dbg, GameState *state, const InputState *input, vec_trigger_event *out_events)
 {
-    bool interact_pressed = input.buttons[0];
-    bool interact_edge = false;
-    if (interact_pressed) {
-        if (!state->prev_interact) {
-            interact_edge = true;
-            debug_log(dbg, "Interact button pressed");
-        }
+    /* input_pressed is already an edge — true the frame the binding fired,
+     * false otherwise. Drop the prev_interact bookkeeping; it was needed
+     * because the legacy InputState.buttons[0] was a level read on
+     * keyboard (IsKeyDown) merged with a one-shot on gamepad. */
+    bool interact_edge = input_pressed(input, &state->bindings, ACTION_INTERACT);
+    if (interact_edge) {
+        debug_log(dbg, "Interact button pressed");
     }
-    state->prev_interact = interact_pressed;
+    state->prev_interact = interact_edge;
 
     if (interact_edge) {
         debug_log(dbg, "Processing interact edge");
@@ -478,7 +494,7 @@ void game_update(Diag *diag, GameState *state, InputState input, float delta_tim
             const AttrSet *player_defaults = entity_resolve_defaults(state, player->id);
             RectU32 level_size = {(uint32_t)state->gamedata.current_level.width,
                                   (uint32_t)state->gamedata.current_level.height};
-            update_player(player, player_defaults, input, delta_time, level_size);
+            update_player(player, player_defaults, &input, &state->bindings, delta_time, level_size);
             resolve_player_obstacles(state, state->gamedata.player_index);
             camera_update_target(state, player->position, delta_time);
         }
@@ -518,7 +534,7 @@ void game_update(Diag *diag, GameState *state, InputState input, float delta_tim
             }
         }
 
-        collect_trigger_events(diag->debug, state, input, &trigger_events);
+        collect_trigger_events(diag->debug, state, &input, &trigger_events);
 
         if (trigger_events.count > 0) {
             int update_count = state->gamedata.current_level.entities.count;

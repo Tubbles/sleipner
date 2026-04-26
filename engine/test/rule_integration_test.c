@@ -176,7 +176,7 @@ void test_integration_interact_rule(void)
     TEST_ASSERT_FALSE(flag_get(&state.gamedata.flags, "chest_opened"));
 
     InputState input = {0};
-    input.buttons[0] = true;
+    input_state_press_gp_button(&input, GAMEPAD_BUTTON_RIGHT_FACE_DOWN);
     game_update(&test_diag, &state, input, 1.0F / 60.0F);
 
     TEST_ASSERT_TRUE(flag_get(&state.gamedata.flags, "chest_opened"));
@@ -223,17 +223,17 @@ void test_integration_condition_blocks_interact(void)
         &test_diag, &state, (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));
 
     InputState input = {0};
-    input.buttons[0] = true;
+    input_state_press_gp_button(&input, GAMEPAD_BUTTON_RIGHT_FACE_DOWN);
     game_update(&test_diag, &state, input, 1.0F / 60.0F);
 
     TEST_ASSERT_FALSE(flag_get(&state.gamedata.flags, "chest_opened"));
 
-    input.buttons[0] = false;
+    input_state_release_gp_button(&input, GAMEPAD_BUTTON_RIGHT_FACE_DOWN);
     game_update(&test_diag, &state, input, 1.0F / 60.0F);
 
     Allocator arena_alloc = allocator_arena(&state.gamedata_arena);
     flag_set(&test_diag, &arena_alloc, &state.gamedata.flags, "has_key");
-    input.buttons[0] = true;
+    input_state_press_gp_button(&input, GAMEPAD_BUTTON_RIGHT_FACE_DOWN);
     game_update(&test_diag, &state, input, 1.0F / 60.0F);
 
     TEST_ASSERT_TRUE(flag_get(&state.gamedata.flags, "chest_opened"));
