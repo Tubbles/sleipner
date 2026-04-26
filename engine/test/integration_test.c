@@ -359,14 +359,10 @@ void test_integration_player_entity_spawns(void)
     const Entity *player = game_get_player_const(&state);
     TEST_ASSERT_NOT_NULL(player);
 
-    /* Player must have behavior="player" attribute (via blueprint) */
-    const AttrSet *player_defaults = entity_resolve_defaults(&state, player->id);
-    const char *behavior = attr_get_scoped_string(&player->attrs, player_defaults, "behavior");
-    TEST_ASSERT_NOT_NULL(behavior);
-    TEST_ASSERT_EQUAL_STRING("player", behavior);
-
-    /* Player must have valid blueprint and texture */
-    TEST_ASSERT_NOT_NULL(player_defaults);
+    /* Player blueprint name and texture are observable from the
+     * loaded gamedata; behavior="player" is the rule-side observable
+     * that makes the entity respond to movement input, covered by
+     * test_game_update_player_moves_right and friends. */
     TEST_ASSERT_NOT_NULL(player->texture);
     TEST_ASSERT_EQUAL_STRING("player", player->blueprint_name.ptr);
 
