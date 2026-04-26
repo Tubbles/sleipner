@@ -212,20 +212,16 @@ static Texture2D *dummy_lookup(const char *texture_name, void *user_data)
 
 void test_integration_load_gamedata(void)
 {
-    GameState state = {0};
-    Diag diag = {&state.error, &state.debug};
-    TEST_ASSERT_TRUE(game_init(&diag, &state, (RectU32){320, 240}));
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_gamedata));
 
-    bool loaded = game_load_gamedata(&diag, &state,
-                                     (GamedataParams){.toml_string = fixture_gamedata, .texture_lookup = dummy_lookup});
-    TEST_ASSERT_TRUE(loaded);
-    TEST_ASSERT_TRUE(state.gamedata_loaded);
-    TEST_ASSERT_EQUAL_STRING("field", state.gamedata.current_level.name.ptr);
-    TEST_ASSERT_EQUAL_INT(3, state.gamedata.current_level.entities.count);
-    TEST_ASSERT_EQUAL_INT(3, state.gamedata.blueprints.entries.count);
-    TEST_ASSERT_TRUE(state.gamedata.player_index >= 0);
+    TEST_ASSERT_TRUE(game.state.gamedata_loaded);
+    TEST_ASSERT_EQUAL_STRING("field", game.state.gamedata.current_level.name.ptr);
+    TEST_ASSERT_EQUAL_INT(3, game.state.gamedata.current_level.entities.count);
+    TEST_ASSERT_EQUAL_INT(3, game.state.gamedata.blueprints.entries.count);
+    TEST_ASSERT_TRUE(game.state.gamedata.player_index >= 0);
 
-    game_free(&diag, &state);
+    test_game_teardown(&game);
 }
 
 void test_integration_load_specific_level(void)
@@ -247,116 +243,90 @@ void test_integration_load_specific_level(void)
 
 void test_integration_walk_and_collide(void)
 {
-    GameState state = {0};
-    Diag diag = {&state.error, &state.debug};
-    TEST_ASSERT_TRUE(game_init(&diag, &state, (RectU32){320, 240}));
-    TEST_ASSERT_TRUE(game_load_gamedata(
-        &diag, &state, (GamedataParams){.toml_string = fixture_gamedata, .texture_lookup = dummy_lookup}));
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_gamedata));
 
     /* Player starts at (160, 120), rock at (200, 120) with 16x16 collision.
      * Walk right into the rock. */
     InputState input = {0};
-    input.gp_axis[GAMEPAD_AXIS_LEFT_X] = 1.0F;
-
-    for (int iteration = 0; iteration < 300; iteration++) {
-        game_update(&diag, &state, input, 1.0F / 60.0F);
-    }
+    input_state_set_gp_axis(&input, GAMEPAD_AXIS_LEFT_X, 1.0F);
+    test_advance_frames(&game, input, 300);
 
     /* Player collision must not overlap the rock */
-    const Entity *player = game_get_player_const(&state);
-    Rectangle player_col = test_entity_collision_rect(&state, player);
-    const Entity *rock_entity = test_find_entity_by_blueprint(&state, "rock");
+    const Entity *player = game_get_player_const(&game.state);
+    Rectangle player_col = test_entity_collision_rect(&game.state, player);
+    const Entity *rock_entity = test_find_entity_by_blueprint(&game.state, "rock");
     TEST_ASSERT_NOT_NULL(rock_entity);
-    Rectangle rock = test_entity_collision_rect(&state, rock_entity);
+    Rectangle rock = test_entity_collision_rect(&game.state, rock_entity);
     TEST_ASSERT_TRUE(player_col.x + player_col.width <= rock.x + 0.1F);
 
-    game_free(&diag, &state);
+    test_game_teardown(&game);
 }
 
 void test_integration_walk_freely(void)
 {
-    GameState state = {0};
-    Diag diag = {&state.error, &state.debug};
-    TEST_ASSERT_TRUE(game_init(&diag, &state, (RectU32){320, 240}));
-    TEST_ASSERT_TRUE(game_load_gamedata(
-        &diag, &state, (GamedataParams){.toml_string = fixture_gamedata, .texture_lookup = dummy_lookup}));
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_gamedata));
 
-    const Entity *player = game_get_player_const(&state);
+    const Entity *player = game_get_player_const(&game.state);
     float start_x = player->position.x;
     float start_y = player->position.y;
 
     /* Walk down-left for 30 frames (away from obstacles) */
     InputState input = {0};
-    input.gp_axis[GAMEPAD_AXIS_LEFT_X] = -0.5F;
-    input.gp_axis[GAMEPAD_AXIS_LEFT_Y] = 0.5F;
+    input_state_set_gp_axis(&input, GAMEPAD_AXIS_LEFT_X, -0.5F);
+    input_state_set_gp_axis(&input, GAMEPAD_AXIS_LEFT_Y, 0.5F);
+    test_advance_frames(&game, input, 30);
 
-    for (int iteration = 0; iteration < 30; iteration++) {
-        game_update(&diag, &state, input, 1.0F / 60.0F);
-    }
-
-    player = game_get_player_const(&state);
+    player = game_get_player_const(&game.state);
     TEST_ASSERT_TRUE(player->position.x < start_x);
     TEST_ASSERT_TRUE(player->position.y > start_y);
-    TEST_ASSERT_EQUAL_INT(30, state.frame);
+    TEST_ASSERT_EQUAL_INT(30, game.state.frame);
 
-    game_free(&diag, &state);
+    test_game_teardown(&game);
 }
 
 void test_integration_boundary_all_directions(void)
 {
-    GameState state = {0};
-    Diag diag = {&state.error, &state.debug};
-    TEST_ASSERT_TRUE(game_init(&diag, &state, (RectU32){320, 240}));
-    TEST_ASSERT_TRUE(game_load_gamedata(
-        &diag, &state, (GamedataParams){.toml_string = fixture_gamedata, .texture_lookup = dummy_lookup}));
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_gamedata));
 
     float half = FRAME_SIZE / 2.0F;
     InputState input = {0};
 
     /* Push against each wall */
-    input.gp_axis[GAMEPAD_AXIS_LEFT_X] = -1.0F;
-    input.gp_axis[GAMEPAD_AXIS_LEFT_Y] = 0.0F;
-    for (int iteration = 0; iteration < 500; iteration++) {
-        game_update(&diag, &state, input, 1.0F / 60.0F);
-    }
-    TEST_ASSERT_FLOAT_WITHIN(0.1F, half, game_get_player_const(&state)->position.x);
+    input_state_set_gp_axis(&input, GAMEPAD_AXIS_LEFT_X, -1.0F);
+    input_state_set_gp_axis(&input, GAMEPAD_AXIS_LEFT_Y, 0.0F);
+    test_advance_frames(&game, input, 500);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, half, game_get_player_const(&game.state)->position.x);
 
-    input.gp_axis[GAMEPAD_AXIS_LEFT_X] = 0.0F;
-    input.gp_axis[GAMEPAD_AXIS_LEFT_Y] = -1.0F;
-    for (int iteration = 0; iteration < 500; iteration++) {
-        game_update(&diag, &state, input, 1.0F / 60.0F);
-    }
-    TEST_ASSERT_FLOAT_WITHIN(0.1F, half, game_get_player_const(&state)->position.y);
+    input_state_set_gp_axis(&input, GAMEPAD_AXIS_LEFT_X, 0.0F);
+    input_state_set_gp_axis(&input, GAMEPAD_AXIS_LEFT_Y, -1.0F);
+    test_advance_frames(&game, input, 500);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, half, game_get_player_const(&game.state)->position.y);
 
-    input.gp_axis[GAMEPAD_AXIS_LEFT_X] = 1.0F;
-    input.gp_axis[GAMEPAD_AXIS_LEFT_Y] = 0.0F;
-    for (int iteration = 0; iteration < 500; iteration++) {
-        game_update(&diag, &state, input, 1.0F / 60.0F);
-    }
-    TEST_ASSERT_FLOAT_WITHIN(0.1F, 320.0F - half, game_get_player_const(&state)->position.x);
+    input_state_set_gp_axis(&input, GAMEPAD_AXIS_LEFT_X, 1.0F);
+    input_state_set_gp_axis(&input, GAMEPAD_AXIS_LEFT_Y, 0.0F);
+    test_advance_frames(&game, input, 500);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 320.0F - half, game_get_player_const(&game.state)->position.x);
 
-    input.gp_axis[GAMEPAD_AXIS_LEFT_X] = 0.0F;
-    input.gp_axis[GAMEPAD_AXIS_LEFT_Y] = 1.0F;
-    for (int iteration = 0; iteration < 500; iteration++) {
-        game_update(&diag, &state, input, 1.0F / 60.0F);
-    }
-    TEST_ASSERT_FLOAT_WITHIN(0.1F, 240.0F - half, game_get_player_const(&state)->position.y);
+    input_state_set_gp_axis(&input, GAMEPAD_AXIS_LEFT_X, 0.0F);
+    input_state_set_gp_axis(&input, GAMEPAD_AXIS_LEFT_Y, 1.0F);
+    test_advance_frames(&game, input, 500);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 240.0F - half, game_get_player_const(&game.state)->position.y);
 
-    game_free(&diag, &state);
+    test_game_teardown(&game);
 }
 
 void test_integration_player_entity_spawns(void)
 {
-    GameState state = {0};
-    Diag diag = {&state.error, &state.debug};
-    TEST_ASSERT_TRUE(game_init(&diag, &state, (RectU32){640, 360}));
-    TEST_ASSERT_TRUE(game_load_gamedata(
-        &diag, &state, (GamedataParams){.toml_string = fixture_gamedata, .texture_lookup = dummy_lookup}));
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_gamedata));
 
     /* Player entity must exist */
-    TEST_ASSERT_TRUE(state.gamedata.player_index >= 0);
+    TEST_ASSERT_TRUE(game.state.gamedata.player_index >= 0);
 
-    const Entity *player = game_get_player_const(&state);
+    const Entity *player = game_get_player_const(&game.state);
     TEST_ASSERT_NOT_NULL(player);
 
     /* Player blueprint name and texture are observable from the
@@ -373,61 +343,47 @@ void test_integration_player_entity_spawns(void)
     /* Player must be controllable — move right for a few frames */
     float start_x = player->position.x;
     InputState input = {0};
-    input.gp_axis[GAMEPAD_AXIS_LEFT_X] = 1.0F;
-    for (int iteration = 0; iteration < 10; iteration++) {
-        game_update(&diag, &state, input, 1.0F / 60.0F);
-    }
-    TEST_ASSERT_TRUE(game_get_player_const(&state)->position.x > start_x);
+    input_state_set_gp_axis(&input, GAMEPAD_AXIS_LEFT_X, 1.0F);
+    test_advance_frames(&game, input, 10);
+    TEST_ASSERT_TRUE(game_get_player_const(&game.state)->position.x > start_x);
 
-    game_free(&diag, &state);
+    test_game_teardown(&game);
 }
 
 void test_integration_on_spawn_trigger_fires_on_load(void)
 {
-    GameState state = {0};
-    Diag diag = {&state.error, &state.debug};
-    TEST_ASSERT_TRUE(game_init(&diag, &state, (RectU32){320, 240}));
-    TEST_ASSERT_TRUE(game_load_gamedata(
-        &diag, &state, (GamedataParams){.toml_string = fixture_triggers, .texture_lookup = dummy_lookup}));
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_triggers));
 
     /* beacon blueprint has on_spawn → set_flag:beacon_spawned.
-     * No game_update needed — the flag must be set by game_load_gamedata. */
-    TEST_ASSERT_TRUE(flag_get(&state.gamedata.flags, "beacon_spawned"));
+     * No frame advance needed — the flag must be set by game_load_gamedata. */
+    TEST_ASSERT_TRUE(flag_get(&game.state.gamedata.flags, "beacon_spawned"));
 
-    game_free(&diag, &state);
+    test_game_teardown(&game);
 }
 
 void test_integration_enter_trigger_fires_on_overlap(void)
 {
-    GameState state = {0};
-    Diag diag = {&state.error, &state.debug};
-    TEST_ASSERT_TRUE(game_init(&diag, &state, (RectU32){320, 240}));
-    TEST_ASSERT_TRUE(game_load_gamedata(
-        &diag, &state, (GamedataParams){.toml_string = fixture_triggers, .texture_lookup = dummy_lookup}));
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_triggers));
 
     /* zone_entered must not be set before the player reaches the zone */
-    TEST_ASSERT_FALSE(flag_get(&state.gamedata.flags, "zone_entered"));
+    TEST_ASSERT_FALSE(flag_get(&game.state.gamedata.flags, "zone_entered"));
 
     /* Player at (100,100), collision [100,100,16,16]. Zone at (200,100), collision [200,100,32,32].
      * Player right edge starts at 116, zone left edge at 200. Gap = 84px.
      * Speed = 80 px/s → need ~63 frames at 1/60s. Run 80 to be safe. */
     InputState input = {0};
-    input.gp_axis[GAMEPAD_AXIS_LEFT_X] = 1.0F;
-    for (int iteration = 0; iteration < 80; iteration++) {
-        game_update(&diag, &state, input, 1.0F / 60.0F);
-    }
+    input_state_set_gp_axis(&input, GAMEPAD_AXIS_LEFT_X, 1.0F);
+    test_advance_frames(&game, input, 80);
 
-    TEST_ASSERT_TRUE(flag_get(&state.gamedata.flags, "zone_entered"));
+    TEST_ASSERT_TRUE(flag_get(&game.state.gamedata.flags, "zone_entered"));
 
-    game_free(&diag, &state);
+    test_game_teardown(&game);
 }
 
 void test_integration_enter_trigger_fires_only_once(void)
 {
-    GameState state = {0};
-    Diag diag = {&state.error, &state.debug};
-    TEST_ASSERT_TRUE(game_init(&diag, &state, (RectU32){320, 240}));
-
     /* Zone blueprint uses add_attr:self.enter_count,1 to count firings */
     static const char *fixture_enter_count = "[[blueprint]]\n"
                                              "name = \"player\"\n"
@@ -463,22 +419,20 @@ void test_integration_enter_trigger_fires_only_once(void)
                                              "blueprint = \"zone\"\n"
                                              "pos = [200, 100]\n";
 
-    TEST_ASSERT_TRUE(game_load_gamedata(
-        &diag, &state, (GamedataParams){.toml_string = fixture_enter_count, .texture_lookup = dummy_lookup}));
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_enter_count));
 
     /* Walk into zone and keep walking through it for 200 frames total */
     InputState input = {0};
-    input.gp_axis[GAMEPAD_AXIS_LEFT_X] = 1.0F;
-    for (int iteration = 0; iteration < 200; iteration++) {
-        game_update(&diag, &state, input, 1.0F / 60.0F);
-    }
+    input_state_set_gp_axis(&input, GAMEPAD_AXIS_LEFT_X, 1.0F);
+    test_advance_frames(&game, input, 200);
 
     /* enter_count must be exactly 1 — edge-triggered, not level-triggered */
-    const Entity *zone = test_find_entity_by_blueprint(&state, "zone");
+    const Entity *zone = test_find_entity_by_blueprint(&game.state, "zone");
     TEST_ASSERT_NOT_NULL(zone);
     TEST_ASSERT_EQUAL_INT(1, (int)attr_get_scoped_float(&zone->attrs, nullptr, "enter_count", 0.0F));
 
-    game_free(&diag, &state);
+    test_game_teardown(&game);
 }
 
 static char *read_file(const char *path)
@@ -510,22 +464,15 @@ void test_integration_real_gamedata_loads(void)
     char *content = read_file(GAMEDATA_PATH);
     TEST_ASSERT_NOT_NULL_MESSAGE(content, "could not read " GAMEDATA_PATH);
 
-    GameState state = {0};
-    Diag diag = {&state.error, &state.debug};
-    TEST_ASSERT_TRUE(game_init(&diag, &state, (RectU32){480, 270}));
-
-    bool loaded =
-        game_load_gamedata(&diag, &state, (GamedataParams){.toml_string = content, .texture_lookup = dummy_lookup});
-    TEST_ASSERT_TRUE_MESSAGE(loaded, error_get(&state.error));
-    TEST_ASSERT_TRUE(state.gamedata.player_index >= 0);
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, content));
+    TEST_ASSERT_TRUE(game.state.gamedata.player_index >= 0);
 
     /* Run a few frames to exercise update logic (timers, overlap tracking, etc.) */
     InputState input = {0};
-    for (int iteration = 0; iteration < 10; iteration++) {
-        game_update(&diag, &state, input, 1.0F / 60.0F);
-    }
+    test_advance_frames(&game, input, 10);
 
-    game_free(&diag, &state);
+    test_game_teardown(&game);
     free(content);
 }
 
@@ -630,29 +577,22 @@ void test_integration_transition_changes_level(void)
  */
 void test_integration_editor_pan_does_not_reset_player_position(void)
 {
-    GameState state = {0};
-    Diag diag = {&state.error, &state.debug};
-    TEST_ASSERT_TRUE(game_init(&diag, &state, (RectU32){320, 240}));
-    TEST_ASSERT_TRUE(game_load_gamedata(
-        &diag, &state, (GamedataParams){.toml_string = fixture_gamedata, .texture_lookup = dummy_lookup}));
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_gamedata));
 
     /* Player starts at TOML position (160, 120). */
-    const Entity *player = game_get_player_const(&state);
+    const Entity *player = game_get_player_const(&game.state);
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 160.0F, player->position.x);
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 120.0F, player->position.y);
 
-    /* Play mode: walk the player down-left for 60 frames so the position
+    /* Play mode: walk the player down for 60 frames so the position
      * visibly diverges from the TOML start. (Away from the rock at 200,120
      * and the tree at 50,50 — take a path clear of both.) */
-    state.editor_mode = false;
     InputState walk_input = {0};
-    walk_input.gp_axis[GAMEPAD_AXIS_LEFT_X] = 0.0F;
-    walk_input.gp_axis[GAMEPAD_AXIS_LEFT_Y] = 1.0F;
-    for (int iteration = 0; iteration < 60; iteration++) {
-        game_update(&diag, &state, walk_input, 1.0F / 60.0F);
-    }
+    input_state_set_gp_axis(&walk_input, GAMEPAD_AXIS_LEFT_Y, 1.0F);
+    test_advance_frames(&game, walk_input, 60);
 
-    player = game_get_player_const(&state);
+    player = game_get_player_const(&game.state);
     float walked_x = player->position.x;
     float walked_y = player->position.y;
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 160.0F, walked_x); /* unchanged in X */
@@ -660,8 +600,8 @@ void test_integration_editor_pan_does_not_reset_player_position(void)
 
     /* Toggle to editor mode. Player position must be preserved across
      * the mode toggle. */
-    state.editor_mode = true;
-    player = game_get_player_const(&state);
+    game.state.editor_mode = true;
+    player = game_get_player_const(&game.state);
     TEST_ASSERT_FLOAT_WITHIN(0.1F, walked_x, player->position.x);
     TEST_ASSERT_FLOAT_WITHIN(0.1F, walked_y, player->position.y);
 
@@ -671,18 +611,15 @@ void test_integration_editor_pan_does_not_reset_player_position(void)
      * player's position gets reset". This is the window in which the
      * reset is alleged to happen. */
     InputState pan_input = {0};
-    pan_input.gp_axis[GAMEPAD_AXIS_LEFT_X] = 1.0F;
-    pan_input.gp_axis[GAMEPAD_AXIS_LEFT_Y] = 0.0F;
-    for (int iteration = 0; iteration < 600; iteration++) {
-        game_update(&diag, &state, pan_input, 1.0F / 60.0F);
-    }
+    input_state_set_gp_axis(&pan_input, GAMEPAD_AXIS_LEFT_X, 1.0F);
+    test_advance_frames(&game, pan_input, 600);
 
     /* The player must still be exactly where we left them. */
-    player = game_get_player_const(&state);
+    player = game_get_player_const(&game.state);
     TEST_ASSERT_FLOAT_WITHIN(0.1F, walked_x, player->position.x);
     TEST_ASSERT_FLOAT_WITHIN(0.1F, walked_y, player->position.y);
 
-    game_free(&diag, &state);
+    test_game_teardown(&game);
 }
 
 /* --- Bug regression: editor undo-at-left-edge re-applies "Initial" snapshot
