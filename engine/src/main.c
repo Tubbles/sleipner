@@ -967,6 +967,18 @@ int main(void)
     blur_init(&blur, (int)game_bounds.width, (int)game_bounds.height);
     bool quit_requested = false;
 
+    FrameContext frame_ctx = {
+        .editor_state = &editor_state,
+        .editor_camera = &editor_camera,
+        .watches = &watches,
+        .undo_history = &undo_history,
+        .menu = &menu,
+        .font_preview_enabled = &font_preview_enabled,
+        .quit_requested = &quit_requested,
+        .save_fn = menu_dispatch_save,
+        .restore_fn = menu_dispatch_restore,
+    };
+
     while (!WindowShouldClose() && !quit_requested) {
         float delta_time = GetFrameTime();
 
@@ -980,43 +992,11 @@ int main(void)
         InputState input = {0};
         input_capture(&input);
 
-        handle_global_toggles(state, &input, &font_preview_enabled);
-
-        /* Pause menu open/close. Same press toggles. Capture the blur
-         * snapshot at open time and freeze it until the menu closes —
-         * the underlying scene is suspended while the menu is up so
-         * re-capturing each frame would just produce the same image. */
-        if (input_pressed(&input, &state->bindings, ACTION_MENU_TOGGLE)) {
-            toggle_menu_open(&menu);
-        }
-
         log_gamepad_changes(state, &prev_gamepads, state->frame);
 
-        /* ACTION_QUIT bundles Ctrl+Q (keyboard chord) and Select+Start
-         * (gamepad chord). Edge semantics: fires the frame the second
-         * part of the chord is pressed while the first is held. */
-        if (input_pressed(&input, &state->bindings, ACTION_QUIT)) {
-            goto quit;
-        }
+        frame_update(diag, state, &frame_ctx, input, delta_time);
 
-        if (menu.open) {
-            dispatch_menu_action((MenuDispatchCtx){.diag = diag,
-                                                   .state = state,
-                                                   .editor_state = &editor_state,
-                                                   .watches = &watches,
-                                                   .undo_history = &undo_history,
-                                                   .menu = &menu,
-                                                   .quit_requested = &quit_requested,
-                                                   .save_fn = menu_dispatch_save,
-                                                   .restore_fn = menu_dispatch_restore},
-                                 menu_handle_input(&menu, &input, &state->bindings));
-            if (editor_state.toast_timer > 0.0F) {
-                editor_state.toast_timer -= delta_time;
-            }
-        } else {
-            run_active_frame(diag, state, &editor_camera, &editor_state, &watches, &undo_history, input, delta_time);
-            handle_transition(diag, state, &undo_history);
-        }
+        handle_transition(diag, state, &undo_history);
 
         render_frame(state, (RenderParams){
                                 .target = target,
@@ -1031,7 +1011,6 @@ int main(void)
                             });
     }
 
-quit:
     debug_log(&state->debug, "exiting game loop (frame=%d t=%.1fs)", state->frame, state->elapsed);
 
     blur_cleanup(&blur);

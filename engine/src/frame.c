@@ -183,3 +183,38 @@ void run_active_frame(Diag *diag,
     }
     game_update(diag, state, input, delta_time);
 }
+
+void frame_update(Diag *diag, GameState *state, FrameContext *ctx, InputState input, float delta_time)
+{
+    handle_global_toggles(state, &input, ctx->font_preview_enabled);
+
+    if (input_pressed(&input, &state->bindings, ACTION_MENU_TOGGLE)) {
+        toggle_menu_open(ctx->menu);
+    }
+
+    if (input_pressed(&input, &state->bindings, ACTION_QUIT)) {
+        *ctx->quit_requested = true;
+    }
+
+    if (ctx->menu->open) {
+        MenuDispatchCtx dispatch_ctx = {
+            .diag = diag,
+            .state = state,
+            .editor_state = ctx->editor_state,
+            .watches = ctx->watches,
+            .undo_history = ctx->undo_history,
+            .menu = ctx->menu,
+            .quit_requested = ctx->quit_requested,
+            .save_fn = ctx->save_fn,
+            .restore_fn = ctx->restore_fn,
+        };
+        MenuAction action = menu_handle_input(ctx->menu, &input, &state->bindings);
+        dispatch_menu_action(dispatch_ctx, action);
+        if (ctx->editor_state->toast_timer > 0.0F) {
+            ctx->editor_state->toast_timer -= delta_time;
+        }
+    } else {
+        run_active_frame(diag, state, ctx->editor_camera, ctx->editor_state, ctx->watches, ctx->undo_history, input,
+                         delta_time);
+    }
+}

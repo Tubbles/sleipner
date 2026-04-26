@@ -76,3 +76,27 @@ void handle_editor_input(Diag *diag,
                          UndoHistory *undo_history,
                          InputState input,
                          float delta_time);
+
+/* Persistent state pointers for one full-frame dispatch.
+ * Production main.c builds this once and passes it to frame_update
+ * every loop iteration; headless tests build a TestGame fixture
+ * around the same fields. */
+typedef struct {
+    EditorState *editor_state;
+    Camera2D *editor_camera;
+    WatchList *watches;
+    UndoHistory *undo_history;
+    MenuState *menu;
+    bool *font_preview_enabled;
+    bool *quit_requested;
+    MenuSaveFn save_fn;
+    MenuRestoreFn restore_fn;
+} FrameContext;
+
+/* Run one full frame of input dispatch: global toggles, menu open /
+ * close press, ACTION_QUIT, then either menu navigation (if menu is
+ * open) or the active editor / play frame. Does NOT call
+ * handle_transition or render — production main.c does those
+ * separately. The same function drives both production and
+ * integration tests. */
+void frame_update(Diag *diag, GameState *state, FrameContext *ctx, InputState input, float delta_time);
