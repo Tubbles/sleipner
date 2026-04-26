@@ -3,6 +3,8 @@
 #include "alloc.h"
 #include "arena.h"
 #include "editor/keybindings.h"
+#include "input.h"
+#include "input_func.h"
 #include "map.h"
 #include "str.h"
 #include "strv.h"
@@ -388,12 +390,12 @@ static void enter_word_builder_empty(EditorState *editor_state)
     editor_state->sub_mode = EDITOR_SUB_WORD_BUILDER;
 }
 
-static void
-handle_blueprint_list_input(GameState *state, EditorState *editor_state, UndoHistory *undo_history, InputState input)
+static void handle_blueprint_list_input(GameState *state,
+                                        EditorState *editor_state,
+                                        UndoHistory *undo_history,
+                                        const InputState *input)
 {
-    (void)input;
-
-    if (binding_pressed(&blueprint_list_actions[BP_LIST_ACT_CANCEL])) {
+    if (input_pressed(input, &state->bindings, ACTION_CANCEL)) {
         editor_state->top_mode = EDITOR_TOP_SCENE;
         editor_state->selected_blueprint_index = -1;
         editor_state->blueprint_list_scroll = 0;
@@ -403,14 +405,14 @@ handle_blueprint_list_input(GameState *state, EditorState *editor_state, UndoHis
     int count = state->gamedata.blueprints.entries.count;
     int total = count + 1; /* +1 for "+NEW" sentinel */
 
-    if (binding_pressed(&blueprint_list_actions[BP_LIST_ACT_DOWN])) {
+    if (input_pressed(input, &state->bindings, ACTION_NAV_DOWN)) {
         editor_state->blueprint_list_scroll = (editor_state->blueprint_list_scroll + 1) % total;
     }
-    if (binding_pressed(&blueprint_list_actions[BP_LIST_ACT_UP])) {
+    if (input_pressed(input, &state->bindings, ACTION_NAV_UP)) {
         editor_state->blueprint_list_scroll = (editor_state->blueprint_list_scroll - 1 + total) % total;
     }
 
-    if (binding_pressed(&blueprint_list_actions[BP_LIST_ACT_CONFIRM])) {
+    if (input_pressed(input, &state->bindings, ACTION_CONFIRM)) {
         if (editor_state->blueprint_list_scroll == count) {
             /* "+NEW" sentinel — create new blueprint via word builder */
             editor_state->creating_blueprint = true;
@@ -421,7 +423,7 @@ handle_blueprint_list_input(GameState *state, EditorState *editor_state, UndoHis
             editor_state->blueprint_tree_index = -1;
         }
     }
-    if (binding_pressed(&blueprint_list_actions[BP_LIST_ACT_DELETE])) {
+    if (input_pressed(input, &state->bindings, ACTION_BLUEPRINT_REMOVE)) {
         if (editor_state->blueprint_list_scroll < count) {
             delete_blueprint(state, editor_state, undo_history);
         }
@@ -430,11 +432,11 @@ handle_blueprint_list_input(GameState *state, EditorState *editor_state, UndoHis
 
 /* --- Blueprint detail view --- */
 
-static void
-handle_blueprint_detail_input(GameState *state, EditorState *editor_state, UndoHistory *undo_history, InputState input)
+static void handle_blueprint_detail_input(GameState *state,
+                                          EditorState *editor_state,
+                                          UndoHistory *undo_history,
+                                          const InputState *input)
 {
-    (void)input;
-
     Blueprint *blueprint = selected_blueprint(state, editor_state);
     if (!blueprint) {
         editor_state->selected_blueprint_index = -1;
@@ -455,34 +457,34 @@ handle_blueprint_detail_input(GameState *state, EditorState *editor_state, UndoH
 
     /* Undo/redo runs before other actions so chord (L1+Left/Right, Ctrl+Z/Y) is not
      * masked by the plain Left/Right navigate bindings. */
-    if (binding_pressed(&blueprint_detail_actions[BP_DETAIL_ACT_UNDO])) {
+    if (input_pressed(input, &state->bindings, ACTION_EDITOR_UNDO)) {
         undo_history_step_back(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base);
         return;
     }
-    if (binding_pressed(&blueprint_detail_actions[BP_DETAIL_ACT_REDO])) {
+    if (input_pressed(input, &state->bindings, ACTION_EDITOR_REDO)) {
         undo_history_step_forward(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base);
         return;
     }
-    if (binding_pressed(&blueprint_detail_actions[BP_DETAIL_ACT_CANCEL])) {
+    if (input_pressed(input, &state->bindings, ACTION_CANCEL)) {
         handle_blueprint_cancel(editor_state);
         return;
     }
-    if (binding_pressed(&blueprint_detail_actions[BP_DETAIL_ACT_DOWN])) {
+    if (input_pressed(input, &state->bindings, ACTION_NAV_DOWN)) {
         handle_blueprint_navigate(blueprint, editor_state, 1);
     }
-    if (binding_pressed(&blueprint_detail_actions[BP_DETAIL_ACT_UP])) {
+    if (input_pressed(input, &state->bindings, ACTION_NAV_UP)) {
         handle_blueprint_navigate(blueprint, editor_state, -1);
     }
-    if (binding_pressed(&blueprint_detail_actions[BP_DETAIL_ACT_CONFIRM])) {
+    if (input_pressed(input, &state->bindings, ACTION_CONFIRM)) {
         handle_blueprint_select(state, editor_state, undo_history);
     }
-    if (binding_pressed(&blueprint_detail_actions[BP_DETAIL_ACT_DELETE])) {
+    if (input_pressed(input, &state->bindings, ACTION_BLUEPRINT_REMOVE)) {
         handle_blueprint_delete(state, editor_state, undo_history);
     }
-    if (binding_pressed(&blueprint_detail_actions[BP_DETAIL_ACT_TYPE_RADIAL])) {
+    if (input_pressed(input, &state->bindings, ACTION_EDITOR_TYPE_PROPS)) {
         open_type_radial(editor_state);
     }
-    if (binding_pressed(&blueprint_detail_actions[BP_DETAIL_ACT_DUPLICATE])) {
+    if (input_pressed(input, &state->bindings, ACTION_BLUEPRINT_DUPLICATE)) {
         editor_state->duplicating_blueprint = true;
         enter_word_builder_empty(editor_state);
     }
@@ -493,7 +495,7 @@ handle_blueprint_detail_input(GameState *state, EditorState *editor_state, UndoH
 void handle_blueprint_browse_input(GameState *state,
                                    EditorState *editor_state,
                                    UndoHistory *undo_history,
-                                   InputState input)
+                                   const InputState *input)
 {
     if (editor_state->selected_blueprint_index < 0) {
         handle_blueprint_list_input(state, editor_state, undo_history, input);

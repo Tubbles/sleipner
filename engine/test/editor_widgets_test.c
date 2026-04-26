@@ -1,14 +1,7 @@
 #include "fff.h"
 #include "unity.h"
 
-#include "../src/strv.c"           // NOLINT(bugprone-suspicious-include)
-#include "../src/str.c"            // NOLINT(bugprone-suspicious-include)
-#include "../src/error.c"          // NOLINT(bugprone-suspicious-include)
-#include "../src/arena_posix.c"    // NOLINT(bugprone-suspicious-include)
-#include "../src/attribute.c"      // NOLINT(bugprone-suspicious-include)
-#include "../src/entity.c"         // NOLINT(bugprone-suspicious-include)
-#include "../src/map.c"            // NOLINT(bugprone-suspicious-include)
-#include "../src/editor/widgets.c" // NOLINT(bugprone-suspicious-include)
+#include "raylib.h"
 
 DEFINE_FFF_GLOBALS;
 
@@ -17,7 +10,29 @@ FAKE_VOID_FUNC(DrawCircle, int, int, float, Color);
 FAKE_VOID_FUNC(DrawRing, Vector2, float, float, float, float, int, Color);
 FAKE_VOID_FUNC(DrawRectangle, int, int, int, int, Color);
 
-/* Cross-file editor fakes: keybindings.c */
+/* Raylib input fakes — input_capture polls these but the unit tests
+ * construct InputState directly; the fakes never actually fire. */
+FAKE_VALUE_FUNC(int, SetGamepadMappings, const char *);
+FAKE_VALUE_FUNC(bool, IsGamepadAvailable, int);
+FAKE_VALUE_FUNC(float, GetGamepadAxisMovement, int, int);
+FAKE_VALUE_FUNC(bool, IsKeyPressed, int);
+FAKE_VALUE_FUNC(bool, IsGamepadButtonPressed, int, int);
+FAKE_VALUE_FUNC(bool, IsKeyDown, int);
+FAKE_VALUE_FUNC(bool, IsGamepadButtonDown, int, int);
+
+#include "../src/strv.c"           // NOLINT(bugprone-suspicious-include)
+#include "../src/str.c"            // NOLINT(bugprone-suspicious-include)
+#include "../src/error.c"          // NOLINT(bugprone-suspicious-include)
+#include "../src/arena_posix.c"    // NOLINT(bugprone-suspicious-include)
+#include "../src/attribute.c"      // NOLINT(bugprone-suspicious-include)
+#include "../src/entity.c"         // NOLINT(bugprone-suspicious-include)
+#include "../src/input.c"          // NOLINT(bugprone-suspicious-include)
+#include "../src/input_func.c"     // NOLINT(bugprone-suspicious-include)
+#include "../src/map.c"            // NOLINT(bugprone-suspicious-include)
+#include "../src/vec.c"            // NOLINT(bugprone-suspicious-include)
+#include "../src/editor/widgets.c" // NOLINT(bugprone-suspicious-include)
+
+/* Cross-file editor fakes: keybindings.c (HUD-only after stage 8) */
 FAKE_VALUE_FUNC(bool, binding_pressed, const EditorBinding *);
 FAKE_VALUE_FUNC(bool, binding_held, const EditorBinding *);
 FAKE_VALUE_FUNC(bool, binding_modifier_down, const EditorBinding *);
@@ -61,12 +76,19 @@ const char *TextFormat(const char *text, ...)
     return "";
 }
 
-/* debug_log stub — variadic with __attribute__((format)) */
+/* debug_log stub — variadic with __attribute__((format)). The real
+ * debug.c is not pulled into the test, but input.c includes debug.h
+ * and main.c calls it from input_load_mappings; provide a no-op stub. */
+/* debug_log lives in debug.c which we do NOT include; provide a stub. */
+/* Note: input.c uses debug_log in input_load_mappings. */
+#ifndef WIDGETS_TEST_DEBUG_LOG_STUBBED
+#define WIDGETS_TEST_DEBUG_LOG_STUBBED 1
 void debug_log(DebugState *dbg, const char *format, ...)
 {
     (void)dbg;
     (void)format;
 }
+#endif
 
 /* VEC_IMPL / MAP_IMPL for types needed by test setup/cleanup */
 VEC_IMPL(blueprint_child, BlueprintChild)
@@ -110,6 +132,17 @@ static Blueprint make_named_blueprint(const char *name)
     Blueprint blueprint = {0};
     TEST_ASSERT_TRUE(attr_set_string(&test_heap_alloc, &blueprint.attrs, (AttrStringPair){"name", name}));
     return blueprint;
+}
+
+static BindingStore test_widget_bindings;
+static bool test_widget_bindings_loaded;
+static const BindingStore *get_test_bindings(void)
+{
+    if (!test_widget_bindings_loaded) {
+        input_func_load_defaults(&test_widget_bindings, test_heap_alloc);
+        test_widget_bindings_loaded = true;
+    }
+    return &test_widget_bindings;
 }
 
 static void reset_input_fakes(void)
@@ -348,67 +381,55 @@ void test_editor_word_builder_item_negative_index(void)
 
 void test_editor_word_builder_nav_up(void)
 {
-    reset_input_fakes();
-    target_key_for_press = KEY_UP;
-    binding_pressed_fake.custom_fake = press_specific_binding;
-
+    InputState input = {0};
+    input_state_press_key(&input, KEY_UP);
     EditorState editor_state = {.word_builder_scroll = 5};
-    word_builder_navigate(&editor_state, 10);
+    word_builder_navigate(&editor_state, &input, get_test_bindings(), 10);
     TEST_ASSERT_EQUAL_INT(4, editor_state.word_builder_scroll);
 }
 
 void test_editor_word_builder_nav_up_clamped(void)
 {
-    reset_input_fakes();
-    target_key_for_press = KEY_UP;
-    binding_pressed_fake.custom_fake = press_specific_binding;
-
+    InputState input = {0};
+    input_state_press_key(&input, KEY_UP);
     EditorState editor_state = {.word_builder_scroll = 0};
-    word_builder_navigate(&editor_state, 10);
+    word_builder_navigate(&editor_state, &input, get_test_bindings(), 10);
     TEST_ASSERT_EQUAL_INT(0, editor_state.word_builder_scroll);
 }
 
 void test_editor_word_builder_nav_down(void)
 {
-    reset_input_fakes();
-    target_key_for_press = KEY_DOWN;
-    binding_pressed_fake.custom_fake = press_specific_binding;
-
+    InputState input = {0};
+    input_state_press_key(&input, KEY_DOWN);
     EditorState editor_state = {.word_builder_scroll = 0};
-    word_builder_navigate(&editor_state, 10);
+    word_builder_navigate(&editor_state, &input, get_test_bindings(), 10);
     TEST_ASSERT_EQUAL_INT(1, editor_state.word_builder_scroll);
 }
 
 void test_editor_word_builder_nav_down_clamped(void)
 {
-    reset_input_fakes();
-    target_key_for_press = KEY_DOWN;
-    binding_pressed_fake.custom_fake = press_specific_binding;
-
+    InputState input = {0};
+    input_state_press_key(&input, KEY_DOWN);
     EditorState editor_state = {.word_builder_scroll = 9};
-    word_builder_navigate(&editor_state, 10);
+    word_builder_navigate(&editor_state, &input, get_test_bindings(), 10);
     TEST_ASSERT_EQUAL_INT(9, editor_state.word_builder_scroll);
 }
 
 void test_editor_word_builder_nav_page_up(void)
 {
-    reset_input_fakes();
-    target_key_for_press = KEY_Q;
-    binding_pressed_fake.custom_fake = press_specific_binding;
-
+    InputState input = {0};
+    input_state_press_key(&input, KEY_Q);
     EditorState editor_state = {.word_builder_scroll = 8};
-    word_builder_navigate(&editor_state, 20);
+    word_builder_navigate(&editor_state, &input, get_test_bindings(), 20);
     TEST_ASSERT_EQUAL_INT(8 - WORD_BUILDER_PAGE_SIZE, editor_state.word_builder_scroll);
 }
 
 void test_editor_word_builder_nav_page_down(void)
 {
-    reset_input_fakes();
-    target_key_for_press = KEY_E;
-    binding_pressed_fake.custom_fake = press_specific_binding;
-
+    InputState input = {0};
+    input_state_press_key(&input, KEY_E);
     EditorState editor_state = {.word_builder_scroll = 0};
-    word_builder_navigate(&editor_state, 20);
+    word_builder_navigate(&editor_state, &input, get_test_bindings(), 20);
     TEST_ASSERT_EQUAL_INT(WORD_BUILDER_PAGE_SIZE, editor_state.word_builder_scroll);
 }
 
@@ -569,45 +590,37 @@ void test_fuzzy_finder_total_count_value(void)
 
 void test_fuzzy_finder_navigate_up_clamped(void)
 {
-    reset_input_fakes();
-    target_key_for_press = KEY_UP;
-    binding_pressed_fake.custom_fake = press_specific_binding;
-
+    InputState input = {0};
+    input_state_press_key(&input, KEY_UP);
     EditorState editor_state = {.fuzzy_finder_scroll = 0};
-    fuzzy_finder_navigate(&editor_state, 10);
+    fuzzy_finder_navigate(&editor_state, &input, get_test_bindings(), 10);
     TEST_ASSERT_EQUAL_INT(0, editor_state.fuzzy_finder_scroll);
 }
 
 void test_fuzzy_finder_navigate_down_clamped(void)
 {
-    reset_input_fakes();
-    target_key_for_press = KEY_DOWN;
-    binding_pressed_fake.custom_fake = press_specific_binding;
-
+    InputState input = {0};
+    input_state_press_key(&input, KEY_DOWN);
     EditorState editor_state = {.fuzzy_finder_scroll = 9};
-    fuzzy_finder_navigate(&editor_state, 10);
+    fuzzy_finder_navigate(&editor_state, &input, get_test_bindings(), 10);
     TEST_ASSERT_EQUAL_INT(9, editor_state.fuzzy_finder_scroll);
 }
 
 void test_fuzzy_finder_navigate_page_up(void)
 {
-    reset_input_fakes();
-    target_key_for_press = KEY_Q;
-    binding_pressed_fake.custom_fake = press_specific_binding;
-
+    InputState input = {0};
+    input_state_press_key(&input, KEY_Q);
     EditorState editor_state = {.fuzzy_finder_scroll = 8};
-    fuzzy_finder_navigate(&editor_state, 20);
+    fuzzy_finder_navigate(&editor_state, &input, get_test_bindings(), 20);
     TEST_ASSERT_EQUAL_INT(8 - FUZZY_FINDER_PAGE_SIZE, editor_state.fuzzy_finder_scroll);
 }
 
 void test_fuzzy_finder_navigate_page_down(void)
 {
-    reset_input_fakes();
-    target_key_for_press = KEY_E;
-    binding_pressed_fake.custom_fake = press_specific_binding;
-
+    InputState input = {0};
+    input_state_press_key(&input, KEY_E);
     EditorState editor_state = {.fuzzy_finder_scroll = 0};
-    fuzzy_finder_navigate(&editor_state, 20);
+    fuzzy_finder_navigate(&editor_state, &input, get_test_bindings(), 20);
     TEST_ASSERT_EQUAL_INT(FUZZY_FINDER_PAGE_SIZE, editor_state.fuzzy_finder_scroll);
 }
 

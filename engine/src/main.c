@@ -837,15 +837,15 @@ static void handle_editor_input(Diag *diag,
     } else if (editor_state->sub_mode == EDITOR_SUB_ATTR_EDIT) {
         handle_attr_edit_input(state, editor_state, undo_history, &input, delta_time);
     } else if (editor_state->sub_mode == EDITOR_SUB_RADIAL) {
-        handle_radial_input(editor_state, input);
+        handle_radial_input(editor_state, &input, &state->bindings);
     } else if (editor_state->sub_mode == EDITOR_SUB_WORD_BUILDER) {
-        handle_word_builder_input(diag, state, editor_state, undo_history);
+        handle_word_builder_input(diag, state, editor_state, undo_history, &input);
     } else if (editor_state->sub_mode == EDITOR_SUB_FUZZY_FINDER) {
-        handle_fuzzy_finder_input(diag, state, editor_state, undo_history, texture_registry_lookup, state);
+        handle_fuzzy_finder_input(diag, state, editor_state, undo_history, texture_registry_lookup, state, &input);
     } else if (editor_state->sub_mode == EDITOR_SUB_GAMEPAD_KB) {
-        handle_gamepad_kb_input(editor_state, input);
+        handle_gamepad_kb_input(editor_state, &input, &state->bindings);
     } else if (editor_state->top_mode == EDITOR_TOP_BLUEPRINT) {
-        handle_blueprint_browse_input(state, editor_state, undo_history, input);
+        handle_blueprint_browse_input(state, editor_state, undo_history, &input);
     } else {
         handle_browse_input(state, camera, editor_state, watches, undo_history, input, delta_time);
     }

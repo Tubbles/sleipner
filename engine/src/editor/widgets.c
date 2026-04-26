@@ -5,6 +5,8 @@
 #include "debug.h"
 #include "editor/keybindings.h"
 #include "error.h"
+#include "input.h"
+#include "input_func.h"
 #include "str.h"
 #include "strv.h"
 
@@ -115,15 +117,16 @@ void draw_radial_picker(ScreenSize screen, const EditorState *editor_state, Font
     DrawCircle(center_x, center_y, RADIAL_INNER_RADIUS, debug_bg_color);
 }
 
-void handle_radial_input(EditorState *editor_state, InputState input)
+void handle_radial_input(EditorState *editor_state, const InputState *input, const BindingStore *bindings)
 {
-    editor_state->radial_selected = radial_sector_from_stick(input.left_stick, editor_state->radial_item_count);
-    if (binding_pressed(&radial_actions[RADIAL_ACT_CANCEL])) {
+    Vector2 stick = input_axis_pair(input, bindings, AXIS_PRIMARY_X, AXIS_PRIMARY_Y);
+    editor_state->radial_selected = radial_sector_from_stick(stick, editor_state->radial_item_count);
+    if (input_pressed(input, bindings, ACTION_CANCEL)) {
         editor_state->radial_confirmed = -1;
         editor_state->sub_mode = EDITOR_SUB_BROWSE;
         return;
     }
-    if (binding_pressed(&radial_actions[RADIAL_ACT_CONFIRM])) {
+    if (input_pressed(input, bindings, ACTION_CONFIRM)) {
         editor_state->radial_confirmed = editor_state->radial_selected;
         editor_state->sub_mode = EDITOR_SUB_BROWSE;
     }
@@ -325,33 +328,35 @@ static void word_builder_confirm(Diag *diag, GameState *state, EditorState *edit
     }
 }
 
-static void word_builder_navigate(EditorState *editor_state, int total)
+static void
+word_builder_navigate(EditorState *editor_state, const InputState *input, const BindingStore *bindings, int total)
 {
-    if (binding_pressed(&word_builder_actions[WORD_BUILDER_ACT_UP])) {
+    if (input_pressed(input, bindings, ACTION_NAV_UP)) {
         if (editor_state->word_builder_scroll > 0) {
             editor_state->word_builder_scroll--;
         }
     }
-    if (binding_pressed(&word_builder_actions[WORD_BUILDER_ACT_DOWN])) {
+    if (input_pressed(input, bindings, ACTION_NAV_DOWN)) {
         if (editor_state->word_builder_scroll < total - 1) {
             editor_state->word_builder_scroll++;
         }
     }
-    if (binding_pressed(&word_builder_actions[WORD_BUILDER_ACT_PAGE_UP])) {
+    if (input_pressed(input, bindings, ACTION_PAGE_UP)) {
         int new_scroll = editor_state->word_builder_scroll - WORD_BUILDER_PAGE_SIZE;
         editor_state->word_builder_scroll = (new_scroll < 0) ? 0 : new_scroll;
     }
-    if (binding_pressed(&word_builder_actions[WORD_BUILDER_ACT_PAGE_DOWN])) {
+    if (input_pressed(input, bindings, ACTION_PAGE_DOWN)) {
         int new_scroll = editor_state->word_builder_scroll + WORD_BUILDER_PAGE_SIZE;
         editor_state->word_builder_scroll = (new_scroll >= total) ? total - 1 : new_scroll;
     }
 }
 
-void handle_word_builder_input(Diag *diag, GameState *state, EditorState *editor_state, UndoHistory *undo_history)
+void handle_word_builder_input(
+    Diag *diag, GameState *state, EditorState *editor_state, UndoHistory *undo_history, const InputState *input)
 {
     int total = word_builder_total_count(state);
-    word_builder_navigate(editor_state, total);
-    if (binding_pressed(&word_builder_actions[WORD_BUILDER_ACT_CONFIRM])) {
+    word_builder_navigate(editor_state, input, &state->bindings, total);
+    if (input_pressed(input, &state->bindings, ACTION_CONFIRM)) {
         if (editor_state->word_builder_scroll == 0 && editor_state->creating_blueprint) {
             create_blank_blueprint(state, editor_state, undo_history, editor_state->word_builder_buf);
             editor_state->creating_blueprint = false;
@@ -382,13 +387,13 @@ void handle_word_builder_input(Diag *diag, GameState *state, EditorState *editor
             word_builder_append(editor_state, word_builder_item(state, editor_state->word_builder_scroll));
         }
     }
-    if (binding_pressed(&word_builder_actions[WORD_BUILDER_ACT_KEYBOARD])) {
+    if (input_pressed(input, &state->bindings, ACTION_WB_KEYBOARD_MODE)) {
         editor_state->keyboard_group = -1;
         editor_state->keyboard_selected = -1;
         editor_state->sub_mode = EDITOR_SUB_GAMEPAD_KB;
         return;
     }
-    if (binding_pressed(&word_builder_actions[WORD_BUILDER_ACT_CANCEL])) {
+    if (input_pressed(input, &state->bindings, ACTION_CANCEL)) {
         if (editor_state->word_builder_len > 0) {
             word_builder_pop(editor_state);
         } else {
@@ -567,23 +572,24 @@ void draw_fuzzy_finder_panel(ScreenSize screen, const GameState *state, const Ed
     }
 }
 
-static void fuzzy_finder_navigate(EditorState *editor_state, int total)
+static void
+fuzzy_finder_navigate(EditorState *editor_state, const InputState *input, const BindingStore *bindings, int total)
 {
-    if (binding_pressed(&fuzzy_finder_actions[FUZZY_FINDER_ACT_UP])) {
+    if (input_pressed(input, bindings, ACTION_NAV_UP)) {
         if (editor_state->fuzzy_finder_scroll > 0) {
             editor_state->fuzzy_finder_scroll--;
         }
     }
-    if (binding_pressed(&fuzzy_finder_actions[FUZZY_FINDER_ACT_DOWN])) {
+    if (input_pressed(input, bindings, ACTION_NAV_DOWN)) {
         if (editor_state->fuzzy_finder_scroll < total - 1) {
             editor_state->fuzzy_finder_scroll++;
         }
     }
-    if (binding_pressed(&fuzzy_finder_actions[FUZZY_FINDER_ACT_PAGE_UP])) {
+    if (input_pressed(input, bindings, ACTION_PAGE_UP)) {
         int new_scroll = editor_state->fuzzy_finder_scroll - FUZZY_FINDER_PAGE_SIZE;
         editor_state->fuzzy_finder_scroll = (new_scroll < 0) ? 0 : new_scroll;
     }
-    if (binding_pressed(&fuzzy_finder_actions[FUZZY_FINDER_ACT_PAGE_DOWN])) {
+    if (input_pressed(input, bindings, ACTION_PAGE_DOWN)) {
         int new_scroll = editor_state->fuzzy_finder_scroll + FUZZY_FINDER_PAGE_SIZE;
         editor_state->fuzzy_finder_scroll = (new_scroll >= total) ? total - 1 : new_scroll;
     }
@@ -659,11 +665,12 @@ void handle_fuzzy_finder_input(Diag *diag,
                                EditorState *editor_state,
                                UndoHistory *undo_history,
                                TextureLookupFn texture_lookup,
-                               void *texture_user_data)
+                               void *texture_user_data,
+                               const InputState *input)
 {
     int total = fuzzy_finder_total_count(editor_state);
-    fuzzy_finder_navigate(editor_state, total);
-    if (binding_pressed(&fuzzy_finder_actions[FUZZY_FINDER_ACT_CONFIRM])) {
+    fuzzy_finder_navigate(editor_state, input, &state->bindings, total);
+    if (input_pressed(input, &state->bindings, ACTION_CONFIRM)) {
         if (editor_state->adding_child) {
             if (editor_state->fuzzy_finder_scroll == 0) {
                 fuzzy_finder_enter_word_builder(state, editor_state);
@@ -696,7 +703,7 @@ void handle_fuzzy_finder_input(Diag *diag,
             editor_state->sub_mode = EDITOR_SUB_BROWSE;
         }
     }
-    if (binding_pressed(&fuzzy_finder_actions[FUZZY_FINDER_ACT_CANCEL])) {
+    if (input_pressed(input, &state->bindings, ACTION_CANCEL)) {
         editor_state->adding_attr = false;
         editor_state->adding_child = false;
         editor_state->adding_blueprint_attr = false;
@@ -813,11 +820,12 @@ void draw_gamepad_kb(ScreenSize screen, const EditorState *editor_state, Font ui
     }
 }
 
-void handle_gamepad_kb_input(EditorState *editor_state, InputState input)
+void handle_gamepad_kb_input(EditorState *editor_state, const InputState *input, const BindingStore *bindings)
 {
     int total = keyboard_item_count(editor_state);
-    editor_state->keyboard_selected = radial_sector_from_stick(input.left_stick, total);
-    if (binding_pressed(&gamepad_kb_actions[GAMEPAD_KB_ACT_CONFIRM])) {
+    Vector2 stick = input_axis_pair(input, bindings, AXIS_PRIMARY_X, AXIS_PRIMARY_Y);
+    editor_state->keyboard_selected = radial_sector_from_stick(stick, total);
+    if (input_pressed(input, bindings, ACTION_CONFIRM)) {
         if (editor_state->keyboard_selected >= 0) {
             if (editor_state->keyboard_group < 0) {
                 editor_state->keyboard_group = editor_state->keyboard_selected;
@@ -831,7 +839,7 @@ void handle_gamepad_kb_input(EditorState *editor_state, InputState input)
             }
         }
     }
-    if (binding_pressed(&gamepad_kb_actions[GAMEPAD_KB_ACT_CANCEL])) {
+    if (input_pressed(input, bindings, ACTION_CANCEL)) {
         if (editor_state->keyboard_group >= 0) {
             editor_state->keyboard_group = -1;
         } else if (editor_state->word_builder_len > 0) {
@@ -840,7 +848,7 @@ void handle_gamepad_kb_input(EditorState *editor_state, InputState input)
             editor_state->sub_mode = EDITOR_SUB_WORD_BUILDER;
         }
     }
-    if (binding_pressed(&gamepad_kb_actions[GAMEPAD_KB_ACT_SWITCH])) {
+    if (input_pressed(input, bindings, ACTION_WB_KEYBOARD_MODE)) {
         editor_state->sub_mode = EDITOR_SUB_WORD_BUILDER;
     }
 }

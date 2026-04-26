@@ -17,6 +17,14 @@ FAKE_VALUE_FUNC(bool, binding_pressed, const EditorBinding *);
 FAKE_VALUE_FUNC(bool, binding_held, const EditorBinding *);
 FAKE_VALUE_FUNC(bool, binding_modifier_down, const EditorBinding *);
 
+/* Cross-file editor fakes: input_func.c (blueprint.c calls input_pressed
+ * since the stage 8 migration; tests don't drive input here, so a fake
+ * returning false everywhere is sufficient). */
+FAKE_VALUE_FUNC(bool, input_pressed, const InputState *, const BindingStore *, InputAction);
+FAKE_VALUE_FUNC(bool, input_held, const InputState *, const BindingStore *, InputAction);
+FAKE_VALUE_FUNC(float, input_axis, const InputState *, const BindingStore *, InputAxis);
+FAKE_VALUE_FUNC(Vector2, input_axis_pair, const InputState *, const BindingStore *, InputAxis, InputAxis);
+
 /* Cross-file editor fakes: draw.c */
 FAKE_VALUE_FUNC(bool, toggle_pressed, ToggleBinding);
 
