@@ -43,6 +43,11 @@ typedef struct {
     int selected;
     Font font;
     bool font_loaded;
+    /* Lazy blur capture flag. Set false on close, set true by the
+     * renderer the first frame the menu draws. Lets state transitions
+     * (menu_open / menu_close) stay free of render side effects so
+     * headless tests can drive the menu without a GL context. */
+    bool blur_captured;
 } MenuState;
 
 /* Zero-init the menu. The display font is provided separately via

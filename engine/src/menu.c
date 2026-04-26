@@ -79,6 +79,7 @@ void menu_open(MenuState *menu)
 void menu_close(MenuState *menu)
 {
     menu->open = false;
+    menu->blur_captured = false;
 }
 
 MenuAction menu_handle_input(MenuState *menu, const InputState *input, const BindingStore *bindings)

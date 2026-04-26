@@ -833,8 +833,10 @@ typedef struct {
     bool is_dirty;
     EditorState editor_state;
     const WatchList *watches;
-    const MenuState *menu;
-    const BlurPipeline *blur;
+    /* menu and blur are mutable: render_frame lazily calls blur_capture
+     * the first frame the menu is open and flips menu->blur_captured. */
+    MenuState *menu;
+    BlurPipeline *blur;
 } RenderParams;
 
 static void render_frame(GameState *state, RenderParams params)
@@ -919,6 +921,10 @@ static void render_frame(GameState *state, RenderParams params)
         draw_toast(&params.editor_state, screen, state->assets.ui_font);
     }
     draw_hints_bar(state->editor_mode, &params.editor_state, params.is_dirty, screen, state->assets.ui_font);
+    if (params.menu->open && !params.menu->blur_captured) {
+        blur_capture(params.blur, params.target.texture);
+        params.menu->blur_captured = true;
+    }
     menu_render(params.menu, params.blur, state->screen_width, state->screen_height);
     EndDrawing();
 }
@@ -963,12 +969,11 @@ static void run_active_frame(Diag *diag,
     handle_transition(diag, state, undo_history);
 }
 
-static void toggle_menu_open(MenuState *menu, BlurPipeline *blur, RenderTexture2D scene)
+static void toggle_menu_open(MenuState *menu)
 {
     if (menu->open) {
         menu_close(menu);
     } else {
-        blur_capture(blur, scene.texture);
         menu_open(menu);
     }
 }
@@ -1164,7 +1169,7 @@ int main(void)
          * the underlying scene is suspended while the menu is up so
          * re-capturing each frame would just produce the same image. */
         if (input_pressed(&input, &state->bindings, ACTION_MENU_TOGGLE)) {
-            toggle_menu_open(&menu, &blur, target);
+            toggle_menu_open(&menu);
         }
 
         log_gamepad_changes(state, &prev_gamepads, state->frame);
