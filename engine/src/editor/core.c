@@ -688,19 +688,20 @@ void handle_drag_input(
         return;
     }
     Entity *entity = &state->gamedata.current_level.entities.data[sel];
-    if (binding_pressed(&drag_actions[DRAG_ACT_CONFIRM])) {
+    if (input_pressed(&input, &state->bindings, ACTION_CONFIRM)) {
         undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
                                strv_from_cstr("Move entity"));
         editor_state->sub_mode = EDITOR_SUB_BROWSE;
         return;
     }
-    if (binding_pressed(&drag_actions[DRAG_ACT_CANCEL])) {
+    if (input_pressed(&input, &state->bindings, ACTION_CANCEL)) {
         entity->position = editor_state->saved_position;
         editor_state->sub_mode = EDITOR_SUB_BROWSE;
         return;
     }
-    entity->position.x += input.left_stick.x * EDITOR_CAMERA_SPEED * delta_time;
-    entity->position.y += input.left_stick.y * EDITOR_CAMERA_SPEED * delta_time;
+    Vector2 move = input_axis_pair(&input, &state->bindings, AXIS_PRIMARY_X, AXIS_PRIMARY_Y);
+    entity->position.x += move.x * EDITOR_CAMERA_SPEED * delta_time;
+    entity->position.y += move.y * EDITOR_CAMERA_SPEED * delta_time;
 }
 
 void handle_handle_input(
@@ -712,7 +713,7 @@ void handle_handle_input(
     }
     Entity *entity = &state->gamedata.current_level.entities.data[sel];
     Allocator alloc = allocator_arena(&state->gamedata_arena);
-    if (binding_pressed(&handles_actions[HANDLES_ACT_CONFIRM])) {
+    if (input_pressed(&input, &state->bindings, ACTION_CONFIRM)) {
         Blueprint *blueprint = find_blueprint_by_name(state, entity->blueprint_name.ptr);
         if (blueprint != nullptr) {
             (void)attr_set_float(&alloc, &blueprint->attrs, "collision_offset_x", editor_state->saved_col_offset.x);
@@ -729,7 +730,7 @@ void handle_handle_input(
         editor_state->sub_mode = EDITOR_SUB_BROWSE;
         return;
     }
-    if (binding_pressed(&handles_actions[HANDLES_ACT_CANCEL])) {
+    if (input_pressed(&input, &state->bindings, ACTION_CANCEL)) {
         attr_remove(&alloc, &entity->attrs, "collision_offset_x");
         attr_remove(&alloc, &entity->attrs, "collision_offset_y");
         attr_remove(&alloc, &entity->attrs, "collision_w");
@@ -737,10 +738,12 @@ void handle_handle_input(
         editor_state->sub_mode = EDITOR_SUB_BROWSE;
         return;
     }
-    editor_state->saved_col_offset.x += input.left_stick.x * EDITOR_HANDLE_SPEED * delta_time;
-    editor_state->saved_col_offset.y += input.left_stick.y * EDITOR_HANDLE_SPEED * delta_time;
-    editor_state->saved_col_size.x += input.right_stick.x * EDITOR_HANDLE_SPEED * delta_time;
-    editor_state->saved_col_size.y += input.right_stick.y * EDITOR_HANDLE_SPEED * delta_time;
+    Vector2 offset_delta = input_axis_pair(&input, &state->bindings, AXIS_PRIMARY_X, AXIS_PRIMARY_Y);
+    Vector2 size_delta = input_axis_pair(&input, &state->bindings, AXIS_SECONDARY_X, AXIS_SECONDARY_Y);
+    editor_state->saved_col_offset.x += offset_delta.x * EDITOR_HANDLE_SPEED * delta_time;
+    editor_state->saved_col_offset.y += offset_delta.y * EDITOR_HANDLE_SPEED * delta_time;
+    editor_state->saved_col_size.x += size_delta.x * EDITOR_HANDLE_SPEED * delta_time;
+    editor_state->saved_col_size.y += size_delta.y * EDITOR_HANDLE_SPEED * delta_time;
     if (editor_state->saved_col_size.x < 0.0F) {
         editor_state->saved_col_size.x = 0.0F;
     }

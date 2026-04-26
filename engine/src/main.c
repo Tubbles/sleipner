@@ -43,8 +43,6 @@ const char *__lsan_default_suppressions(void)
 #include "debug.h"
 #include "depth_sort.h"
 #include "editor/editor.h"
-#include "editor/keybindings.h"
-#include "editor/main_bindings.h"
 #include "entity.h"
 #include "diag.h"
 #include "game.h"
@@ -773,7 +771,7 @@ static void handle_place_input(Diag *diag,
         editor_state->sub_mode = EDITOR_SUB_BROWSE;
         return;
     }
-    if (binding_pressed(&place_actions[PLACE_ACT_CONFIRM])) {
+    if (input_pressed(&input, &state->bindings, ACTION_CONFIRM)) {
         int bp_index = editor_state->place_blueprint_index;
         const Blueprint *blueprint = &state->gamedata.blueprints.entries.data[bp_index];
         Allocator alloc = allocator_arena(&state->gamedata_arena);
@@ -797,22 +795,22 @@ static void handle_place_input(Diag *diag,
                                    strv_from_cstr("Place entity"));
         }
     }
-    if (binding_pressed(&place_actions[PLACE_ACT_CANCEL])) {
+    if (input_pressed(&input, &state->bindings, ACTION_CANCEL)) {
         editor_state->sub_mode = EDITOR_SUB_BROWSE;
     }
-    if (binding_pressed(&place_actions[PLACE_ACT_UP])) {
+    if (input_pressed(&input, &state->bindings, ACTION_NAV_UP)) {
         int count = state->gamedata.blueprints.entries.count;
         editor_state->place_blueprint_index = (editor_state->place_blueprint_index - 1 + count) % count;
     }
-    if (binding_pressed(&place_actions[PLACE_ACT_DOWN])) {
+    if (input_pressed(&input, &state->bindings, ACTION_NAV_DOWN)) {
         int count = state->gamedata.blueprints.entries.count;
         editor_state->place_blueprint_index = (editor_state->place_blueprint_index + 1) % count;
     }
-    if (binding_pressed(&place_actions[PLACE_ACT_PAGE_UP])) {
+    if (input_pressed(&input, &state->bindings, ACTION_PAGE_UP)) {
         int new_index = editor_state->place_blueprint_index - EDITOR_PLACE_PAGE_SIZE;
         editor_state->place_blueprint_index = (new_index < 0) ? 0 : new_index;
     }
-    if (binding_pressed(&place_actions[PLACE_ACT_PAGE_DOWN])) {
+    if (input_pressed(&input, &state->bindings, ACTION_PAGE_DOWN)) {
         int count = state->gamedata.blueprints.entries.count;
         int new_index = editor_state->place_blueprint_index + EDITOR_PLACE_PAGE_SIZE;
         editor_state->place_blueprint_index = (new_index >= count) ? count - 1 : new_index;
