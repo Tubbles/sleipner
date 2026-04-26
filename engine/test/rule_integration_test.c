@@ -609,8 +609,14 @@ void test_integration_timer_periodic_fires_repeatedly(void)
 
 void test_integration_timer_destroy_cancels(void)
 {
-    /* Entity creates a timer on_spawn and destroys it on a separate event.
-     * After the destroy event no fire should occur even past the duration. */
+    /* Black-box shape:
+     *   - thing has timer + cancel-destroys-timer + tick-fires rules.
+     *   - cancel_button has on-interact rule firing fire_event:cancel.
+     *   - player overlaps cancel_button so a single ACTION_INTERACT
+     *     press fires the cancel event, which thing's rule consumes
+     *     to destroy its timer.
+     * After the player interacts and time advances past the timer
+     * duration, fired_count must remain 0 — the timer was cancelled. */
     static const char *gamedata = "[[blueprint]]\n"
                                   "name = \"thing\"\n"
                                   "texture = \"t.png\"\n"
@@ -628,6 +634,22 @@ void test_integration_timer_destroy_cancels(void)
                                   "trigger = \"timer:tick\"\n"
                                   "actions = [\"add_attr:self.fired_count,1\"]\n"
                                   "\n"
+                                  "[[blueprint]]\n"
+                                  "name = \"player\"\n"
+                                  "texture = \"p.png\"\n"
+                                  "src = [0, 0, 16, 16]\n"
+                                  "behavior = \"player\"\n"
+                                  "speed = 0\n"
+                                  "\n"
+                                  "[[blueprint]]\n"
+                                  "name = \"cancel_button\"\n"
+                                  "texture = \"b.png\"\n"
+                                  "src = [0, 0, 16, 16]\n"
+                                  "\n"
+                                  "[[blueprint.rule]]\n"
+                                  "trigger = \"interact\"\n"
+                                  "actions = [\"fire_event:cancel\"]\n"
+                                  "\n"
                                   "[[level]]\n"
                                   "name = \"test\"\n"
                                   "size = [320, 240]\n"
@@ -635,35 +657,36 @@ void test_integration_timer_destroy_cancels(void)
                                   "[[level.entity]]\n"
                                   "blueprint = \"thing\"\n"
                                   "pos = [10, 10]\n"
-                                  "fired_count = 0\n";
+                                  "fired_count = 0\n"
+                                  "\n"
+                                  "[[level.entity]]\n"
+                                  "blueprint = \"player\"\n"
+                                  "pos = [100, 100]\n"
+                                  "\n"
+                                  "[[level.entity]]\n"
+                                  "blueprint = \"cancel_button\"\n"
+                                  "pos = [100, 100]\n";
 
-    GameState state = {0};
-    TEST_ASSERT_TRUE(game_init(&test_diag, &state, (RectU32){320, 240}));
-    TEST_ASSERT_TRUE(game_load_gamedata(
-        &test_diag, &state, (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, gamedata));
 
-    /* Fire cancel event -- timer removed */
-    TriggerEvent cancel = {.type = TRIGGER_EVENT, .entity_index = -1};
-    cancel.argument = str_new(test_heap_alloc);
-    (void)str_from_cstr(&cancel.argument, "cancel");
-    int cancel_count = state.gamedata.current_level.entities.count;
-    const AttrSet *cancel_defaults[64];
-    for (int index = 0; index < cancel_count; index++) {
-        cancel_defaults[index] = entity_resolve_defaults(&state, state.gamedata.current_level.entities.data[index].id);
-    }
-    Allocator rule_alloc = allocator_arena(&state.gamedata_arena);
-    rules_evaluate_batch(&test_diag, &rule_alloc, state.gamedata.current_level.entities.data, cancel_count, &cancel, 1,
-                         &state.gamedata.flags, &state.gamedata.vars, &state.gamedata.rule_table,
-                         &state.gamedata.subroutines, &state.gamedata.timers, cancel_defaults, &state.transition);
-    str_free(&cancel.argument);
+    /* Player interacts with the cancel_button (overlapping at (100,100))
+     * -- fires fire_event:cancel -- thing's event:cancel rule destroys
+     * the tick timer. */
+    InputState interact = {0};
+    input_state_press_gp_button(&interact, GAMEPAD_BUTTON_RIGHT_FACE_DOWN);
+    test_advance_frame(&game, interact);
 
-    /* Advance past duration -- no fire */
-    game_update(&test_diag, &state, (InputState){0}, 0.6F);
-    const Entity *thing = test_find_entity_by_blueprint(&state, "thing");
+    /* Advance well past the timer duration (0.5s) with no input. */
+    InputState idle = {0};
+    test_advance_frames(&game, idle, 60);
+
+    /* Observable: tick rule never fired, fired_count is still 0. */
+    const Entity *thing = test_find_entity_by_blueprint(&game.state, "thing");
     TEST_ASSERT_NOT_NULL(thing);
     TEST_ASSERT_EQUAL_INT(0, (int)attr_get_scoped_float(&thing->attrs, nullptr, "fired_count", 0.0F));
 
-    game_free(&test_diag, &state);
+    test_game_teardown(&game);
 }
 
 /* ---- Integration: on_destroy trigger ---- */
