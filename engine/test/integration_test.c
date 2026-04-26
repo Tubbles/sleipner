@@ -5,17 +5,35 @@
 #include "editor/internal.h"
 #include "entity.h"
 #include "game.h"
+#include "input_func.h"
 #include "menu.h"
 #include "strv.h"
+#include "test_heap_alloc.h"
 #include "test_input_mock.h"
 #include "undo.h"
 
 #include "raylib.h"
 #include "toml.h"
 
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+/* Lazy-initialised default BindingStore for tests that need to drive the
+ * function layer (input_pressed/input_axis). The store survives the
+ * whole test process; vec contents are heap-allocated and intentionally
+ * not freed (one-shot leak at process exit, matches main_test.c style). */
+static BindingStore test_bindings;
+static bool test_bindings_loaded;
+static const BindingStore *get_test_bindings(void)
+{
+    if (!test_bindings_loaded) {
+        input_func_load_defaults(&test_bindings, test_heap_alloc);
+        test_bindings_loaded = true;
+    }
+    return &test_bindings;
+}
 
 static const char *fixture_gamedata = "[[blueprint]]\n"
                                       "name = \"player\"\n"
@@ -964,7 +982,9 @@ void test_integration_menu_navigation_and_quit(void)
     /* Walk to QUIT (4 down-presses from RESUME). One tap per frame. */
     for (int step = 0; step < 4; step++) {
         test_input_tap_key(KEY_DOWN);
-        MenuAction action = menu_handle_input(&menu);
+        InputState frame_input = {0};
+        input_capture(&frame_input);
+        MenuAction action = menu_handle_input(&menu, &frame_input, get_test_bindings());
         TEST_ASSERT_EQUAL_INT(MENU_ACTION_NONE, action);
         test_input_frame_advance();
     }
@@ -972,13 +992,19 @@ void test_integration_menu_navigation_and_quit(void)
 
     /* Pressing past the last entry must clamp, not wrap. */
     test_input_tap_key(KEY_DOWN);
-    (void)menu_handle_input(&menu);
+    {
+        InputState frame_input = {0};
+        input_capture(&frame_input);
+        (void)menu_handle_input(&menu, &frame_input, get_test_bindings());
+    }
     test_input_frame_advance();
     TEST_ASSERT_EQUAL_INT(MENU_ENTRY_QUIT, menu.selected);
 
     /* Confirm fires QUIT. */
     test_input_tap_key(KEY_ENTER);
-    MenuAction quit_action = menu_handle_input(&menu);
+    InputState confirm_input = {0};
+    input_capture(&confirm_input);
+    MenuAction quit_action = menu_handle_input(&menu, &confirm_input, get_test_bindings());
     test_input_frame_advance();
     TEST_ASSERT_EQUAL_INT(MENU_ACTION_QUIT, quit_action);
 
@@ -996,20 +1022,26 @@ void test_integration_menu_escape_returns_resume(void)
     /* Move off Resume so the assertion is meaningful. */
     test_input_tap_key(KEY_DOWN);
     test_input_tap_key(KEY_DOWN);
-    (void)menu_handle_input(&menu);
+    {
+        InputState frame_input = {0};
+        input_capture(&frame_input);
+        (void)menu_handle_input(&menu, &frame_input, get_test_bindings());
+    }
     test_input_frame_advance();
     TEST_ASSERT_NOT_EQUAL(MENU_ENTRY_RESUME, menu.selected);
 
     test_input_tap_key(KEY_ESCAPE);
-    MenuAction action = menu_handle_input(&menu);
+    InputState escape_input = {0};
+    input_capture(&escape_input);
+    MenuAction action = menu_handle_input(&menu, &escape_input, get_test_bindings());
     test_input_frame_advance();
     TEST_ASSERT_EQUAL_INT(MENU_ACTION_RESUME, action);
 
     menu_cleanup(&menu);
 }
 
-/* D-pad LEFT_FACE_DOWN navigates same as KEY_DOWN — the binding for
- * MENU_ACT_DOWN couples both halves. */
+/* D-pad LEFT_FACE_DOWN navigates same as KEY_DOWN — both are bound to
+ * ACTION_NAV_DOWN in the function layer. */
 void test_integration_menu_gamepad_navigation(void)
 {
     test_input_reset();
@@ -1018,12 +1050,18 @@ void test_integration_menu_gamepad_navigation(void)
     menu_open(&menu);
 
     test_input_tap_gamepad_button(0, GAMEPAD_BUTTON_LEFT_FACE_DOWN);
-    (void)menu_handle_input(&menu);
+    {
+        InputState frame_input = {0};
+        input_capture(&frame_input);
+        (void)menu_handle_input(&menu, &frame_input, get_test_bindings());
+    }
     test_input_frame_advance();
     TEST_ASSERT_EQUAL_INT(MENU_ENTRY_SAVE, menu.selected);
 
     test_input_tap_gamepad_button(0, GAMEPAD_BUTTON_RIGHT_FACE_DOWN);
-    MenuAction action = menu_handle_input(&menu);
+    InputState confirm_input = {0};
+    input_capture(&confirm_input);
+    MenuAction action = menu_handle_input(&menu, &confirm_input, get_test_bindings());
     test_input_frame_advance();
     TEST_ASSERT_EQUAL_INT(MENU_ACTION_SAVE, action);
 

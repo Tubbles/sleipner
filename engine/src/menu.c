@@ -1,7 +1,8 @@
 #include "menu.h"
 
 #include "blur.h"
-#include "editor/keybindings.h"
+#include "input.h"
+#include "input_func.h"
 #include "raylib.h"
 
 #include <stddef.h>
@@ -16,48 +17,6 @@
 #define MENU_TEXT_HIGHLIGHT_R 255
 #define MENU_TEXT_HIGHLIGHT_G 230
 #define MENU_TEXT_HIGHLIGHT_B 120
-
-enum {
-    MENU_ACT_UP,
-    MENU_ACT_DOWN,
-    MENU_ACT_CONFIRM,
-    MENU_ACT_CANCEL,
-    MENU_ACT_COUNT,
-};
-
-static const EditorBinding menu_actions[MENU_ACT_COUNT] = {
-    [MENU_ACT_UP] =
-        {
-            .binding = {KEY_UP, GAMEPAD_BUTTON_LEFT_FACE_UP},
-            .description = "Up",
-        },
-    [MENU_ACT_DOWN] =
-        {
-            .binding = {KEY_DOWN, GAMEPAD_BUTTON_LEFT_FACE_DOWN},
-            .description = "Down",
-        },
-    [MENU_ACT_CONFIRM] =
-        {
-            .binding = {KEY_ENTER, GAMEPAD_BUTTON_RIGHT_FACE_DOWN},
-            .description = "Select",
-        },
-    [MENU_ACT_CANCEL] =
-        {
-            .binding = {KEY_ESCAPE, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT},
-            .description = "Resume",
-        },
-};
-
-static const EditorBindingTable menu_table = {
-    .actions = menu_actions,
-    .count = MENU_ACT_COUNT,
-    .mode_label = "Menu",
-};
-
-const EditorBindingTable *menu_bindings(void)
-{
-    return &menu_table;
-}
 
 static const char *entry_label(MenuEntry entry)
 {
@@ -122,22 +81,22 @@ void menu_close(MenuState *menu)
     menu->open = false;
 }
 
-MenuAction menu_handle_input(MenuState *menu)
+MenuAction menu_handle_input(MenuState *menu, const InputState *input, const BindingStore *bindings)
 {
-    if (binding_pressed(&menu_actions[MENU_ACT_UP])) {
+    if (input_pressed(input, bindings, ACTION_NAV_UP)) {
         if (menu->selected > 0) {
             menu->selected--;
         }
     }
-    if (binding_pressed(&menu_actions[MENU_ACT_DOWN])) {
+    if (input_pressed(input, bindings, ACTION_NAV_DOWN)) {
         if (menu->selected < MENU_ENTRY_COUNT - 1) {
             menu->selected++;
         }
     }
-    if (binding_pressed(&menu_actions[MENU_ACT_CANCEL])) {
+    if (input_pressed(input, bindings, ACTION_CANCEL)) {
         return MENU_ACTION_RESUME;
     }
-    if (binding_pressed(&menu_actions[MENU_ACT_CONFIRM])) {
+    if (input_pressed(input, bindings, ACTION_CONFIRM)) {
         return action_for_entry((MenuEntry)menu->selected);
     }
     return MENU_ACTION_NONE;

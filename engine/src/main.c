@@ -49,6 +49,7 @@ const char *__lsan_default_suppressions(void)
 #include "diag.h"
 #include "game.h"
 #include "input.h"
+#include "input_func.h"
 #include "level.h"
 #include "map.h"
 #include "menu.h"
@@ -380,6 +381,16 @@ static void load_persistent_assets(GameState *state)
         LoadFontFromMemory(".ttf", ui_font_asset.data, ui_font_asset.size, DEBUG_FONT_SIZE, nullptr, 0);
     debug_log(&state->debug, "ui_font: Golden Apple %dpx valid=%d", DEBUG_FONT_SIZE,
               IsFontValid(state->assets.ui_font));
+
+    /* Input bindings live alongside textures and fonts: persistent, below
+     * gamedata_base, freed only at game exit. The TOML overlay loader is a
+     * stub for now (defaults are the source of truth); a later stage adds
+     * file parsing on top. */
+    input_func_load_defaults(&state->bindings, gamedata_alloc);
+    if (!input_func_load_bindings_toml(&state->bindings, gamedata_alloc, &state->error, nullptr)) {
+        debug_log(&state->debug, "input bindings: %s", error_get(&state->error));
+        error_clear(&state->error);
+    }
 }
 
 static void unload_textures(GameState *state)
@@ -1202,6 +1213,10 @@ int main(void)
         }
 
         InputState input = read_all_input();
+        /* Populate the function-layer fields alongside the legacy ones. The
+         * legacy left_stick/buttons/etc. die in stage 9 once every consumer
+         * has migrated to input_pressed/input_axis. */
+        input_capture(&input);
 
         if (menu.open) {
             dispatch_menu_action((MenuDispatchCtx){.diag = diag,
@@ -1211,7 +1226,7 @@ int main(void)
                                                    .undo_history = &undo_history,
                                                    .menu = &menu,
                                                    .quit_requested = &quit_requested},
-                                 menu_handle_input(&menu));
+                                 menu_handle_input(&menu, &input, &state->bindings));
             if (editor_state.toast_timer > 0.0F) {
                 editor_state.toast_timer -= delta_time;
             }

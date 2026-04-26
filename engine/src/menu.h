@@ -1,22 +1,22 @@
 #pragma once
 
 #include "blur.h"
-#include "editor/keybindings.h"
+#include "input.h"
+#include "input_func.h"
 #include "raylib.h"
 
 #include <stdbool.h>
 
 /* Pause-overlay main menu.
  *
- * Opens via the global menu binding (PLAY_ACT_OPEN_MENU in
- * engine/src/editor/main_bindings.c) in either play or editor mode,
- * suspending normal frame logic until closed. Five entries: Resume,
- * Save, Restore, Toggle Debug Overlay, Quit. Background is a frozen
- * Gaussian blur of the frame the menu opened over.
+ * Opens via the global menu binding (ACTION_MENU_TOGGLE) in either play
+ * or editor mode, suspending normal frame logic until closed. Five
+ * entries: Resume, Save, Restore, Toggle Debug Overlay, Quit. Background
+ * is a frozen Gaussian blur of the frame the menu opened over.
  *
- * The menu's only inputs are nav (up/down), confirm (A/Enter), and
- * cancel (B/Esc). It owns no game state — Save / Restore / Toggle /
- * Quit return as a MenuAction enum the caller dispatches against. */
+ * The menu's only inputs are nav (up/down), confirm, and cancel. It owns
+ * no game state — Save / Restore / Toggle / Quit return as a MenuAction
+ * enum the caller dispatches against. */
 
 #define MENU_FONT_SIZE 64
 
@@ -65,11 +65,10 @@ void menu_open(MenuState *menu);
  * UX wants explicit reset-on-close. */
 void menu_close(MenuState *menu);
 
-/* Read one frame of menu input via the binding system and return the
+/* Read one frame of menu input via the function layer and return the
  * dispatch action. MENU_ACTION_NONE means no input fired this frame.
- * MENU_ACTION_RESUME closes the menu (the caller flips menu->open).
- * Pure with respect to game state: only mutates menu->selected. */
-MenuAction menu_handle_input(MenuState *menu);
+ * MENU_ACTION_RESUME closes the menu (the caller flips menu->open). */
+MenuAction menu_handle_input(MenuState *menu, const InputState *input, const BindingStore *bindings);
 
 /* Draw the blurred backdrop and the entry list. Caller is responsible
  * for being inside BeginDrawing(). The blur pipeline is captured at
@@ -78,6 +77,3 @@ void menu_render(const MenuState *menu, const BlurPipeline *blur, int screen_wid
 
 /* Free the loaded font. Safe on a zero-initialised menu. */
 void menu_cleanup(MenuState *menu);
-
-/* Hints-bar binding table accessor, parallel to play_mode_bindings(). */
-const EditorBindingTable *menu_bindings(void);

@@ -1,16 +1,35 @@
 #include "fff.h"
 #include "unity.h"
 
-#include "../src/menu.c" // NOLINT(bugprone-suspicious-include)
+#include "raylib.h"
 
 DEFINE_FFF_GLOBALS;
 
-/* The menu only consults the binding system; it never reads raylib
- * input directly. Faking binding_pressed alone is enough to drive
- * navigation, confirm and cancel through the unit test. */
-FAKE_VALUE_FUNC(bool, binding_pressed, const EditorBinding *);
-FAKE_VALUE_FUNC(bool, binding_held, const EditorBinding *);
-FAKE_VALUE_FUNC(bool, binding_modifier_down, const EditorBinding *);
+/* menu_handle_input now consults input_func, not binding_pressed. The
+ * test constructs an InputState directly via the helpers in input.h and
+ * passes a defaults-loaded BindingStore. */
+
+FAKE_VALUE_FUNC(int, SetGamepadMappings, const char *);
+FAKE_VALUE_FUNC(bool, IsGamepadAvailable, int);
+FAKE_VALUE_FUNC(float, GetGamepadAxisMovement, int, int);
+FAKE_VALUE_FUNC(bool, IsGamepadButtonPressed, int, int);
+FAKE_VALUE_FUNC(bool, IsGamepadButtonDown, int, int);
+FAKE_VALUE_FUNC(bool, IsKeyDown, int);
+FAKE_VALUE_FUNC(bool, IsKeyPressed, int);
+
+#include "debug.h"
+void debug_log(DebugState *dbg, const char *format, ...)
+{
+    (void)dbg;
+    (void)format;
+}
+
+#include "../src/input.c"      // NOLINT(bugprone-suspicious-include)
+#include "../src/input_func.c" // NOLINT(bugprone-suspicious-include)
+#include "../src/menu.c"       // NOLINT(bugprone-suspicious-include)
+#include "../src/vec.c"        // NOLINT(bugprone-suspicious-include)
+
+#include "test_heap_alloc.h"
 
 /* menu.c includes blur.h for menu_render but only references
  * blur_draw at runtime. The unit tests never call menu_render, so a
@@ -58,24 +77,29 @@ void UnloadFont(Font font)
     (void)font;
 }
 
+static BindingStore store;
+
 void setUp(void)
 {
-    RESET_FAKE(binding_pressed);
-    RESET_FAKE(binding_held);
-    RESET_FAKE(binding_modifier_down);
-    FFF_RESET_HISTORY(); // NOLINT(bugprone-multi-level-implicit-pointer-conversion)
+    test_helpers_init();
+    store = (BindingStore){0};
+    input_func_load_defaults(&store, test_heap_alloc);
 }
 
-void tearDown(void) {}
-
-/* binding_pressed fake parameterised by which action is "the one that
- * fired this frame". Only the matching MENU_ACT_* enum value returns
- * true; all others return false. */
-static int target_action_for_press;
-static bool press_specific_action(const EditorBinding *action)
+void tearDown(void)
 {
-    int index = (int)(action - menu_actions);
-    return index == target_action_for_press;
+    for (int act = 0; act < ACTION_COUNT; act++) {
+        for (int alt = 0; alt < store.actions[act].alternatives.count; alt++) {
+            vec_atomic_input_free(&store.actions[act].alternatives.data[alt].parts);
+        }
+        vec_physical_input_free(&store.actions[act].alternatives);
+    }
+    for (int axis = 0; axis < AXIS_COUNT; axis++) {
+        for (int alt = 0; alt < store.axes[axis].alternatives.count; alt++) {
+            vec_atomic_input_free(&store.axes[axis].alternatives.data[alt].parts);
+        }
+        vec_physical_input_free(&store.axes[axis].alternatives);
+    }
 }
 
 /* ---- menu_open / menu_close --------------------------------------------- */
@@ -102,9 +126,9 @@ void test_menu_close_clears_open_flag(void)
 void test_menu_down_advances_selection(void)
 {
     MenuState menu = {.open = true, .selected = MENU_ENTRY_RESUME};
-    target_action_for_press = MENU_ACT_DOWN;
-    binding_pressed_fake.custom_fake = press_specific_action;
-    MenuAction result = menu_handle_input(&menu);
+    InputState input = {0};
+    input_state_press_key(&input, KEY_DOWN);
+    MenuAction result = menu_handle_input(&menu, &input, &store);
     TEST_ASSERT_EQUAL_INT(MENU_ACTION_NONE, result);
     TEST_ASSERT_EQUAL_INT(MENU_ENTRY_SAVE, menu.selected);
 }
@@ -112,9 +136,9 @@ void test_menu_down_advances_selection(void)
 void test_menu_up_retreats_selection(void)
 {
     MenuState menu = {.open = true, .selected = MENU_ENTRY_RESTORE};
-    target_action_for_press = MENU_ACT_UP;
-    binding_pressed_fake.custom_fake = press_specific_action;
-    MenuAction result = menu_handle_input(&menu);
+    InputState input = {0};
+    input_state_press_key(&input, KEY_UP);
+    MenuAction result = menu_handle_input(&menu, &input, &store);
     TEST_ASSERT_EQUAL_INT(MENU_ACTION_NONE, result);
     TEST_ASSERT_EQUAL_INT(MENU_ENTRY_SAVE, menu.selected);
 }
@@ -122,18 +146,18 @@ void test_menu_up_retreats_selection(void)
 void test_menu_down_clamps_at_last_entry(void)
 {
     MenuState menu = {.open = true, .selected = MENU_ENTRY_QUIT};
-    target_action_for_press = MENU_ACT_DOWN;
-    binding_pressed_fake.custom_fake = press_specific_action;
-    (void)menu_handle_input(&menu);
+    InputState input = {0};
+    input_state_press_key(&input, KEY_DOWN);
+    (void)menu_handle_input(&menu, &input, &store);
     TEST_ASSERT_EQUAL_INT(MENU_ENTRY_QUIT, menu.selected);
 }
 
 void test_menu_up_clamps_at_first_entry(void)
 {
     MenuState menu = {.open = true, .selected = MENU_ENTRY_RESUME};
-    target_action_for_press = MENU_ACT_UP;
-    binding_pressed_fake.custom_fake = press_specific_action;
-    (void)menu_handle_input(&menu);
+    InputState input = {0};
+    input_state_press_key(&input, KEY_UP);
+    (void)menu_handle_input(&menu, &input, &store);
     TEST_ASSERT_EQUAL_INT(MENU_ENTRY_RESUME, menu.selected);
 }
 
@@ -142,56 +166,56 @@ void test_menu_up_clamps_at_first_entry(void)
 void test_menu_confirm_on_resume_returns_resume(void)
 {
     MenuState menu = {.open = true, .selected = MENU_ENTRY_RESUME};
-    target_action_for_press = MENU_ACT_CONFIRM;
-    binding_pressed_fake.custom_fake = press_specific_action;
-    TEST_ASSERT_EQUAL_INT(MENU_ACTION_RESUME, menu_handle_input(&menu));
+    InputState input = {0};
+    input_state_press_key(&input, KEY_ENTER);
+    TEST_ASSERT_EQUAL_INT(MENU_ACTION_RESUME, menu_handle_input(&menu, &input, &store));
 }
 
 void test_menu_confirm_on_save_returns_save(void)
 {
     MenuState menu = {.open = true, .selected = MENU_ENTRY_SAVE};
-    target_action_for_press = MENU_ACT_CONFIRM;
-    binding_pressed_fake.custom_fake = press_specific_action;
-    TEST_ASSERT_EQUAL_INT(MENU_ACTION_SAVE, menu_handle_input(&menu));
+    InputState input = {0};
+    input_state_press_key(&input, KEY_ENTER);
+    TEST_ASSERT_EQUAL_INT(MENU_ACTION_SAVE, menu_handle_input(&menu, &input, &store));
 }
 
 void test_menu_confirm_on_restore_returns_restore(void)
 {
     MenuState menu = {.open = true, .selected = MENU_ENTRY_RESTORE};
-    target_action_for_press = MENU_ACT_CONFIRM;
-    binding_pressed_fake.custom_fake = press_specific_action;
-    TEST_ASSERT_EQUAL_INT(MENU_ACTION_RESTORE, menu_handle_input(&menu));
+    InputState input = {0};
+    input_state_press_key(&input, KEY_ENTER);
+    TEST_ASSERT_EQUAL_INT(MENU_ACTION_RESTORE, menu_handle_input(&menu, &input, &store));
 }
 
 void test_menu_confirm_on_toggle_debug_returns_toggle_debug(void)
 {
     MenuState menu = {.open = true, .selected = MENU_ENTRY_TOGGLE_DEBUG_OVERLAY};
-    target_action_for_press = MENU_ACT_CONFIRM;
-    binding_pressed_fake.custom_fake = press_specific_action;
-    TEST_ASSERT_EQUAL_INT(MENU_ACTION_TOGGLE_DEBUG_OVERLAY, menu_handle_input(&menu));
+    InputState input = {0};
+    input_state_press_key(&input, KEY_ENTER);
+    TEST_ASSERT_EQUAL_INT(MENU_ACTION_TOGGLE_DEBUG_OVERLAY, menu_handle_input(&menu, &input, &store));
 }
 
 void test_menu_confirm_on_quit_returns_quit(void)
 {
     MenuState menu = {.open = true, .selected = MENU_ENTRY_QUIT};
-    target_action_for_press = MENU_ACT_CONFIRM;
-    binding_pressed_fake.custom_fake = press_specific_action;
-    TEST_ASSERT_EQUAL_INT(MENU_ACTION_QUIT, menu_handle_input(&menu));
+    InputState input = {0};
+    input_state_press_key(&input, KEY_ENTER);
+    TEST_ASSERT_EQUAL_INT(MENU_ACTION_QUIT, menu_handle_input(&menu, &input, &store));
 }
 
 void test_menu_cancel_returns_resume_regardless_of_selection(void)
 {
     MenuState menu = {.open = true, .selected = MENU_ENTRY_QUIT};
-    target_action_for_press = MENU_ACT_CANCEL;
-    binding_pressed_fake.custom_fake = press_specific_action;
-    TEST_ASSERT_EQUAL_INT(MENU_ACTION_RESUME, menu_handle_input(&menu));
+    InputState input = {0};
+    input_state_press_key(&input, KEY_ESCAPE);
+    TEST_ASSERT_EQUAL_INT(MENU_ACTION_RESUME, menu_handle_input(&menu, &input, &store));
 }
 
 void test_menu_handle_input_returns_none_when_no_input(void)
 {
     MenuState menu = {.open = true, .selected = MENU_ENTRY_SAVE};
-    binding_pressed_fake.return_val = false;
-    TEST_ASSERT_EQUAL_INT(MENU_ACTION_NONE, menu_handle_input(&menu));
+    InputState input = {0};
+    TEST_ASSERT_EQUAL_INT(MENU_ACTION_NONE, menu_handle_input(&menu, &input, &store));
     TEST_ASSERT_EQUAL_INT(MENU_ENTRY_SAVE, menu.selected);
 }
 

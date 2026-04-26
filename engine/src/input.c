@@ -53,20 +53,22 @@ void input_capture(InputState *state)
         }
     }
 
-    /* Gamepad 0 only — multi-pad fan-out is future work. */
+    /* Gamepad 0 only — multi-pad fan-out is future work. raylib returns
+     * false / 0.0 for unavailable gamepads, so polling unconditionally is
+     * safe; gating on IsGamepadAvailable here would also bypass the
+     * test-input wrap shim for tests that drive gamepad input without
+     * mocking IsGamepadAvailable. */
     state->gp_connected = IsGamepadAvailable(0);
-    if (state->gp_connected) {
-        for (int button = 1; button < INPUT_GP_BUTTON_COUNT; button++) {
-            if (IsGamepadButtonDown(0, button)) {
-                state->gp_button_down |= (1U << button);
-            }
-            if (IsGamepadButtonPressed(0, button)) {
-                state->gp_button_pressed |= (1U << button);
-            }
+    for (int button = 1; button < INPUT_GP_BUTTON_COUNT; button++) {
+        if (IsGamepadButtonDown(0, button)) {
+            state->gp_button_down |= (1U << button);
         }
-        for (int axis = 0; axis < INPUT_GP_AXIS_COUNT; axis++) {
-            state->gp_axis[axis] = GetGamepadAxisMovement(0, axis);
+        if (IsGamepadButtonPressed(0, button)) {
+            state->gp_button_pressed |= (1U << button);
         }
+    }
+    for (int axis = 0; axis < INPUT_GP_AXIS_COUNT; axis++) {
+        state->gp_axis[axis] = GetGamepadAxisMovement(0, axis);
     }
 }
 

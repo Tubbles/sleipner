@@ -5,6 +5,7 @@
 #include "diag.h"
 #include "gamedata.h"
 #include "input.h"
+#include "input_func.h"
 #include "raylib.h"
 #include "rect.h"
 
@@ -65,6 +66,7 @@ typedef struct {
     DebugState debug;
     AudioState audio;
     AssetRegistry assets;
+    BindingStore bindings;
     long gamedata_mtime;
     int screen_width;
     int screen_height;
