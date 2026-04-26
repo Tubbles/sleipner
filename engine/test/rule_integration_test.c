@@ -186,6 +186,14 @@ void test_integration_interact_rule(void)
 
 void test_integration_condition_blocks_interact(void)
 {
+    /* Black-box shape:
+     *   - locked_chest's interact rule is gated on flag:has_key.
+     *   - key blueprint's interact rule sets has_key and destroys self.
+     *   - Player starts at (100,120) overlapping the chest at (110,120)
+     *     so the first interact targets the chest only.
+     *   - Key at (200,120) is out of range until the player walks right.
+     * Test: first interact -> chest blocked. Walk to key, interact ->
+     * has_key set, key gone. Walk back to chest, interact -> chest_opened. */
     static const char *gamedata = "[[blueprint]]\n"
                                   "name = \"player\"\n"
                                   "texture = \"player.png\"\n"
@@ -205,40 +213,63 @@ void test_integration_condition_blocks_interact(void)
                                   "conditions = [\"flag:has_key\"]\n"
                                   "actions = [\"set_flag:chest_opened\"]\n"
                                   "\n"
+                                  "[[blueprint]]\n"
+                                  "name = \"key\"\n"
+                                  "texture = \"key.png\"\n"
+                                  "src = [0, 0, 16, 16]\n"
+                                  "\n"
+                                  "[[blueprint.rule]]\n"
+                                  "trigger = \"interact\"\n"
+                                  "actions = [\"set_flag:has_key\", \"destroy\"]\n"
+                                  "\n"
                                   "[[level]]\n"
                                   "name = \"test\"\n"
                                   "size = [320, 240]\n"
                                   "\n"
                                   "[[level.entity]]\n"
                                   "blueprint = \"player\"\n"
-                                  "pos = [160, 120]\n"
+                                  "pos = [100, 120]\n"
                                   "\n"
                                   "[[level.entity]]\n"
                                   "blueprint = \"locked_chest\"\n"
-                                  "pos = [165, 120]\n";
+                                  "pos = [110, 120]\n"
+                                  "\n"
+                                  "[[level.entity]]\n"
+                                  "blueprint = \"key\"\n"
+                                  "pos = [200, 120]\n";
 
-    GameState state = {0};
-    TEST_ASSERT_TRUE(game_init(&test_diag, &state, (RectU32){320, 240}));
-    TEST_ASSERT_TRUE(game_load_gamedata(
-        &test_diag, &state, (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, gamedata));
 
-    InputState input = {0};
-    input_state_press_gp_button(&input, GAMEPAD_BUTTON_RIGHT_FACE_DOWN);
-    game_update(&test_diag, &state, input, 1.0F / 60.0F);
+    /* First interact: chest is the only target in range; rule blocked
+     * by flag:has_key. */
+    InputState press_a = {0};
+    input_state_press_gp_button(&press_a, GAMEPAD_BUTTON_RIGHT_FACE_DOWN);
+    test_advance_frame(&game, press_a);
+    TEST_ASSERT_FALSE(flag_get(&game.state.gamedata.flags, "chest_opened"));
 
-    TEST_ASSERT_FALSE(flag_get(&state.gamedata.flags, "chest_opened"));
+    /* Walk right past the chest and into the key's interact range.
+     * 80 px/s, ~76 px to reach key range, plenty of margin at 80 frames. */
+    InputState walk_right = {0};
+    input_state_set_gp_axis(&walk_right, GAMEPAD_AXIS_LEFT_X, 1.0F);
+    test_advance_frames(&game, walk_right, 80);
 
-    input_state_release_gp_button(&input, GAMEPAD_BUTTON_RIGHT_FACE_DOWN);
-    game_update(&test_diag, &state, input, 1.0F / 60.0F);
+    /* Pick up the key. Chest is now far away; only the key receives
+     * the interact target. */
+    test_advance_frame(&game, press_a);
+    TEST_ASSERT_TRUE(flag_get(&game.state.gamedata.flags, "has_key"));
 
-    Allocator arena_alloc = allocator_arena(&state.gamedata_arena);
-    flag_set(&test_diag, &arena_alloc, &state.gamedata.flags, "has_key");
-    input_state_press_gp_button(&input, GAMEPAD_BUTTON_RIGHT_FACE_DOWN);
-    game_update(&test_diag, &state, input, 1.0F / 60.0F);
+    /* Walk back left to the chest. */
+    InputState walk_left = {0};
+    input_state_set_gp_axis(&walk_left, GAMEPAD_AXIS_LEFT_X, -1.0F);
+    test_advance_frames(&game, walk_left, 80);
 
-    TEST_ASSERT_TRUE(flag_get(&state.gamedata.flags, "chest_opened"));
+    /* Final interact: chest is back in range, has_key is set, rule
+     * fires and chest_opened is set. */
+    test_advance_frame(&game, press_a);
+    TEST_ASSERT_TRUE(flag_get(&game.state.gamedata.flags, "chest_opened"));
 
-    game_free(&test_diag, &state);
+    test_game_teardown(&game);
 }
 
 /* ---- Integration: for_each control flow ---- */
