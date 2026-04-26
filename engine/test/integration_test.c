@@ -584,40 +584,38 @@ void test_integration_real_gamedata_all_levels_load(void)
 
 void test_integration_transition_changes_level(void)
 {
-    GameState state = {0};
-    Diag diag = {&state.error, &state.debug};
-    TEST_ASSERT_TRUE(game_init(&diag, &state, (RectU32){320, 240}));
-    TEST_ASSERT_TRUE(game_load_gamedata(
-        &diag, &state, (GamedataParams){.toml_string = fixture_transition, .texture_lookup = dummy_lookup}));
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_transition));
 
-    TEST_ASSERT_EQUAL_STRING("field", state.gamedata.current_level.name.ptr);
-    TEST_ASSERT_FALSE(state.transition.pending);
+    TEST_ASSERT_EQUAL_STRING("field", game.state.gamedata.current_level.name.ptr);
 
-    /* Walk right into the door trigger: player at (100,100), door at (200,100).
-     * Speed = 80 px/s, gap ~84px → ~63 frames. Run 80 to be safe. */
+    /* Walk right into the door trigger. Player at (100,100), door at
+     * (200,100), speed = 80 px/s, so ~64 frames to reach. Iterate
+     * until the level changes, then drop the input and run one more
+     * frame so the spawn position is observable without further drift. */
     InputState input = {0};
-    input.gp_axis[GAMEPAD_AXIS_LEFT_X] = 1.0F;
-    for (int iteration = 0; iteration < 80; iteration++) {
-        game_update(&diag, &state, input, 1.0F / 60.0F);
+    input_state_set_gp_axis(&input, GAMEPAD_AXIS_LEFT_X, 1.0F);
+    int max_iterations = 200;
+    int iteration = 0;
+    while (iteration < max_iterations && strcmp(game.state.gamedata.current_level.name.ptr, "field") == 0) {
+        test_advance_frame(&game, input);
+        iteration++;
     }
+    TEST_ASSERT_TRUE_MESSAGE(iteration < max_iterations, "transition to 'interior' should fire within 200 frames");
+    TEST_ASSERT_EQUAL_STRING("interior", game.state.gamedata.current_level.name.ptr);
 
-    /* The enter trigger should have set transition.pending */
-    TEST_ASSERT_TRUE_MESSAGE(state.transition.pending, error_get(&state.error));
-    TEST_ASSERT_EQUAL_STRING("interior", state.transition.level.ptr);
+    /* Drop the input so the player doesn't drift after respawn. */
+    InputState idle = {0};
+    test_advance_frame(&game, idle);
 
-    /* Simulate what handle_transition does: reload with the target level name.
-     * This is the exact path that broke — the level name was in gamedata_arena
-     * and got wiped by arena_restore before level_load could use it. */
-    state.transition.pending = false;
-    bool reloaded = game_load_gamedata(&diag, &state,
-                                       (GamedataParams){.toml_string = fixture_transition,
-                                                        .level_name = state.transition.level.ptr,
-                                                        .texture_lookup = dummy_lookup});
-    TEST_ASSERT_TRUE_MESSAGE(reloaded, error_get(&state.error));
-    TEST_ASSERT_EQUAL_STRING("interior", state.gamedata.current_level.name.ptr);
-    TEST_ASSERT_TRUE(state.gamedata.player_index >= 0);
+    /* Observable: the player is at the spawn point declared in the
+     * transition trigger (interior, 80, 60). */
+    const Entity *player = game_get_player_const(&game.state);
+    TEST_ASSERT_NOT_NULL(player);
+    TEST_ASSERT_FLOAT_WITHIN(0.5F, 80.0F, player->position.x);
+    TEST_ASSERT_FLOAT_WITHIN(0.5F, 60.0F, player->position.y);
 
-    game_free(&diag, &state);
+    test_game_teardown(&game);
 }
 
 /* Bug: "after panning around in editor for a little while, the player's
