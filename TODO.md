@@ -149,15 +149,18 @@ Carried over from the pause-overlay menu landing:
 
 - **Toasts from menu Save / Restore are invisible in play mode.**
   `menu_dispatch_save` and `menu_dispatch_restore` set
-  `editor_state.toast_text`, but `draw_toast` is gated on
-  `state->editor_mode` (`engine/src/main.c:947`). Save / Restore from
-  the pause menu in play mode succeeds silently. Either ungate
-  `draw_toast` or move the toast to a play-mode-aware surface.
+  `editor_state.toast_text`, but `draw_toast` in `render_frame`
+  is gated on `state->editor_mode` (engine/src/main.c around
+  line 814). Save / Restore from the pause menu in play mode
+  succeeds silently. Either ungate `draw_toast` or move the toast
+  to a play-mode-aware surface.
 - **`blur_resize` is implemented but never called.** Resizing the
   window while the menu is open leaves the blur backdrop stretched
-  over a stale capture at the old game-bounds size. Wire it from the
-  resize path (or call it lazily from the next `blur_capture` if
-  dimensions diverge).
+  over a stale capture at the old game-bounds size. The lazy
+  capture hook landed (render_frame re-captures when
+  `menu->open && !menu->blur_captured`), so the resize path needs
+  to set `menu->blur_captured = false` and call `blur_resize` —
+  the next render then re-captures at the new dimensions.
 - **CardboardCrown is loaded twice.** Once at `FONT_PREVIEW_SIZE`
   (32px) for the font preview panel, again at `MENU_FONT_SIZE` (64px)
   for the menu. Wasteful; the asset bytes are identical. Add a tiny
