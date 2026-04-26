@@ -243,16 +243,6 @@ static void log_gamepad_changes(GameState *state, int *prev_gamepads, int frame)
     }
 }
 
-static bool any_gamepad_exit_requested(void)
-{
-    for (int index = 0; index < 4; index++) {
-        if (input_exit_requested(index)) {
-            return true;
-        }
-    }
-    return false;
-}
-
 static void draw_background_tiles(Texture2D texture, RectU32 bounds, Color tint)
 {
     for (uint32_t tile_y = 0; tile_y < bounds.height; tile_y += TILE_SIZE) {
@@ -961,12 +951,12 @@ static void render_frame(GameState *state, RenderParams params)
     EndDrawing();
 }
 
-static void handle_global_toggles(GameState *state, bool *font_preview_enabled)
+static void handle_global_toggles(GameState *state, const InputState *input, bool *font_preview_enabled)
 {
-    if (binding_pressed(&play_mode_actions[PLAY_ACT_FONT_PREVIEW])) {
+    if (input_pressed(input, &state->bindings, ACTION_FONT_PREVIEW_TOGGLE)) {
         *font_preview_enabled = !*font_preview_enabled;
     }
-    if (binding_pressed(&play_mode_actions[PLAY_ACT_ENTER_EDITOR])) {
+    if (input_pressed(input, &state->bindings, ACTION_EDITOR_TOGGLE)) {
         state->editor_mode = !state->editor_mode;
         debug_log(&state->debug, "editor %s (frame %d)", (int)state->editor_mode ? "ON" : "OFF", state->frame);
     }
@@ -1192,30 +1182,30 @@ int main(void)
             handle_hot_reload(diag, state, &editor_state, &watches, &undo_history);
         }
 
-        handle_global_toggles(state, &font_preview_enabled);
-
-        /* Pause menu open/close. Same press toggles. Capture the blur
-         * snapshot at open time and freeze it until the menu closes —
-         * the underlying scene is suspended while the menu is up so
-         * re-capturing each frame would just produce the same image. */
-        if (binding_pressed(&play_mode_actions[PLAY_ACT_OPEN_MENU])) {
-            toggle_menu_open(&menu, &blur, target);
-        }
-
-        log_gamepad_changes(state, &prev_gamepads, state->frame);
-
-        if (any_gamepad_exit_requested()) {
-            goto quit;
-        }
-        if (IsKeyDown(KEY_LEFT_CONTROL) && IsKeyPressed(KEY_Q)) {
-            goto quit;
-        }
-
         InputState input = read_all_input();
         /* Populate the function-layer fields alongside the legacy ones. The
          * legacy left_stick/buttons/etc. die in stage 9 once every consumer
          * has migrated to input_pressed/input_axis. */
         input_capture(&input);
+
+        handle_global_toggles(state, &input, &font_preview_enabled);
+
+        /* Pause menu open/close. Same press toggles. Capture the blur
+         * snapshot at open time and freeze it until the menu closes —
+         * the underlying scene is suspended while the menu is up so
+         * re-capturing each frame would just produce the same image. */
+        if (input_pressed(&input, &state->bindings, ACTION_MENU_TOGGLE)) {
+            toggle_menu_open(&menu, &blur, target);
+        }
+
+        log_gamepad_changes(state, &prev_gamepads, state->frame);
+
+        /* ACTION_QUIT bundles Ctrl+Q (keyboard chord) and Select+Start
+         * (gamepad chord). Edge semantics: fires the frame the second
+         * part of the chord is pressed while the first is held. */
+        if (input_pressed(&input, &state->bindings, ACTION_QUIT)) {
+            goto quit;
+        }
 
         if (menu.open) {
             dispatch_menu_action((MenuDispatchCtx){.diag = diag,

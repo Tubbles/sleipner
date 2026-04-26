@@ -65,7 +65,6 @@ void input_load_mappings(DebugState *dbg, Allocator *alloc, const char *data, in
 InputState input_read(int gamepad_id);
 InputState input_read_keyboard(void);
 int input_count_gamepads(void);
-bool input_exit_requested(int gamepad_id);
 
 /* Pure helper: apply radial deadzone and clamp the output to the unit
  * disc. Exposed for unit testing. Returns (0, 0) when magnitude is at or
