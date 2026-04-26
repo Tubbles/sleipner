@@ -101,30 +101,15 @@ Carried over from `work/keybinding-audit.md`:
   but `L2 / R2` are already bound to `-10 / +10`. Either drop the `L2 / R2`
   labels for ±100 or rebind ±100 to a different gamepad combo.
 
-## Integration test black-box discipline
+## Test fixture follow-ups
 
-The function-layer overhaul + frame_update extraction unblocked
-black-box integration tests for the input boundary. The 6
-mock-using tests in `integration_test.c` migrated to that pattern
-in 2026-04. The rest of `integration_test.c` and
-`rule_integration_test.c` still reach past the boundary in places:
-
-- **Raw entity index access.** `integration_test.c:270, :483`
-  index `state.gamedata.current_level.entities.data[1]` directly
-  to fetch the rock and zone entities. Replace with a
-  blueprint-name lookup helper in `test_helpers.h` (e.g.
-  `Entity *test_find_entity_by_blueprint(state, "rock")`).
-  rule_integration_test.c does the same at several call sites.
-- **`test_integration_transition_changes_level` bypasses
-  handle_transition.** The test asserts on `state.transition.pending`
-  (engine internals), then calls `game_load_gamedata` manually with
-  the target level name to simulate the transition (line 605-617
-  area, comment "Simulate what handle_transition does"). This
-  predates frame_update; the test should drive frame_update through
-  the trigger and let `handle_transition` (still in main.c) fire
-  via a thin test-side wrapper, or expose a public
-  `handle_transition` from the engine library so the test fixture
-  can call it as part of `test_advance_frame`.
+- **`test_game_setup` does not take a level_name.** Two tests still
+  use the inline `game_init` + `game_load_gamedata` pattern because
+  they pass `GamedataParams.level_name` to load a non-default level
+  out of the same TOML: `test_integration_load_specific_level` and
+  `test_integration_real_gamedata_all_levels_load`. Add a
+  `test_game_setup_with_level(out, toml, level_name)` helper if
+  more tests start needing this.
 
 ## Input system overhaul follow-ups
 
