@@ -264,12 +264,10 @@ void test_integration_walk_and_collide(void)
 
     /* Player collision must not overlap the rock */
     const Entity *player = game_get_player_const(&state);
-    const AttrSet *player_defaults = entity_resolve_defaults(&state, player->id);
-    Rectangle player_col = entity_collision_rect(player, player_defaults);
-    /* Rock is entity index 1 (player is 0) */
-    const Entity *rock_entity = &state.gamedata.current_level.entities.data[1];
-    const AttrSet *rock_defaults = entity_resolve_defaults(&state, rock_entity->id);
-    Rectangle rock = entity_collision_rect(rock_entity, rock_defaults);
+    Rectangle player_col = test_entity_collision_rect(&state, player);
+    const Entity *rock_entity = test_find_entity_by_blueprint(&state, "rock");
+    TEST_ASSERT_NOT_NULL(rock_entity);
+    Rectangle rock = test_entity_collision_rect(&state, rock_entity);
     TEST_ASSERT_TRUE(player_col.x + player_col.width <= rock.x + 0.1F);
 
     game_free(&diag, &state);
@@ -480,7 +478,8 @@ void test_integration_enter_trigger_fires_only_once(void)
     }
 
     /* enter_count must be exactly 1 — edge-triggered, not level-triggered */
-    const Entity *zone = &state.gamedata.current_level.entities.data[1];
+    const Entity *zone = test_find_entity_by_blueprint(&state, "zone");
+    TEST_ASSERT_NOT_NULL(zone);
     TEST_ASSERT_EQUAL_INT(1, (int)attr_get_scoped_float(&zone->attrs, nullptr, "enter_count", 0.0F));
 
     game_free(&diag, &state);
@@ -790,7 +789,7 @@ void test_integration_editor_attr_edit_tap_decrements_by_one(void)
     test_advance_frame(&game, editor_toggle);
     TEST_ASSERT_TRUE(game.state.editor_mode);
 
-    Entity *player_entity = &game.state.gamedata.current_level.entities.data[game.state.gamedata.player_index];
+    Entity *player_entity = game_get_player(&game.state);
     int speed_attr_index = test_find_int_attr_display_index(&game.state, player_entity, "speed");
     TEST_ASSERT_TRUE_MESSAGE(speed_attr_index >= 0, "could not locate INT attr 'speed' on player");
 
@@ -847,7 +846,7 @@ void test_integration_editor_attr_edit_hold_repeats_after_delay(void)
     test_advance_frame(&game, editor_toggle);
     TEST_ASSERT_TRUE(game.state.editor_mode);
 
-    Entity *player_entity = &game.state.gamedata.current_level.entities.data[game.state.gamedata.player_index];
+    Entity *player_entity = game_get_player(&game.state);
     int speed_attr_index = test_find_int_attr_display_index(&game.state, player_entity, "speed");
     TEST_ASSERT_TRUE(speed_attr_index >= 0);
 

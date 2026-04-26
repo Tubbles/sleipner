@@ -344,9 +344,10 @@ void test_integration_for_each_condition_filter(void)
         &test_diag, &state, (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));
 
     TEST_ASSERT_EQUAL_INT(3, state.gamedata.current_level.entities.count);
-    /* entity 1 = enemy, entity 2 = bystander */
-    const Entity *enemy = &state.gamedata.current_level.entities.data[1];
-    const Entity *bystander = &state.gamedata.current_level.entities.data[2];
+    const Entity *enemy = test_find_entity_by_blueprint(&state, "enemy");
+    const Entity *bystander = test_find_entity_by_blueprint(&state, "bystander");
+    TEST_ASSERT_NOT_NULL(enemy);
+    TEST_ASSERT_NOT_NULL(bystander);
     TEST_ASSERT_EQUAL_INT(1, (int)attr_get_scoped_float(&enemy->attrs, nullptr, "hit_count", 0.0F));
     TEST_ASSERT_EQUAL_INT(0, (int)attr_get_scoped_float(&bystander->attrs, nullptr, "hit_count", 0.0F));
 
@@ -473,7 +474,8 @@ void test_integration_subroutine_inherits_self(void)
         &test_diag, &state, (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));
 
     /* Called twice -- count must be 2 */
-    const Entity *counter = &state.gamedata.current_level.entities.data[0];
+    const Entity *counter = test_find_entity_by_blueprint(&state, "counter");
+    TEST_ASSERT_NOT_NULL(counter);
     TEST_ASSERT_EQUAL_INT(2, (int)attr_get_scoped_float(&counter->attrs, nullptr, "count", 0.0F));
 
     game_free(&test_diag, &state);
@@ -506,7 +508,8 @@ void test_integration_subroutine_missing_is_soft_fail(void)
         &test_diag, &state, (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));
 
     /* count must be 1 -- add_attr ran after the failed call: */
-    const Entity *thing = &state.gamedata.current_level.entities.data[0];
+    const Entity *thing = test_find_entity_by_blueprint(&state, "thing");
+    TEST_ASSERT_NOT_NULL(thing);
     TEST_ASSERT_EQUAL_INT(1, (int)attr_get_scoped_float(&thing->attrs, nullptr, "count", 0.0F));
 
     game_free(&test_diag, &state);
@@ -547,7 +550,8 @@ void test_integration_timer_oneshot_fires_once(void)
 
     /* 1 timer created, none fired yet */
     TEST_ASSERT_EQUAL_INT(1, state.gamedata.timers.count);
-    const Entity *thing = &state.gamedata.current_level.entities.data[0];
+    const Entity *thing = test_find_entity_by_blueprint(&state, "thing");
+    TEST_ASSERT_NOT_NULL(thing);
     TEST_ASSERT_EQUAL_INT(0, (int)attr_get_scoped_float(&thing->attrs, nullptr, "fired_count", 0.0F));
 
     /* Advance past duration -- timer fires once */
@@ -594,7 +598,8 @@ void test_integration_timer_periodic_fires_repeatedly(void)
 
     /* Advance 0.6 s -- one fire */
     game_update(&test_diag, &state, (InputState){0}, 0.6F);
-    const Entity *thing = &state.gamedata.current_level.entities.data[0];
+    const Entity *thing = test_find_entity_by_blueprint(&state, "thing");
+    TEST_ASSERT_NOT_NULL(thing);
     TEST_ASSERT_EQUAL_INT(1, (int)attr_get_scoped_float(&thing->attrs, nullptr, "pulse_count", 0.0F));
 
     /* Advance another 0.6 s -- second fire; timer still alive */
@@ -661,7 +666,8 @@ void test_integration_timer_destroy_cancels(void)
 
     /* Advance past duration -- no fire */
     game_update(&test_diag, &state, (InputState){0}, 0.6F);
-    const Entity *thing = &state.gamedata.current_level.entities.data[0];
+    const Entity *thing = test_find_entity_by_blueprint(&state, "thing");
+    TEST_ASSERT_NOT_NULL(thing);
     TEST_ASSERT_EQUAL_INT(0, (int)attr_get_scoped_float(&thing->attrs, nullptr, "fired_count", 0.0F));
 
     game_free(&test_diag, &state);
@@ -699,7 +705,8 @@ void test_integration_on_destroy_fires(void)
         &test_diag, &state, (GamedataParams){.toml_string = gamedata, .texture_lookup = rule_test_dummy_lookup}));
 
     /* Entity must be inactive and the on_destroy flag must be set */
-    const Entity *thing = &state.gamedata.current_level.entities.data[0];
+    const Entity *thing = test_find_entity_by_blueprint(&state, "thing");
+    TEST_ASSERT_NOT_NULL(thing);
     TEST_ASSERT_FALSE(attr_get_bool(&thing->attrs, "active", true));
     TEST_ASSERT_TRUE(flag_get(&state.gamedata.flags, "thing_destroyed"));
 
