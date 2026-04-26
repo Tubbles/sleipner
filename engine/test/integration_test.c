@@ -694,7 +694,7 @@ void test_integration_editor_pan_does_not_reset_player_position(void)
 /* --- Bug regression: editor undo-at-left-edge re-applies "Initial" snapshot
  *
  * User report: in a fresh Linux session, start → walk for a second → enter
- * editor → pan for a couple seconds → player snaps back to TOML start.
+ * editor → press the undo chord → player snaps back to TOML start.
  *
  * Mechanism:
  *   1. main.c pushes an "Initial" undo entry at startup, capturing the
@@ -702,30 +702,27 @@ void test_integration_editor_pan_does_not_reset_player_position(void)
  *   2. The user enters play mode and walks the player.
  *   3. The user toggles to editor mode — no new undo entry is pushed by
  *      play-mode movement (play movement is not an editor edit).
- *   4. In editor BROWSE, KEY_LEFT is bound to undo_history_step_back
- *      (editor/core.c:596). On Linux the user pans with the arrow keys,
- *      so the LEFT arrow fires at the left edge of the pan.
+ *   4. In editor BROWSE, ACTION_EDITOR_UNDO (Ctrl+Z keyboard, L1+Left
+ *      D-pad gamepad) calls undo_history_step_back (editor/core.c:588).
  *   5. undo_history_step_back at the left edge (no prev entry) used to
  *      call restore_entry on the current node unconditionally, memcpying
  *      the "Initial" arena bytes back over live state and resetting the
  *      player to the TOML start.
  *
- * Black-box shape: this test drives the exact observable path — it mocks
- * raylib's IsKeyPressed(KEY_LEFT) via the --wrap shim in test_input_mock.c
- * so handle_browse_input's real toggle_pressed call fires, which then
- * invokes undo_history_step_back via the real editor binding. The only
- * layer skipped versus the real frame loop is main.c's sub_mode dispatch
- * in handle_editor_input (which is static and not reachable from the
- * engine library), but because the editor enters BROWSE by default the
- * dispatch is a straight forward to handle_browse_input anyway.
+ * Black-box shape: builds a real InputState with the Ctrl+Z chord and
+ * feeds it to handle_browse_input. handle_browse_input reads via the
+ * input_func layer (input_pressed against state->bindings), which sees
+ * both Ctrl held and Z freshly pressed and fires ACTION_EDITOR_UNDO.
+ * The only layer skipped versus the production frame loop is main.c's
+ * static sub_mode dispatch in handle_editor_input; the editor enters
+ * BROWSE by default so the dispatch would be a straight forward to
+ * handle_browse_input anyway.
  *
- * If you need to prove the wrap actually hooks the test, temporarily revert
- * the left-edge early-return in undo.c:undo_history_step_back — this test
- * must go red. */
+ * Acid test: temporarily replace the `|| !history->current->prev`
+ * left-edge guard in undo.c:undo_history_step_back with `false`, so
+ * restore_entry runs unconditionally — this test must go red. */
 void test_integration_editor_undo_at_left_edge_preserves_play_state(void)
 {
-    test_input_reset();
-
     GameState state = {0};
     Diag diag = {&state.error, &state.debug};
     TEST_ASSERT_TRUE(game_init(&diag, &state, (RectU32){320, 240}));
@@ -762,15 +759,6 @@ void test_integration_editor_undo_at_left_edge_preserves_play_state(void)
      * only undo entry in history is still the "Initial" one. */
     state.editor_mode = true;
 
-    /* Now simulate the actual user action that triggered the bug: the
-     * LEFT arrow keypress while in editor browse. The --wrap shim on
-     * IsKeyPressed makes toggle_pressed({KEY_LEFT, ...}) return true,
-     * exactly as if the user had pressed the key on a real keyboard.
-     *
-     * This is the whole point of the wrap infrastructure: the test no
-     * longer reaches past handle_browse_input to call
-     * undo_history_step_back directly — it goes through the real
-     * edge-triggered input path. */
     /* Match main.c's editor initialisation: sentinel -1s for index fields
      * and radial confirmation, so handle_browse_input doesn't early-return
      * into the radial dispatch path (radial_confirmed == 0 is a valid
@@ -786,11 +774,14 @@ void test_integration_editor_undo_at_left_edge_preserves_play_state(void)
                                 .blueprint_tree_index = -1};
     WatchList watches = {0};
     Camera2D editor_camera = {0};
-    InputState editor_input = {0};
 
-    test_input_press_key(KEY_LEFT);
+    /* Real Ctrl+Z chord: hold Ctrl (level), press Z (edge). The
+     * input_func layer's chord rule fires when all atoms are down and
+     * at least one is freshly pressed this frame. */
+    InputState editor_input = {0};
+    input_state_hold_key(&editor_input, KEY_LEFT_CONTROL);
+    input_state_press_key(&editor_input, KEY_Z);
     handle_browse_input(&state, &editor_camera, &editor_state, &watches, &undo_history, editor_input, 1.0F / 60.0F);
-    test_input_frame_advance();
 
     /* The user did not perform any editor edits since entering editor
      * mode, so undo-at-the-left-edge must be a no-op with respect to
