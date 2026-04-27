@@ -454,6 +454,15 @@ If `data/gamedata.toml` and `~/Sync/sleipner/gamedata.toml` have diverged (both 
 - **Trace log (Android):** `/storage/emulated/0/Sync/sleipner/trace.log` — readable from desktop via Syncthing at `~/Sync/sleipner/trace.log`.
 - **Trace log (desktop):** `trace.log` in the working directory.
 
+### Keybindings overlay
+
+`keybindings.toml` is a **per-user overlay** written by the in-game Settings UI. Unlike `gamedata.toml` it is **not** versioned in git (`.gitignore` covers `data/keybindings.toml` and the `.bak` sibling). Built-in defaults in `engine/src/input_func.c` are the source of truth; the file overlays user customizations on top via `input_func_load_bindings_toml`.
+
+- **Desktop:** `data/keybindings.toml` — only created after the user rebinds something via the Settings UI; absent file means defaults remain.
+- **Android:** `/storage/emulated/0/Sync/sleipner/keybindings.toml` — synced via Syncthing the same way trace logs are. Schema documented at `plans/parsed-floating-dolphin.md` § "Configuration File".
+
+Conflict resolution mirrors the gamedata workflow if both desktop and Android edited the file independently.
+
 ## Lint Discipline
 
 - **Never assume warnings are false positives.** Treat every clang-tidy/clang-analyzer warning as a real issue. Exhaust all code-level fixes before even considering suppression. Hard proof is required that something is truly a false positive before adding any NOLINTNEXTLINE.

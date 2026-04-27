@@ -103,18 +103,17 @@ Carried over from `work/keybinding-audit.md`:
 
 ## Input system future work
 
-- **Settings UI for rebinding.** The function layer was designed to
-  support runtime rebinding but no UI exists yet. Need an editor sub-mode
-  that walks the BindingStore and lets the user rebind one alternative
-  at a time, then writes the changes to `data/keybindings.toml`.
-- **TOML overlay loader.** `input_func_load_bindings_toml` is a stub
-  that returns true with no-op. Implement it: parse
-  `data/keybindings.toml`, walk the `[function.NAME]` tables, replace
-  the matching alternatives in the BindingStore. The shape is documented
-  in `plans/parsed-floating-dolphin.md`.
 - **Plugin-declared actions.** When a plugin/engine system arrives,
   bindings need a parallel registry alongside the central enum. See
   `plans/parsed-floating-dolphin.md` § "Forward-Looking Context".
+- **Conflict warnings in Settings.** The Settings UI lets the user bind
+  the same key/button to two actions without warning. The function
+  layer documents that the *caller* resolves order-sensitivity, so
+  this is not a correctness bug, but a usability nicety worth adding.
+- **Per-gamepad binding.** AtomicInput.int_b stores a gamepad id but
+  the entire codebase still assumes gamepad 0. Settings UI does not
+  expose a gamepad selector. Defer until the engine actually supports
+  multiple gamepads.
 
 ## misc
 - add persisted attrs for children in toml emit and editor ui

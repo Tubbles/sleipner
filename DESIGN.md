@@ -1359,9 +1359,56 @@ AABB rectangles everywhere. This phase wires the shape system into the game.
 ### HUD & Menus
 - Health display — hearts, bar, or numeric?
 - Inventory screen — overlay or full-screen?
-- Pause menu — resume, save, settings, quit?
+- Pause menu — Resume, Save, Restore, Settings, Toggle Debug
+  Overlay, Quit. Settings opens the keybindings rebind UI; the rest
+  dispatch the corresponding action. Implemented in `engine/src/menu.c`.
 - Minimap or full map screen?
 - All menus gamepad-navigable with on-screen button hints.
+
+### Keybindings Settings UI
+
+Pause menu's "Settings" entry opens a three-screen overlay
+(`engine/src/settings.c`):
+
+- **List screen** — scrollable list of every `InputAction` and
+  `InputAxis` plus a final "Reset all to defaults" entry. Each row
+  shows the action / axis name and its current binding label
+  (rendered via `input_func_label`). Confirm enters Detail; Cancel
+  closes back to the menu.
+- **Detail screen** — per-target view listing each existing
+  alternative, plus "Add new alternative" and "Reset to defaults"
+  rows. Confirm on an alternative enters Capture; `EDITOR_DELETE`
+  removes one; Cancel returns to List.
+- **Capture screen** — high-water-mark chord capture for actions:
+  every frame, the set of held bindable atoms is merged into a peak
+  set; finalize when the held set becomes empty after at least one
+  atom was captured. Tolerates out-of-sync release order so
+  Ctrl+Shift+Z resolves correctly regardless of which key the user
+  lifts first. Axis capture has its own three-flow state machine:
+  stick deflection or trigger pull finalizes a single
+  `ATOM_GP_AXIS` / `ATOM_GP_TRIGGER`; a key press transitions to a
+  "now press the positive direction" prompt that finalizes
+  `ATOM_KB_AXIS{neg, pos}`.
+
+`KEY_ESCAPE` and `GAMEPAD_BUTTON_MIDDLE_RIGHT` (Start) are
+**reserved cancels**: read raw and never bindable from the UI, so
+binding `ACTION_CANCEL` elsewhere cannot trap the user inside the
+capture screen. The `capture_armed` flag waits for one no-input
+frame after entering capture, so the Confirm press that opened the
+screen does not accidentally appear in the captured chord.
+
+Persistence: every successful mutation sets
+`SettingsState.save_requested`; the frame dispatcher forwards that
+to a host-supplied `KeybindingsSaveFn`. Production wires this to
+`save_keybindings` in main.c, which serializes the BindingStore via
+`toml_emit_bindings` and writes to `KEYBINDINGS_PATH`
+(`data/keybindings.toml` on desktop, the Syncthing path on
+Android). At startup, `input_func_load_defaults` populates defaults
+and `input_func_load_bindings_toml` overlays the file on top so
+user customizations win.
+
+Settings shares the menu's blur backdrop and reopens fresh after
+hot-reload (its memory lives in `gamedata_arena`).
 
 ### AI & Pathfinding
 - Enemy behaviors beyond static — chase, patrol, flee, guard?
