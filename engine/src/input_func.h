@@ -228,3 +228,15 @@ void input_func_reset_all_to_defaults(BindingStore *store, Allocator alloc);
  * GAMEPAD_BUTTON_RIGHT_FACE_DOWN -> "A". Returns "?" if not found. */
 [[nodiscard]] const char *input_func_key_label(int key);
 [[nodiscard]] const char *input_func_gp_button_label(int button);
+
+/* TOML name (e.g. "LEFT_CONTROL", "RIGHT_FACE_DOWN", "LEFT_X") for a code.
+ * Returns nullptr if not found. Used by the bindings TOML emitter. */
+[[nodiscard]] const char *input_func_key_name(int key);
+[[nodiscard]] const char *input_func_gp_button_name(int button);
+[[nodiscard]] const char *input_func_gp_axis_name(int axis);
+
+/* TOML name for an action / axis enum value (the name used as the
+ * `[function.NAME]` key in keybindings.toml). Returns nullptr if the
+ * enum value is out of range. */
+[[nodiscard]] const char *input_func_action_toml_name(InputAction action);
+[[nodiscard]] const char *input_func_axis_toml_name(InputAxis axis);

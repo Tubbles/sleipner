@@ -34,6 +34,7 @@ set(ENGINE_SOURCE_FILES
     game.c
     input.c
     input_func.c
+    input_func_toml.c
     level.c
     map.c
     menu.c

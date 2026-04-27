@@ -1,12 +1,12 @@
 #include "input_func.h"
 
 #include "alloc.h"
-#include "error.h"
 #include "input.h"
 #include "raylib.h"
 #include "vec.h"
 
 #include <math.h>
+#include <stddef.h>
 #include <string.h>
 
 VEC_IMPL(atomic_input, AtomicInput)
@@ -816,17 +816,101 @@ void input_func_reset_all_to_defaults(BindingStore *store, Allocator alloc)
     input_func_load_defaults(store, alloc);
 }
 
-/* --- TOML loader (deferred to a follow-up commit) ------------------------ */
+/* --- TOML name tables ---------------------------------------------------- */
 
-bool input_func_load_bindings_toml(BindingStore *store, Allocator alloc, ErrorState *err, const char *toml_path)
+/* TOML name for each action / axis. Action names are the enum suffix without
+ * the ACTION_ prefix; axis names move the AXIS_ token to the middle so they
+ * cannot collide with action names in the shared `[function.NAME]` namespace.
+ * The actual TOML parser/emitter lives in input_func_toml.c — this file
+ * stays free of tomlc99 so the unit test can include it directly. */
+static const char *const action_toml_names[ACTION_COUNT] = {
+    [ACTION_CONFIRM] = "CONFIRM",
+    [ACTION_CANCEL] = "CANCEL",
+    [ACTION_NAV_UP] = "NAV_UP",
+    [ACTION_NAV_DOWN] = "NAV_DOWN",
+    [ACTION_NAV_LEFT] = "NAV_LEFT",
+    [ACTION_NAV_RIGHT] = "NAV_RIGHT",
+    [ACTION_PAGE_UP] = "PAGE_UP",
+    [ACTION_PAGE_DOWN] = "PAGE_DOWN",
+    [ACTION_EDITOR_TOGGLE] = "EDITOR_TOGGLE",
+    [ACTION_EDITOR_OPEN_BLUEPRINTS] = "EDITOR_OPEN_BLUEPRINTS",
+    [ACTION_EDITOR_OPEN_TOOLS] = "EDITOR_OPEN_TOOLS",
+    [ACTION_EDITOR_DELETE] = "EDITOR_DELETE",
+    [ACTION_EDITOR_PLACE] = "EDITOR_PLACE",
+    [ACTION_EDITOR_TYPE_PROPS] = "EDITOR_TYPE_PROPS",
+    [ACTION_EDITOR_GRAB] = "EDITOR_GRAB",
+    [ACTION_EDITOR_HANDLES] = "EDITOR_HANDLES",
+    [ACTION_EDITOR_WATCH] = "EDITOR_WATCH",
+    [ACTION_EDITOR_UNDO] = "EDITOR_UNDO",
+    [ACTION_EDITOR_REDO] = "EDITOR_REDO",
+    [ACTION_ATTR_INC_1] = "ATTR_INC_1",
+    [ACTION_ATTR_DEC_1] = "ATTR_DEC_1",
+    [ACTION_ATTR_INC_10] = "ATTR_INC_10",
+    [ACTION_ATTR_DEC_10] = "ATTR_DEC_10",
+    [ACTION_ATTR_INC_100] = "ATTR_INC_100",
+    [ACTION_ATTR_DEC_100] = "ATTR_DEC_100",
+    [ACTION_BLUEPRINT_DUPLICATE] = "BLUEPRINT_DUPLICATE",
+    [ACTION_BLUEPRINT_REMOVE] = "BLUEPRINT_REMOVE",
+    [ACTION_WB_KEYBOARD_MODE] = "WB_KEYBOARD_MODE",
+    [ACTION_WB_APPEND] = "WB_APPEND",
+    [ACTION_WB_POP] = "WB_POP",
+    [ACTION_INTERACT] = "INTERACT",
+    [ACTION_MENU_TOGGLE] = "MENU_TOGGLE",
+    [ACTION_FONT_PREVIEW_TOGGLE] = "FONT_PREVIEW_TOGGLE",
+    [ACTION_QUIT] = "QUIT",
+};
+
+static const char *const axis_toml_names[AXIS_COUNT] = {
+    [AXIS_PRIMARY_X] = "PRIMARY_AXIS_X",       [AXIS_PRIMARY_Y] = "PRIMARY_AXIS_Y",
+    [AXIS_SECONDARY_X] = "SECONDARY_AXIS_X",   [AXIS_SECONDARY_Y] = "SECONDARY_AXIS_Y",
+    [AXIS_TRIGGER_LEFT] = "TRIGGER_LEFT_AXIS", [AXIS_TRIGGER_RIGHT] = "TRIGGER_RIGHT_AXIS",
+};
+
+const char *input_func_action_toml_name(InputAction action)
 {
-    /* Built-in defaults are the source of truth for stage 1. The TOML
-     * overlay parser is implemented in a later stage of the migration
-     * (see plans/parsed-floating-dolphin.md). Returning true here means:
-     * "no overlay applied, defaults remain". */
-    (void)store;
-    (void)alloc;
-    (void)err;
-    (void)toml_path;
-    return true;
+    if (action < 0 || action >= ACTION_COUNT) {
+        return nullptr;
+    }
+    return action_toml_names[action];
 }
+
+const char *input_func_axis_toml_name(InputAxis axis)
+{
+    if (axis < 0 || axis >= AXIS_COUNT) {
+        return nullptr;
+    }
+    return axis_toml_names[axis];
+}
+
+const char *input_func_key_name(int key)
+{
+    for (size_t index = 0; index < sizeof(keyboard_codes) / sizeof(keyboard_codes[0]); index++) {
+        if (keyboard_codes[index].code == key) {
+            return keyboard_codes[index].toml_name;
+        }
+    }
+    return nullptr;
+}
+
+const char *input_func_gp_button_name(int button)
+{
+    for (size_t index = 0; index < sizeof(gp_button_codes) / sizeof(gp_button_codes[0]); index++) {
+        if (gp_button_codes[index].code == button) {
+            return gp_button_codes[index].toml_name;
+        }
+    }
+    return nullptr;
+}
+
+const char *input_func_gp_axis_name(int axis)
+{
+    for (size_t index = 0; index < sizeof(gp_axis_codes) / sizeof(gp_axis_codes[0]); index++) {
+        if (gp_axis_codes[index].code == axis) {
+            return gp_axis_codes[index].toml_name;
+        }
+    }
+    return nullptr;
+}
+
+/* TOML loader implementation lives in input_func_toml.c so this file can be
+ * included directly by the input_func unit test without dragging tomlc99 in. */
