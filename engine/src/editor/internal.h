@@ -10,6 +10,7 @@
 #include "editor/editor.h"
 #include "entity.h"
 #include "game.h"
+#include "input_func.h"
 #include "level.h"
 #include "undo.h"
 
@@ -17,10 +18,50 @@
 #define M_PI 3.14159265358979323846
 #endif
 
+/* --- HUD hint table ---
+ *
+ * Each editor submode declares a static EditorHintTable describing the verbs
+ * relevant to that mode. The hints bar in draw.c renders a table by looking
+ * each action up in the BindingStore via input_func_label, so on-screen
+ * labels are always authoritative — they cannot drift from the bindings the
+ * handler actually reads. */
+typedef struct {
+    InputAction action;
+    const char *description; /* mode-specific verb, e.g. "Edit" not "Confirm" */
+} EditorActionHint;
+
+typedef struct {
+    const EditorActionHint *hints;
+    int count;
+    const char *mode_label; /* shown as "[Mode]" at the left of the hints bar */
+} EditorHintTable;
+
 /* --- Shared helpers: draw.c --- */
 
 void draw_ui_text(Font font, const char *text, int pos_x, int pos_y, int font_size, Color color);
 int measure_ui_text(Font font, const char *text, int font_size);
+
+/* Render "[Mode] | A/Ent: Confirm | Ctrl+Z/L1+Left: Undo | ..." into out.
+ * Skips entries whose action has no alternatives in the store. Truncates at a
+ * separator if cap is exceeded and appends " +N" for the dropped entries.
+ * Always null-terminates. Returns bytes written (excluding null). */
+int editor_hint_table_render(const BindingStore *store, const EditorHintTable *table, char *out, int cap);
+
+/* --- Per-submode hint table accessors ---
+ *
+ * Each table is owned by the file that handles the submode; this header
+ * re-exports the accessors so the hints bar (editor/draw.c) can look up the
+ * current table by submode. */
+const EditorHintTable *browse_hints_table(void);
+const EditorHintTable *drag_hints_table(void);
+const EditorHintTable *handles_hints_table(void);
+const EditorHintTable *attr_edit_hints_table(void);
+const EditorHintTable *radial_hints_table(void);
+const EditorHintTable *word_builder_hints_table(void);
+const EditorHintTable *fuzzy_finder_hints_table(void);
+const EditorHintTable *gamepad_kb_hints_table(void);
+const EditorHintTable *blueprint_list_hints_table(void);
+const EditorHintTable *blueprint_detail_hints_table(void);
 
 /* --- Shared helpers: core.c --- */
 

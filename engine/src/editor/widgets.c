@@ -3,7 +3,6 @@
 #include "alloc.h"
 #include "arena.h"
 #include "debug.h"
-#include "editor/keybindings.h"
 #include "error.h"
 #include "input.h"
 #include "input_func.h"
@@ -13,40 +12,6 @@
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
-
-enum { RADIAL_ACT_CONFIRM, RADIAL_ACT_CANCEL, RADIAL_ACT_COUNT };
-
-enum {
-    WORD_BUILDER_ACT_UP,
-    WORD_BUILDER_ACT_DOWN,
-    WORD_BUILDER_ACT_PAGE_UP,
-    WORD_BUILDER_ACT_PAGE_DOWN,
-    WORD_BUILDER_ACT_CONFIRM,
-    WORD_BUILDER_ACT_KEYBOARD,
-    WORD_BUILDER_ACT_CANCEL,
-    WORD_BUILDER_ACT_COUNT
-};
-
-enum {
-    FUZZY_FINDER_ACT_UP,
-    FUZZY_FINDER_ACT_DOWN,
-    FUZZY_FINDER_ACT_PAGE_UP,
-    FUZZY_FINDER_ACT_PAGE_DOWN,
-    FUZZY_FINDER_ACT_CONFIRM,
-    FUZZY_FINDER_ACT_CANCEL,
-    FUZZY_FINDER_ACT_COUNT
-};
-
-enum { GAMEPAD_KB_ACT_CONFIRM, GAMEPAD_KB_ACT_CANCEL, GAMEPAD_KB_ACT_SWITCH, GAMEPAD_KB_ACT_COUNT };
-
-static const EditorBinding radial_actions[RADIAL_ACT_COUNT];
-static const EditorBindingTable radial_table;
-static const EditorBinding word_builder_actions[WORD_BUILDER_ACT_COUNT];
-static const EditorBindingTable word_builder_table;
-static const EditorBinding fuzzy_finder_actions[FUZZY_FINDER_ACT_COUNT];
-static const EditorBindingTable fuzzy_finder_table;
-static const EditorBinding gamepad_kb_actions[GAMEPAD_KB_ACT_COUNT];
-static const EditorBindingTable gamepad_kb_table;
 
 /* --- Radial picker --- */
 
@@ -853,150 +818,70 @@ void handle_gamepad_kb_input(EditorState *editor_state, const InputState *input,
     }
 }
 
-/* --- Binding tables --- */
+/* --- Hint tables --- */
 
-static const EditorBinding radial_actions[RADIAL_ACT_COUNT] = {
-    [RADIAL_ACT_CONFIRM] =
-        {
-            .binding = {KEY_ENTER, GAMEPAD_BUTTON_RIGHT_FACE_DOWN},
-            .description = "Confirm",
-        },
-    [RADIAL_ACT_CANCEL] =
-        {
-            .binding = {KEY_ESCAPE, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT},
-            .description = "Cancel",
-        },
+static const EditorActionHint radial_hints[] = {
+    {ACTION_CONFIRM, "Confirm"},
+    {ACTION_CANCEL, "Cancel"},
 };
 
-static const EditorBindingTable radial_table = {
-    .actions = radial_actions,
-    .count = RADIAL_ACT_COUNT,
+static const EditorHintTable radial_table = {
+    .hints = radial_hints,
+    .count = (int)(sizeof(radial_hints) / sizeof(radial_hints[0])),
     .mode_label = "Radial picker",
 };
 
-const EditorBindingTable *radial_bindings(void)
+const EditorHintTable *radial_hints_table(void)
 {
     return &radial_table;
 }
 
-static const EditorBinding word_builder_actions[WORD_BUILDER_ACT_COUNT] = {
-    [WORD_BUILDER_ACT_UP] =
-        {
-            .binding = {KEY_UP, GAMEPAD_BUTTON_LEFT_FACE_UP},
-            .description = "Prev",
-        },
-    [WORD_BUILDER_ACT_DOWN] =
-        {
-            .binding = {KEY_DOWN, GAMEPAD_BUTTON_LEFT_FACE_DOWN},
-            .description = "Next",
-        },
-    [WORD_BUILDER_ACT_PAGE_UP] =
-        {
-            .binding = {KEY_Q, GAMEPAD_BUTTON_LEFT_TRIGGER_1},
-            .description = "Page up",
-        },
-    [WORD_BUILDER_ACT_PAGE_DOWN] =
-        {
-            .binding = {KEY_E, GAMEPAD_BUTTON_RIGHT_TRIGGER_1},
-            .description = "Page down",
-        },
-    [WORD_BUILDER_ACT_CONFIRM] =
-        {
-            .binding = {KEY_ENTER, GAMEPAD_BUTTON_RIGHT_FACE_DOWN},
-            .description = "Append / Done",
-        },
-    [WORD_BUILDER_ACT_KEYBOARD] =
-        {
-            .binding = {KEY_DELETE, GAMEPAD_BUTTON_RIGHT_FACE_LEFT},
-            .description = "Keyboard",
-        },
-    [WORD_BUILDER_ACT_CANCEL] =
-        {
-            .binding = {KEY_ESCAPE, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT},
-            .description = "Pop / Cancel",
-        },
+static const EditorActionHint word_builder_hints[] = {
+    {ACTION_NAV_UP, "Prev"},         {ACTION_NAV_DOWN, "Next"},         {ACTION_PAGE_UP, "Page up"},
+    {ACTION_PAGE_DOWN, "Page down"}, {ACTION_CONFIRM, "Append / Done"}, {ACTION_WB_KEYBOARD_MODE, "Keyboard"},
+    {ACTION_CANCEL, "Pop / Cancel"},
 };
 
-static const EditorBindingTable word_builder_table = {
-    .actions = word_builder_actions,
-    .count = WORD_BUILDER_ACT_COUNT,
+static const EditorHintTable word_builder_table = {
+    .hints = word_builder_hints,
+    .count = (int)(sizeof(word_builder_hints) / sizeof(word_builder_hints[0])),
     .mode_label = "Word builder",
 };
 
-const EditorBindingTable *word_builder_bindings(void)
+const EditorHintTable *word_builder_hints_table(void)
 {
     return &word_builder_table;
 }
 
-static const EditorBinding fuzzy_finder_actions[FUZZY_FINDER_ACT_COUNT] = {
-    [FUZZY_FINDER_ACT_UP] =
-        {
-            .binding = {KEY_UP, GAMEPAD_BUTTON_LEFT_FACE_UP},
-            .description = "Prev",
-        },
-    [FUZZY_FINDER_ACT_DOWN] =
-        {
-            .binding = {KEY_DOWN, GAMEPAD_BUTTON_LEFT_FACE_DOWN},
-            .description = "Next",
-        },
-    [FUZZY_FINDER_ACT_PAGE_UP] =
-        {
-            .binding = {KEY_Q, GAMEPAD_BUTTON_LEFT_TRIGGER_1},
-            .description = "Page up",
-        },
-    [FUZZY_FINDER_ACT_PAGE_DOWN] =
-        {
-            .binding = {KEY_E, GAMEPAD_BUTTON_RIGHT_TRIGGER_1},
-            .description = "Page down",
-        },
-    [FUZZY_FINDER_ACT_CONFIRM] =
-        {
-            .binding = {KEY_ENTER, GAMEPAD_BUTTON_RIGHT_FACE_DOWN},
-            .description = "Pick",
-        },
-    [FUZZY_FINDER_ACT_CANCEL] =
-        {
-            .binding = {KEY_ESCAPE, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT},
-            .description = "Cancel",
-        },
+static const EditorActionHint fuzzy_finder_hints[] = {
+    {ACTION_NAV_UP, "Prev"},         {ACTION_NAV_DOWN, "Next"}, {ACTION_PAGE_UP, "Page up"},
+    {ACTION_PAGE_DOWN, "Page down"}, {ACTION_CONFIRM, "Pick"},  {ACTION_CANCEL, "Cancel"},
 };
 
-static const EditorBindingTable fuzzy_finder_table = {
-    .actions = fuzzy_finder_actions,
-    .count = FUZZY_FINDER_ACT_COUNT,
+static const EditorHintTable fuzzy_finder_table = {
+    .hints = fuzzy_finder_hints,
+    .count = (int)(sizeof(fuzzy_finder_hints) / sizeof(fuzzy_finder_hints[0])),
     .mode_label = "Name picker",
 };
 
-const EditorBindingTable *fuzzy_finder_bindings(void)
+const EditorHintTable *fuzzy_finder_hints_table(void)
 {
     return &fuzzy_finder_table;
 }
 
-static const EditorBinding gamepad_kb_actions[GAMEPAD_KB_ACT_COUNT] = {
-    [GAMEPAD_KB_ACT_CONFIRM] =
-        {
-            .binding = {KEY_ENTER, GAMEPAD_BUTTON_RIGHT_FACE_DOWN},
-            .description = "Select",
-        },
-    [GAMEPAD_KB_ACT_CANCEL] =
-        {
-            .binding = {KEY_ESCAPE, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT},
-            .description = "Back / Bksp",
-        },
-    [GAMEPAD_KB_ACT_SWITCH] =
-        {
-            .binding = {KEY_DELETE, GAMEPAD_BUTTON_RIGHT_FACE_LEFT},
-            .description = "Word builder",
-        },
+static const EditorActionHint gamepad_kb_hints[] = {
+    {ACTION_CONFIRM, "Select"},
+    {ACTION_CANCEL, "Back / Bksp"},
+    {ACTION_WB_KEYBOARD_MODE, "Word builder"},
 };
 
-static const EditorBindingTable gamepad_kb_table = {
-    .actions = gamepad_kb_actions,
-    .count = GAMEPAD_KB_ACT_COUNT,
+static const EditorHintTable gamepad_kb_table = {
+    .hints = gamepad_kb_hints,
+    .count = (int)(sizeof(gamepad_kb_hints) / sizeof(gamepad_kb_hints[0])),
     .mode_label = "Keyboard",
 };
 
-const EditorBindingTable *gamepad_kb_bindings(void)
+const EditorHintTable *gamepad_kb_hints_table(void)
 {
     return &gamepad_kb_table;
 }

@@ -101,25 +101,6 @@ Carried over from `work/keybinding-audit.md`:
   but `L2 / R2` are already bound to `-10 / +10`. Either drop the `L2 / R2`
   labels for ±100 or rebind ±100 to a different gamepad combo.
 
-## Input system overhaul follow-ups
-
-The function layer (input_pressed / input_held / input_axis /
-input_axis_pair against a BindingStore) shipped in stages 1-9. One
-piece of cleanup remains before the overhaul is fully done:
-
-- **HUD hint bar still walks the legacy EditorBinding tables.**
-  `editor/draw.c draw_hints_bar` calls `binding_table_render(...)` on
-  `EditorBindingTable` accessors (`browse_bindings()`, etc.) which still
-  hold every per-handler binding as dead data. Replace with a
-  `EditorActionHint { InputAction action; const char *description; }`
-  shape that consults `input_func_label(store, action, ...)` for the
-  rendered keys, then delete `editor/keybindings.{h,c}`,
-  `editor/main_bindings.{h,c}`, the `EditorBinding` / `ToggleBinding`
-  structs, and the per-handler `*_actions` tables. Keep
-  `keybindings_test.c`'s rendering tests by porting them to the new
-  label API (or delete — `input_func_test` already covers chord
-  rendering).
-
 ## Input system future work
 
 - **Settings UI for rebinding.** The function layer was designed to

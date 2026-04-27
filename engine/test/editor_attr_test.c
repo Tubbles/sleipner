@@ -37,13 +37,6 @@ void debug_log(DebugState *dbg, const char *format, ...)
     (void)format;
 }
 
-/* Cross-file editor fakes: keybindings.c (kept for HUD-hint table that
- * still lives in attr.c — never actually called by the migrated input
- * functions). */
-FAKE_VALUE_FUNC(bool, binding_pressed, const EditorBinding *);
-FAKE_VALUE_FUNC(bool, binding_held, const EditorBinding *);
-FAKE_VALUE_FUNC(bool, binding_modifier_down, const EditorBinding *);
-
 /* Cross-file editor fakes: core.c */
 FAKE_VALUE_FUNC(Blueprint *, find_blueprint_by_name, GameState *, const char *);
 FAKE_VALUE_FUNC(bool, is_blueprint_attr, const GameState *, const Entity *, int);

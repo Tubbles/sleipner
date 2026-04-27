@@ -784,7 +784,8 @@ static void render_frame(GameState *state, RenderParams params)
     if (state->editor_mode) {
         draw_toast(&params.editor_state, screen, state->assets.ui_font);
     }
-    draw_hints_bar(state->editor_mode, &params.editor_state, params.is_dirty, screen, state->assets.ui_font);
+    draw_hints_bar(state->editor_mode, &params.editor_state, &state->bindings, params.is_dirty, screen,
+                   state->assets.ui_font);
     if (params.menu->open && !params.menu->blur_captured) {
         blur_capture(params.blur, params.target.texture);
         params.menu->blur_captured = true;

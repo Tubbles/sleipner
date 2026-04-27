@@ -7,14 +7,13 @@
 #include "../src/arena_posix.c" // NOLINT(bugprone-suspicious-include)
 #include "../src/attribute.c"   // NOLINT(bugprone-suspicious-include)
 #include "../src/entity.c"      // NOLINT(bugprone-suspicious-include)
+#include "../src/input.c"       // NOLINT(bugprone-suspicious-include)
+#include "../src/input_func.c"  // NOLINT(bugprone-suspicious-include)
 #include "../src/map.c"         // NOLINT(bugprone-suspicious-include)
+#include "../src/vec.c"         // NOLINT(bugprone-suspicious-include)
 #include "../src/editor/draw.c" // NOLINT(bugprone-suspicious-include)
 
 DEFINE_FFF_GLOBALS;
-
-/* raylib input fakes */
-FAKE_VALUE_FUNC(bool, IsKeyPressed, int);
-FAKE_VALUE_FUNC(bool, IsGamepadButtonPressed, int, int);
 
 /* raylib draw fakes */
 FAKE_VOID_FUNC(DrawLine, int, int, int, int, Color);
@@ -24,11 +23,28 @@ FAKE_VOID_FUNC(DrawRectangleLinesEx, Rectangle, float, Color);
 FAKE_VOID_FUNC(DrawTextureRec, Texture2D, Rectangle, Vector2, Color);
 FAKE_VALUE_FUNC(Vector2, MeasureTextEx, Font, const char *, float, float);
 
+/* raylib input fakes — input.c's input_capture polls these but the unit
+ * tests construct InputState directly; the fakes never fire. */
+FAKE_VALUE_FUNC(int, SetGamepadMappings, const char *);
+FAKE_VALUE_FUNC(bool, IsGamepadAvailable, int);
+FAKE_VALUE_FUNC(float, GetGamepadAxisMovement, int, int);
+FAKE_VALUE_FUNC(bool, IsKeyPressed, int);
+FAKE_VALUE_FUNC(bool, IsGamepadButtonPressed, int, int);
+FAKE_VALUE_FUNC(bool, IsKeyDown, int);
+FAKE_VALUE_FUNC(bool, IsGamepadButtonDown, int, int);
+
 /* TextFormat stub — variadic, cannot use FAKE_VALUE_FUNC */
 const char *TextFormat(const char *text, ...)
 {
     (void)text;
     return "";
+}
+
+/* debug_log stub — variadic with __attribute__((format)) */
+void debug_log(DebugState *dbg, const char *format, ...)
+{
+    (void)dbg;
+    (void)format;
 }
 
 /* External module fakes */
@@ -38,27 +54,33 @@ FAKE_VALUE_FUNC(const AttrSet *, entity_resolve_defaults, const GameState *, int
 FAKE_VALUE_FUNC(const Blueprint *, blueprint_find, const BlueprintTable *, const char *);
 
 /* Cross-file editor fakes (functions from other editor split files) */
-FAKE_VALUE_FUNC(Vector2, input_axis_pair, const InputState *, const BindingStore *, InputAxis, InputAxis);
 FAKE_VALUE_FUNC(int, total_attr_count, const GameState *, const Entity *);
 FAKE_VALUE_FUNC(bool, entity_has_persisted_section, const Entity *);
 FAKE_VALUE_FUNC(int, place_visible_count, int);
 
-/* Cross-file editor fakes: keybindings.c (used by draw_hints_bar) */
-FAKE_VALUE_FUNC(int, binding_table_render, const EditorBindingTable *, char *, int);
-FAKE_VALUE_FUNC(const EditorBindingTable *, browse_bindings);
-FAKE_VALUE_FUNC(const EditorBindingTable *, drag_bindings);
-FAKE_VALUE_FUNC(const EditorBindingTable *, handles_bindings);
-FAKE_VALUE_FUNC(const EditorBindingTable *, place_bindings);
-FAKE_VALUE_FUNC(const EditorBindingTable *, attr_edit_bindings);
-FAKE_VALUE_FUNC(const EditorBindingTable *, radial_bindings);
-FAKE_VALUE_FUNC(const EditorBindingTable *, word_builder_bindings);
-FAKE_VALUE_FUNC(const EditorBindingTable *, fuzzy_finder_bindings);
-FAKE_VALUE_FUNC(const EditorBindingTable *, gamepad_kb_bindings);
-FAKE_VALUE_FUNC(const EditorBindingTable *, blueprint_list_bindings);
-FAKE_VALUE_FUNC(const EditorBindingTable *, blueprint_detail_bindings);
-FAKE_VALUE_FUNC(const EditorBindingTable *, play_mode_bindings);
+/* Cross-file editor fakes: per-submode hint table accessors are owned by
+ * the other editor TUs and pulled in via the linker only when draw.c
+ * dispatches through hints_table_for. The render-only tests never reach
+ * draw_hints_bar, so nullptr fakes satisfy the linker without affecting
+ * coverage. */
+FAKE_VALUE_FUNC(const EditorHintTable *, browse_hints_table);
+FAKE_VALUE_FUNC(const EditorHintTable *, drag_hints_table);
+FAKE_VALUE_FUNC(const EditorHintTable *, handles_hints_table);
+FAKE_VALUE_FUNC(const EditorHintTable *, attr_edit_hints_table);
+FAKE_VALUE_FUNC(const EditorHintTable *, radial_hints_table);
+FAKE_VALUE_FUNC(const EditorHintTable *, word_builder_hints_table);
+FAKE_VALUE_FUNC(const EditorHintTable *, fuzzy_finder_hints_table);
+FAKE_VALUE_FUNC(const EditorHintTable *, gamepad_kb_hints_table);
+FAKE_VALUE_FUNC(const EditorHintTable *, blueprint_list_hints_table);
+FAKE_VALUE_FUNC(const EditorHintTable *, blueprint_detail_hints_table);
+
+/* VEC_IMPL needed by input_func.c's ActionBinding/AxisBinding */
+VEC_IMPL(blueprint_child, BlueprintChild)
+VEC_IMPL(blueprint, Blueprint)
 
 #include "test_heap_alloc.h"
+
+#include <string.h>
 
 void setUp(void) {}
 void tearDown(void) {}
@@ -70,38 +92,79 @@ static void test_attr_set_free_local(AttrSet *set)
     attr_set_free(&test_heap_alloc, set);
 }
 
-static void reset_input_fakes(void)
+static BindingStore test_draw_bindings;
+static bool test_draw_bindings_loaded;
+static const BindingStore *get_test_bindings(void)
 {
-    RESET_FAKE(IsKeyPressed);
-    RESET_FAKE(IsGamepadButtonPressed);
-    FFF_RESET_HISTORY(); // NOLINT(bugprone-multi-level-implicit-pointer-conversion)
+    if (!test_draw_bindings_loaded) {
+        input_func_load_defaults(&test_draw_bindings, test_heap_alloc);
+        test_draw_bindings_loaded = true;
+    }
+    return &test_draw_bindings;
 }
 
-/* ---- toggle_pressed ----------------------------------------------------- */
+/* ---- editor_hint_table_render ------------------------------------------- */
 
-void test_editor_toggle_pressed_key(void)
+void test_editor_hint_table_renders_mode_label_and_entries(void)
 {
-    reset_input_fakes();
-    IsKeyPressed_fake.return_val = true;
-    TEST_ASSERT_TRUE(toggle_pressed((ToggleBinding){KEY_SPACE, GAMEPAD_BUTTON_RIGHT_FACE_DOWN}));
-    TEST_ASSERT_EQUAL_INT(1, IsKeyPressed_fake.call_count);
-    TEST_ASSERT_EQUAL_INT(0, IsGamepadButtonPressed_fake.call_count);
+    const EditorActionHint hints[] = {
+        {ACTION_CONFIRM, "Pick"},
+        {ACTION_EDITOR_UNDO, "Undo"},
+    };
+    const EditorHintTable table = {
+        .hints = hints,
+        .count = (int)(sizeof(hints) / sizeof(hints[0])),
+        .mode_label = "Test",
+    };
+    char out[256];
+    int len = editor_hint_table_render(get_test_bindings(), &table, out, (int)sizeof(out));
+    TEST_ASSERT_GREATER_THAN(0, len);
+    TEST_ASSERT_NOT_NULL(strstr(out, "[Test]"));
+    TEST_ASSERT_NOT_NULL(strstr(out, "Pick"));
+    TEST_ASSERT_NOT_NULL(strstr(out, "Undo"));
+    TEST_ASSERT_NOT_NULL(strstr(out, "Ctrl+Z"));
+    TEST_ASSERT_NOT_NULL(strstr(out, "L1+Left"));
 }
 
-void test_editor_toggle_pressed_gamepad(void)
+void test_editor_hint_table_skips_unbound_action(void)
 {
-    reset_input_fakes();
-    IsKeyPressed_fake.return_val = false;
-    IsGamepadButtonPressed_fake.return_val = true;
-    TEST_ASSERT_TRUE(toggle_pressed((ToggleBinding){KEY_SPACE, GAMEPAD_BUTTON_RIGHT_FACE_DOWN}));
-    TEST_ASSERT_EQUAL_INT(1, IsKeyPressed_fake.call_count);
-    TEST_ASSERT_EQUAL_INT(1, IsGamepadButtonPressed_fake.call_count);
+    /* ACTION_EDITOR_OPEN_BLUEPRINTS has no defaults — its label is empty,
+     * so it must not render even if the description is present. */
+    const EditorActionHint hints[] = {
+        {ACTION_CONFIRM, "Confirm"},
+        {ACTION_EDITOR_OPEN_BLUEPRINTS, "Should not appear"},
+    };
+    const EditorHintTable table = {
+        .hints = hints,
+        .count = 2,
+        .mode_label = "M",
+    };
+    char out[128];
+    (void)editor_hint_table_render(get_test_bindings(), &table, out, (int)sizeof(out));
+    TEST_ASSERT_NOT_NULL(strstr(out, "Confirm"));
+    TEST_ASSERT_NULL(strstr(out, "Should not appear"));
 }
 
-void test_editor_toggle_pressed_neither(void)
+void test_editor_hint_table_truncates_with_overflow_tail(void)
 {
-    reset_input_fakes();
-    TEST_ASSERT_FALSE(toggle_pressed((ToggleBinding){KEY_SPACE, GAMEPAD_BUTTON_RIGHT_FACE_DOWN}));
+    const EditorActionHint hints[] = {
+        {ACTION_CONFIRM, "One"},
+        {ACTION_CANCEL, "Two"},
+        {ACTION_NAV_UP, "Three"},
+        {ACTION_NAV_DOWN, "Four"},
+    };
+    const EditorHintTable table = {
+        .hints = hints,
+        .count = 4,
+        .mode_label = "X",
+    };
+    char out[48]; /* tight: forces truncation but leaves room for the overflow tail */
+    int len = editor_hint_table_render(get_test_bindings(), &table, out, (int)sizeof(out));
+    TEST_ASSERT_GREATER_THAN(0, len);
+    TEST_ASSERT_TRUE(len < (int)sizeof(out));
+    TEST_ASSERT_EQUAL_CHAR('\0', out[len]);
+    TEST_ASSERT_NOT_NULL(strstr(out, "+"));
+    TEST_ASSERT_NOT_NULL(strstr(out, "more"));
 }
 
 /* ---- find_nearest_entity ------------------------------------------------ */
@@ -267,9 +330,9 @@ int main(void)
     test_helpers_init();
     UNITY_BEGIN();
 
-    RUN_TEST(test_editor_toggle_pressed_key);
-    RUN_TEST(test_editor_toggle_pressed_gamepad);
-    RUN_TEST(test_editor_toggle_pressed_neither);
+    RUN_TEST(test_editor_hint_table_renders_mode_label_and_entries);
+    RUN_TEST(test_editor_hint_table_skips_unbound_action);
+    RUN_TEST(test_editor_hint_table_truncates_with_overflow_tail);
     RUN_TEST(test_editor_find_nearest_single_entity);
     RUN_TEST(test_editor_find_nearest_closer_wins);
     RUN_TEST(test_editor_find_nearest_skips_children);

@@ -2,7 +2,6 @@
 
 #include "alloc.h"
 #include "arena.h"
-#include "editor/keybindings.h"
 #include "input.h"
 #include "input_func.h"
 #include "map.h"
@@ -10,33 +9,6 @@
 #include "strv.h"
 
 #include <string.h>
-
-enum {
-    BP_LIST_ACT_CANCEL,
-    BP_LIST_ACT_DOWN,
-    BP_LIST_ACT_UP,
-    BP_LIST_ACT_CONFIRM,
-    BP_LIST_ACT_DELETE,
-    BP_LIST_ACT_COUNT
-};
-
-enum {
-    BP_DETAIL_ACT_CANCEL,
-    BP_DETAIL_ACT_DOWN,
-    BP_DETAIL_ACT_UP,
-    BP_DETAIL_ACT_CONFIRM,
-    BP_DETAIL_ACT_DELETE,
-    BP_DETAIL_ACT_TYPE_RADIAL,
-    BP_DETAIL_ACT_DUPLICATE,
-    BP_DETAIL_ACT_UNDO,
-    BP_DETAIL_ACT_REDO,
-    BP_DETAIL_ACT_COUNT
-};
-
-static const EditorBinding blueprint_list_actions[BP_LIST_ACT_COUNT];
-static const EditorBindingTable blueprint_list_table;
-static const EditorBinding blueprint_detail_actions[BP_DETAIL_ACT_COUNT];
-static const EditorBindingTable blueprint_detail_table;
 
 /* --- Helpers --- */
 
@@ -504,104 +476,43 @@ void handle_blueprint_browse_input(GameState *state,
     }
 }
 
-/* --- Binding tables --- */
+/* --- Hint tables --- */
 
-static const EditorBinding blueprint_list_actions[BP_LIST_ACT_COUNT] = {
-    [BP_LIST_ACT_CANCEL] =
-        {
-            .binding = {KEY_ESCAPE, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT},
-            .description = "Back to scene",
-        },
-    [BP_LIST_ACT_DOWN] =
-        {
-            .binding = {KEY_DOWN, GAMEPAD_BUTTON_LEFT_FACE_DOWN},
-            .description = "Next",
-        },
-    [BP_LIST_ACT_UP] =
-        {
-            .binding = {KEY_UP, GAMEPAD_BUTTON_LEFT_FACE_UP},
-            .description = "Prev",
-        },
-    [BP_LIST_ACT_CONFIRM] =
-        {
-            .binding = {KEY_ENTER, GAMEPAD_BUTTON_RIGHT_FACE_DOWN},
-            .description = "Open / New",
-        },
-    [BP_LIST_ACT_DELETE] =
-        {
-            .binding = {KEY_DELETE, GAMEPAD_BUTTON_RIGHT_FACE_LEFT},
-            .description = "Delete",
-        },
+static const EditorActionHint blueprint_list_hints[] = {
+    {ACTION_CANCEL, "Back to scene"}, {ACTION_NAV_DOWN, "Next"},        {ACTION_NAV_UP, "Prev"},
+    {ACTION_CONFIRM, "Open / New"},   {ACTION_EDITOR_DELETE, "Delete"},
 };
 
-static const EditorBindingTable blueprint_list_table = {
-    .actions = blueprint_list_actions,
-    .count = BP_LIST_ACT_COUNT,
+static const EditorHintTable blueprint_list_table = {
+    .hints = blueprint_list_hints,
+    .count = (int)(sizeof(blueprint_list_hints) / sizeof(blueprint_list_hints[0])),
     .mode_label = "Blueprint list",
 };
 
-const EditorBindingTable *blueprint_list_bindings(void)
+const EditorHintTable *blueprint_list_hints_table(void)
 {
     return &blueprint_list_table;
 }
 
-static const EditorBinding blueprint_detail_actions[BP_DETAIL_ACT_COUNT] = {
-    [BP_DETAIL_ACT_CANCEL] =
-        {
-            .binding = {KEY_ESCAPE, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT},
-            .description = "Back",
-        },
-    [BP_DETAIL_ACT_DOWN] =
-        {
-            .binding = {KEY_DOWN, GAMEPAD_BUTTON_LEFT_FACE_DOWN},
-            .description = "Next",
-        },
-    [BP_DETAIL_ACT_UP] =
-        {
-            .binding = {KEY_UP, GAMEPAD_BUTTON_LEFT_FACE_UP},
-            .description = "Prev",
-        },
-    [BP_DETAIL_ACT_CONFIRM] =
-        {
-            .binding = {KEY_ENTER, GAMEPAD_BUTTON_RIGHT_FACE_DOWN},
-            .description = "Edit",
-        },
-    [BP_DETAIL_ACT_DELETE] =
-        {
-            .binding = {KEY_DELETE, GAMEPAD_BUTTON_RIGHT_FACE_LEFT},
-            .description = "Remove",
-        },
-    [BP_DETAIL_ACT_TYPE_RADIAL] =
-        {
-            .binding = {KEY_RIGHT_BRACKET, GAMEPAD_BUTTON_RIGHT_TRIGGER_2},
-            .description = "Type",
-        },
-    [BP_DETAIL_ACT_DUPLICATE] =
-        {
-            .binding = {KEY_LEFT_BRACKET, GAMEPAD_BUTTON_LEFT_TRIGGER_2},
-            .description = "Duplicate",
-        },
-    [BP_DETAIL_ACT_UNDO] =
-        {
-            .binding = {KEY_Z, GAMEPAD_BUTTON_LEFT_FACE_LEFT},
-            .modifier = {KEY_LEFT_CONTROL, GAMEPAD_BUTTON_LEFT_TRIGGER_1},
-            .description = "Undo",
-        },
-    [BP_DETAIL_ACT_REDO] =
-        {
-            .binding = {KEY_Y, GAMEPAD_BUTTON_LEFT_FACE_RIGHT},
-            .modifier = {KEY_LEFT_CONTROL, GAMEPAD_BUTTON_LEFT_TRIGGER_1},
-            .description = "Redo",
-        },
+static const EditorActionHint blueprint_detail_hints[] = {
+    {ACTION_CANCEL, "Back"},
+    {ACTION_NAV_DOWN, "Next"},
+    {ACTION_NAV_UP, "Prev"},
+    {ACTION_CONFIRM, "Edit"},
+    {ACTION_EDITOR_DELETE, "Remove"},
+    {ACTION_EDITOR_TYPE_PROPS, "Type"},
+    {ACTION_BLUEPRINT_DUPLICATE, "Duplicate"},
+    {ACTION_EDITOR_UNDO, "Undo"},
+    {ACTION_EDITOR_REDO, "Redo"},
 };
 
-static const EditorBindingTable blueprint_detail_table = {
-    .actions = blueprint_detail_actions,
-    .count = BP_DETAIL_ACT_COUNT,
+static const EditorHintTable blueprint_detail_table = {
+    .hints = blueprint_detail_hints,
+    .count = (int)(sizeof(blueprint_detail_hints) / sizeof(blueprint_detail_hints[0])),
     .mode_label = "Blueprint detail",
 };
 
-const EditorBindingTable *blueprint_detail_bindings(void)
+const EditorHintTable *blueprint_detail_hints_table(void)
 {
     return &blueprint_detail_table;
 }

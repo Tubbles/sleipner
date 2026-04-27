@@ -2,42 +2,11 @@
 
 #include "alloc.h"
 #include "arena.h"
-#include "editor/keybindings.h"
 #include "map.h"
 #include "rule.h"
 #include "strv.h"
 
 #include <string.h>
-
-/* --- Binding tables (declared below, defined at end of file) --- */
-
-enum {
-    BROWSE_ACT_TOOLS,
-    BROWSE_ACT_CONFIRM,
-    BROWSE_ACT_CANCEL,
-    BROWSE_ACT_NAV_DOWN,
-    BROWSE_ACT_NAV_UP,
-    BROWSE_ACT_WATCH,
-    BROWSE_ACT_DELETE,
-    BROWSE_ACT_PLACE,
-    BROWSE_ACT_TYPE_PROPS,
-    BROWSE_ACT_GRAB,
-    BROWSE_ACT_HANDLES,
-    BROWSE_ACT_UNDO,
-    BROWSE_ACT_REDO,
-    BROWSE_ACT_COUNT
-};
-
-enum { DRAG_ACT_CONFIRM, DRAG_ACT_CANCEL, DRAG_ACT_COUNT };
-
-enum { HANDLES_ACT_CONFIRM, HANDLES_ACT_CANCEL, HANDLES_ACT_COUNT };
-
-static const EditorBinding browse_actions[BROWSE_ACT_COUNT];
-static const EditorBindingTable browse_table;
-static const EditorBinding drag_actions[DRAG_ACT_COUNT];
-static const EditorBindingTable drag_table;
-static const EditorBinding handles_actions[HANDLES_ACT_COUNT];
-static const EditorBindingTable handles_table;
 
 /* --- Shared helpers (declared in internal.h) --- */
 
@@ -756,139 +725,63 @@ void handle_handle_input(
     (void)attr_set_float(&alloc, &entity->attrs, "collision_h", editor_state->saved_col_size.y);
 }
 
-/* --- Binding tables --- */
+/* --- Hint tables --- */
 
-static const EditorBinding browse_actions[BROWSE_ACT_COUNT] = {
-    [BROWSE_ACT_TOOLS] =
-        {
-            /* Gamepad Y (RIGHT_FACE_UP), formerly the direct Save binding
-             * before the pause menu took ownership of Save / Restore.
-             * Moved off Select to free MIDDLE_LEFT for the pause menu,
-             * which opens in both play and editor mode. */
-            .binding = {KEY_TAB, GAMEPAD_BUTTON_RIGHT_FACE_UP},
-            .description = "Tools",
-        },
-    [BROWSE_ACT_CONFIRM] =
-        {
-            .binding = {KEY_ENTER, GAMEPAD_BUTTON_RIGHT_FACE_DOWN},
-            .description = "Select / Edit",
-        },
-    [BROWSE_ACT_CANCEL] =
-        {
-            .binding = {KEY_ESCAPE, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT},
-            .description = "Back / Deselect",
-        },
-    [BROWSE_ACT_NAV_DOWN] =
-        {
-            .binding = {KEY_DOWN, GAMEPAD_BUTTON_LEFT_FACE_DOWN},
-            .description = "Next",
-        },
-    [BROWSE_ACT_NAV_UP] =
-        {
-            .binding = {KEY_UP, GAMEPAD_BUTTON_LEFT_FACE_UP},
-            .description = "Prev",
-        },
-    [BROWSE_ACT_WATCH] =
-        {
-            .binding = {KEY_LEFT_SHIFT, GAMEPAD_BUTTON_LEFT_TRIGGER_2},
-            .description = "Watch",
-        },
-    [BROWSE_ACT_DELETE] =
-        {
-            .binding = {KEY_DELETE, GAMEPAD_BUTTON_RIGHT_FACE_LEFT},
-            .description = "Delete",
-        },
-    [BROWSE_ACT_PLACE] =
-        {
-            .binding = {KEY_P, GAMEPAD_BUTTON_RIGHT_TRIGGER_1},
-            .description = "Place",
-        },
-    [BROWSE_ACT_TYPE_PROPS] =
-        {
-            .binding = {KEY_RIGHT_BRACKET, GAMEPAD_BUTTON_RIGHT_TRIGGER_2},
-            .description = "Type / Props",
-        },
-    [BROWSE_ACT_GRAB] =
-        {
-            .binding = {KEY_G, GAMEPAD_BUTTON_LEFT_THUMB},
-            .description = "Grab",
-        },
-    [BROWSE_ACT_HANDLES] =
-        {
-            /* Keyboard-only: gamepad Handles is reached via Tools radial so
-             * L1 stays free for the undo/redo chord. */
-            .binding = {KEY_H, GAMEPAD_BUTTON_UNKNOWN},
-            .description = "Handles",
-        },
-    [BROWSE_ACT_UNDO] =
-        {
-            .binding = {KEY_Z, GAMEPAD_BUTTON_LEFT_FACE_LEFT},
-            .modifier = {KEY_LEFT_CONTROL, GAMEPAD_BUTTON_LEFT_TRIGGER_1},
-            .description = "Undo",
-        },
-    [BROWSE_ACT_REDO] =
-        {
-            .binding = {KEY_Y, GAMEPAD_BUTTON_LEFT_FACE_RIGHT},
-            .modifier = {KEY_LEFT_CONTROL, GAMEPAD_BUTTON_LEFT_TRIGGER_1},
-            .description = "Redo",
-        },
+static const EditorActionHint browse_hints[] = {
+    {ACTION_EDITOR_OPEN_TOOLS, "Tools"},
+    {ACTION_CONFIRM, "Select / Edit"},
+    {ACTION_CANCEL, "Back / Deselect"},
+    {ACTION_NAV_DOWN, "Next"},
+    {ACTION_NAV_UP, "Prev"},
+    {ACTION_EDITOR_WATCH, "Watch"},
+    {ACTION_EDITOR_DELETE, "Delete"},
+    {ACTION_EDITOR_PLACE, "Place"},
+    {ACTION_EDITOR_TYPE_PROPS, "Type / Props"},
+    {ACTION_EDITOR_GRAB, "Grab"},
+    {ACTION_EDITOR_HANDLES, "Handles"},
+    {ACTION_EDITOR_UNDO, "Undo"},
+    {ACTION_EDITOR_REDO, "Redo"},
 };
 
-static const EditorBindingTable browse_table = {
-    .actions = browse_actions,
-    .count = BROWSE_ACT_COUNT,
+static const EditorHintTable browse_table = {
+    .hints = browse_hints,
+    .count = (int)(sizeof(browse_hints) / sizeof(browse_hints[0])),
     .mode_label = "Scene",
 };
 
-static const EditorBinding drag_actions[DRAG_ACT_COUNT] = {
-    [DRAG_ACT_CONFIRM] =
-        {
-            .binding = {KEY_ENTER, GAMEPAD_BUTTON_RIGHT_FACE_DOWN},
-            .description = "Confirm move",
-        },
-    [DRAG_ACT_CANCEL] =
-        {
-            .binding = {KEY_ESCAPE, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT},
-            .description = "Cancel",
-        },
+static const EditorActionHint drag_hints[] = {
+    {ACTION_CONFIRM, "Confirm move"},
+    {ACTION_CANCEL, "Cancel"},
 };
 
-static const EditorBindingTable drag_table = {
-    .actions = drag_actions,
-    .count = DRAG_ACT_COUNT,
+static const EditorHintTable drag_table = {
+    .hints = drag_hints,
+    .count = (int)(sizeof(drag_hints) / sizeof(drag_hints[0])),
     .mode_label = "Drag  (stick: move entity)",
 };
 
-static const EditorBinding handles_actions[HANDLES_ACT_COUNT] = {
-    [HANDLES_ACT_CONFIRM] =
-        {
-            .binding = {KEY_ENTER, GAMEPAD_BUTTON_RIGHT_FACE_DOWN},
-            .description = "Confirm resize",
-        },
-    [HANDLES_ACT_CANCEL] =
-        {
-            .binding = {KEY_ESCAPE, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT},
-            .description = "Cancel",
-        },
+static const EditorActionHint handles_hints[] = {
+    {ACTION_CONFIRM, "Confirm resize"},
+    {ACTION_CANCEL, "Cancel"},
 };
 
-static const EditorBindingTable handles_table = {
-    .actions = handles_actions,
-    .count = HANDLES_ACT_COUNT,
+static const EditorHintTable handles_table = {
+    .hints = handles_hints,
+    .count = (int)(sizeof(handles_hints) / sizeof(handles_hints[0])),
     .mode_label = "Handles  (L-stick: offset, R-stick: size)",
 };
 
-const EditorBindingTable *browse_bindings(void)
+const EditorHintTable *browse_hints_table(void)
 {
     return &browse_table;
 }
 
-const EditorBindingTable *drag_bindings(void)
+const EditorHintTable *drag_hints_table(void)
 {
     return &drag_table;
 }
 
-const EditorBindingTable *handles_bindings(void)
+const EditorHintTable *handles_hints_table(void)
 {
     return &handles_table;
 }

@@ -32,13 +32,7 @@ FAKE_VALUE_FUNC(bool, IsGamepadButtonDown, int, int);
 #include "../src/vec.c"            // NOLINT(bugprone-suspicious-include)
 #include "../src/editor/widgets.c" // NOLINT(bugprone-suspicious-include)
 
-/* Cross-file editor fakes: keybindings.c (HUD-only after stage 8) */
-FAKE_VALUE_FUNC(bool, binding_pressed, const EditorBinding *);
-FAKE_VALUE_FUNC(bool, binding_held, const EditorBinding *);
-FAKE_VALUE_FUNC(bool, binding_modifier_down, const EditorBinding *);
-
 /* Cross-file editor fakes: draw.c */
-FAKE_VALUE_FUNC(bool, toggle_pressed, ToggleBinding);
 FAKE_VOID_FUNC(draw_ui_text, Font, const char *, int, int, int, Color);
 FAKE_VALUE_FUNC(int, measure_ui_text, Font, const char *, int);
 
@@ -143,26 +137,6 @@ static const BindingStore *get_test_bindings(void)
         test_widget_bindings_loaded = true;
     }
     return &test_widget_bindings;
-}
-
-static void reset_input_fakes(void)
-{
-    RESET_FAKE(toggle_pressed);
-    RESET_FAKE(binding_pressed);
-    RESET_FAKE(binding_held);
-    RESET_FAKE(binding_modifier_down);
-    FFF_RESET_HISTORY(); // NOLINT(bugprone-multi-level-implicit-pointer-conversion)
-}
-
-static int target_key_for_press;
-static bool press_specific_toggle(ToggleBinding binding)
-{
-    return binding.key == target_key_for_press;
-}
-
-static bool press_specific_binding(const EditorBinding *action)
-{
-    return action->binding.key == target_key_for_press;
 }
 
 /* ---- radial_sector_from_stick ------------------------------------------- */

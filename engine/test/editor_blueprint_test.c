@@ -12,21 +12,13 @@
 
 DEFINE_FFF_GLOBALS;
 
-/* Cross-file editor fakes: keybindings.c */
-FAKE_VALUE_FUNC(bool, binding_pressed, const EditorBinding *);
-FAKE_VALUE_FUNC(bool, binding_held, const EditorBinding *);
-FAKE_VALUE_FUNC(bool, binding_modifier_down, const EditorBinding *);
-
-/* Cross-file editor fakes: input_func.c (blueprint.c calls input_pressed
- * since the stage 8 migration; tests don't drive input here, so a fake
- * returning false everywhere is sufficient). */
+/* Cross-file editor fakes: input_func.c. blueprint.c calls input_pressed;
+ * tests don't drive input here, so a fake returning false everywhere is
+ * sufficient. */
 FAKE_VALUE_FUNC(bool, input_pressed, const InputState *, const BindingStore *, InputAction);
 FAKE_VALUE_FUNC(bool, input_held, const InputState *, const BindingStore *, InputAction);
 FAKE_VALUE_FUNC(float, input_axis, const InputState *, const BindingStore *, InputAxis);
 FAKE_VALUE_FUNC(Vector2, input_axis_pair, const InputState *, const BindingStore *, InputAxis, InputAxis);
-
-/* Cross-file editor fakes: draw.c */
-FAKE_VALUE_FUNC(bool, toggle_pressed, ToggleBinding);
 
 /* Cross-file editor fakes: attr.c */
 FAKE_VOID_FUNC(dispatch_attr_type_change, GameState *, EditorState *, int, UndoHistory *);
@@ -72,10 +64,6 @@ MAP_IMPL(entity_ruleset, int, vec_rule, map_hash_int, map_eq_int)
 
 void setUp(void)
 {
-    RESET_FAKE(toggle_pressed);
-    RESET_FAKE(binding_pressed);
-    RESET_FAKE(binding_held);
-    RESET_FAKE(binding_modifier_down);
     RESET_FAKE(dispatch_attr_type_change);
     RESET_FAKE(dispatch_child_props);
     RESET_FAKE(remove_blueprint_child);

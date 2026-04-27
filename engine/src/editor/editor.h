@@ -58,11 +58,6 @@ extern const Color debug_text_color;
 extern const Color debug_bg_color;
 extern const Color debug_log_color;
 
-typedef struct {
-    int key;
-    int gamepad_button;
-} ToggleBinding;
-
 typedef enum {
     EDITOR_TOP_SCENE,     /* default: entity-focused editing */
     EDITOR_TOP_BLUEPRINT, /* blueprint-focused editing */
@@ -137,10 +132,14 @@ typedef struct {
     int count;
 } WatchList;
 
-bool toggle_pressed(ToggleBinding binding);
 void update_editor_camera(Camera2D *camera, const InputState *input, const BindingStore *bindings, float delta_time);
 void draw_editor_crosshair(RectU32 game_bounds);
-void draw_hints_bar(bool editor_mode, const EditorState *editor_state, bool is_dirty, ScreenSize screen, Font ui_font);
+void draw_hints_bar(bool editor_mode,
+                    const EditorState *editor_state,
+                    const BindingStore *bindings,
+                    bool is_dirty,
+                    ScreenSize screen,
+                    Font ui_font);
 void draw_toast(const EditorState *editor_state, ScreenSize screen, Font ui_font);
 int find_nearest_entity(const Level *level, Vector2 cursor_world);
 void draw_editor_highlights(const GameState *state, const EditorState *editor_state, int hover_entity_index);

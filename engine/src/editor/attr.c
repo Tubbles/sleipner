@@ -1,7 +1,6 @@
 #include "editor/internal.h"
 
 #include "alloc.h"
-#include "editor/keybindings.h"
 #include "input.h"
 #include "input_func.h"
 #include "str.h"
@@ -11,25 +10,6 @@
 #include <string.h>
 
 #define RADIX_DECIMAL 10
-
-/* Forward decls for the HUD-hint table (still walked by editor/draw.c).
- * The binding fields are dead data after stage 6 of the input overhaul;
- * the description fields remain in use for the hints bar until stage 9
- * replaces the HUD layer wholesale. */
-enum {
-    ATTR_EDIT_ACT_CONFIRM,
-    ATTR_EDIT_ACT_CANCEL,
-    ATTR_EDIT_ACT_DEC_ONE,
-    ATTR_EDIT_ACT_INC_ONE,
-    ATTR_EDIT_ACT_DEC_TEN,
-    ATTR_EDIT_ACT_INC_TEN,
-    ATTR_EDIT_ACT_DEC_HUNDRED,
-    ATTR_EDIT_ACT_INC_HUNDRED,
-    ATTR_EDIT_ACT_COUNT
-};
-
-static const EditorBinding attr_edit_actions[ATTR_EDIT_ACT_COUNT];
-static const EditorBindingTable attr_edit_table;
 
 static int read_value_delta(const InputState *input, const BindingStore *bindings)
 {
@@ -300,8 +280,8 @@ static void reset_attr_hold(EditorState *editor_state)
     editor_state->attr_hold_dir = 0;
 }
 
-static void handle_child_offset_edit(GameState *state, EditorState *editor_state, UndoHistory *undo_history,
-                                     const InputState *input, float delta_time)
+static void handle_child_offset_edit(
+    GameState *state, EditorState *editor_state, UndoHistory *undo_history, const InputState *input, float delta_time)
 {
     if (input_pressed(input, &state->bindings, ACTION_CONFIRM)) {
         confirm_child_offset_edit(state, editor_state, undo_history, editor_state->saved_attr_int);
@@ -355,8 +335,8 @@ static void attr_edit_confirm(GameState *state, EditorState *editor_state, UndoH
     editor_state->sub_mode = EDITOR_SUB_BROWSE;
 }
 
-void handle_attr_edit_input(GameState *state, EditorState *editor_state, UndoHistory *undo_history,
-                            const InputState *input, float delta_time)
+void handle_attr_edit_input(
+    GameState *state, EditorState *editor_state, UndoHistory *undo_history, const InputState *input, float delta_time)
 {
     if (editor_state->editing_child_offset) {
         handle_child_offset_edit(state, editor_state, undo_history, input, delta_time);
@@ -414,58 +394,26 @@ void handle_attr_edit_input(GameState *state, EditorState *editor_state, UndoHis
     }
 }
 
-/* --- Binding table --- */
+/* --- Hint table --- */
 
-static const EditorBinding attr_edit_actions[ATTR_EDIT_ACT_COUNT] = {
-    [ATTR_EDIT_ACT_CONFIRM] =
-        {
-            .binding = {KEY_ENTER, GAMEPAD_BUTTON_RIGHT_FACE_DOWN},
-            .description = "Confirm",
-        },
-    [ATTR_EDIT_ACT_CANCEL] =
-        {
-            .binding = {KEY_ESCAPE, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT},
-            .description = "Cancel",
-        },
-    [ATTR_EDIT_ACT_DEC_ONE] =
-        {
-            .binding = {KEY_LEFT, GAMEPAD_BUTTON_LEFT_FACE_LEFT},
-            .description = "-1 (tap or hold)",
-        },
-    [ATTR_EDIT_ACT_INC_ONE] =
-        {
-            .binding = {KEY_RIGHT, GAMEPAD_BUTTON_LEFT_FACE_RIGHT},
-            .description = "+1 (tap or hold)",
-        },
-    [ATTR_EDIT_ACT_DEC_TEN] =
-        {
-            .binding = {KEY_LEFT_BRACKET, GAMEPAD_BUTTON_LEFT_TRIGGER_1},
-            .description = "-10",
-        },
-    [ATTR_EDIT_ACT_INC_TEN] =
-        {
-            .binding = {KEY_RIGHT_BRACKET, GAMEPAD_BUTTON_RIGHT_TRIGGER_1},
-            .description = "+10",
-        },
-    [ATTR_EDIT_ACT_DEC_HUNDRED] =
-        {
-            .binding = {KEY_PAGE_DOWN, GAMEPAD_BUTTON_LEFT_TRIGGER_2},
-            .description = "-100",
-        },
-    [ATTR_EDIT_ACT_INC_HUNDRED] =
-        {
-            .binding = {KEY_PAGE_UP, GAMEPAD_BUTTON_RIGHT_TRIGGER_2},
-            .description = "+100",
-        },
+static const EditorActionHint attr_edit_hints[] = {
+    {ACTION_CONFIRM, "Confirm"},
+    {ACTION_CANCEL, "Cancel"},
+    {ACTION_ATTR_DEC_1, "-1 (tap or hold)"},
+    {ACTION_ATTR_INC_1, "+1 (tap or hold)"},
+    {ACTION_ATTR_DEC_10, "-10"},
+    {ACTION_ATTR_INC_10, "+10"},
+    {ACTION_ATTR_DEC_100, "-100"},
+    {ACTION_ATTR_INC_100, "+100"},
 };
 
-static const EditorBindingTable attr_edit_table = {
-    .actions = attr_edit_actions,
-    .count = ATTR_EDIT_ACT_COUNT,
+static const EditorHintTable attr_edit_table = {
+    .hints = attr_edit_hints,
+    .count = (int)(sizeof(attr_edit_hints) / sizeof(attr_edit_hints[0])),
     .mode_label = "Adjust value",
 };
 
-const EditorBindingTable *attr_edit_bindings(void)
+const EditorHintTable *attr_edit_hints_table(void)
 {
     return &attr_edit_table;
 }

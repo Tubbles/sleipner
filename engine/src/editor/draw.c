@@ -1,10 +1,11 @@
 #include "editor/internal.h"
 
-#include "editor/keybindings.h"
-
+#include <stdio.h>
 #include <string.h>
 
 #define HINTS_BAR_BUF_CAP 512
+#define HINT_LABEL_BUF_CAP 32
+#define HINT_OVERFLOW_TAIL_CAP 16
 
 const Color debug_text_color = {200, 220, 240, 255};
 const Color debug_log_color = {180, 210, 180, 255};
@@ -27,14 +28,6 @@ int measure_ui_text(Font font, const char *text, int font_size)
     return (int)MeasureTextEx(font, text, (float)font_size, 1).x;
 }
 
-bool toggle_pressed(ToggleBinding binding)
-{
-    if (IsKeyPressed(binding.key)) {
-        return true;
-    }
-    return IsGamepadButtonPressed(0, binding.gamepad_button);
-}
-
 void update_editor_camera(Camera2D *camera, const InputState *input, const BindingStore *bindings, float delta_time)
 {
     Vector2 pan = input_axis_pair(input, bindings, AXIS_PRIMARY_X, AXIS_PRIMARY_Y);
@@ -50,45 +43,134 @@ void draw_editor_crosshair(RectU32 game_bounds)
     DrawLine(center_x, center_y - EDITOR_CROSSHAIR_HALF, center_x, center_y + EDITOR_CROSSHAIR_HALF, WHITE);
 }
 
-static const EditorBindingTable *hints_table_for(bool editor_mode, const EditorState *editor_state)
+/* --- HUD hint tables for the top-level game loop ---
+ *
+ * Place mode and play mode aren't owned by an editor handler TU (their
+ * handlers live in main.c), so their hint tables sit alongside the only
+ * consumer — the hint bar render below. The submode-owning files own
+ * theirs, exposed via the accessors declared in editor/internal.h. */
+static const EditorActionHint place_hints[] = {
+    {ACTION_CONFIRM, "Place"}, {ACTION_CANCEL, "Cancel"},   {ACTION_NAV_UP, "Prev"},
+    {ACTION_NAV_DOWN, "Next"}, {ACTION_PAGE_UP, "Page up"}, {ACTION_PAGE_DOWN, "Page down"},
+};
+
+static const EditorHintTable place_table = {
+    .hints = place_hints,
+    .count = (int)(sizeof(place_hints) / sizeof(place_hints[0])),
+    .mode_label = "Place entity",
+};
+
+static const EditorActionHint play_mode_hints[] = {
+    {ACTION_MENU_TOGGLE, "Menu"},
+    {ACTION_FONT_PREVIEW_TOGGLE, "Fonts"},
+    {ACTION_EDITOR_TOGGLE, "Editor"},
+};
+
+static const EditorHintTable play_mode_table = {
+    .hints = play_mode_hints,
+    .count = (int)(sizeof(play_mode_hints) / sizeof(play_mode_hints[0])),
+    .mode_label = "Play",
+};
+
+static const EditorHintTable *hints_table_for(bool editor_mode, const EditorState *editor_state)
 {
     if (!editor_mode) {
-        return play_mode_bindings();
+        return &play_mode_table;
     }
     switch (editor_state->sub_mode) {
     case EDITOR_SUB_DRAG:
-        return drag_bindings();
+        return drag_hints_table();
     case EDITOR_SUB_HANDLES:
-        return handles_bindings();
+        return handles_hints_table();
     case EDITOR_SUB_PLACE:
-        return place_bindings();
+        return &place_table;
     case EDITOR_SUB_ATTR_EDIT:
-        return attr_edit_bindings();
+        return attr_edit_hints_table();
     case EDITOR_SUB_RADIAL:
-        return radial_bindings();
+        return radial_hints_table();
     case EDITOR_SUB_WORD_BUILDER:
-        return word_builder_bindings();
+        return word_builder_hints_table();
     case EDITOR_SUB_GAMEPAD_KB:
-        return gamepad_kb_bindings();
+        return gamepad_kb_hints_table();
     case EDITOR_SUB_FUZZY_FINDER:
-        return fuzzy_finder_bindings();
+        return fuzzy_finder_hints_table();
     case EDITOR_SUB_BROWSE:
         if (editor_state->top_mode == EDITOR_TOP_BLUEPRINT) {
-            return editor_state->selected_blueprint_index >= 0 ? blueprint_detail_bindings()
-                                                               : blueprint_list_bindings();
+            return editor_state->selected_blueprint_index >= 0 ? blueprint_detail_hints_table()
+                                                               : blueprint_list_hints_table();
         }
-        return browse_bindings();
+        return browse_hints_table();
     }
-    return browse_bindings();
+    return browse_hints_table();
 }
 
-void draw_hints_bar(bool editor_mode, const EditorState *editor_state, bool is_dirty, ScreenSize screen, Font ui_font)
+static int hint_append_str(char *out, int cap, int len, const char *text)
+{
+    if (len >= cap - 1) {
+        return len;
+    }
+    int remain = cap - 1 - len;
+    int text_len = (int)strlen(text);
+    if (text_len > remain) {
+        text_len = remain;
+    }
+    memcpy(out + len, text, (size_t)text_len);
+    return len + text_len;
+}
+
+int editor_hint_table_render(const BindingStore *store, const EditorHintTable *table, char *out, int cap)
+{
+    if (cap <= 0) {
+        return 0;
+    }
+    int len = 0;
+    if (table->mode_label != nullptr && table->mode_label[0] != '\0') {
+        len = hint_append_str(out, cap, len, "[");
+        len = hint_append_str(out, cap, len, table->mode_label);
+        len = hint_append_str(out, cap, len, "]");
+    }
+    for (int index = 0; index < table->count; index++) {
+        const EditorActionHint *hint = &table->hints[index];
+        if (hint->description == nullptr || hint->description[0] == '\0') {
+            continue;
+        }
+        char label_buf[HINT_LABEL_BUF_CAP];
+        int label_len = input_func_label(store, hint->action, label_buf, sizeof(label_buf));
+        if (label_len == 0) {
+            continue; /* action has no alternatives — skip rather than render an empty key */
+        }
+        int before = len;
+        if (len > 0) {
+            len = hint_append_str(out, cap, len, "  |  ");
+        }
+        len = hint_append_str(out, cap, len, label_buf);
+        len = hint_append_str(out, cap, len, ": ");
+        len = hint_append_str(out, cap, len, hint->description);
+        if (len >= cap - 1) {
+            len = before;
+            int remaining = table->count - index;
+            char tail[HINT_OVERFLOW_TAIL_CAP];
+            (void)snprintf(tail, sizeof(tail), "  +%d more", remaining);
+            len = hint_append_str(out, cap, len, tail);
+            break;
+        }
+    }
+    out[len] = '\0';
+    return len;
+}
+
+void draw_hints_bar(bool editor_mode,
+                    const EditorState *editor_state,
+                    const BindingStore *bindings,
+                    bool is_dirty,
+                    ScreenSize screen,
+                    Font ui_font)
 {
     int bar_y = screen.height - HINTS_BAR_HEIGHT;
     DrawRectangle(0, bar_y, screen.width, HINTS_BAR_HEIGHT, debug_bg_color);
-    const EditorBindingTable *table = hints_table_for(editor_mode, editor_state);
+    const EditorHintTable *table = hints_table_for(editor_mode, editor_state);
     char hints[HINTS_BAR_BUF_CAP];
-    (void)binding_table_render(table, hints, (int)sizeof(hints));
+    (void)editor_hint_table_render(bindings, table, hints, (int)sizeof(hints));
     int text_y = bar_y + ((HINTS_BAR_HEIGHT - HINTS_FONT_SIZE) / 2);
     draw_ui_text(ui_font, hints, DEBUG_MARGIN, text_y, HINTS_FONT_SIZE, debug_text_color);
     if (editor_mode && is_dirty) {
