@@ -180,6 +180,41 @@ void input_func_load_defaults(BindingStore *store, Allocator alloc);
 [[nodiscard]] bool
 input_func_load_bindings_toml(BindingStore *store, Allocator alloc, ErrorState *err, const char *toml_path);
 
+/* --- Mutation API -------------------------------------------------------- */
+
+/* All mutators deep-copy the supplied PhysicalInput so the store owns
+ * its parts vec; the caller can free or stack-allocate the source freely.
+ * `alloc` should be the same allocator used by input_func_load_defaults
+ * (typically the gamedata arena). */
+
+[[nodiscard]] bool input_func_set_action_alternative(
+    BindingStore *store, Allocator alloc, InputAction action, int alt_index, const PhysicalInput *replacement);
+
+[[nodiscard]] bool input_func_add_action_alternative(BindingStore *store,
+                                                     Allocator alloc,
+                                                     InputAction action,
+                                                     const PhysicalInput *new_alt);
+
+void input_func_remove_action_alternative(BindingStore *store, InputAction action, int alt_index);
+
+/* Drop all alternatives for `action`. Distinguishes "explicitly unbound"
+ * from "defaults" once the TOML overlay loader is wired in. */
+void input_func_clear_action(BindingStore *store, InputAction action);
+
+[[nodiscard]] bool input_func_set_axis_alternative(
+    BindingStore *store, Allocator alloc, InputAxis axis, int alt_index, const PhysicalInput *replacement);
+
+[[nodiscard]] bool
+input_func_add_axis_alternative(BindingStore *store, Allocator alloc, InputAxis axis, const PhysicalInput *new_alt);
+
+void input_func_remove_axis_alternative(BindingStore *store, InputAxis axis, int alt_index);
+
+void input_func_clear_axis(BindingStore *store, InputAxis axis);
+
+void input_func_reset_action_to_defaults(BindingStore *store, Allocator alloc, InputAction action);
+void input_func_reset_axis_to_defaults(BindingStore *store, Allocator alloc, InputAxis axis);
+void input_func_reset_all_to_defaults(BindingStore *store, Allocator alloc);
+
 /* --- Code <-> name translation ------------------------------------------- */
 
 /* Resolve a TOML name like "ENTER", "RIGHT_FACE_DOWN", "LEFT_X" to its

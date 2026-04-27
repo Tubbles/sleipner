@@ -489,6 +489,143 @@ typedef struct {
 #define GT(axis) ((DefaultAtom){.atom = {.kind = ATOM_GP_TRIGGER, .int_a = (axis), .scale = 1.0F}})
 #define KBA(neg, pos) ((DefaultAtom){.atom = {.kind = ATOM_KB_AXIS, .int_a = (neg), .int_b = (pos), .scale = 1.0F}})
 
+/* Each block: atoms separated by ATOM_END; whole list terminated by ALTS_END.
+ * Atoms within a single PhysicalInput are AND-combined (chord);
+ * separate PhysicalInputs are OR-combined (alternatives). */
+
+/* clang-format off */
+static const DefaultAtom default_confirm[]   = { K(KEY_ENTER),  ATOM_END,  GB(GAMEPAD_BUTTON_RIGHT_FACE_DOWN),  ATOM_END, ALTS_END };
+static const DefaultAtom default_cancel[]    = { K(KEY_ESCAPE), ATOM_END,  GB(GAMEPAD_BUTTON_RIGHT_FACE_RIGHT), ATOM_END, ALTS_END };
+static const DefaultAtom default_nav_up[]    = { K(KEY_UP),     ATOM_END,  GB(GAMEPAD_BUTTON_LEFT_FACE_UP),     ATOM_END, ALTS_END };
+static const DefaultAtom default_nav_down[]  = { K(KEY_DOWN),   ATOM_END,  GB(GAMEPAD_BUTTON_LEFT_FACE_DOWN),   ATOM_END, ALTS_END };
+static const DefaultAtom default_nav_left[]  = { K(KEY_LEFT),   ATOM_END,  GB(GAMEPAD_BUTTON_LEFT_FACE_LEFT),   ATOM_END, ALTS_END };
+static const DefaultAtom default_nav_right[] = { K(KEY_RIGHT),  ATOM_END,  GB(GAMEPAD_BUTTON_LEFT_FACE_RIGHT),  ATOM_END, ALTS_END };
+static const DefaultAtom default_page_up[]   = { K(KEY_Q),      ATOM_END,  GB(GAMEPAD_BUTTON_LEFT_TRIGGER_1),   ATOM_END, ALTS_END };
+static const DefaultAtom default_page_down[] = { K(KEY_E),      ATOM_END,  GB(GAMEPAD_BUTTON_RIGHT_TRIGGER_1),  ATOM_END, ALTS_END };
+
+static const DefaultAtom default_editor_toggle[]          = { K(KEY_F5),  ATOM_END, GB(GAMEPAD_BUTTON_MIDDLE_RIGHT), ATOM_END, ALTS_END };
+static const DefaultAtom default_editor_open_blueprints[] = { ALTS_END }; /* opened via tools radial; no direct binding currently */
+static const DefaultAtom default_editor_open_tools[]      = { K(KEY_TAB), ATOM_END, GB(GAMEPAD_BUTTON_RIGHT_FACE_UP), ATOM_END, ALTS_END };
+static const DefaultAtom default_editor_delete[]          = { K(KEY_DELETE), ATOM_END, GB(GAMEPAD_BUTTON_RIGHT_FACE_LEFT), ATOM_END, ALTS_END };
+static const DefaultAtom default_editor_place[]           = { K(KEY_P),   ATOM_END, GB(GAMEPAD_BUTTON_RIGHT_TRIGGER_1), ATOM_END, ALTS_END };
+static const DefaultAtom default_editor_type_props[]      = { K(KEY_RIGHT_BRACKET), ATOM_END, GB(GAMEPAD_BUTTON_RIGHT_TRIGGER_2), ATOM_END, ALTS_END };
+static const DefaultAtom default_editor_grab[]            = { K(KEY_G),   ATOM_END, GB(GAMEPAD_BUTTON_LEFT_THUMB),    ATOM_END, ALTS_END };
+static const DefaultAtom default_editor_handles[]         = { K(KEY_H),   ATOM_END, ALTS_END }; /* keyboard-only by design (L1 reserved for chord) */
+static const DefaultAtom default_editor_watch[]           = { K(KEY_LEFT_SHIFT), ATOM_END, GB(GAMEPAD_BUTTON_LEFT_TRIGGER_2), ATOM_END, ALTS_END };
+static const DefaultAtom default_editor_undo[] = {
+    K(KEY_LEFT_CONTROL), K(KEY_Z), ATOM_END,
+    GB(GAMEPAD_BUTTON_LEFT_TRIGGER_1), GB(GAMEPAD_BUTTON_LEFT_FACE_LEFT), ATOM_END,
+    ALTS_END,
+};
+static const DefaultAtom default_editor_redo[] = {
+    K(KEY_LEFT_CONTROL), K(KEY_Y), ATOM_END,
+    GB(GAMEPAD_BUTTON_LEFT_TRIGGER_1), GB(GAMEPAD_BUTTON_LEFT_FACE_RIGHT), ATOM_END,
+    ALTS_END,
+};
+
+static const DefaultAtom default_attr_dec_1[]   = { K(KEY_LEFT),  ATOM_END, GB(GAMEPAD_BUTTON_LEFT_FACE_LEFT),   ATOM_END, ALTS_END };
+static const DefaultAtom default_attr_inc_1[]   = { K(KEY_RIGHT), ATOM_END, GB(GAMEPAD_BUTTON_LEFT_FACE_RIGHT),  ATOM_END, ALTS_END };
+static const DefaultAtom default_attr_dec_10[]  = { K(KEY_LEFT_BRACKET),  ATOM_END, GB(GAMEPAD_BUTTON_LEFT_TRIGGER_1),  ATOM_END, ALTS_END };
+static const DefaultAtom default_attr_inc_10[]  = { K(KEY_RIGHT_BRACKET), ATOM_END, GB(GAMEPAD_BUTTON_RIGHT_TRIGGER_1), ATOM_END, ALTS_END };
+static const DefaultAtom default_attr_dec_100[] = { K(KEY_PAGE_DOWN), ATOM_END, GB(GAMEPAD_BUTTON_LEFT_TRIGGER_2),  ATOM_END, ALTS_END };
+static const DefaultAtom default_attr_inc_100[] = { K(KEY_PAGE_UP),   ATOM_END, GB(GAMEPAD_BUTTON_RIGHT_TRIGGER_2), ATOM_END, ALTS_END };
+
+static const DefaultAtom default_blueprint_duplicate[] = { K(KEY_LEFT_BRACKET), ATOM_END, GB(GAMEPAD_BUTTON_LEFT_TRIGGER_1), ATOM_END, ALTS_END };
+static const DefaultAtom default_blueprint_remove[]    = { K(KEY_DELETE), ATOM_END, GB(GAMEPAD_BUTTON_RIGHT_FACE_LEFT), ATOM_END, ALTS_END };
+
+static const DefaultAtom default_wb_keyboard_mode[] = { K(KEY_DELETE), ATOM_END, GB(GAMEPAD_BUTTON_RIGHT_FACE_LEFT), ATOM_END, ALTS_END };
+static const DefaultAtom default_wb_append[]        = { K(KEY_ENTER),  ATOM_END, GB(GAMEPAD_BUTTON_RIGHT_FACE_DOWN), ATOM_END, ALTS_END };
+static const DefaultAtom default_wb_pop[]           = { K(KEY_ESCAPE), ATOM_END, GB(GAMEPAD_BUTTON_RIGHT_FACE_RIGHT), ATOM_END, ALTS_END };
+
+static const DefaultAtom default_interact[] = { K(KEY_SPACE), ATOM_END, GB(GAMEPAD_BUTTON_RIGHT_FACE_DOWN), ATOM_END, ALTS_END };
+
+static const DefaultAtom default_menu_toggle[]         = { K(KEY_F3), ATOM_END, GB(GAMEPAD_BUTTON_MIDDLE_LEFT), ATOM_END, ALTS_END };
+static const DefaultAtom default_font_preview_toggle[] = { K(KEY_F4), ATOM_END, GB(GAMEPAD_BUTTON_RIGHT_THUMB), ATOM_END, ALTS_END };
+static const DefaultAtom default_quit[] = {
+    K(KEY_LEFT_CONTROL), K(KEY_Q), ATOM_END,
+    GB(GAMEPAD_BUTTON_MIDDLE_LEFT), GB(GAMEPAD_BUTTON_MIDDLE_RIGHT), ATOM_END,
+    ALTS_END,
+};
+
+static const DefaultAtom default_axis_primary_x[] = {
+    KBA(KEY_LEFT, KEY_RIGHT), ATOM_END,
+    KBA(KEY_A,    KEY_D),     ATOM_END,
+    GA(GAMEPAD_AXIS_LEFT_X),  ATOM_END,
+    ALTS_END,
+};
+static const DefaultAtom default_axis_primary_y[] = {
+    KBA(KEY_UP, KEY_DOWN),    ATOM_END,
+    KBA(KEY_W,  KEY_S),       ATOM_END,
+    GA(GAMEPAD_AXIS_LEFT_Y),  ATOM_END,
+    ALTS_END,
+};
+static const DefaultAtom default_axis_secondary_x[] = {
+    KBA(KEY_Q, KEY_E),         ATOM_END,
+    GA(GAMEPAD_AXIS_RIGHT_X),  ATOM_END,
+    ALTS_END,
+};
+static const DefaultAtom default_axis_secondary_y[] = {
+    GA(GAMEPAD_AXIS_RIGHT_Y), ATOM_END,
+    ALTS_END,
+};
+static const DefaultAtom default_axis_trigger_left[] = {
+    KBA(0, KEY_Z),                  ATOM_END,
+    GT(GAMEPAD_AXIS_LEFT_TRIGGER),  ATOM_END,
+    ALTS_END,
+};
+static const DefaultAtom default_axis_trigger_right[] = {
+    KBA(0, KEY_X),                   ATOM_END,
+    GT(GAMEPAD_AXIS_RIGHT_TRIGGER),  ATOM_END,
+    ALTS_END,
+};
+/* clang-format on */
+
+/* Lookup tables: enum -> defaults atoms array. Indexed by InputAction /
+ * InputAxis. Keeping these as the single source of truth lets per-action
+ * reset reuse the same data the full-store loader uses. */
+static const DefaultAtom *const default_action_atoms[ACTION_COUNT] = {
+    [ACTION_CONFIRM] = default_confirm,
+    [ACTION_CANCEL] = default_cancel,
+    [ACTION_NAV_UP] = default_nav_up,
+    [ACTION_NAV_DOWN] = default_nav_down,
+    [ACTION_NAV_LEFT] = default_nav_left,
+    [ACTION_NAV_RIGHT] = default_nav_right,
+    [ACTION_PAGE_UP] = default_page_up,
+    [ACTION_PAGE_DOWN] = default_page_down,
+    [ACTION_EDITOR_TOGGLE] = default_editor_toggle,
+    [ACTION_EDITOR_OPEN_BLUEPRINTS] = default_editor_open_blueprints,
+    [ACTION_EDITOR_OPEN_TOOLS] = default_editor_open_tools,
+    [ACTION_EDITOR_DELETE] = default_editor_delete,
+    [ACTION_EDITOR_PLACE] = default_editor_place,
+    [ACTION_EDITOR_TYPE_PROPS] = default_editor_type_props,
+    [ACTION_EDITOR_GRAB] = default_editor_grab,
+    [ACTION_EDITOR_HANDLES] = default_editor_handles,
+    [ACTION_EDITOR_WATCH] = default_editor_watch,
+    [ACTION_EDITOR_UNDO] = default_editor_undo,
+    [ACTION_EDITOR_REDO] = default_editor_redo,
+    [ACTION_ATTR_INC_1] = default_attr_inc_1,
+    [ACTION_ATTR_DEC_1] = default_attr_dec_1,
+    [ACTION_ATTR_INC_10] = default_attr_inc_10,
+    [ACTION_ATTR_DEC_10] = default_attr_dec_10,
+    [ACTION_ATTR_INC_100] = default_attr_inc_100,
+    [ACTION_ATTR_DEC_100] = default_attr_dec_100,
+    [ACTION_BLUEPRINT_DUPLICATE] = default_blueprint_duplicate,
+    [ACTION_BLUEPRINT_REMOVE] = default_blueprint_remove,
+    [ACTION_WB_KEYBOARD_MODE] = default_wb_keyboard_mode,
+    [ACTION_WB_APPEND] = default_wb_append,
+    [ACTION_WB_POP] = default_wb_pop,
+    [ACTION_INTERACT] = default_interact,
+    [ACTION_MENU_TOGGLE] = default_menu_toggle,
+    [ACTION_FONT_PREVIEW_TOGGLE] = default_font_preview_toggle,
+    [ACTION_QUIT] = default_quit,
+};
+
+static const DefaultAtom *const default_axis_atoms[AXIS_COUNT] = {
+    [AXIS_PRIMARY_X] = default_axis_primary_x,       [AXIS_PRIMARY_Y] = default_axis_primary_y,
+    [AXIS_SECONDARY_X] = default_axis_secondary_x,   [AXIS_SECONDARY_Y] = default_axis_secondary_y,
+    [AXIS_TRIGGER_LEFT] = default_axis_trigger_left, [AXIS_TRIGGER_RIGHT] = default_axis_trigger_right,
+};
+
 /* Push one PhysicalInput (parsed up to ATOM_END) into the binding's
  * alternatives. Advances `cursor` past the ATOM_END. Returns false on
  * vec push failure. */
@@ -507,24 +644,12 @@ static bool push_physical(vec_physical_input *alternatives, Allocator alloc, con
     return vec_physical_input_push(alternatives, physical);
 }
 
-static bool build_action(ActionBinding *binding, Allocator alloc, const DefaultAtom *atoms)
+static bool build_alternatives(vec_physical_input *alternatives, Allocator alloc, const DefaultAtom *atoms)
 {
-    binding->alternatives = vec_physical_input_new(alloc);
+    *alternatives = vec_physical_input_new(alloc);
     const DefaultAtom *cursor = atoms;
     while (!cursor->is_alts_end) {
-        if (!push_physical(&binding->alternatives, alloc, &cursor)) {
-            return false;
-        }
-    }
-    return true;
-}
-
-static bool build_axis(AxisBinding *binding, Allocator alloc, const DefaultAtom *atoms)
-{
-    binding->alternatives = vec_physical_input_new(alloc);
-    const DefaultAtom *cursor = atoms;
-    while (!cursor->is_alts_end) {
-        if (!push_physical(&binding->alternatives, alloc, &cursor)) {
+        if (!push_physical(alternatives, alloc, &cursor)) {
             return false;
         }
     }
@@ -533,144 +658,162 @@ static bool build_axis(AxisBinding *binding, Allocator alloc, const DefaultAtom 
 
 void input_func_load_defaults(BindingStore *store, Allocator alloc)
 {
-    /* Each block: atoms separated by ATOM_END; whole list terminated by ALTS_END.
-     * Atoms within a single PhysicalInput are AND-combined (chord);
-     * separate PhysicalInputs are OR-combined (alternatives). */
+    for (int action = 0; action < ACTION_COUNT; action++) {
+        (void)build_alternatives(&store->actions[action].alternatives, alloc, default_action_atoms[action]);
+    }
+    for (int axis = 0; axis < AXIS_COUNT; axis++) {
+        (void)build_alternatives(&store->axes[axis].alternatives, alloc, default_axis_atoms[axis]);
+    }
+}
 
-    /* clang-format off */
-    static const DefaultAtom confirm[]   = { K(KEY_ENTER),  ATOM_END,  GB(GAMEPAD_BUTTON_RIGHT_FACE_DOWN),  ATOM_END, ALTS_END };
-    static const DefaultAtom cancel[]    = { K(KEY_ESCAPE), ATOM_END,  GB(GAMEPAD_BUTTON_RIGHT_FACE_RIGHT), ATOM_END, ALTS_END };
-    static const DefaultAtom nav_up[]    = { K(KEY_UP),     ATOM_END,  GB(GAMEPAD_BUTTON_LEFT_FACE_UP),     ATOM_END, ALTS_END };
-    static const DefaultAtom nav_down[]  = { K(KEY_DOWN),   ATOM_END,  GB(GAMEPAD_BUTTON_LEFT_FACE_DOWN),   ATOM_END, ALTS_END };
-    static const DefaultAtom nav_left[]  = { K(KEY_LEFT),   ATOM_END,  GB(GAMEPAD_BUTTON_LEFT_FACE_LEFT),   ATOM_END, ALTS_END };
-    static const DefaultAtom nav_right[] = { K(KEY_RIGHT),  ATOM_END,  GB(GAMEPAD_BUTTON_LEFT_FACE_RIGHT),  ATOM_END, ALTS_END };
-    static const DefaultAtom page_up[]   = { K(KEY_Q),      ATOM_END,  GB(GAMEPAD_BUTTON_LEFT_TRIGGER_1),   ATOM_END, ALTS_END };
-    static const DefaultAtom page_down[] = { K(KEY_E),      ATOM_END,  GB(GAMEPAD_BUTTON_RIGHT_TRIGGER_1),  ATOM_END, ALTS_END };
+/* --- Mutation API -------------------------------------------------------- */
 
-    static const DefaultAtom editor_toggle[]          = { K(KEY_F5),  ATOM_END, GB(GAMEPAD_BUTTON_MIDDLE_RIGHT), ATOM_END, ALTS_END };
-    static const DefaultAtom editor_open_blueprints[] = { ALTS_END }; /* opened via tools radial; no direct binding currently */
-    static const DefaultAtom editor_open_tools[]      = { K(KEY_TAB), ATOM_END, GB(GAMEPAD_BUTTON_RIGHT_FACE_UP), ATOM_END, ALTS_END };
-    static const DefaultAtom editor_delete[]          = { K(KEY_DELETE), ATOM_END, GB(GAMEPAD_BUTTON_RIGHT_FACE_LEFT), ATOM_END, ALTS_END };
-    static const DefaultAtom editor_place[]           = { K(KEY_P),   ATOM_END, GB(GAMEPAD_BUTTON_RIGHT_TRIGGER_1), ATOM_END, ALTS_END };
-    static const DefaultAtom editor_type_props[]      = { K(KEY_RIGHT_BRACKET), ATOM_END, GB(GAMEPAD_BUTTON_RIGHT_TRIGGER_2), ATOM_END, ALTS_END };
-    static const DefaultAtom editor_grab[]            = { K(KEY_G),   ATOM_END, GB(GAMEPAD_BUTTON_LEFT_THUMB),    ATOM_END, ALTS_END };
-    static const DefaultAtom editor_handles[]         = { K(KEY_H),   ATOM_END, ALTS_END }; /* keyboard-only by design (L1 reserved for chord) */
-    static const DefaultAtom editor_watch[]           = { K(KEY_LEFT_SHIFT), ATOM_END, GB(GAMEPAD_BUTTON_LEFT_TRIGGER_2), ATOM_END, ALTS_END };
-    static const DefaultAtom editor_undo[] = {
-        K(KEY_LEFT_CONTROL), K(KEY_Z), ATOM_END,
-        GB(GAMEPAD_BUTTON_LEFT_TRIGGER_1), GB(GAMEPAD_BUTTON_LEFT_FACE_LEFT), ATOM_END,
-        ALTS_END,
-    };
-    static const DefaultAtom editor_redo[] = {
-        K(KEY_LEFT_CONTROL), K(KEY_Y), ATOM_END,
-        GB(GAMEPAD_BUTTON_LEFT_TRIGGER_1), GB(GAMEPAD_BUTTON_LEFT_FACE_RIGHT), ATOM_END,
-        ALTS_END,
-    };
+/* Deep-copy a PhysicalInput so the store owns its parts vec independently
+ * of the caller's source. Without this, pushing a caller-provided
+ * PhysicalInput by value would alias the source's parts.data pointer. */
+[[nodiscard]] static bool clone_physical(PhysicalInput *out, const PhysicalInput *src, Allocator alloc)
+{
+    out->parts = vec_atomic_input_new(alloc);
+    for (int index = 0; index < src->parts.count; index++) {
+        if (!vec_atomic_input_push(&out->parts, src->parts.data[index])) {
+            return false;
+        }
+    }
+    return true;
+}
 
-    static const DefaultAtom attr_dec_1[]   = { K(KEY_LEFT),  ATOM_END, GB(GAMEPAD_BUTTON_LEFT_FACE_LEFT),   ATOM_END, ALTS_END };
-    static const DefaultAtom attr_inc_1[]   = { K(KEY_RIGHT), ATOM_END, GB(GAMEPAD_BUTTON_LEFT_FACE_RIGHT),  ATOM_END, ALTS_END };
-    static const DefaultAtom attr_dec_10[]  = { K(KEY_LEFT_BRACKET),  ATOM_END, GB(GAMEPAD_BUTTON_LEFT_TRIGGER_1),  ATOM_END, ALTS_END };
-    static const DefaultAtom attr_inc_10[]  = { K(KEY_RIGHT_BRACKET), ATOM_END, GB(GAMEPAD_BUTTON_RIGHT_TRIGGER_1), ATOM_END, ALTS_END };
-    static const DefaultAtom attr_dec_100[] = { K(KEY_PAGE_DOWN), ATOM_END, GB(GAMEPAD_BUTTON_LEFT_TRIGGER_2),  ATOM_END, ALTS_END };
-    static const DefaultAtom attr_inc_100[] = { K(KEY_PAGE_UP),   ATOM_END, GB(GAMEPAD_BUTTON_RIGHT_TRIGGER_2), ATOM_END, ALTS_END };
+static void ensure_alternatives_init(vec_physical_input *alternatives, Allocator alloc)
+{
+    if (!alternatives->alloc.realloc_fn) {
+        *alternatives = vec_physical_input_new(alloc);
+    }
+}
 
-    static const DefaultAtom blueprint_duplicate[] = { K(KEY_LEFT_BRACKET), ATOM_END, GB(GAMEPAD_BUTTON_LEFT_TRIGGER_1), ATOM_END, ALTS_END };
-    static const DefaultAtom blueprint_remove[]    = { K(KEY_DELETE), ATOM_END, GB(GAMEPAD_BUTTON_RIGHT_FACE_LEFT), ATOM_END, ALTS_END };
+static bool
+set_alternative(vec_physical_input *alternatives, Allocator alloc, int alt_index, const PhysicalInput *replacement)
+{
+    if (alt_index < 0 || alt_index >= alternatives->count) {
+        return false;
+    }
+    PhysicalInput copy;
+    if (!clone_physical(&copy, replacement, alloc)) {
+        return false;
+    }
+    /* The previous PhysicalInput's parts vec is leaked into the arena;
+     * arena reclaims it on the next reset. */
+    alternatives->data[alt_index] = copy;
+    return true;
+}
 
-    static const DefaultAtom wb_keyboard_mode[] = { K(KEY_DELETE), ATOM_END, GB(GAMEPAD_BUTTON_RIGHT_FACE_LEFT), ATOM_END, ALTS_END };
-    static const DefaultAtom wb_append[]        = { K(KEY_ENTER),  ATOM_END, GB(GAMEPAD_BUTTON_RIGHT_FACE_DOWN), ATOM_END, ALTS_END };
-    static const DefaultAtom wb_pop[]           = { K(KEY_ESCAPE), ATOM_END, GB(GAMEPAD_BUTTON_RIGHT_FACE_RIGHT), ATOM_END, ALTS_END };
+static bool add_alternative(vec_physical_input *alternatives, Allocator alloc, const PhysicalInput *new_alt)
+{
+    ensure_alternatives_init(alternatives, alloc);
+    PhysicalInput copy;
+    if (!clone_physical(&copy, new_alt, alloc)) {
+        return false;
+    }
+    return vec_physical_input_push(alternatives, copy);
+}
 
-    static const DefaultAtom interact[]            = { K(KEY_SPACE), ATOM_END, GB(GAMEPAD_BUTTON_RIGHT_FACE_DOWN), ATOM_END, ALTS_END };
+static void remove_alternative(vec_physical_input *alternatives, int alt_index)
+{
+    if (alt_index < 0 || alt_index >= alternatives->count) {
+        return;
+    }
+    for (int index = alt_index; index + 1 < alternatives->count; index++) {
+        alternatives->data[index] = alternatives->data[index + 1];
+    }
+    alternatives->count--;
+}
 
-    static const DefaultAtom menu_toggle[]         = { K(KEY_F3), ATOM_END, GB(GAMEPAD_BUTTON_MIDDLE_LEFT), ATOM_END, ALTS_END };
-    static const DefaultAtom font_preview_toggle[] = { K(KEY_F4), ATOM_END, GB(GAMEPAD_BUTTON_RIGHT_THUMB), ATOM_END, ALTS_END };
-    static const DefaultAtom quit[] = {
-        K(KEY_LEFT_CONTROL), K(KEY_Q), ATOM_END,
-        GB(GAMEPAD_BUTTON_MIDDLE_LEFT), GB(GAMEPAD_BUTTON_MIDDLE_RIGHT), ATOM_END,
-        ALTS_END,
-    };
+bool input_func_set_action_alternative(
+    BindingStore *store, Allocator alloc, InputAction action, int alt_index, const PhysicalInput *replacement)
+{
+    if (action < 0 || action >= ACTION_COUNT) {
+        return false;
+    }
+    return set_alternative(&store->actions[action].alternatives, alloc, alt_index, replacement);
+}
 
-    static const DefaultAtom axis_primary_x[] = {
-        KBA(KEY_LEFT, KEY_RIGHT), ATOM_END,
-        KBA(KEY_A,    KEY_D),     ATOM_END,
-        GA(GAMEPAD_AXIS_LEFT_X),  ATOM_END,
-        ALTS_END,
-    };
-    static const DefaultAtom axis_primary_y[] = {
-        KBA(KEY_UP, KEY_DOWN),    ATOM_END,
-        KBA(KEY_W,  KEY_S),       ATOM_END,
-        GA(GAMEPAD_AXIS_LEFT_Y),  ATOM_END,
-        ALTS_END,
-    };
-    static const DefaultAtom axis_secondary_x[] = {
-        KBA(KEY_Q, KEY_E),         ATOM_END,
-        GA(GAMEPAD_AXIS_RIGHT_X),  ATOM_END,
-        ALTS_END,
-    };
-    static const DefaultAtom axis_secondary_y[] = {
-        GA(GAMEPAD_AXIS_RIGHT_Y), ATOM_END,
-        ALTS_END,
-    };
-    static const DefaultAtom axis_trigger_left[] = {
-        KBA(0, KEY_Z),                  ATOM_END,
-        GT(GAMEPAD_AXIS_LEFT_TRIGGER),  ATOM_END,
-        ALTS_END,
-    };
-    static const DefaultAtom axis_trigger_right[] = {
-        KBA(0, KEY_X),                   ATOM_END,
-        GT(GAMEPAD_AXIS_RIGHT_TRIGGER),  ATOM_END,
-        ALTS_END,
-    };
-    /* clang-format on */
+bool input_func_add_action_alternative(BindingStore *store,
+                                       Allocator alloc,
+                                       InputAction action,
+                                       const PhysicalInput *new_alt)
+{
+    if (action < 0 || action >= ACTION_COUNT) {
+        return false;
+    }
+    return add_alternative(&store->actions[action].alternatives, alloc, new_alt);
+}
 
-    (void)build_action(&store->actions[ACTION_CONFIRM], alloc, confirm);
-    (void)build_action(&store->actions[ACTION_CANCEL], alloc, cancel);
-    (void)build_action(&store->actions[ACTION_NAV_UP], alloc, nav_up);
-    (void)build_action(&store->actions[ACTION_NAV_DOWN], alloc, nav_down);
-    (void)build_action(&store->actions[ACTION_NAV_LEFT], alloc, nav_left);
-    (void)build_action(&store->actions[ACTION_NAV_RIGHT], alloc, nav_right);
-    (void)build_action(&store->actions[ACTION_PAGE_UP], alloc, page_up);
-    (void)build_action(&store->actions[ACTION_PAGE_DOWN], alloc, page_down);
+void input_func_remove_action_alternative(BindingStore *store, InputAction action, int alt_index)
+{
+    if (action < 0 || action >= ACTION_COUNT) {
+        return;
+    }
+    remove_alternative(&store->actions[action].alternatives, alt_index);
+}
 
-    (void)build_action(&store->actions[ACTION_EDITOR_TOGGLE], alloc, editor_toggle);
-    (void)build_action(&store->actions[ACTION_EDITOR_OPEN_BLUEPRINTS], alloc, editor_open_blueprints);
-    (void)build_action(&store->actions[ACTION_EDITOR_OPEN_TOOLS], alloc, editor_open_tools);
-    (void)build_action(&store->actions[ACTION_EDITOR_DELETE], alloc, editor_delete);
-    (void)build_action(&store->actions[ACTION_EDITOR_PLACE], alloc, editor_place);
-    (void)build_action(&store->actions[ACTION_EDITOR_TYPE_PROPS], alloc, editor_type_props);
-    (void)build_action(&store->actions[ACTION_EDITOR_GRAB], alloc, editor_grab);
-    (void)build_action(&store->actions[ACTION_EDITOR_HANDLES], alloc, editor_handles);
-    (void)build_action(&store->actions[ACTION_EDITOR_WATCH], alloc, editor_watch);
-    (void)build_action(&store->actions[ACTION_EDITOR_UNDO], alloc, editor_undo);
-    (void)build_action(&store->actions[ACTION_EDITOR_REDO], alloc, editor_redo);
+void input_func_clear_action(BindingStore *store, InputAction action)
+{
+    if (action < 0 || action >= ACTION_COUNT) {
+        return;
+    }
+    vec_physical_input_clear(&store->actions[action].alternatives);
+}
 
-    (void)build_action(&store->actions[ACTION_ATTR_DEC_1], alloc, attr_dec_1);
-    (void)build_action(&store->actions[ACTION_ATTR_INC_1], alloc, attr_inc_1);
-    (void)build_action(&store->actions[ACTION_ATTR_DEC_10], alloc, attr_dec_10);
-    (void)build_action(&store->actions[ACTION_ATTR_INC_10], alloc, attr_inc_10);
-    (void)build_action(&store->actions[ACTION_ATTR_DEC_100], alloc, attr_dec_100);
-    (void)build_action(&store->actions[ACTION_ATTR_INC_100], alloc, attr_inc_100);
+bool input_func_set_axis_alternative(
+    BindingStore *store, Allocator alloc, InputAxis axis, int alt_index, const PhysicalInput *replacement)
+{
+    if (axis < 0 || axis >= AXIS_COUNT) {
+        return false;
+    }
+    return set_alternative(&store->axes[axis].alternatives, alloc, alt_index, replacement);
+}
 
-    (void)build_action(&store->actions[ACTION_BLUEPRINT_DUPLICATE], alloc, blueprint_duplicate);
-    (void)build_action(&store->actions[ACTION_BLUEPRINT_REMOVE], alloc, blueprint_remove);
+bool input_func_add_axis_alternative(BindingStore *store, Allocator alloc, InputAxis axis, const PhysicalInput *new_alt)
+{
+    if (axis < 0 || axis >= AXIS_COUNT) {
+        return false;
+    }
+    return add_alternative(&store->axes[axis].alternatives, alloc, new_alt);
+}
 
-    (void)build_action(&store->actions[ACTION_WB_KEYBOARD_MODE], alloc, wb_keyboard_mode);
-    (void)build_action(&store->actions[ACTION_WB_APPEND], alloc, wb_append);
-    (void)build_action(&store->actions[ACTION_WB_POP], alloc, wb_pop);
+void input_func_remove_axis_alternative(BindingStore *store, InputAxis axis, int alt_index)
+{
+    if (axis < 0 || axis >= AXIS_COUNT) {
+        return;
+    }
+    remove_alternative(&store->axes[axis].alternatives, alt_index);
+}
 
-    (void)build_action(&store->actions[ACTION_INTERACT], alloc, interact);
+void input_func_clear_axis(BindingStore *store, InputAxis axis)
+{
+    if (axis < 0 || axis >= AXIS_COUNT) {
+        return;
+    }
+    vec_physical_input_clear(&store->axes[axis].alternatives);
+}
 
-    (void)build_action(&store->actions[ACTION_MENU_TOGGLE], alloc, menu_toggle);
-    (void)build_action(&store->actions[ACTION_FONT_PREVIEW_TOGGLE], alloc, font_preview_toggle);
-    (void)build_action(&store->actions[ACTION_QUIT], alloc, quit);
+void input_func_reset_action_to_defaults(BindingStore *store, Allocator alloc, InputAction action)
+{
+    if (action < 0 || action >= ACTION_COUNT) {
+        return;
+    }
+    (void)build_alternatives(&store->actions[action].alternatives, alloc, default_action_atoms[action]);
+}
 
-    (void)build_axis(&store->axes[AXIS_PRIMARY_X], alloc, axis_primary_x);
-    (void)build_axis(&store->axes[AXIS_PRIMARY_Y], alloc, axis_primary_y);
-    (void)build_axis(&store->axes[AXIS_SECONDARY_X], alloc, axis_secondary_x);
-    (void)build_axis(&store->axes[AXIS_SECONDARY_Y], alloc, axis_secondary_y);
-    (void)build_axis(&store->axes[AXIS_TRIGGER_LEFT], alloc, axis_trigger_left);
-    (void)build_axis(&store->axes[AXIS_TRIGGER_RIGHT], alloc, axis_trigger_right);
+void input_func_reset_axis_to_defaults(BindingStore *store, Allocator alloc, InputAxis axis)
+{
+    if (axis < 0 || axis >= AXIS_COUNT) {
+        return;
+    }
+    (void)build_alternatives(&store->axes[axis].alternatives, alloc, default_axis_atoms[axis]);
+}
+
+void input_func_reset_all_to_defaults(BindingStore *store, Allocator alloc)
+{
+    input_func_load_defaults(store, alloc);
 }
 
 /* --- TOML loader (deferred to a follow-up commit) ------------------------ */
