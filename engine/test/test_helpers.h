@@ -61,8 +61,14 @@ typedef struct {
  * baseline undo entry, menu_init, EditorState with sentinel -1s,
  * frame_ctx wired to the struct's own fields. Returns false on any
  * underlying failure; on success the caller must pair with
- * test_game_teardown. Does not need a writable filesystem. */
+ * test_game_teardown. Does not need a writable filesystem.
+ *
+ * test_game_setup loads the level marked default in the TOML.
+ * test_game_setup_with_level loads the named level instead, for tests
+ * that need to exercise a non-default starting level out of the same
+ * fixture. Passing level_name = nullptr is equivalent to test_game_setup. */
 [[nodiscard]] bool test_game_setup(TestGame *out, const char *toml_string);
+[[nodiscard]] bool test_game_setup_with_level(TestGame *out, const char *toml_string, const char *level_name);
 
 void test_game_teardown(TestGame *game);
 

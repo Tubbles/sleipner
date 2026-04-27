@@ -196,15 +196,6 @@ static const char *fixture_transition = "[[blueprint]]\n"
                                         "blueprint = \"exit_door\"\n"
                                         "pos = [80, 110]\n";
 
-static Texture2D dummy_texture;
-
-static Texture2D *dummy_lookup(const char *texture_name, void *user_data)
-{
-    (void)texture_name;
-    (void)user_data;
-    return &dummy_texture;
-}
-
 void test_integration_load_gamedata(void)
 {
     TestGame game;
@@ -221,19 +212,14 @@ void test_integration_load_gamedata(void)
 
 void test_integration_load_specific_level(void)
 {
-    GameState state = {0};
-    Diag diag = {&state.error, &state.debug};
-    TEST_ASSERT_TRUE(game_init(&diag, &state, (RectU32){160, 120}));
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup_with_level(&game, fixture_gamedata, "cave"));
 
-    bool loaded = game_load_gamedata(
-        &diag, &state,
-        (GamedataParams){.toml_string = fixture_gamedata, .level_name = "cave", .texture_lookup = dummy_lookup});
-    TEST_ASSERT_TRUE(loaded);
-    TEST_ASSERT_EQUAL_STRING("cave", state.gamedata.current_level.name.ptr);
-    TEST_ASSERT_EQUAL_INT(2, state.gamedata.current_level.entities.count);
-    TEST_ASSERT_TRUE(state.gamedata.player_index >= 0);
+    TEST_ASSERT_EQUAL_STRING("cave", game.state.gamedata.current_level.name.ptr);
+    TEST_ASSERT_EQUAL_INT(2, game.state.gamedata.current_level.entities.count);
+    TEST_ASSERT_TRUE(game.state.gamedata.player_index >= 0);
 
-    game_free(&diag, &state);
+    test_game_teardown(&game);
 }
 
 void test_integration_walk_and_collide(void)
@@ -501,17 +487,12 @@ void test_integration_real_gamedata_all_levels_load(void)
 
     /* Load each level through the full engine path */
     for (int index = 0; index < level_count; index++) {
-        GameState state = {0};
-        Diag diag = {&state.error, &state.debug};
-        TEST_ASSERT_TRUE(game_init(&diag, &state, (RectU32){480, 270}));
+        TestGame game;
+        bool loaded = test_game_setup_with_level(&game, content, level_names[index]);
+        TEST_ASSERT_TRUE_MESSAGE(loaded, error_get(&game.state.error));
+        TEST_ASSERT_TRUE(game.state.gamedata.player_index >= 0);
 
-        bool loaded = game_load_gamedata(
-            &diag, &state,
-            (GamedataParams){.toml_string = content, .level_name = level_names[index], .texture_lookup = dummy_lookup});
-        TEST_ASSERT_TRUE_MESSAGE(loaded, error_get(&state.error));
-        TEST_ASSERT_TRUE(state.gamedata.player_index >= 0);
-
-        game_free(&diag, &state);
+        test_game_teardown(&game);
     }
 
     for (int index = 0; index < level_count; index++) {

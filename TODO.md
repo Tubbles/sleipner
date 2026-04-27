@@ -101,16 +101,6 @@ Carried over from `work/keybinding-audit.md`:
   but `L2 / R2` are already bound to `-10 / +10`. Either drop the `L2 / R2`
   labels for ±100 or rebind ±100 to a different gamepad combo.
 
-## Test fixture follow-ups
-
-- **`test_game_setup` does not take a level_name.** Two tests still
-  use the inline `game_init` + `game_load_gamedata` pattern because
-  they pass `GamedataParams.level_name` to load a non-default level
-  out of the same TOML: `test_integration_load_specific_level` and
-  `test_integration_real_gamedata_all_levels_load`. Add a
-  `test_game_setup_with_level(out, toml, level_name)` helper if
-  more tests start needing this.
-
 ## Input system overhaul follow-ups
 
 The function layer (input_pressed / input_held / input_axis /

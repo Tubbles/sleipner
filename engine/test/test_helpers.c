@@ -127,6 +127,11 @@ static bool test_level_loader(Diag *diag, GameState *state, const char *level_na
 
 bool test_game_setup(TestGame *out, const char *toml_string)
 {
+    return test_game_setup_with_level(out, toml_string, nullptr);
+}
+
+bool test_game_setup_with_level(TestGame *out, const char *toml_string, const char *level_name)
+{
     *out = (TestGame){0};
     out->diag = (Diag){&out->state.error, &out->state.debug};
     out->toml_string = toml_string;
@@ -134,9 +139,10 @@ bool test_game_setup(TestGame *out, const char *toml_string)
     if (!game_init(&out->diag, &out->state, (RectU32){320, 240})) {
         return false;
     }
-    if (!game_load_gamedata(
-            &out->diag, &out->state,
-            (GamedataParams){.toml_string = toml_string, .texture_lookup = test_dummy_texture_lookup})) {
+    if (!game_load_gamedata(&out->diag, &out->state,
+                            (GamedataParams){.toml_string = toml_string,
+                                             .level_name = level_name,
+                                             .texture_lookup = test_dummy_texture_lookup})) {
         return false;
     }
     if (!undo_history_init(&out->state.error, &out->undo_history)) {
