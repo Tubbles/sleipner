@@ -855,18 +855,7 @@ view (e.g. `EntityView { Entity *entity; const AttrSet *defaults; }`) and passes
 those down. Resolution happens once at the call boundary; the lower module just reads flat
 data. This is the preferred approach when the set of data is known up front.
 
-**Callback / ops struct.** A struct containing a function pointer and `void *` state, defined
-at the lower level and implemented by the higher level. The lower module calls through the
-function pointer without knowing the concrete state type. Same pattern as `struct
-file_operations` in the Linux kernel, and similar to the existing `Allocator` in this
-codebase. Use when resolution must happen lazily or the set of inputs isn't known up front.
-
-```c
-typedef struct {
-    const AttrSet *(*resolve)(void *state, int entity_id);
-    void *state;
-} DefaultsResolver;
-```
+**Callback / ops struct.** A struct containing a function pointer plus `void *` state, defined at the lower level and implemented by the higher level. Lower module calls through the pointer without knowing the concrete state type. Same shape as Linux's `struct file_operations` and this codebase's existing `Allocator`. Use when resolution is lazy or the input set isn't known up front.
 
 **Handle / lookup key.** The object stores an ID or name that a lookup function translates
 into a pointer. Already used for entity→blueprint (`blueprint_name` string) and
@@ -910,17 +899,7 @@ A `map<K, vec_V>` grows in two independent dimensions:
   array. Calling `vec_push` through that pointer updates the vec struct in-place — fine as long as
   the map doesn't rehash concurrently.
 
-The two failure modes are independent:
-
-```
-// Stale vec pointer after map rehash:
-vec_int *group = map_get(&groups, "enemies");   // pointer into bucket array
-map_set(&groups, "new_group", empty, alloc);    // rehash → new bucket array
-vec_int_push(group, id, alloc);                 // ✗ group points into orphaned array
-
-// Correct: fresh lookup every time
-vec_int_push(map_get(&groups, "enemies"), id, alloc);  // ✓
-```
+The two failure modes are independent: a `vec` pointer obtained from `map_get` becomes stale on the next `map_set` that rehashes. The safe pattern is fresh lookup every time (`vec_push(map_get(&groups, "enemies"), …)`) — never cache the inner vec pointer across an outer `map_set`.
 
 #### Mitigations
 
@@ -1049,63 +1028,13 @@ Rules that prevent memory corruption when modifying the codebase:
 
 ## Bug Investigation Discipline
 
-Two non-negotiable rules govern how every bug report is handled in this project.
-CLAUDE.md carries the operational details; this section is the design-level
-statement of intent.
+Three rules, design-level statement of intent. CLAUDE.md § *Bug Investigation Discipline* carries the operational workflow.
 
-**1. Every bug report starts with a failing integration test.** Before anyone
-hypothesizes causes, reads unrelated code, adds diagnostic logging, or proposes
-fixes, the first commit on the bug is a headless integration test that
-reproduces the reported behavior against real gamedata. The failing test IS the
-bug specification — it pins down the exact state, inputs, and assertion. Root
-cause analysis then iterates against a stable repro, not against guesses. The
-same test doubles as the regression guard when the fix lands. A bug
-investigation that does not begin with a test is not in line with project
-discipline and must be restarted.
+1. **Every bug report starts with a failing integration test.** That test is the bug specification — exact state, inputs, assertion — and doubles as the regression guard once the fix lands. No diagnostic logging, hypothesizing, or fix proposals before it fails for the reason the user reported.
+2. **User reports are authoritative.** Don't hypothesize "user error" without asking. Visible side effects the user would have mentioned (toasts, sounds, overlay text) but didn't are strong negative evidence against a hypothesis.
+3. **Bug-repro tests drive the game as a black box.** Inputs go through the real input layer (synthetic `InputState`, raised through the top-level frame entry point); outputs are observable game state (positions, level name, attribute values, toast text). Internal symbols (`undo_history_*`, `gamedata_arena_*`, `handle_*_input`) in the test body are a smell. Refactors that preserve behavior must keep the test green; fixes in the wrong layer must keep it red.
 
-**2. User reports are authoritative.** The user's description of the bug is
-ground truth. Do not construct hypotheses that amount to "the user did X by
-accident" or "the user misread what they saw" without first asking them. Visible
-side effects the user would have noticed (toasts, sounds, animations, overlay
-text, obvious UI state) are strong negative evidence — if your hypothesis would
-have produced one and the report doesn't mention it, the hypothesis is likely
-dead before it's written. Ask clarifying questions instead of filling gaps with
-guesses. "User error" is not an acceptable first hypothesis without explicit
-confirmation.
-
-**3. Integration tests for bugs must drive the game as a black box.** A bug
-report is a claim about externally observable behavior — what the user did at
-the input layer, what the user saw at the output layer. A bug-repro test must
-live entirely between those two boundaries. Inputs are synthetic `InputState`
-values (or their moral equivalent at the top-level frame entry point) fed
-through the real input pipeline; outputs are observable game state like entity
-positions, level name, attribute values, or toast text. Internal functions,
-arena offsets, undo cursors, and handler names must never appear in a
-bug-repro test body. If the internal mechanism is refactored but the
-user-visible behavior is preserved, the test must stay green. Conversely, if
-the internal mechanism is fixed in the wrong place — or renamed, or no-opped
-— the test must still fail, because the keyboard→pixel path is still broken.
-A test that can be silenced by touching an internal helper is not a
-regression test, it is a unit test in disguise, and it creates dangerous
-false confidence. See CLAUDE.md → *Bug Investigation Discipline* rule 3 for
-the worked anti-pattern and the writing heuristic.
-
-All three rules exist because of real mistakes we want to lock out:
-
-- Rule 1 came from proposing diagnostic-log commits instead of a repro test
-  on a player-position-reset bug.
-- Rule 2 came from blaming "accidental D-pad presses" on that same bug
-  without asking the user, when visible side effects the user would have
-  mentioned (no toast, no overlay, no indication) already falsified it.
-- Rule 3 came from writing a "repro test" for that bug that reached into the
-  engine and called the undo helper directly, bypassing the keyboard and the
-  editor input handler — so the test would have passed even if the real fix
-  had unbound the key entirely. Worse than no test, because it would have
-  green-lit the wrong fix.
-
-See CLAUDE.md → *Bug Investigation Discipline* for the operational workflow,
-and § *Headless input and the test frame loop* below for the test
-infrastructure direction that makes rule 3 ergonomic to follow.
+See § *Test ergonomics for black-box integration testing* below for the infrastructure that makes rule 3 ergonomic.
 
 ## Input Architecture
 
@@ -1137,43 +1066,11 @@ the caller is responsible for checking the chord first and early-returning.
 
 ## Test ergonomics for black-box integration testing
 
-**Intent.** Rule 3 above requires bug-repro tests to drive the game as a
-black box — inputs through the real input layer, outputs as observable game
-state. The function-layer overhaul in 2026-04 unblocked the input side:
-every binding site in the engine reads from an `InputState` snapshot via
-`input_pressed` / `input_axis`, never raylib globals directly.
+The function-layer overhaul (2026-04) unblocked black-box bug-repro tests: every binding site reads from an `InputState` snapshot via `input_pressed` / `input_axis` — no raylib globals.
 
-**Public frame entry point.** `engine/src/frame.h` exposes `frame_update`
-plus `FrameContext`. Production main.c builds the context once and calls
-`frame_update` every loop iteration; headless tests build a `TestGame`
-fixture (engine/test/test_helpers.h) around the same fields and drive
-`test_advance_frame` / `test_advance_frames` through the same dispatcher.
-The cut leaves render, audio, gamepad polling, hot-reload, gamedata
-file I/O, and transition handling in main.c — those are production-only
-concerns. Save / restore handlers reach the menu via `MenuSaveFn` /
-`MenuRestoreFn` function pointers on `MenuDispatchCtx`; tests pass
-nullptr (SAVE / RESTORE close the menu without writing to disk).
+**Public frame entry point.** `engine/src/frame.h` exposes `frame_update` + `FrameContext`. Production `main.c` builds the context once per loop iteration; headless tests build a `TestGame` fixture (`engine/test/test_helpers.h`) around the same fields and drive `test_advance_frame` / `test_advance_frames` through the same dispatcher. Render, audio, gamepad polling, hot-reload, gamedata file I/O, and transition handling stay in `main.c` (production-only). Save / restore handlers reach the menu via `MenuSaveFn` / `MenuRestoreFn` function pointers on `MenuDispatchCtx`; tests pass `nullptr` so SAVE / RESTORE close the menu without touching disk.
 
-**Black-box pattern.** Tests use the `TestGame` fixture:
-
-```c
-TestGame game;
-TEST_ASSERT_TRUE(test_game_setup(&game, fixture_gamedata));
-
-InputState walk = {0};
-input_state_set_gp_axis(&walk, GAMEPAD_AXIS_LEFT_Y, 1.0F);
-test_advance_frames(&game, walk, 60);
-
-InputState toggle = {0};
-input_state_press_key(&toggle, KEY_F5);
-test_advance_frame(&game, toggle);
-
-TEST_ASSERT_TRUE(game.state.editor_mode);
-test_game_teardown(&game);
-```
-
-The fixture struct grows over time as new top-level state appears in
-main.c; new "sane defaults" go in `test_game_setup`.
+**Black-box pattern.** Build a `TestGame` with `test_game_setup`, construct `InputState` values via the `input_state_*` helpers, drive `test_advance_frames`, then assert on observable game state. The fixture struct grows over time as new top-level state appears in `main.c`; new sane defaults go in `test_game_setup`.
 
 ## Roadmap
 
@@ -1438,16 +1335,7 @@ and adding named regions (collision vs trigger vs hitbox). See Phase 9 in the ro
 
 #### Named regions (planned)
 
-Separate collision and trigger volumes on each entity, replacing the single `Rectangle
-collision` field:
-
-```c
-CollisionShape collision_region;  // physics resolution (blocks movement)
-CollisionShape trigger_region;    // enter trigger detection
-// future: attack_hitbox, hurt_box, ...
-```
-
-An empty shape (`.prims.count == 0`) means the region is absent — no special sentinel needed.
+Separate collision and trigger volumes on each entity, replacing the single `Rectangle collision` field. Initial pair: `collision_region` (physics resolution, blocks movement) and `trigger_region` (enter trigger detection); future regions for attack hitbox, hurtbox, etc. An empty shape (`.prims.count == 0`) means the region is absent — no special sentinel needed.
 
 #### Decomposability
 

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **IMPORTANT:** This document applies to all LLMs working on this project. However, only Mistral LLM (devstral-2) shall also read and follow CONTRIBUTING.md.
 
-**DO NOT default to traditional C idioms.** This project uses modern C (C23) with its own abstractions (`Str`, `vec`, arenas, `Allocator`). Do not reach for `char[]` buffers, `malloc`/`free`, `MAX_*`-sized arrays, or other old-school patterns — they are almost always wrong here. When a project abstraction exists for the job (e.g. `Str` + arena instead of a fixed-size `char` buffer), use it. Read and follow the conventions in this document carefully; the project's own types and patterns exist for a reason.
+**DO NOT default to traditional C idioms.** This is C23 with its own abstractions (`Str`, `vec`, `map`, arenas, `Allocator`). Reaching for `char[]`, `malloc`/`free`, or `MAX_*`-sized arrays is almost always wrong. See "Coding Style" and "Core Types" below.
 
 ## Project Overview
 
@@ -48,16 +48,7 @@ nix develop .#android -c bash -c 'cd android && gradle wrapper --gradle-version 
 
 Preset definitions live in `CMakePresets.json` at the repo root: `linux` builds into `build/Release/`, `windows` into `build/windows/` with the in-tree mingw toolchain. Add a new platform by adding a configure preset, a matching build preset, optionally a test preset, and a workflow preset that chains them.
 
-The Linux build post-processes the `sleipner` binary with `patchelf` so it
-uses the distro-standard dynamic linker (`/lib64/ld-linux-x86-64.so.2`) and
-carries no Nix-store paths in `DT_RUNPATH`. `engine/src/glibc_compat.h` is
-force-included into every C translation unit and pins `fmod`/`fmodf` back
-to `GLIBC_2.2.5`, so the highest glibc symbol version in the final binary
-is `GLIBC_2.35`. The binary runs on any x86-64 Linux with glibc >= 2.36
-(Debian bookworm, Ubuntu 22.04, Fedora 36, or newer) and the usual desktop
-graphics stack (libGL/libX11/libwayland-client/libxkbcommon). No Nix is
-required on the target machine. See the top-level `CMakeLists.txt` and
-`engine/CMakeLists.txt` for the compile-option and post-build wiring.
+The Linux build runs `patchelf` over `sleipner` to strip Nix-store paths from `DT_RUNPATH` and point the interpreter at `/lib64/ld-linux-x86-64.so.2`. `engine/src/glibc_compat.h` is force-included everywhere and pins `fmod`/`fmodf` to `GLIBC_2.2.5`, capping the binary's symbol-version floor at `GLIBC_2.35`. Result: the binary runs on any x86-64 Linux with glibc >= 2.36 (bookworm, Ubuntu 22.04, Fedora 36+) and the usual desktop graphics stack, no Nix on the target. See top-level + `engine/CMakeLists.txt` for the wiring.
 
 macOS contributors can use `nix develop` directly; Windows contributors need WSL2.
 
@@ -81,7 +72,9 @@ macOS contributors can use `nix develop` directly; Windows contributors need WSL
 - **Full descriptive names always.** No single-letter variables anywhere, including loop counters (`i` → `index`, `j` → `next`). No small abbreviations either (`pt` → `particle`, `dx` → `delta_x`, `wp` → `world_pos`). The codebase should be self-documenting through clear naming.
 - **Vendor libraries go in `engine/vendor/`.** Not the top-level `vendor/`.
 - **Prefer `vec` over fixed-size arrays with `MAX_*` constants.** Whenever you need a dynamic collection, reach for a `vec` type backed by the appropriate arena — not a `Type array[MAX_SOMETHING]` with a companion count. Fixed-size arrays are only justified for truly fixed-size data (e.g. a 4-button input state). If you find yourself defining a `MAX_*` constant to size a buffer, stop and ask whether a `vec` fits instead.
-- **No opaque cross-module forward declarations.** Never use `struct Foo;` or `typedef struct Foo Foo;` in a header to avoid including the header that defines `Foo`. This hides circular dependencies and obscures the include hierarchy. If a circular dependency appears, fix the architecture — extract a common lower-level definition, use dependency injection, or split the type — rather than hiding the cycle with an opaque pointer. There is no clang-tidy check for this; enforcement is via the cppcheck addon `tools/cppcheck/no_forward_decl.py` (run via `nix develop -c cppcheck --addon=tools/cppcheck/no_forward_decl.py ...`). Use `// cppcheck-suppress noForwardDecl-noForwardDecl` for known exceptions. Exceptions: self-referential structs within the same file (e.g. `struct Node { struct Node *next; }`) are necessary and fine.
+- **No opaque cross-module forward declarations.** Never write `struct Foo;` or `typedef struct Foo Foo;` in a header to dodge including the defining header. It hides circular dependencies behind opaque pointers; fix the architecture instead (extract a lower-level definition, inject the dependency, or split the type).
+  - **Enforcement:** cppcheck addon `tools/cppcheck/no_forward_decl.py`. Suppress with `// cppcheck-suppress noForwardDecl-noForwardDecl` only for justified exceptions.
+  - **Allowed:** self-referential structs within the same file (`struct Node { struct Node *next; }`).
 
 ## Core Types: Str, Strv, vec, map
 
@@ -89,76 +82,29 @@ The project has its own string and container types. **Never use raw `char[]` buf
 
 ### Strv — non-owning string view (`engine/src/strv.h`)
 
-A `{const char *ptr, size_t len}` pair. Does not own memory, does not require null-termination (though `strv_from_cstr` produces views of null-terminated strings). Use for read-only string references, function parameters, and temporaries.
-
-```c
-Strv view = strv_from_cstr("hello");        /* view of a string literal */
-Strv view = str_to_strv(some_str);          /* view into an owning Str */
-bool match = strv_eq_cstr(view, "hello");   /* compare with C string */
-Strv token = strv_split(&remaining, ':');   /* split and advance */
-```
+A `{const char *ptr, size_t len}` pair. Does not own memory, does not require null-termination (though `strv_from_cstr` produces views of null-terminated strings). Use for read-only string references, function parameters, and temporaries. Key entry points: `strv_from_cstr`, `str_to_strv`, `strv_eq_cstr`, `strv_split`.
 
 `Strv` is safe to store in structs when the backing memory outlives the view (e.g. string literals, arena-backed `Str` data). Be careful with views into scratch arena — they die at `SCRATCH_SCOPE` exit.
 
 ### Str — owning, growable string (`engine/src/str.h`)
 
-A `{char *ptr, size_t len, size_t cap}` triple. Always null-terminated. All mutating functions take an `Allocator *` — in engine code, always `allocator_arena(arena)`.
-
-```c
-Str name = {0};
-str_from_cstr(&alloc, &name, "player");     /* allocate + copy */
-str_append_cstr(&alloc, &name, "_idle");    /* grow: "player_idle" */
-Strv view = str_to_strv(name);              /* borrow as view */
-str_free(&alloc, &name);                    /* only needed for heap alloc; arena reclaims on rewind */
-```
+A `{char *ptr, size_t len, size_t cap}` triple. Always null-terminated. All mutating functions take an `Allocator *` — in engine code, always `allocator_arena(arena)`. Zero-init with `{0}`, then build via `str_from_cstr`, `str_append_cstr`, etc. Borrow as a `Strv` with `str_to_strv`.
 
 In arena-backed code, `str_free` is a no-op (arena reclaims memory on rewind). It exists for test code using heap allocators.
 
 ### vec — typed dynamic array (`engine/src/vec.h`)
 
-Code-generated via `VEC_DECL` / `VEC_IMPL` macros. Each `vec_<name>` stores `{data, count, capacity, alloc}` — the allocator is stored at creation time and used by all subsequent pushes.
+Code-generated via `VEC_DECL` / `VEC_IMPL` macros (declare in a header after the element type, implement in exactly one `.c` file). Each `vec_<name>` stores `{data, count, capacity, alloc}` — the allocator is stored at creation time and used by all subsequent pushes. Construct with `vec_<name>_new(alloc)`, mutate with `vec_<name>_push` / `vec_<name>_clear`, read via `.data[index]` and `.count`.
 
-```c
-/* Declare in header (after element type is defined): */
-VEC_DECL(enemy, Enemy)
-
-/* Implement in exactly one .c file: */
-VEC_IMPL(enemy, Enemy)
-
-/* Usage: */
-Allocator alloc = allocator_arena(&state->gamedata_arena);
-vec_enemy enemies = vec_enemy_new(alloc);   /* empty vec, allocator stored */
-vec_enemy_push(&enemies, some_enemy);       /* push element, grows as needed */
-Enemy *first = &enemies.data[0];            /* direct access via .data[index] */
-enemies.count;                              /* number of elements */
-vec_enemy_clear(&enemies);                  /* reset count to 0, keep allocation */
-```
-
-Primitive types (`vec_int`, `vec_bool`, `vec_float`, etc.) are pre-declared — just include `vec.h`.
-
-**Critical rule:** never hold a `&vec.data[i]` pointer across a push — reallocation invalidates it. Re-derive after any push.
+Primitive types (`vec_int`, `vec_bool`, `vec_float`, etc.) are pre-declared — just include `vec.h`. Pointer-stability rules live under "Vec growth and pointer stability" below.
 
 ### map — typed hash map (`engine/src/map.h`)
 
-Code-generated via `MAP_DECL` / `MAP_IMPL` macros. Open-addressing, power-of-2 capacity, 75% load factor, tombstone deletion. All mutating functions take an `Allocator *` parameter.
-
-```c
-/* Declare in header: */
-MAP_DECL(str_int, Str, int)
-
-/* Implement in one .c file (provide hash and equality functions): */
-MAP_IMPL(str_int, Str, int, my_str_hash, my_str_eq)
-
-/* Usage: */
-map_str_int scores = {0};                                /* zero-init is valid empty map */
-map_str_int_set(&scores, key, 42, &alloc);               /* insert or update */
-const int *value = map_str_int_get(&scores, key);        /* returns nullptr if missing */
-map_str_int_remove(&scores, key);                        /* tombstone deletion */
-```
+Code-generated via `MAP_DECL` / `MAP_IMPL` macros. Open-addressing, power-of-2 capacity, 75% load factor, tombstone deletion. `MAP_IMPL` requires hash and equality functions for the key type. All mutating functions take an `Allocator *` parameter. Zero-init with `{0}` is a valid empty map. Mutate with `map_<name>_set` / `map_<name>_remove`; lookup via `map_<name>_get` returns a pointer (or `nullptr` if missing).
 
 Int-keyed maps (`map_int_bool`, `map_int_int`, `map_int_str`, etc.) are pre-declared with built-in hash/eq — just include `map.h`.
 
-**Critical rule:** `map_get` returns a pointer into the bucket array. Any `map_set` that triggers a rehash invalidates all previously returned pointers. Always call `map_get` immediately before use.
+**Critical rule:** `map_get` returns a pointer into the bucket array; any `map_set` that triggers a rehash invalidates it. Re-fetch immediately before use.
 
 ## Input Function Layer
 
@@ -171,14 +117,12 @@ Bindings live in a `BindingStore` on `GameState.bindings`, loaded once in `game_
 
 ### API
 
-```c
-[[nodiscard]] bool  input_pressed(in, store, ACTION_X);   /* edge — fires once per press */
-[[nodiscard]] bool  input_held(in, store, ACTION_X);      /* level — true while held */
-[[nodiscard]] float input_axis(in, store, AXIS_X);        /* sums alternatives, clamps to [-1, +1] */
-[[nodiscard]] Vector2 input_axis_pair(in, store, AXIS_X, AXIS_Y);  /* paired read with unit-disc clamp */
-```
+- `input_pressed(in, store, ACTION_X)` — edge: fires once per press.
+- `input_held(in, store, ACTION_X)` — level: true while held.
+- `input_axis(in, store, AXIS_X)` — sums alternatives, clamps to `[-1, +1]`.
+- `input_axis_pair(in, store, AXIS_X, AXIS_Y)` — paired read with unit-disc clamp.
 
-Use `input_axis_pair` for any (x, y) directional pair (player movement, editor camera pan, entity drag) — it preserves the "diagonals not faster than cardinals" guarantee.
+All four are `[[nodiscard]]`. Use `input_axis_pair` for any (x, y) directional pair (player movement, editor camera pan, entity drag) — it preserves the "diagonals not faster than cardinals" guarantee.
 
 ### Chord support
 
@@ -190,16 +134,7 @@ The function layer is a **binding lookup, not a priority resolver**. If `ACTION_
 
 ### Tests
 
-Construct an `InputState` directly and use the helpers in `input.h`:
-
-```c
-InputState input = {0};
-input_state_press_key(&input, KEY_ENTER);          /* edge: sets both _pressed and _down */
-input_state_hold_key(&input, KEY_LEFT_CONTROL);    /* level: sets _down only */
-input_state_press_gp_button(&input, GAMEPAD_BUTTON_RIGHT_FACE_DOWN);
-input_state_set_gp_axis(&input, GAMEPAD_AXIS_LEFT_X, 0.5F);
-TEST_ASSERT_TRUE(input_pressed(&input, &store, ACTION_EDITOR_UNDO));
-```
+Construct an `InputState` directly and drive it through the helpers in `input.h`: `input_state_press_key` (edge: sets both `_pressed` and `_down`), `input_state_hold_key` (level: sets `_down` only), `input_state_press_gp_button`, `input_state_set_gp_axis`. Then assert against `input_pressed` / `input_held` / etc. against the test's `BindingStore`.
 
 The legacy `test_input_mock` `--wrap` shim still exists for pre-existing integration tests but should not be the preferred path for new tests.
 
@@ -230,15 +165,11 @@ gamedata_arena:
 
 ### Backing storage
 
-Both arenas use `mmap(MAP_ANONYMOUS|MAP_PRIVATE|MAP_NORESERVE)` with a 1 TiB (`1ULL << 40`) virtual reservation. Physical pages are demand-paged — only memory actually written costs RAM. `MAP_NORESERVE` is required to allow the large reservation inside containers with strict overcommit heuristics.
+Both arenas reserve 1 TiB via `mmap(MAP_ANONYMOUS|MAP_PRIVATE|MAP_NORESERVE)` and demand-page on first write. `MAP_NORESERVE` is required so the reservation succeeds inside containers with strict overcommit.
 
 ### `SCRATCH_SCOPE` macro
 
-```c
-SCRATCH_SCOPE(&state.scratch_arena);
-```
-
-Saves the arena offset on entry and restores it on any block exit (return, break, goto, fall-through) via `__attribute__((cleanup))`. Every function that allocates into `scratch_arena` must open with `SCRATCH_SCOPE`. No manual `arena_save`/`arena_restore` on `scratch_arena` is permitted.
+`SCRATCH_SCOPE(&state.scratch_arena)` saves the arena offset on entry and restores it on any block exit (return, break, goto, fall-through) via `__attribute__((cleanup))`. Every function that allocates into `scratch_arena` must open with `SCRATCH_SCOPE`. No manual `arena_save`/`arena_restore` on `scratch_arena` is permitted.
 
 ### Passing allocators
 
@@ -303,10 +234,7 @@ Two levels of testing, both run in CI:
 - Every new subsystem must be testable headlessly. If adding a feature requires a screen to test, the architecture is wrong — refactor until the logic is separable from the rendering.
 
 ### Testing Discipline
-- **Every new feature ships with tests.** Unit tests for the pure logic, integration tests for the subsystem interaction. A feature is not done until its tests are written.
-- **Tests document behavior.** Integration test scenarios serve as executable documentation of how the game systems work together.
-- **Test the interesting cases.** Don't test trivial getters. Test state transitions, edge cases, rule interactions, and anything that has broken before.
-- **Bugs get tests FIRST, not last.** See the next section — every bug report begins with a failing integration test, which then doubles as the regression guard.
+- **Bugs get tests FIRST, not last.** See "Bug Investigation Discipline" below — every bug report begins with a failing integration test that doubles as the regression guard.
 
 ## Bug Investigation Discipline
 
@@ -314,19 +242,9 @@ Two levels of testing, both run in CI:
 
 ### 1. Reproduce before hypothesizing — write the test first
 
-The **first** action on any bug report is to write a failing integration test — headless engine, real gamedata, real inputs — that reproduces the reported behavior. The test lives in `engine/test/integration_test.c` (or a focused unit test if the bug is purely in pure logic). It is the first commit on the bug, not the last.
+The first action on any bug report is a failing integration test in `engine/test/integration_test.c` (or a focused unit test if the bug is purely pure logic). Headless engine, real gamedata, real inputs. **No diagnostic logging, hypotheses, or fixes before the test fails for the reason the user reported.** That test, once green, IS the regression guard — don't write it twice.
 
-**Do not** add diagnostic logging, hypothesize causes, read unrelated code, or propose fixes until you have a failing test that reproduces the bug for the reason the user reported. Logging is second-best: it ships a build and depends on the user to repro manually. A failing test is a concrete, iteration-ready pin on the exact behavior.
-
-**Strict bug-fix workflow:**
-1. Write a failing integration test that reproduces the reported behavior.
-2. Run it — confirm it fails for the reported reason (not an unrelated reason).
-3. Investigate the root cause with the test as a stable repro.
-4. Fix the code.
-5. Re-run the test — confirm it passes.
-6. Commit test + fix together.
-
-The failing test written in step 1 IS the regression test. Don't write it twice. If you cannot reproduce after reasonable effort, stop and ask the user for concrete specifics (exact input sequence, exact level, exact toggle state, what UI appeared around the moment of the bug). Never fill the gaps with guesses.
+If you can't reproduce after reasonable effort, stop and ask the user for specifics (exact input sequence, level, toggle state, surrounding UI). Never fill gaps with guesses.
 
 ### 2. User reports are authoritative — never blame the user
 
@@ -350,9 +268,7 @@ The failing test that reproduces a bug is a claim about **external** behavior �
 - **The test must still fail if a "fix" touches the wrong layer.** If you can silence the test by renaming or no-opping an internal function without changing behavior at the keyboard→pixel boundary, the test is wired to the wrong layer. Bug-repro tests must only go green when the externally observable behavior changes.
 - **The test must still pass after any refactor that preserves behavior.** Swapping out the undo strategy, restructuring the editor handlers, renaming internal functions — none of these should break a bug-repro test. If they do, the test was over-coupled.
 
-**Anti-pattern worked example.** The bug report says "I pressed the arrow key in the editor and the player snapped back to start." Calling `undo_history_step_back` directly in the test is **not** a reproduction of that bug. It skips the keyboard, skips `input_read_keyboard`, skips the frame dispatcher, skips `handle_browse_input`, and skips the `toggle_pressed` call that the real keypress would fire. What's left is a unit test of the undo subsystem wearing an integration test's name. If the real fix were to unbind `KEY_LEFT` from undo entirely, the test would still pass against the broken code — which is exactly the opposite of what a regression test must do.
-
-**Heuristic while writing a bug-repro test:** write every step in the vocabulary of the bug report. "I pressed the arrow key" → the test presses the arrow key (via the input layer). "The player snapped back" → the test asserts on the player's position. Any step of the test that uses vocabulary from the engine's internals — function names, struct fields, arena operations — is a smell. If you catch yourself typing `undo_history_`, `gamedata_arena_`, `handle_*_input`, or any other internal symbol into the test body, stop: you are testing the wrong layer.
+**Heuristic while writing a bug-repro test:** write every step in the vocabulary of the bug report. "I pressed the arrow key" → the test presses the arrow key through the input layer. "The player snapped back" → the test asserts on the player's position. Any internal symbol in the test body (`undo_history_`, `gamedata_arena_`, `handle_*_input`) is a smell — you are testing the wrong layer.
 
 If the input layer does not yet support driving the path headlessly (e.g. a binding reads raylib globals directly), the correct response is to **extend the test infrastructure** so it can, not to reach past the abstraction. Improving the integration test framework so black-box bug-repro tests are ergonomic is tracked as open work — see DESIGN.md § "Test ergonomics for black-box integration testing".
 
@@ -371,42 +287,11 @@ For events worth observing. Goes to stdout (timestamped), the in-game debug over
 
 ### Error Handling
 
-Go-style error propagation: every function that can fail must report *why* it failed, and callers must not be able to silently ignore errors.
+Go-style error propagation: every function that can fail reports *why* via its return value, callers cannot silently ignore the result, and only the top-level caller logs the chain.
 
-**Principles:**
+**`[[nodiscard]]` on all fallible functions.** C23's `[[nodiscard]]` attribute makes clang emit a warning (promoted to error by our `WarningsAsErrors: '*'` config) when a caller discards the return value. This is the enforcement mechanism — equivalent to Go's "unused variable" error on the `err` return. To intentionally discard an error (rare, must be justified), use an explicit `(void)` cast — the same pattern we already use for stdio functions. This makes the decision visible in code review.
 
-1. **Errors are values, not side effects.** A function that can fail communicates failure through its return value, not by logging and returning void.
-2. **Callers must handle errors.** It should be a compile error to ignore a fallible return value.
-3. **Errors carry context.** When propagating an error up the call stack, each layer adds context — like Go's `fmt.Errorf("load level: %w", err)`. The final error message reads as a chain: `load_gamedata: level_load: blueprint 'player' not found`.
-4. **Log at the boundary, not at the source.** The function that *detects* the error sets it. Intermediate callers wrap it. Only the top-level caller (game loop, test harness) logs it via `debug_log`. This avoids duplicate log spam and keeps inner functions pure.
-
-**`[[nodiscard]]` on all fallible functions.** C23's `[[nodiscard]]` attribute makes clang emit a warning (promoted to error by our `WarningsAsErrors: '*'` config) when a caller discards the return value. This is the enforcement mechanism — equivalent to Go's "unused variable" error on the `err` return.
-
-```c
-[[nodiscard]] bool level_load(Level *level, ...);
-```
-
-To intentionally discard an error (rare, must be justified), use an explicit `(void)` cast — the same pattern we already use for stdio functions. This makes the decision visible in code review.
-
-**Contextual error propagation (`error.h`).** The error chain must be stored in an explicit `ErrorState` struct, not a static buffer. We strictly avoid global singletons.
-
-```c
-// At the point of failure — set the root cause:
-error_set(err, "fopen(%s): %s", path, strerror(errno));
-return false;
-
-// Intermediate caller — wrap with context:
-if (!level_load(err, dbg, &level, ...)) {
-    error_wrap(err, "load_gamedata");
-    return false;
-}
-
-// Top-level caller — log the full chain:
-if (!game_load_gamedata(err, dbg, &state, params)) {
-    debug_log(dbg, "error: %s", error_get(err));
-    // prints: "load_gamedata: level_load: fopen(/path): Permission denied"
-}
-```
+**Contextual error propagation (`error.h`).** The error chain must be stored in an explicit `ErrorState` struct, not a static buffer. We strictly avoid global singletons. The convention: the function that detects the failure calls `error_set` and returns `false`; intermediate callers call `error_wrap` and return `false`; only the top-level caller (game loop, test harness) logs the chain via `debug_log(dbg, "error: %s", error_get(err))`. The resulting message reads like `load_gamedata: level_load: fopen(/path): Permission denied`.
 
 **API surface:**
 - `error_set(err, format, ...)` — set the root error (clears any previous chain).
@@ -459,7 +344,7 @@ If `data/gamedata.toml` and `~/Sync/sleipner/gamedata.toml` have diverged (both 
 `keybindings.toml` is a **per-user overlay** written by the in-game Settings UI. Unlike `gamedata.toml` it is **not** versioned in git (`.gitignore` covers `data/keybindings.toml` and the `.bak` sibling). Built-in defaults in `engine/src/input_func.c` are the source of truth; the file overlays user customizations on top via `input_func_load_bindings_toml`.
 
 - **Desktop:** `data/keybindings.toml` — only created after the user rebinds something via the Settings UI; absent file means defaults remain.
-- **Android:** `/storage/emulated/0/Sync/sleipner/keybindings.toml` — synced via Syncthing the same way trace logs are. Schema documented at `plans/parsed-floating-dolphin.md` § "Configuration File".
+- **Android:** `/storage/emulated/0/Sync/sleipner/keybindings.toml` — synced via Syncthing the same way trace logs are. Schema is whatever `engine/src/input_func_toml.c` reads/writes.
 
 Conflict resolution mirrors the gamedata workflow if both desktop and Android edited the file independently.
 
@@ -468,9 +353,7 @@ Conflict resolution mirrors the gamedata workflow if both desktop and Android ed
 - **Never assume warnings are false positives.** Treat every clang-tidy/clang-analyzer warning as a real issue. Exhaust all code-level fixes before even considering suppression. Hard proof is required that something is truly a false positive before adding any NOLINTNEXTLINE.
 - **Avoid NOLINT comments.** Prefer fixing the code. NOLINTs are noise that hide real issues.
 - **Never disable lint checks without asking.** Do not modify `.clang-tidy` Checks or add inline suppressions without explicit user approval.
-- **Keep a list of tricky checks.** When encountering a lint check that requires a non-obvious fix pattern, document the check name and the fix in this section so it's available for future reference. Keep adding to this list over time.
-
-### Known tricky checks
+### Known tricky checks (add new entries when a check has a non-obvious fix)
 - `bugprone-easily-swappable-parameters` — Two adjacent parameters of the same type. Fix by reordering params, changing one to a different type (e.g. index instead of pointer), or wrapping in a struct.
 - `performance-no-int-to-ptr` — Don't cast integers to pointers. Use index arithmetic or memcpy instead of `(Type *)(uintptr_t)value`.
 
@@ -483,25 +366,15 @@ Conflict resolution mirrors the gamedata workflow if both desktop and Android ed
 
 ## Game Design Notes
 
-- **Genre:** Top-down action RPG in the style of classic Zelda (Link to the Past / Link's Awakening).
-- **Input:** Controller-first. Gamepad is the primary input method; keyboard fallback for development. **Every feature must have a gamepad binding** — the user tests on Android with gamepad only, keyboard is unreachable there.
-- **Mobile target:** Android runs a native APK built from the same engine code via the NDK, using raylib's `PLATFORM=Android` codepath (`engine/vendor/raylib/src/platforms/rcore_android.c`). The Windows x86_64 binary can additionally be run on Linux via Proton (which provides Windows-to-Linux translation), or on Android via Proton layered on FEX (FEX adds x86-to-ARM emulation). The "Game Native" app is one packaged option for the Android path. Keep performance reasonable for mid-range phones: avoid heavy compute, prefer simple draw calls.
-- **Assets:** Embedded in the binary via `.incbin` assembly directives. Each asset gets a `.S` file generated by CMake's `embed_asset()` function. The assembler copies raw bytes into `.rodata` — no C parsing overhead, scales to many assets. Loaded at runtime via raylib's memory-loading functions (`LoadImageFromMemory`, `LoadFontFromMemory`, `LoadMusicStreamFromMemory`). To add a new asset: add an `embed_asset()` call in `engine/CMakeLists.txt`, a `DECLARE_ASSET()` in `assets.h`, and load with `ASSET(name)`.
+- **Input:** Controller-first. **Every feature must have a gamepad binding** — the user tests on Android with gamepad only, keyboard is unreachable there.
+- **Performance:** Keep things light enough for mid-range phones — avoid heavy compute, prefer simple draw calls.
+- **Assets:** Embedded in the binary via `.incbin` assembly directives. Each asset gets a `.S` file from CMake's `embed_asset()`. Loaded at runtime via raylib's memory-loading functions (`LoadImageFromMemory`, etc.). To add a new asset: an `embed_asset()` call in `engine/CMakeLists.txt`, a `DECLARE_ASSET()` in `assets.h`, and load with `ASSET(name)`.
 - **Architecture:** All C code lives in `engine/`. There is no separate "game code" — the game is defined entirely by `data/gamedata.toml` and `assets/`. The engine interprets the game data at runtime.
-- **Font Preview Panel:** Debug overlay (toggle with F4/gamepad Right Thumb) shows all embedded fonts at 32px size with sample text "The quick brown fox 0123456789". Includes: Earth Illusion, Golden Apple, MenuCard, Nudge Orb, CardboardCrown, and RoyalFibre fonts.
+- **Font Preview Panel:** Debug overlay (F4 / gamepad Right Thumb) shows every embedded font at 32px with sample text.
 
 ## Android APK Signing
 
-Android requires APK updates to be signed with the same key as the original installation. The project uses a development keystore (`android/keystore.jks`) for consistent signing:
-
-- **Keystore location:** `android/keystore.jks`
-- **Password:** `sleipner` (hardcoded in `.github/workflows/android.yml` for development)
-- **Keystore tracking:** The keystore is tracked in git to ensure consistent signing across different machines and CI runs.
-
-**Important:** This development keystore uses a public password and is suitable only for development builds. For production releases:
-- Generate a new keystore with a strong, unique password
-- Use proper secret management (e.g., GitHub Secrets)
-- Never commit production keystores or passwords to version control
+Android requires update APKs to be signed with the same key as the original install. The project ships a tracked development keystore at `android/keystore.jks` (password `sleipner`, hardcoded in `.github/workflows/android.yml`) so every machine and CI run produces a compatible signature. Pre-alpha only — not a production-grade setup.
 
 ## Development Discipline
 
@@ -529,10 +402,8 @@ Android requires APK updates to be signed with the same key as the original inst
 
 ## Claude Code Guidelines
 
-Rules for how Claude Code should operate in this project. Keep adding to this list as new patterns emerge.
-
 - **Only do what was asked.** Never carry out unrequested changes — no bundling extra fixes, no proactively addressing future improvements. If something seems worth doing, ask first.
-- **This is a pre-alpha codebase: no external users, architecture still in flux, exploring advanced patterns is an explicit project goal. Do not weight options on "muscle memory", "user retraining", "convention familiarity", "established workflows", or any similar continuity argument** — no one is depending on a stable UX here, so reframing those concerns as decision criteria pollutes the analysis. Weight options on actual technical merit: clarity, footprint, conflict-freeness, idiomatic placement within the codebase, and (legitimately) "is this an architecture worth exploring". **The pre-alpha label disqualifies continuity arguments; it does not disqualify architectural ambition.** "It's just pre-alpha, keep it simple" is the same kind of cheap dismissal as "users will be confused if we change it" — both are non-technical. If only continuity-style reasons remain to prefer one option over another, treat the options as equivalent and pick whichever is simpler to implement.
+- **Pre-alpha: weigh options on technical merit, not continuity.** No external users depend on stable UX, so "muscle memory", "convention familiarity", "established workflows" and similar are not decision criteria. Equally, "it's just pre-alpha, keep it simple" is not a technical argument. Decide on clarity, footprint, conflict-freeness, idiomatic fit, and architectural value. When only continuity-style reasons separate two options, treat them as equivalent and pick the simpler implementation.
 - **Use `nix develop` for tooling.** Don't install compilers, libraries, or build tools globally — if something's missing, add it to `flake.nix`. Use `nix develop .#windows` or `nix develop .#android` for the cross-compile shells.
 - **Never run cmake, clang-tidy, cppcheck, etc. outside a Nix shell.** Always prefix with `nix develop -c ...` (or enter the shell first) so the toolchain is reproducible.
 - **Skip local builds for small/trivial changes.** Let GitHub Actions CI catch issues instead — time is precious. Only run locally when the change is non-trivial.
