@@ -10,8 +10,10 @@ static Diag test_diag = {&test_err, &test_dbg};
 #include "toml_emitter.h"
 #include "test_helpers.h"
 #include "arena.h"
+#include "input_func.h"
 #include "toml.h"
 
+#include <stdio.h>
 #include <string.h>
 
 static Texture2D dummy_texture;
@@ -583,4 +585,153 @@ void test_toml_emit_rules(void)
 
     arena_free(&arena);
     arena_free(&arena2);
+}
+
+/* --- Bindings round-trip ------------------------------------------------- */
+
+#define BINDINGS_BUF_CAP 16384
+#define BINDINGS_TMP_PATH "/tmp/sleipner_test_keybindings.toml"
+
+static void free_binding_store(BindingStore *store)
+{
+    for (int act = 0; act < ACTION_COUNT; act++) {
+        for (int alt = 0; alt < store->actions[act].alternatives.count; alt++) {
+            vec_atomic_input_free(&store->actions[act].alternatives.data[alt].parts);
+        }
+        vec_physical_input_free(&store->actions[act].alternatives);
+    }
+    for (int axis = 0; axis < AXIS_COUNT; axis++) {
+        for (int alt = 0; alt < store->axes[axis].alternatives.count; alt++) {
+            vec_atomic_input_free(&store->axes[axis].alternatives.data[alt].parts);
+        }
+        vec_physical_input_free(&store->axes[axis].alternatives);
+    }
+}
+
+/* Emit `src` to a temp file then load that file back into `dst`. The two
+ * stores are bundled into a struct so adjacent-parameter swap can't bite. */
+typedef struct {
+    BindingStore *src;
+    BindingStore *dst;
+} StorePair;
+
+static bool emit_then_load(StorePair stores, Allocator alloc)
+{
+    char buffer[BINDINGS_BUF_CAP];
+    int written = toml_emit_bindings(&test_err, buffer, (int)sizeof(buffer), stores.src);
+    if (written < 0) {
+        return false;
+    }
+    FILE *file = fopen(BINDINGS_TMP_PATH, "we");
+    if (!file) {
+        return false;
+    }
+    bool wrote = fwrite(buffer, 1, (size_t)written, file) == (size_t)written;
+    (void)fclose(file);
+    if (!wrote) {
+        return false;
+    }
+    input_func_load_defaults(stores.dst, alloc);
+    if (!input_func_load_bindings_toml(stores.dst, alloc, &test_err, BINDINGS_TMP_PATH)) {
+        return false;
+    }
+    (void)remove(BINDINGS_TMP_PATH);
+    return true;
+}
+
+static bool atoms_equal(const AtomicInput *first, const AtomicInput *second)
+{
+    return first->kind == second->kind && first->int_a == second->int_a && first->int_b == second->int_b;
+}
+
+static bool physical_equal(const PhysicalInput *first, const PhysicalInput *second)
+{
+    if (first->parts.count != second->parts.count) {
+        return false;
+    }
+    for (int index = 0; index < first->parts.count; index++) {
+        if (!atoms_equal(&first->parts.data[index], &second->parts.data[index])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool alternatives_equal(const vec_physical_input *first, const vec_physical_input *second)
+{
+    if (first->count != second->count) {
+        return false;
+    }
+    for (int index = 0; index < first->count; index++) {
+        if (!physical_equal(&first->data[index], &second->data[index])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+void test_toml_emit_bindings_round_trip_defaults(void)
+{
+    BindingStore src = {0};
+    input_func_load_defaults(&src, test_heap_alloc);
+
+    BindingStore dst = {0};
+    TEST_ASSERT_TRUE(emit_then_load((StorePair){.src = &src, .dst = &dst}, test_heap_alloc));
+
+    for (int act = 0; act < ACTION_COUNT; act++) {
+        TEST_ASSERT_TRUE(alternatives_equal(&src.actions[act].alternatives, &dst.actions[act].alternatives));
+    }
+    for (int axis = 0; axis < AXIS_COUNT; axis++) {
+        TEST_ASSERT_TRUE(alternatives_equal(&src.axes[axis].alternatives, &dst.axes[axis].alternatives));
+    }
+    free_binding_store(&src);
+    free_binding_store(&dst);
+}
+
+void test_toml_emit_bindings_round_trip_after_mutation(void)
+{
+    BindingStore src = {0};
+    input_func_load_defaults(&src, test_heap_alloc);
+
+    AtomicInput chord_atoms[3] = {
+        {.kind = ATOM_KEY, .int_a = KEY_LEFT_CONTROL, .scale = 1.0F},
+        {.kind = ATOM_KEY, .int_a = KEY_LEFT_SHIFT, .scale = 1.0F},
+        {.kind = ATOM_KEY, .int_a = KEY_Z, .scale = 1.0F},
+    };
+    PhysicalInput chord = {0};
+    chord.parts.data = chord_atoms;
+    chord.parts.count = 3;
+    chord.parts.capacity = 3;
+    TEST_ASSERT_TRUE(input_func_set_action_alternative(&src, test_heap_alloc, ACTION_INTERACT, 0, &chord));
+
+    BindingStore dst = {0};
+    TEST_ASSERT_TRUE(emit_then_load((StorePair){.src = &src, .dst = &dst}, test_heap_alloc));
+
+    const PhysicalInput *out_alt = &dst.actions[ACTION_INTERACT].alternatives.data[0];
+    TEST_ASSERT_EQUAL_INT(3, out_alt->parts.count);
+    TEST_ASSERT_EQUAL_INT(KEY_LEFT_CONTROL, out_alt->parts.data[0].int_a);
+    TEST_ASSERT_EQUAL_INT(KEY_LEFT_SHIFT, out_alt->parts.data[1].int_a);
+    TEST_ASSERT_EQUAL_INT(KEY_Z, out_alt->parts.data[2].int_a);
+
+    for (int act = 0; act < ACTION_COUNT; act++) {
+        if (act == ACTION_INTERACT) {
+            continue;
+        }
+        TEST_ASSERT_TRUE(alternatives_equal(&src.actions[act].alternatives, &dst.actions[act].alternatives));
+    }
+    free_binding_store(&src);
+    free_binding_store(&dst);
+}
+
+void test_toml_load_bindings_missing_file_keeps_defaults(void)
+{
+    BindingStore store = {0};
+    input_func_load_defaults(&store, test_heap_alloc);
+    int confirm_count_before = store.actions[ACTION_CONFIRM].alternatives.count;
+
+    TEST_ASSERT_TRUE(
+        input_func_load_bindings_toml(&store, test_heap_alloc, &test_err, "/tmp/this_path_should_not_exist_42.toml"));
+
+    TEST_ASSERT_EQUAL_INT(confirm_count_before, store.actions[ACTION_CONFIRM].alternatives.count);
+    free_binding_store(&store);
 }

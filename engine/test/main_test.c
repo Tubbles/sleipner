@@ -79,6 +79,9 @@ void test_toml_emit_health(void);
 void test_toml_emit_persisted_attrs(void);
 void test_toml_emit_no_persisted_attrs(void);
 void test_toml_emit_rules(void);
+void test_toml_emit_bindings_round_trip_defaults(void);
+void test_toml_emit_bindings_round_trip_after_mutation(void);
+void test_toml_load_bindings_missing_file_keeps_defaults(void);
 
 /* sprite_offset_integration_test.c */
 void test_integration_sprite_offset_edit_updates_entity_live(void);
@@ -233,6 +236,9 @@ int main(void)
     RUN_TEST(test_toml_emit_persisted_attrs);
     RUN_TEST(test_toml_emit_no_persisted_attrs);
     RUN_TEST(test_toml_emit_rules);
+    RUN_TEST(test_toml_emit_bindings_round_trip_defaults);
+    RUN_TEST(test_toml_emit_bindings_round_trip_after_mutation);
+    RUN_TEST(test_toml_load_bindings_missing_file_keeps_defaults);
 
     return UNITY_END();
 }

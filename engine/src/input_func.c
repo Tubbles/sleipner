@@ -644,9 +644,25 @@ static bool push_physical(vec_physical_input *alternatives, Allocator alloc, con
     return vec_physical_input_push(alternatives, physical);
 }
 
+/* Free each alternative's parts vec and reset count to 0. For heap
+ * allocators this releases the inner allocations so test code can stay
+ * leak-clean; for arena allocators free is a no-op and the arena
+ * reclaims on rewind. */
+static void deep_clear_alternatives(vec_physical_input *alternatives)
+{
+    for (int index = 0; index < alternatives->count; index++) {
+        vec_atomic_input_free(&alternatives->data[index].parts);
+    }
+    vec_physical_input_clear(alternatives);
+}
+
 static bool build_alternatives(vec_physical_input *alternatives, Allocator alloc, const DefaultAtom *atoms)
 {
-    *alternatives = vec_physical_input_new(alloc);
+    if (!alternatives->alloc.realloc_fn) {
+        *alternatives = vec_physical_input_new(alloc);
+    } else {
+        deep_clear_alternatives(alternatives);
+    }
     const DefaultAtom *cursor = atoms;
     while (!cursor->is_alts_end) {
         if (!push_physical(alternatives, alloc, &cursor)) {
@@ -699,8 +715,10 @@ set_alternative(vec_physical_input *alternatives, Allocator alloc, int alt_index
     if (!clone_physical(&copy, replacement, alloc)) {
         return false;
     }
-    /* The previous PhysicalInput's parts vec is leaked into the arena;
-     * arena reclaims it on the next reset. */
+    /* Free the previous parts vec. For arena allocators this is a no-op
+     * (the arena reclaims on rewind); paying the cost here keeps heap
+     * allocator test code leak-clean. */
+    vec_atomic_input_free(&alternatives->data[alt_index].parts);
     alternatives->data[alt_index] = copy;
     return true;
 }
@@ -720,6 +738,8 @@ static void remove_alternative(vec_physical_input *alternatives, int alt_index)
     if (alt_index < 0 || alt_index >= alternatives->count) {
         return;
     }
+    /* Free the parts vec we're about to drop. No-op for arena code. */
+    vec_atomic_input_free(&alternatives->data[alt_index].parts);
     for (int index = alt_index; index + 1 < alternatives->count; index++) {
         alternatives->data[index] = alternatives->data[index + 1];
     }
@@ -759,7 +779,7 @@ void input_func_clear_action(BindingStore *store, InputAction action)
     if (action < 0 || action >= ACTION_COUNT) {
         return;
     }
-    vec_physical_input_clear(&store->actions[action].alternatives);
+    deep_clear_alternatives(&store->actions[action].alternatives);
 }
 
 bool input_func_set_axis_alternative(
@@ -792,7 +812,7 @@ void input_func_clear_axis(BindingStore *store, InputAxis axis)
     if (axis < 0 || axis >= AXIS_COUNT) {
         return;
     }
-    vec_physical_input_clear(&store->axes[axis].alternatives);
+    deep_clear_alternatives(&store->axes[axis].alternatives);
 }
 
 void input_func_reset_action_to_defaults(BindingStore *store, Allocator alloc, InputAction action)

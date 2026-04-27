@@ -274,6 +274,111 @@ void test_key_label_returns_short_form(void)
     TEST_ASSERT_EQUAL_STRING("?", input_func_key_label(99999));
 }
 
+/* ---- Mutation API ------------------------------------------------------- */
+
+/* Stack-borrowed PhysicalInput pointing at caller-supplied atoms. The
+ * mutation API deep-copies via clone_physical, so the .alloc field on
+ * the source can stay zero — the source is never pushed to. */
+static PhysicalInput physical_view(AtomicInput *atoms, int count)
+{
+    PhysicalInput view = {0};
+    view.parts.data = atoms;
+    view.parts.count = count;
+    view.parts.capacity = count;
+    return view;
+}
+
+void test_mutation_set_action_alternative(void)
+{
+    AtomicInput atoms[] = {{.kind = ATOM_KEY, .int_a = KEY_F1, .scale = 1.0F}};
+    PhysicalInput replacement = physical_view(atoms, 1);
+    TEST_ASSERT_TRUE(input_func_set_action_alternative(&store, test_heap_alloc, ACTION_CONFIRM, 0, &replacement));
+
+    InputState input = {0};
+    input_state_press_key(&input, KEY_F1);
+    TEST_ASSERT_TRUE(input_pressed(&input, &store, ACTION_CONFIRM));
+
+    /* alt 0 was overwritten; ENTER alone no longer fires CONFIRM via
+     * that alternative. The gamepad alternative is unaffected. */
+    InputState enter_only = {0};
+    input_state_press_key(&enter_only, KEY_ENTER);
+    TEST_ASSERT_FALSE(input_pressed(&enter_only, &store, ACTION_CONFIRM));
+}
+
+void test_mutation_add_action_alternative(void)
+{
+    int before = store.actions[ACTION_CONFIRM].alternatives.count;
+    AtomicInput atoms[] = {{.kind = ATOM_KEY, .int_a = KEY_F2, .scale = 1.0F}};
+    PhysicalInput new_alt = physical_view(atoms, 1);
+    TEST_ASSERT_TRUE(input_func_add_action_alternative(&store, test_heap_alloc, ACTION_CONFIRM, &new_alt));
+    TEST_ASSERT_EQUAL_INT(before + 1, store.actions[ACTION_CONFIRM].alternatives.count);
+
+    InputState input = {0};
+    input_state_press_key(&input, KEY_F2);
+    TEST_ASSERT_TRUE(input_pressed(&input, &store, ACTION_CONFIRM));
+}
+
+void test_mutation_remove_action_alternative(void)
+{
+    int before = store.actions[ACTION_CONFIRM].alternatives.count;
+    input_func_remove_action_alternative(&store, ACTION_CONFIRM, 0);
+    TEST_ASSERT_EQUAL_INT(before - 1, store.actions[ACTION_CONFIRM].alternatives.count);
+}
+
+void test_mutation_clear_action_drops_alternatives(void)
+{
+    input_func_clear_action(&store, ACTION_CONFIRM);
+    TEST_ASSERT_EQUAL_INT(0, store.actions[ACTION_CONFIRM].alternatives.count);
+
+    InputState input = {0};
+    input_state_press_key(&input, KEY_ENTER);
+    TEST_ASSERT_FALSE(input_pressed(&input, &store, ACTION_CONFIRM));
+}
+
+void test_mutation_set_action_deep_copies_chord(void)
+{
+    AtomicInput atoms[2] = {
+        {.kind = ATOM_KEY, .int_a = KEY_LEFT_CONTROL, .scale = 1.0F},
+        {.kind = ATOM_KEY, .int_a = KEY_F3, .scale = 1.0F},
+    };
+    PhysicalInput chord = physical_view(atoms, 2);
+    TEST_ASSERT_TRUE(input_func_set_action_alternative(&store, test_heap_alloc, ACTION_INTERACT, 0, &chord));
+
+    /* Mutate the caller's atoms after the deep copy; store should be
+     * unaffected. If the store had aliased the parts pointer the
+     * binding would shift with the caller's edit. */
+    atoms[1].int_a = KEY_F10;
+
+    InputState input = {0};
+    input_state_hold_key(&input, KEY_LEFT_CONTROL);
+    input_state_press_key(&input, KEY_F3);
+    TEST_ASSERT_TRUE(input_pressed(&input, &store, ACTION_INTERACT));
+}
+
+void test_mutation_reset_action_restores_defaults(void)
+{
+    input_func_clear_action(&store, ACTION_CONFIRM);
+    TEST_ASSERT_EQUAL_INT(0, store.actions[ACTION_CONFIRM].alternatives.count);
+
+    input_func_reset_action_to_defaults(&store, test_heap_alloc, ACTION_CONFIRM);
+    TEST_ASSERT_EQUAL_INT(2, store.actions[ACTION_CONFIRM].alternatives.count);
+
+    InputState input = {0};
+    input_state_press_key(&input, KEY_ENTER);
+    TEST_ASSERT_TRUE(input_pressed(&input, &store, ACTION_CONFIRM));
+}
+
+void test_mutation_axis_alternative_round_trip(void)
+{
+    AtomicInput atoms[] = {{.kind = ATOM_KB_AXIS, .int_a = KEY_F1, .int_b = KEY_F2, .scale = 1.0F}};
+    PhysicalInput replacement = physical_view(atoms, 1);
+    TEST_ASSERT_TRUE(input_func_set_axis_alternative(&store, test_heap_alloc, AXIS_PRIMARY_X, 0, &replacement));
+
+    InputState input = {0};
+    input_state_hold_key(&input, KEY_F2);
+    TEST_ASSERT_FLOAT_WITHIN(0.01F, 1.0F, input_axis(&input, &store, AXIS_PRIMARY_X));
+}
+
 int main(void)
 {
     UNITY_BEGIN();
@@ -307,6 +412,14 @@ int main(void)
     RUN_TEST(test_key_from_name_round_trip);
     RUN_TEST(test_gp_button_from_name_round_trip);
     RUN_TEST(test_key_label_returns_short_form);
+
+    RUN_TEST(test_mutation_set_action_alternative);
+    RUN_TEST(test_mutation_add_action_alternative);
+    RUN_TEST(test_mutation_remove_action_alternative);
+    RUN_TEST(test_mutation_clear_action_drops_alternatives);
+    RUN_TEST(test_mutation_set_action_deep_copies_chord);
+    RUN_TEST(test_mutation_reset_action_restores_defaults);
+    RUN_TEST(test_mutation_axis_alternative_round_trip);
 
     return UNITY_END();
 }

@@ -197,12 +197,16 @@ static bool parse_physical(toml_table_t *binding, PhysicalInput *out, Allocator 
     return true;
 }
 
+/* Push parsed bindings onto an already-cleared `out`. Caller deep-clears
+ * via input_func_clear_action / _axis before calling, so the existing
+ * vec's allocator is preserved and previous alternatives' parts are
+ * already freed. Returns true on success (including the present-but-no-
+ * bindings-array case, treated as "explicitly cleared"). */
 static bool parse_alternatives(toml_table_t *func, vec_physical_input *out, Allocator alloc, ErrorState *err)
 {
     toml_array_t *bindings = toml_array_in(func, "bindings");
-    *out = vec_physical_input_new(alloc);
     if (!bindings) {
-        return true; /* function present but no bindings array = empty alternatives */
+        return true;
     }
     int count = toml_array_nelem(bindings);
     for (int index = 0; index < count; index++) {
@@ -257,13 +261,12 @@ bool input_func_load_bindings_toml(BindingStore *store, Allocator alloc, ErrorSt
         if (!func) {
             continue;
         }
-        vec_physical_input parsed;
-        if (!parse_alternatives(func, &parsed, alloc, err)) {
+        input_func_clear_action(store, (InputAction)action);
+        if (!parse_alternatives(func, &store->actions[action].alternatives, alloc, err)) {
             error_wrap(err, "function.%s", name);
             toml_free(root);
             return false;
         }
-        store->actions[action].alternatives = parsed;
     }
     for (int axis = 0; axis < AXIS_COUNT; axis++) {
         const char *name = input_func_axis_toml_name((InputAxis)axis);
@@ -274,13 +277,12 @@ bool input_func_load_bindings_toml(BindingStore *store, Allocator alloc, ErrorSt
         if (!func) {
             continue;
         }
-        vec_physical_input parsed;
-        if (!parse_alternatives(func, &parsed, alloc, err)) {
+        input_func_clear_axis(store, (InputAxis)axis);
+        if (!parse_alternatives(func, &store->axes[axis].alternatives, alloc, err)) {
             error_wrap(err, "function.%s", name);
             toml_free(root);
             return false;
         }
-        store->axes[axis].alternatives = parsed;
     }
     toml_free(root);
     return true;
