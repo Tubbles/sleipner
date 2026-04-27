@@ -114,6 +114,17 @@ Carried over from `work/keybinding-audit.md`:
   the entire codebase still assumes gamepad 0. Settings UI does not
   expose a gamepad selector. Defer until the engine actually supports
   multiple gamepads.
+- **Replace `capture_armed` with release-edge capture in
+  `engine/src/settings.c`.** Today the chord-capture state machine
+  carries a `capture_armed` flag that flips true on the first frame
+  with no input held, then starts accumulating. It exists only to
+  prevent the press that opened capture (e.g. ACTION_CONFIRM = ENTER)
+  from leaking into the captured chord. Cleaner: track the
+  previous-frame held set, accumulate only on press edges (held this
+  frame and not held last frame), and finalize on the held -> empty
+  transition. The opening press is already "old" by the next frame
+  so it never accumulates, and the explicit arming flag goes away.
+  Worth doing once the capture path picks up its own unit tests.
 
 ## misc
 - add persisted attrs for children in toml emit and editor ui
