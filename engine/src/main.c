@@ -84,9 +84,11 @@ VEC_IMPL(texture_entry, TextureEntry)
 #ifdef __ANDROID__
 #define SYNCTHING_PATH "/storage/emulated/0/Sync"
 #define GAMEDATA_PATH SYNCTHING_PATH "/sleipner/gamedata.toml"
+#define KEYBINDINGS_PATH SYNCTHING_PATH "/sleipner/keybindings.toml"
 #define TRACE_LOG_PATH SYNCTHING_PATH "/sleipner/trace.log"
 #else
 #define GAMEDATA_PATH "data/gamedata.toml"
+#define KEYBINDINGS_PATH "data/keybindings.toml"
 #define TRACE_LOG_PATH "trace.log"
 #endif
 
@@ -330,11 +332,11 @@ static void load_persistent_assets(GameState *state)
     debug_log(&state->debug, "ui_font: Golden Apple %dpx valid=%d", DEBUG_FONT_SIZE,
               IsFontValid(state->assets.ui_font));
 
-    /* Defaults are loaded in game_init. Overlay the TOML file (currently
-     * a stub) on top so user customizations win once that lands. Bindings
-     * live alongside textures and fonts: persistent, below gamedata_base,
-     * freed only at game exit. */
-    if (!input_func_load_bindings_toml(&state->bindings, gamedata_alloc, &state->error, nullptr)) {
+    /* Defaults are loaded in game_init. Overlay user customizations from
+     * KEYBINDINGS_PATH on top. Missing file is OK (defaults remain).
+     * Bindings live alongside textures and fonts: persistent, below
+     * gamedata_base, freed only at game exit. */
+    if (!input_func_load_bindings_toml(&state->bindings, gamedata_alloc, &state->error, KEYBINDINGS_PATH)) {
         debug_log(&state->debug, "input bindings: %s", error_get(&state->error));
         error_clear(&state->error);
     }

@@ -6,3 +6,5 @@ CMakeUserPresets.json
 android/.gradle/
 android/app/.cxx/
 android/app/build/
+data/keybindings.toml
+data/keybindings.toml.bak
