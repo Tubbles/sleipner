@@ -4,6 +4,7 @@
 #include "blueprint.h"
 #include "entity.h"
 #include "error.h"
+#include "input_func.h"
 #include "level.h"
 #include "rule.h"
 
@@ -450,6 +451,143 @@ int toml_emit_gamedata(
     offset = emit_blueprints(buffer, capacity, offset, blueprints);
     offset = emit_levels(buffer, capacity, offset, levels, level_count);
 
+    if (offset < 0) {
+        error_set(err, "buffer too small (capacity %d)", capacity);
+    }
+    return offset;
+}
+
+/* ---- Bindings emitter ---- */
+
+static int emit_scale_field(char *buffer, int capacity, int offset, const AtomicInput *atom)
+{
+    if (atom->scale == 1.0F) {
+        return offset;
+    }
+    char tmp[FLOAT_STR_BUFSIZE];
+    (void)snprintf(tmp, sizeof(tmp), "%g", (double)atom->scale);
+    if (strchr(tmp, '.') != nullptr || strchr(tmp, 'e') != nullptr || strchr(tmp, 'E') != nullptr) {
+        return emit_append(buffer, capacity, offset, ", scale = %s", tmp);
+    }
+    return emit_append(buffer, capacity, offset, ", scale = %s.0", tmp);
+}
+
+static int emit_atom(char *buffer, int capacity, int offset, const AtomicInput *atom)
+{
+    switch (atom->kind) {
+    case ATOM_KEY: {
+        const char *name = input_func_key_name(atom->int_a);
+        if (!name) {
+            return -1;
+        }
+        return emit_append(buffer, capacity, offset, "{ kind = \"key\", key = \"%s\" }", name);
+    }
+    case ATOM_GP_BUTTON: {
+        const char *name = input_func_gp_button_name(atom->int_a);
+        if (!name) {
+            return -1;
+        }
+        offset = emit_append(buffer, capacity, offset, "{ kind = \"gamepad_button\", button = \"%s\"", name);
+        if (atom->int_b != 0) {
+            offset = emit_append(buffer, capacity, offset, ", gamepad = %d", atom->int_b);
+        }
+        return emit_append(buffer, capacity, offset, " }");
+    }
+    case ATOM_GP_AXIS: {
+        const char *name = input_func_gp_axis_name(atom->int_a);
+        if (!name) {
+            return -1;
+        }
+        offset = emit_append(buffer, capacity, offset, "{ kind = \"gamepad_axis\", axis = \"%s\"", name);
+        if (atom->int_b != 0) {
+            offset = emit_append(buffer, capacity, offset, ", gamepad = %d", atom->int_b);
+        }
+        offset = emit_scale_field(buffer, capacity, offset, atom);
+        return emit_append(buffer, capacity, offset, " }");
+    }
+    case ATOM_GP_TRIGGER: {
+        const char *name = input_func_gp_axis_name(atom->int_a);
+        if (!name) {
+            return -1;
+        }
+        offset = emit_append(buffer, capacity, offset, "{ kind = \"gamepad_trigger\", axis = \"%s\"", name);
+        if (atom->int_b != 0) {
+            offset = emit_append(buffer, capacity, offset, ", gamepad = %d", atom->int_b);
+        }
+        offset = emit_scale_field(buffer, capacity, offset, atom);
+        return emit_append(buffer, capacity, offset, " }");
+    }
+    case ATOM_KB_AXIS: {
+        offset = emit_append(buffer, capacity, offset, "{ kind = \"kb_axis\"");
+        if (atom->int_a != 0) {
+            const char *neg = input_func_key_name(atom->int_a);
+            if (!neg) {
+                return -1;
+            }
+            offset = emit_append(buffer, capacity, offset, ", neg_key = \"%s\"", neg);
+        }
+        if (atom->int_b != 0) {
+            const char *pos = input_func_key_name(atom->int_b);
+            if (!pos) {
+                return -1;
+            }
+            offset = emit_append(buffer, capacity, offset, ", pos_key = \"%s\"", pos);
+        }
+        offset = emit_scale_field(buffer, capacity, offset, atom);
+        return emit_append(buffer, capacity, offset, " }");
+    }
+    }
+    return -1;
+}
+
+static int emit_physical(char *buffer, int capacity, int offset, const PhysicalInput *physical)
+{
+    offset = emit_append(buffer, capacity, offset, "  { parts = [");
+    for (int index = 0; index < physical->parts.count; index++) {
+        if (index > 0) {
+            offset = emit_append(buffer, capacity, offset, ", ");
+        }
+        offset = emit_atom(buffer, capacity, offset, &physical->parts.data[index]);
+    }
+    return emit_append(buffer, capacity, offset, "] },\n");
+}
+
+static int
+emit_function_block(char *buffer, int capacity, int offset, const char *name, const vec_physical_input *alternatives)
+{
+    offset = emit_append(buffer, capacity, offset, "[function.%s]\n", name);
+    offset = emit_append(buffer, capacity, offset, "bindings = [\n");
+    for (int index = 0; index < alternatives->count; index++) {
+        offset = emit_physical(buffer, capacity, offset, &alternatives->data[index]);
+    }
+    return emit_append(buffer, capacity, offset, "]\n\n");
+}
+
+int toml_emit_bindings(ErrorState *err, char *buffer, int capacity, const BindingStore *store)
+{
+    int offset = 0;
+    for (int action = 0; action < ACTION_COUNT; action++) {
+        const vec_physical_input *alternatives = &store->actions[action].alternatives;
+        if (alternatives->count == 0) {
+            continue;
+        }
+        const char *name = input_func_action_toml_name((InputAction)action);
+        if (!name) {
+            continue;
+        }
+        offset = emit_function_block(buffer, capacity, offset, name, alternatives);
+    }
+    for (int axis = 0; axis < AXIS_COUNT; axis++) {
+        const vec_physical_input *alternatives = &store->axes[axis].alternatives;
+        if (alternatives->count == 0) {
+            continue;
+        }
+        const char *name = input_func_axis_toml_name((InputAxis)axis);
+        if (!name) {
+            continue;
+        }
+        offset = emit_function_block(buffer, capacity, offset, name, alternatives);
+    }
     if (offset < 0) {
         error_set(err, "buffer too small (capacity %d)", capacity);
     }

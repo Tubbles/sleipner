@@ -2,6 +2,7 @@
 
 #include "blueprint.h"
 #include "error.h"
+#include "input_func.h"
 #include "level.h"
 
 /* Emit blueprint and level data as TOML into a buffer.
@@ -13,3 +14,11 @@
                                      const BlueprintTable *blueprints,
                                      const Level *levels,
                                      int level_count);
+
+/* Emit a BindingStore as keybindings.toml content. The schema mirrors
+ * input_func_load_bindings_toml: top-level [function.NAME] tables, each
+ * with a `bindings` array of `{ parts = [{...}] }` entries. Only
+ * actions/axes that have at least one alternative are emitted. Returns
+ * bytes written (excluding null terminator), or -1 if the buffer is
+ * too small. */
+[[nodiscard]] int toml_emit_bindings(ErrorState *err, char *buffer, int capacity, const BindingStore *store);
