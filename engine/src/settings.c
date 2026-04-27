@@ -126,10 +126,10 @@ static int detail_total_rows(const SettingsState *settings, const BindingStore *
 static const char *target_label(const SettingsState *settings)
 {
     if (settings->target_kind == SETTINGS_TARGET_ACTION) {
-        return input_func_action_toml_name((InputAction)settings->target_index);
+        return input_func_action_toml_name_at(settings->target_index);
     }
     if (settings->target_kind == SETTINGS_TARGET_AXIS) {
-        return input_func_axis_toml_name((InputAxis)settings->target_index);
+        return input_func_axis_toml_name_at(settings->target_index);
     }
     return "";
 }
@@ -383,10 +383,13 @@ static void handle_list_input(
     if (!input_pressed(input, store, ACTION_CONFIRM)) {
         return;
     }
-    if (settings->list_index < ACTION_ROW_COUNT) {
+    if (settings->list_index >= 0 && settings->list_index < ACTION_ROW_COUNT) {
         enter_detail_action(settings, (InputAction)settings->list_index);
-    } else if (settings->list_index < ACTION_ROW_COUNT + AXIS_ROW_COUNT) {
-        enter_detail_axis(settings, (InputAxis)(settings->list_index - ACTION_ROW_COUNT));
+    } else if (settings->list_index >= ACTION_ROW_COUNT && settings->list_index < ACTION_ROW_COUNT + AXIS_ROW_COUNT) {
+        int axis_index = settings->list_index - ACTION_ROW_COUNT;
+        if (axis_index >= 0 && axis_index < AXIS_COUNT) {
+            enter_detail_axis(settings, (InputAxis)axis_index);
+        }
     } else {
         input_func_reset_all_to_defaults(store, alloc);
         settings->save_requested = true;
@@ -646,16 +649,16 @@ static void draw_text(const SettingsState *settings, const char *text, int pos_x
 
 static void list_row_label(int row, char *out, size_t cap, const BindingStore *store)
 {
-    if (row < ACTION_ROW_COUNT) {
-        const char *name = input_func_action_toml_name((InputAction)row);
+    if (row >= 0 && row < ACTION_ROW_COUNT) {
+        const char *name = input_func_action_toml_name_at(row);
         char binding[LABEL_BUF_CAP] = {0};
-        (void)input_func_label(store, (InputAction)row, binding, sizeof(binding));
+        (void)input_func_label_at(store, row, binding, sizeof(binding));
         (void)snprintf(out, cap, "%-26s %s", name ? name : "", binding);
         return;
     }
-    if (row < ACTION_ROW_COUNT + AXIS_ROW_COUNT) {
-        int axis = row - ACTION_ROW_COUNT;
-        const char *name = input_func_axis_toml_name((InputAxis)axis);
+    if (row >= ACTION_ROW_COUNT && row < ACTION_ROW_COUNT + AXIS_ROW_COUNT) {
+        int axis_index = row - ACTION_ROW_COUNT;
+        const char *name = input_func_axis_toml_name_at(axis_index);
         (void)snprintf(out, cap, "%s", name ? name : "");
         return;
     }

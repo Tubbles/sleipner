@@ -428,16 +428,16 @@ static int append_physical_label(char *out, size_t cap, int len, const PhysicalI
     return len;
 }
 
-int input_func_label(const BindingStore *store, InputAction action, char *out, size_t cap)
+int input_func_label_at(const BindingStore *store, int action_index, char *out, size_t cap)
 {
     if (cap == 0) {
         return 0;
     }
     out[0] = '\0';
-    if (action < 0 || action >= ACTION_COUNT) {
+    if (action_index < 0 || action_index >= ACTION_COUNT) {
         return 0;
     }
-    const ActionBinding *binding = &store->actions[action];
+    const ActionBinding *binding = &store->actions[action_index];
 
     /* Render gamepad alternatives first (project is gamepad-first), then
      * keyboard. Within each group, alternatives are joined with "/"; the
@@ -465,6 +465,11 @@ int input_func_label(const BindingStore *store, InputAction action, char *out, s
         len = (int)cap - 1;
     }
     return len;
+}
+
+int input_func_label(const BindingStore *store, InputAction action, char *out, size_t cap)
+{
+    return input_func_label_at(store, (int)action, out, cap);
 }
 
 /* --- Defaults builder ---------------------------------------------------- */
@@ -900,6 +905,22 @@ const char *input_func_axis_toml_name(InputAxis axis)
         return nullptr;
     }
     return axis_toml_names[axis];
+}
+
+const char *input_func_action_toml_name_at(int action_index)
+{
+    if (action_index < 0 || action_index >= ACTION_COUNT) {
+        return nullptr;
+    }
+    return action_toml_names[action_index];
+}
+
+const char *input_func_axis_toml_name_at(int axis_index)
+{
+    if (axis_index < 0 || axis_index >= AXIS_COUNT) {
+        return nullptr;
+    }
+    return axis_toml_names[axis_index];
 }
 
 const char *input_func_key_name(int key)

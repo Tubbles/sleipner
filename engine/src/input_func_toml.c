@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 
 #define TOML_BINDINGS_ERRBUF 200
 
@@ -232,11 +233,15 @@ bool input_func_load_bindings_toml(BindingStore *store, Allocator alloc, ErrorSt
     if (!toml_path) {
         return true;
     }
+    /* Probe with stat first so a missing file degrades to "no overlay,
+     * defaults remain" without inspecting errno after fopen. Any other
+     * failure mode (permission denied, etc.) is reported below. */
+    struct stat path_stat;
+    if (stat(toml_path, &path_stat) != 0) {
+        return true;
+    }
     FILE *file = fopen(toml_path, "re");
     if (!file) {
-        if (errno == ENOENT) {
-            return true; /* missing file is OK — defaults remain */
-        }
         error_set(err, "fopen(%s): %s", toml_path, strerror(errno));
         return false;
     }

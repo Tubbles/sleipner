@@ -162,6 +162,12 @@ input_axis_pair(const InputState *input, const BindingStore *store, InputAxis x_
  * Returns bytes written (excluding the null terminator). */
 int input_func_label(const BindingStore *store, InputAction action, char *out, size_t cap);
 
+/* Same, but indexed by raw int. Mirror of input_func_action_toml_name_at:
+ * lets list-row code that has already bounds-checked an integer index
+ * skip the cast to InputAction, which the static analyzer flags
+ * pessimistically through path-sensitive constraints. */
+int input_func_label_at(const BindingStore *store, int action_index, char *out, size_t cap);
+
 /* --- Loading ------------------------------------------------------------- */
 
 /* Initialize `store` with built-in defaults. All vecs use `alloc`. */
@@ -240,3 +246,10 @@ void input_func_reset_all_to_defaults(BindingStore *store, Allocator alloc);
  * enum value is out of range. */
 [[nodiscard]] const char *input_func_action_toml_name(InputAction action);
 [[nodiscard]] const char *input_func_axis_toml_name(InputAxis axis);
+
+/* Same, but indexed by raw int. Useful when iterating list rows whose
+ * row index has already been bounds-checked but where casting to
+ * InputAction / InputAxis would trip the EnumCastOutOfRange static
+ * analyzer check. Returns nullptr for out-of-range indices. */
+[[nodiscard]] const char *input_func_action_toml_name_at(int action_index);
+[[nodiscard]] const char *input_func_axis_toml_name_at(int axis_index);
