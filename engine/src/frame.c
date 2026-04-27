@@ -16,6 +16,7 @@
 #include "map.h"
 #include "menu.h"
 #include "rule.h"
+#include "settings.h"
 #include "str.h"
 #include "strv.h"
 #include "undo.h"
@@ -59,6 +60,12 @@ void dispatch_menu_action(MenuDispatchCtx ctx, MenuAction action)
     case MENU_ACTION_RESTORE:
         if (ctx.restore_fn) {
             ctx.restore_fn(ctx.diag, ctx.state, ctx.editor_state, ctx.watches, ctx.undo_history);
+        }
+        menu_close(ctx.menu);
+        break;
+    case MENU_ACTION_OPEN_SETTINGS:
+        if (ctx.settings) {
+            settings_open(ctx.settings);
         }
         menu_close(ctx.menu);
         break;
@@ -224,9 +231,34 @@ void handle_transition(Diag *diag, GameState *state, FrameContext *ctx)
                            strv_from_cstr("Level loaded"));
 }
 
+static void run_settings_frame(GameState *state, FrameContext *ctx, InputState input, float delta_time)
+{
+    Allocator gamedata_alloc = allocator_arena(&state->gamedata_arena);
+    bool close_requested = false;
+    settings_handle_input(ctx->settings, &input, &state->bindings, gamedata_alloc, &close_requested);
+    settings_tick(ctx->settings, delta_time);
+    if (ctx->settings->save_requested) {
+        ctx->settings->save_requested = false;
+        if (ctx->keybindings_save_fn) {
+            (void)ctx->keybindings_save_fn(state);
+        }
+    }
+    if (close_requested) {
+        settings_close(ctx->settings);
+        if (ctx->menu) {
+            menu_open(ctx->menu);
+        }
+    }
+}
+
 void frame_update(Diag *diag, GameState *state, FrameContext *ctx, InputState input, float delta_time)
 {
     handle_global_toggles(state, &input, ctx->font_preview_enabled);
+
+    if (ctx->settings && settings_is_open(ctx->settings)) {
+        run_settings_frame(state, ctx, input, delta_time);
+        return;
+    }
 
     if (input_pressed(&input, &state->bindings, ACTION_MENU_TOGGLE)) {
         toggle_menu_open(ctx->menu);
@@ -244,6 +276,7 @@ void frame_update(Diag *diag, GameState *state, FrameContext *ctx, InputState in
             .watches = ctx->watches,
             .undo_history = ctx->undo_history,
             .menu = ctx->menu,
+            .settings = ctx->settings,
             .quit_requested = ctx->quit_requested,
             .save_fn = ctx->save_fn,
             .restore_fn = ctx->restore_fn,

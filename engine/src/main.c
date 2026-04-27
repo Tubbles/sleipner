@@ -46,6 +46,7 @@ const char *__lsan_default_suppressions(void)
 #include "entity.h"
 #include "diag.h"
 #include "frame.h"
+#include "settings.h"
 #include "game.h"
 #include "input.h"
 #include "input_func.h"
@@ -488,6 +489,52 @@ static bool save_gamedata(GameState *state)
     return true;
 }
 
+#define MAX_KEYBINDINGS_SIZE (32UL * 1024)
+
+static bool save_keybindings(GameState *state)
+{
+    /* No backup pass: the keybindings file is small, regenerated from
+     * the BindingStore on every save, and not user-authored content
+     * (the settings UI is the only writer). The previous file is left
+     * intact if the emit fails because we only fopen-write after the
+     * emit succeeds. */
+    char buffer[MAX_KEYBINDINGS_SIZE];
+    int written = toml_emit_bindings(&state->error, buffer, (int)sizeof(buffer), &state->bindings);
+    if (written < 0) {
+        error_wrap(&state->error, "save_keybindings");
+        return false;
+    }
+
+    FILE *file = fopen(KEYBINDINGS_PATH, FOPEN_WRITE);
+    if (!file) {
+        error_set(&state->error, "fopen(%s): %s", KEYBINDINGS_PATH, strerror(errno));
+        error_wrap(&state->error, "save_keybindings");
+        return false;
+    }
+
+    size_t to_write = (size_t)written;
+    if (fwrite(buffer, 1, to_write, file) != to_write) {
+        error_set(&state->error, "fwrite(%s): %s", KEYBINDINGS_PATH, strerror(errno));
+        (void)fclose(file);
+        error_wrap(&state->error, "save_keybindings");
+        return false;
+    }
+    (void)fclose(file);
+
+    debug_log(&state->debug, "saved keybindings: %d bytes to %s", written, KEYBINDINGS_PATH);
+    return true;
+}
+
+static bool dispatch_save_keybindings(GameState *state)
+{
+    if (!save_keybindings(state)) {
+        debug_log(&state->debug, "save keybindings error: %s", error_get(&state->error));
+        error_clear(&state->error);
+        return false;
+    }
+    return true;
+}
+
 static char *read_file_text(GameState *state, const char *path, Arena *arena)
 {
     /* Stat the file first for diagnostics */
@@ -699,11 +746,36 @@ typedef struct {
     bool is_dirty;
     EditorState editor_state;
     const WatchList *watches;
-    /* menu and blur are mutable: render_frame lazily calls blur_capture
-     * the first frame the menu is open and flips menu->blur_captured. */
+    /* menu, settings, and blur are mutable: render_frame lazily calls
+     * blur_capture the first frame either overlay is open and flips
+     * the corresponding blur_captured flag. */
     MenuState *menu;
+    SettingsState *settings;
     BlurPipeline *blur;
 } RenderParams;
+
+/* Capture the current scene into the blur pipeline if either overlay
+ * is open and neither has captured yet. Sets the captured flag on both
+ * so a single capture serves both overlays (which share the backdrop). */
+static void capture_overlay_blur_if_needed(RenderParams params)
+{
+    bool menu_open = params.menu->open;
+    bool settings_open = params.settings && params.settings->open;
+    if (!menu_open && !settings_open) {
+        return;
+    }
+    if (params.menu->blur_captured) {
+        return;
+    }
+    if (params.settings && params.settings->blur_captured) {
+        return;
+    }
+    blur_capture(params.blur, params.target.texture);
+    params.menu->blur_captured = true;
+    if (params.settings) {
+        params.settings->blur_captured = true;
+    }
+}
 
 static void render_frame(GameState *state, RenderParams params)
 {
@@ -788,11 +860,11 @@ static void render_frame(GameState *state, RenderParams params)
     }
     draw_hints_bar(state->editor_mode, &params.editor_state, &state->bindings, params.is_dirty, screen,
                    state->assets.ui_font);
-    if (params.menu->open && !params.menu->blur_captured) {
-        blur_capture(params.blur, params.target.texture);
-        params.menu->blur_captured = true;
-    }
+    capture_overlay_blur_if_needed(params);
     menu_render(params.menu, params.blur, state->screen_width, state->screen_height);
+    if (params.settings && params.settings->open) {
+        settings_render(params.settings, &state->bindings, params.blur, state->screen_width, state->screen_height);
+    }
     EndDrawing();
 }
 
@@ -936,6 +1008,16 @@ int main(void)
     EmbeddedAsset menu_font_asset = ASSET(cardboardcrown_ttf);
     menu_set_font(&menu,
                   LoadFontFromMemory(".ttf", menu_font_asset.data, menu_font_asset.size, MENU_FONT_SIZE, nullptr, 0));
+
+    /* Settings overlay shares the menu's blur backdrop. Uses the smaller
+     * Golden Apple font since list rows are denser than the menu's
+     * five-entry layout. */
+    SettingsState settings = {0};
+    settings_init(&settings);
+    EmbeddedAsset settings_font_asset = ASSET(golden_apple_ttf);
+    settings_set_font(&settings, LoadFontFromMemory(".ttf", settings_font_asset.data, settings_font_asset.size,
+                                                    SETTINGS_FONT_SIZE, nullptr, 0));
+
     BlurPipeline blur = {0};
     blur_init(&blur, (int)game_bounds.width, (int)game_bounds.height);
     bool quit_requested = false;
@@ -946,10 +1028,12 @@ int main(void)
         .watches = &watches,
         .undo_history = &undo_history,
         .menu = &menu,
+        .settings = &settings,
         .font_preview_enabled = &font_preview_enabled,
         .quit_requested = &quit_requested,
         .save_fn = menu_dispatch_save,
         .restore_fn = menu_dispatch_restore,
+        .keybindings_save_fn = dispatch_save_keybindings,
         .level_loader_fn = production_level_loader,
         .level_loader_user_data = nullptr,
     };
@@ -982,6 +1066,7 @@ int main(void)
                                 .editor_state = editor_state,
                                 .watches = &watches,
                                 .menu = &menu,
+                                .settings = &settings,
                                 .blur = &blur,
                             });
     }
@@ -989,6 +1074,7 @@ int main(void)
     debug_log(&state->debug, "exiting game loop (frame=%d t=%.1fs)", state->frame, state->elapsed);
 
     blur_cleanup(&blur);
+    settings_cleanup(&settings);
     menu_cleanup(&menu);
     undo_history_free(&undo_history);
     UnloadMusicStream(bgm);

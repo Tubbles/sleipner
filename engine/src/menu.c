@@ -27,6 +27,8 @@ static const char *entry_label(MenuEntry entry)
         return "SAVE";
     case MENU_ENTRY_RESTORE:
         return "RESTORE";
+    case MENU_ENTRY_SETTINGS:
+        return "SETTINGS";
     case MENU_ENTRY_TOGGLE_DEBUG_OVERLAY:
         return "TOGGLE DEBUG OVERLAY";
     case MENU_ENTRY_QUIT:
@@ -46,6 +48,8 @@ static MenuAction action_for_entry(MenuEntry entry)
         return MENU_ACTION_SAVE;
     case MENU_ENTRY_RESTORE:
         return MENU_ACTION_RESTORE;
+    case MENU_ENTRY_SETTINGS:
+        return MENU_ACTION_OPEN_SETTINGS;
     case MENU_ENTRY_TOGGLE_DEBUG_OVERLAY:
         return MENU_ACTION_TOGGLE_DEBUG_OVERLAY;
     case MENU_ENTRY_QUIT:

@@ -41,6 +41,7 @@ set(ENGINE_SOURCE_FILES
     particle.c
     render.c
     rule.c
+    settings.c
     shape.c
     str.c
     strv.c

@@ -6,6 +6,7 @@
 #include "input.h"
 #include "menu.h"
 #include "raylib.h"
+#include "settings.h"
 #include "undo.h"
 
 #include <stdbool.h>
@@ -35,6 +36,11 @@ typedef void (*MenuSaveFn)(Diag *diag, GameState *state, EditorState *editor_sta
 typedef void (*MenuRestoreFn)(
     Diag *diag, GameState *state, EditorState *editor_state, WatchList *watches, UndoHistory *undo_history);
 
+/* Persist BindingStore mutations to disk after a successful rebind. nullptr
+ * is permitted: settings still mutates the in-memory store, just no disk write
+ * (the right shape for headless tests). */
+typedef bool (*KeybindingsSaveFn)(GameState *state);
+
 /* Pluggable level loader for handle_transition. Production wires this
  * to a wrapper around its file-I/O load_gamedata; tests wire it to a
  * wrapper around game_load_gamedata against an in-memory TOML
@@ -50,6 +56,7 @@ typedef struct {
     WatchList *watches;
     UndoHistory *undo_history;
     MenuState *menu;
+    SettingsState *settings;
     bool *quit_requested;
     MenuSaveFn save_fn;
     MenuRestoreFn restore_fn;
@@ -57,7 +64,8 @@ typedef struct {
 
 /* Apply one MenuAction. RESUME / TOGGLE_DEBUG_OVERLAY / QUIT are
  * pure state transitions; SAVE / RESTORE go through ctx.save_fn /
- * ctx.restore_fn (each may be nullptr). */
+ * ctx.restore_fn (each may be nullptr); OPEN_SETTINGS hands control
+ * to the Settings overlay. */
 void dispatch_menu_action(MenuDispatchCtx ctx, MenuAction action);
 
 /* Editor-or-play step + simulation step. Does NOT call
@@ -95,10 +103,12 @@ typedef struct {
     WatchList *watches;
     UndoHistory *undo_history;
     MenuState *menu;
+    SettingsState *settings;
     bool *font_preview_enabled;
     bool *quit_requested;
     MenuSaveFn save_fn;
     MenuRestoreFn restore_fn;
+    KeybindingsSaveFn keybindings_save_fn;
     LevelLoaderFn level_loader_fn;
     void *level_loader_user_data;
 } FrameContext;

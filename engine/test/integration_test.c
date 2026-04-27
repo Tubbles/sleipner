@@ -796,8 +796,10 @@ void test_integration_menu_navigation_and_quit(void)
     TEST_ASSERT_TRUE(game.menu.open);
     TEST_ASSERT_EQUAL_INT(MENU_ENTRY_RESUME, game.menu.selected);
 
-    /* Walk to QUIT (4 down-presses from RESUME). One tap per frame. */
-    for (int step = 0; step < 4; step++) {
+    /* Walk to QUIT. The menu has six entries: RESUME, SAVE, RESTORE,
+     * SETTINGS, TOGGLE_DEBUG_OVERLAY, QUIT — 5 down-presses from RESUME.
+     * One tap per frame. */
+    for (int step = 0; step < 5; step++) {
         InputState down = {0};
         input_state_press_key(&down, KEY_DOWN);
         test_advance_frame(&game, down);
