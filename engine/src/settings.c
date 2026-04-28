@@ -405,30 +405,59 @@ static void path_edit_set_buf(PathEditState *path_edit, const char *value)
     path_edit->len = (int)length;
 }
 
-/* Synthesized ".." index. -1 when at_root and ".." is suppressed; else 0. */
-static int dotdot_row_index(const PathEditState *path_edit)
+/* Row index meanings (in the browse list):
+ *   PATH_EDIT_ROW_USE_THIS  : synthesized first row "<USE THIS DIRECTORY>".
+ *                             CONFIRM commits the current buf and exits.
+ *   PATH_EDIT_ROW_DOTDOT    : synthesized ".." row, only present when not at
+ *                             filesystem root. CONFIRM goes up one level.
+ *   >= file_offset          : index into FilePathList, points at a
+ *                             subdirectory. CONFIRM enters that folder.
+ *
+ * The two synthesized rows live at fixed UI indices so the user lands on
+ * USE_THIS by default (browse_index initialized to 0), making the
+ * one-press "open screen, A, save current path" workflow work without
+ * needing a separate ACTION_INTERACT binding (which would clash with
+ * ACTION_CONFIRM since both default to gamepad RIGHT_FACE_DOWN). */
+typedef enum {
+    PATH_EDIT_KIND_USE_THIS,
+    PATH_EDIT_KIND_DOTDOT,
+    PATH_EDIT_KIND_DIR,
+} PathEditRowKind;
+
+static int path_edit_dotdot_row_index(const PathEditState *path_edit)
 {
-    return path_edit->at_root ? -1 : 0;
+    return path_edit->at_root ? -1 : 1;
+}
+
+static int path_edit_first_dir_row(const PathEditState *path_edit)
+{
+    return path_edit->at_root ? 1 : 2;
 }
 
 static int path_edit_total_rows(const PathEditState *path_edit)
 {
-    int rows = path_edit->dir_list_loaded ? (int)path_edit->dir_list.count : 0;
+    int rows = 1; /* USE_THIS */
     if (!path_edit->at_root) {
-        rows += 1;
+        rows += 1; /* .. */
+    }
+    if (path_edit->dir_list_loaded) {
+        rows += (int)path_edit->dir_list.count;
     }
     return rows;
 }
 
-/* Translate a UI row to the FilePathList index it points at, or -1 when
- * the row is the synthesized "..". */
-static int path_edit_filelist_index(const PathEditState *path_edit, int row)
+static PathEditRowKind path_edit_row_kind(const PathEditState *path_edit, int row, int *file_index_out)
 {
-    int dotdot = dotdot_row_index(path_edit);
-    if (row == dotdot) {
-        return -1;
+    *file_index_out = -1;
+    if (row == 0) {
+        return PATH_EDIT_KIND_USE_THIS;
     }
-    return row - (path_edit->at_root ? 0 : 1);
+    if (row == path_edit_dotdot_row_index(path_edit)) {
+        return PATH_EDIT_KIND_DOTDOT;
+    }
+    int file_index = row - path_edit_first_dir_row(path_edit);
+    *file_index_out = file_index;
+    return PATH_EDIT_KIND_DIR;
 }
 
 static void path_edit_enter_screen(SettingsState *settings, const Preferences *preferences)
@@ -501,21 +530,36 @@ static void path_edit_navigate_index(PathEditState *path_edit, const InputState 
     update_browse_scroll(path_edit);
 }
 
-static void path_edit_descend_into_row(PathEditState *path_edit)
+/* Returns true when the row dispatch already committed + exited the
+ * screen (row was USE_THIS); the caller must not touch settings/path_edit
+ * after that point. */
+static bool path_edit_dispatch_confirm(SettingsState *settings, Preferences *preferences)
 {
-    int file_index = path_edit_filelist_index(path_edit, path_edit->browse_index);
-    if (file_index == -1) {
+    PathEditState *path_edit = &settings->path_edit;
+    int file_index = -1;
+    PathEditRowKind kind = path_edit_row_kind(path_edit, path_edit->browse_index, &file_index);
+    switch (kind) {
+    case PATH_EDIT_KIND_USE_THIS:
+        path_edit_commit(settings, preferences);
+        path_edit_exit(settings);
+        show_toast(settings, "Data directory saved");
+        return true;
+    case PATH_EDIT_KIND_DOTDOT: {
         const char *parent = GetPrevDirectoryPath(path_edit->buf);
         if (parent != nullptr) {
             path_edit_set_buf(path_edit, parent);
             path_edit_refresh(path_edit);
         }
-        return;
+        return false;
     }
-    if (file_index >= 0 && file_index < (int)path_edit->dir_list.count) {
-        path_edit_set_buf(path_edit, path_edit->dir_list.paths[file_index]);
-        path_edit_refresh(path_edit);
+    case PATH_EDIT_KIND_DIR:
+        if (file_index >= 0 && path_edit->dir_list_loaded && file_index < (int)path_edit->dir_list.count) {
+            path_edit_set_buf(path_edit, path_edit->dir_list.paths[file_index]);
+            path_edit_refresh(path_edit);
+        }
+        return false;
     }
+    return false;
 }
 
 static bool path_edit_pop_to_parent(PathEditState *path_edit)
@@ -545,14 +589,8 @@ static void handle_path_edit_browse(SettingsState *settings,
         keyboard_widget_reset(&path_edit->kb, path_edit->buf, &path_edit->len, PATH_EDIT_BUF_SIZE);
         return;
     }
-    if (input_pressed(input, store, ACTION_INTERACT)) {
-        path_edit_commit(settings, preferences);
-        path_edit_exit(settings);
-        show_toast(settings, "Data directory saved");
-        return;
-    }
     if (input_pressed(input, store, ACTION_CONFIRM)) {
-        path_edit_descend_into_row(path_edit);
+        (void)path_edit_dispatch_confirm(settings, preferences);
         return;
     }
     if (input_pressed(input, store, ACTION_CANCEL) && !path_edit_pop_to_parent(path_edit)) {
@@ -565,16 +603,22 @@ static void handle_path_edit_keyboard(SettingsState *settings,
                                       const InputState *input,
                                       const BindingStore *store)
 {
+    (void)preferences;
     if (input_pressed(input, store, ACTION_WB_KEYBOARD_MODE)) {
         settings->path_edit.mode = PATH_EDIT_BROWSE;
         path_edit_refresh(&settings->path_edit);
         return;
     }
     KeyboardWidgetResult result = keyboard_widget_handle_input(&settings->path_edit.kb, input, store);
+    /* The widget signals EXIT_REQUESTED on CANCEL at top-level group with
+     * an empty buf — its native "I'm done typing" gesture for the editor
+     * word builder. Path-edit treats it as "drop me back to browse" so
+     * the user always exits via the browse list's <USE THIS DIRECTORY>
+     * row, never by accident from the keyboard widget. The buf is
+     * preserved across the toggle. */
     if (result == KB_RESULT_EXIT_REQUESTED) {
-        path_edit_commit(settings, preferences);
-        path_edit_exit(settings);
-        show_toast(settings, "Data directory saved");
+        settings->path_edit.mode = PATH_EDIT_BROWSE;
+        path_edit_refresh(&settings->path_edit);
     }
 }
 
@@ -1225,14 +1269,22 @@ static void render_capture_screen(const SettingsState *settings, Rectangle scree
 
 static void path_edit_browse_label(const PathEditState *path_edit, int row, char *out, size_t cap)
 {
-    int file_index = path_edit_filelist_index(path_edit, row);
-    if (file_index == -1) {
+    int file_index = -1;
+    PathEditRowKind kind = path_edit_row_kind(path_edit, row, &file_index);
+    switch (kind) {
+    case PATH_EDIT_KIND_USE_THIS:
+        (void)snprintf(out, cap, "<USE THIS DIRECTORY>");
+        return;
+    case PATH_EDIT_KIND_DOTDOT:
         (void)snprintf(out, cap, "../");
         return;
-    }
-    if (file_index >= 0 && file_index < (int)path_edit->dir_list.count) {
-        const char *name = GetFileName(path_edit->dir_list.paths[file_index]);
-        (void)snprintf(out, cap, "%s/", name != nullptr ? name : "");
+    case PATH_EDIT_KIND_DIR:
+        if (file_index >= 0 && path_edit->dir_list_loaded && file_index < (int)path_edit->dir_list.count) {
+            const char *name = GetFileName(path_edit->dir_list.paths[file_index]);
+            (void)snprintf(out, cap, "%s/", name != nullptr ? name : "");
+            return;
+        }
+        out[0] = '\0';
         return;
     }
     out[0] = '\0';
@@ -1293,8 +1345,10 @@ render_path_edit_browse(const SettingsState *settings, const BindingStore *store
         row_y += LIST_LINE_HEIGHT;
     }
     static const HintPair pairs[] = {
-        {ACTION_CONFIRM, "enter folder"},      {ACTION_CANCEL, "up"},   {ACTION_INTERACT, "select"},
-        {ACTION_WB_KEYBOARD_MODE, "keyboard"}, {ACTION_COUNT, nullptr},
+        {ACTION_CONFIRM, "select / enter"},
+        {ACTION_CANCEL, "up / exit"},
+        {ACTION_WB_KEYBOARD_MODE, "keyboard"},
+        {ACTION_COUNT, nullptr},
     };
     render_path_edit_hints(settings, store, pairs, screen);
 }

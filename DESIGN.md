@@ -1375,17 +1375,26 @@ break old saved files.
 screen with two modes that share one buffer.
 
 - BROWSE (default): raylib `LoadDirectoryFilesEx(buf, "DIRS*",
-  false)` lists subdirectories. NAV_UP/DOWN, PAGE_UP/DOWN navigate;
-  CONFIRM enters a folder, CANCEL goes up; a synthesized "../" row
-  shows when not at filesystem root. ACTION_INTERACT commits the
-  current path to `preferences.data_dir` and returns to the LIST
-  screen.
+  false)` lists subdirectories. The list always starts with a
+  synthesized `<USE THIS DIRECTORY>` row at index 0 — the screen
+  opens with that row selected, so a single CONFIRM (gamepad
+  RIGHT_FACE_DOWN, keyboard Enter) commits the seeded `data_dir`
+  and exits. A `..` row follows when not at filesystem root.
+  Subdirectory rows come after. CONFIRM dispatches per row:
+  USE_THIS commits, `..` goes up, anything else enters that folder.
+  NAV_UP/DOWN and PAGE_UP/DOWN move the cursor, CANCEL goes up one
+  level (or exits at root). One action verb (CONFIRM) means no
+  binding clash — the earlier draft used `ACTION_INTERACT` for
+  commit, which shared the gamepad south face with `ACTION_CONFIRM`
+  and broke "enter folder" on gamepad entirely.
 - KEYBOARD: reuses the two-level radial `KeyboardWidget` from
   `engine/src/keyboard_widget.{h,c}` (extracted from the editor's
   word builder so it has no editor dependency). Type into the same
   buffer. CANCEL backspaces; the widget's
   `KB_RESULT_EXIT_REQUESTED` (CANCEL at top-level group on empty
-  buffer) commits and exits.
+  buffer) drops back to BROWSE rather than committing — commit
+  always goes through the BROWSE list's USE_THIS row, so the user
+  cannot accidentally save by emptying the keyboard buffer.
 
 ACTION_WB_KEYBOARD_MODE (gamepad RIGHT_FACE_LEFT, keyboard Delete) toggles
 between modes without leaving the screen.

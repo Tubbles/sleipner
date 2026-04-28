@@ -979,13 +979,13 @@ void test_integration_settings_path_edit_commit(void)
     TEST_ASSERT_EQUAL_INT(SETTINGS_SCREEN_PATH_EDIT, (int)game.settings.screen);
     TEST_ASSERT_EQUAL_INT(PATH_EDIT_BROWSE, (int)game.settings.path_edit.mode);
 
-    /* Save default by pressing INTERACT (KEY_SPACE). The buffer was
-     * seeded with the current preferences.data_dir, so committing
-     * leaves data_dir unchanged but raises and consumes
-     * save_preferences_requested. */
-    InputState interact = {0};
-    input_state_press_key(&interact, KEY_SPACE);
-    test_advance_frame(&game, interact);
+    /* The browse list seeds with browse_index = 0, which is the
+     * synthesized "<USE THIS DIRECTORY>" row. CONFIRM commits the
+     * current buffer (seeded from preferences.data_dir) and exits. */
+    TEST_ASSERT_EQUAL_INT(0, game.settings.path_edit.browse_index);
+    InputState commit = {0};
+    input_state_press_key(&commit, KEY_ENTER);
+    test_advance_frame(&game, commit);
     TEST_ASSERT_EQUAL_INT(SETTINGS_SCREEN_LIST, (int)game.settings.screen);
     TEST_ASSERT_FALSE(game.settings.save_preferences_requested);
     TEST_ASSERT_NOT_NULL(game.state.preferences.data_dir.ptr);
