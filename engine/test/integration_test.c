@@ -934,3 +934,61 @@ void test_integration_settings_tab_switch(void)
 
     test_game_teardown(&game);
 }
+
+/* Open the Settings overlay, switch to General, enter the path-edit
+ * screen by confirming the Data directory row, then commit the buffer
+ * via ACTION_INTERACT (KEY_SPACE / GAMEPAD_BUTTON_RIGHT_FACE_DOWN).
+ *
+ * Assertions are made on observable state: the settings screen pops
+ * back to LIST, save_preferences_requested was raised AND consumed
+ * (frame.c clears it after the save dispatcher runs), and
+ * state.preferences.data_dir reflects the buffer that was committed.
+ *
+ * The TestGame's preferences_save_fn is null, so the dispatcher is a
+ * no-op on disk — exactly the headless contract the FrameContext
+ * design encodes. */
+void test_integration_settings_path_edit_commit(void)
+{
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_gamedata));
+
+    /* Open menu → SETTINGS (3 down-presses) → confirm. */
+    InputState menu_open = {0};
+    input_state_press_key(&menu_open, KEY_F3);
+    test_advance_frame(&game, menu_open);
+    for (int step = 0; step < 3; step++) {
+        InputState down = {0};
+        input_state_press_key(&down, KEY_DOWN);
+        test_advance_frame(&game, down);
+    }
+    InputState confirm = {0};
+    input_state_press_key(&confirm, KEY_ENTER);
+    test_advance_frame(&game, confirm);
+    TEST_ASSERT_TRUE(game.settings.open);
+
+    /* Switch to General tab. */
+    InputState tab_next = {0};
+    input_state_press_key(&tab_next, KEY_TAB);
+    test_advance_frame(&game, tab_next);
+    TEST_ASSERT_EQUAL_INT(SETTINGS_TAB_GENERAL, (int)game.settings.tab);
+
+    /* Confirm Data directory row → enter path-edit screen. */
+    InputState confirm_path = {0};
+    input_state_press_key(&confirm_path, KEY_ENTER);
+    test_advance_frame(&game, confirm_path);
+    TEST_ASSERT_EQUAL_INT(SETTINGS_SCREEN_PATH_EDIT, (int)game.settings.screen);
+    TEST_ASSERT_EQUAL_INT(PATH_EDIT_BROWSE, (int)game.settings.path_edit.mode);
+
+    /* Save default by pressing INTERACT (KEY_SPACE). The buffer was
+     * seeded with the current preferences.data_dir, so committing
+     * leaves data_dir unchanged but raises and consumes
+     * save_preferences_requested. */
+    InputState interact = {0};
+    input_state_press_key(&interact, KEY_SPACE);
+    test_advance_frame(&game, interact);
+    TEST_ASSERT_EQUAL_INT(SETTINGS_SCREEN_LIST, (int)game.settings.screen);
+    TEST_ASSERT_FALSE(game.settings.save_preferences_requested);
+    TEST_ASSERT_NOT_NULL(game.state.preferences.data_dir.ptr);
+
+    test_game_teardown(&game);
+}

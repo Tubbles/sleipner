@@ -66,6 +66,7 @@ void test_integration_menu_navigation_and_quit(void);
 void test_integration_menu_escape_returns_resume(void);
 void test_integration_menu_gamepad_navigation(void);
 void test_integration_settings_tab_switch(void);
+void test_integration_settings_path_edit_commit(void);
 
 /* toml_emitter_test.c */
 void test_toml_emit_blueprints(void);
@@ -178,6 +179,7 @@ int main(void)
     RUN_TEST(test_integration_menu_escape_returns_resume);
     RUN_TEST(test_integration_menu_gamepad_navigation);
     RUN_TEST(test_integration_settings_tab_switch);
+    RUN_TEST(test_integration_settings_path_edit_commit);
 
     RUN_TEST(test_level_load_first);
     RUN_TEST(test_level_load_by_name);

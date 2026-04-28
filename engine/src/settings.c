@@ -4,13 +4,16 @@
 #include "blur.h"
 #include "input.h"
 #include "input_func.h"
+#include "keyboard_widget.h"
 #include "preferences.h"
 #include "raylib.h"
+#include "str.h"
 
 #include <math.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdio.h>
+#include <string.h>
 
 #define LIST_VISIBLE_ROWS 14
 #define LIST_LINE_HEIGHT 40
@@ -354,14 +357,243 @@ static void enter_detail_axis(SettingsState *settings, InputAxis axis)
     settings->detail_scroll = 0;
 }
 
-/* General tab: one row in v1, "Data directory: <value>". CONFIRM is a
- * placeholder until SETTINGS_SCREEN_PATH_EDIT lands in the next commit;
- * for now it shows a toast so the row is reachable from gamepad. */
+/* General tab: one row in v1, "Data directory: <value>". */
 #define GENERAL_TOTAL_ROWS 1
+
+#define PATH_EDIT_VISIBLE_ROWS 12
+
+static void path_edit_unload(PathEditState *path_edit)
+{
+    if (path_edit->dir_list_loaded) {
+        UnloadDirectoryFiles(path_edit->dir_list);
+        path_edit->dir_list_loaded = false;
+        path_edit->dir_list = (FilePathList){0};
+    }
+}
+
+/* Detect whether a path is the filesystem root: parent of root resolves
+ * to root again. */
+static bool path_is_root(const char *path)
+{
+    const char *parent = GetPrevDirectoryPath(path);
+    return parent == nullptr || strcmp(parent, path) == 0;
+}
+
+static void path_edit_refresh(PathEditState *path_edit)
+{
+    path_edit_unload(path_edit);
+    path_edit->dir_list = LoadDirectoryFilesEx(path_edit->buf, "DIRS*", false);
+    path_edit->dir_list_loaded = true;
+    path_edit->at_root = path_is_root(path_edit->buf);
+    path_edit->browse_index = 0;
+    path_edit->browse_scroll = 0;
+}
+
+static void path_edit_set_buf(PathEditState *path_edit, const char *value)
+{
+    if (value == nullptr) {
+        path_edit->buf[0] = '\0';
+        path_edit->len = 0;
+        return;
+    }
+    size_t length = strlen(value);
+    if (length >= PATH_EDIT_BUF_SIZE) {
+        length = PATH_EDIT_BUF_SIZE - 1;
+    }
+    memcpy(path_edit->buf, value, length);
+    path_edit->buf[length] = '\0';
+    path_edit->len = (int)length;
+}
+
+/* Synthesized ".." index. -1 when at_root and ".." is suppressed; else 0. */
+static int dotdot_row_index(const PathEditState *path_edit)
+{
+    return path_edit->at_root ? -1 : 0;
+}
+
+static int path_edit_total_rows(const PathEditState *path_edit)
+{
+    int rows = path_edit->dir_list_loaded ? (int)path_edit->dir_list.count : 0;
+    if (!path_edit->at_root) {
+        rows += 1;
+    }
+    return rows;
+}
+
+/* Translate a UI row to the FilePathList index it points at, or -1 when
+ * the row is the synthesized "..". */
+static int path_edit_filelist_index(const PathEditState *path_edit, int row)
+{
+    int dotdot = dotdot_row_index(path_edit);
+    if (row == dotdot) {
+        return -1;
+    }
+    return row - (path_edit->at_root ? 0 : 1);
+}
+
+static void path_edit_enter_screen(SettingsState *settings, const Preferences *preferences)
+{
+    PathEditState *path_edit = &settings->path_edit;
+    *path_edit = (PathEditState){0};
+    path_edit->mode = PATH_EDIT_BROWSE;
+    const char *seed =
+        (preferences != nullptr && preferences->data_dir.ptr != nullptr) ? preferences->data_dir.ptr : "";
+    path_edit_set_buf(path_edit, seed);
+    keyboard_widget_reset(&path_edit->kb, path_edit->buf, &path_edit->len, PATH_EDIT_BUF_SIZE);
+    path_edit_refresh(path_edit);
+    settings->screen = SETTINGS_SCREEN_PATH_EDIT;
+}
+
+static void path_edit_commit(SettingsState *settings, Preferences *preferences)
+{
+    if (preferences == nullptr) {
+        return;
+    }
+    str_clear(&preferences->data_dir);
+    (void)str_append_cstr(&preferences->data_dir, settings->path_edit.buf);
+    /* Ensure trailing slash so "data_dir + filename" composition still
+     * works for downstream callers. */
+    if (preferences->data_dir.len == 0 || preferences->data_dir.ptr[preferences->data_dir.len - 1] != '/') {
+        (void)str_append_cstr(&preferences->data_dir, "/");
+    }
+    settings->save_preferences_requested = true;
+}
+
+static void path_edit_exit(SettingsState *settings)
+{
+    path_edit_unload(&settings->path_edit);
+    settings->screen = SETTINGS_SCREEN_LIST;
+}
+
+static void update_browse_scroll(PathEditState *path_edit)
+{
+    if (path_edit->browse_index < path_edit->browse_scroll) {
+        path_edit->browse_scroll = path_edit->browse_index;
+    } else if (path_edit->browse_index >= path_edit->browse_scroll + PATH_EDIT_VISIBLE_ROWS) {
+        path_edit->browse_scroll = path_edit->browse_index - PATH_EDIT_VISIBLE_ROWS + 1;
+    }
+}
+
+static void path_edit_navigate_index(PathEditState *path_edit, const InputState *input, const BindingStore *store)
+{
+    int total_rows = path_edit_total_rows(path_edit);
+    if (total_rows <= 0) {
+        total_rows = 1;
+    }
+    if (input_pressed(input, store, ACTION_NAV_UP) && path_edit->browse_index > 0) {
+        path_edit->browse_index--;
+    }
+    if (input_pressed(input, store, ACTION_NAV_DOWN) && path_edit->browse_index < total_rows - 1) {
+        path_edit->browse_index++;
+    }
+    if (input_pressed(input, store, ACTION_PAGE_UP)) {
+        path_edit->browse_index -= PATH_EDIT_VISIBLE_ROWS;
+        if (path_edit->browse_index < 0) {
+            path_edit->browse_index = 0;
+        }
+    }
+    if (input_pressed(input, store, ACTION_PAGE_DOWN)) {
+        path_edit->browse_index += PATH_EDIT_VISIBLE_ROWS;
+        if (path_edit->browse_index >= total_rows) {
+            path_edit->browse_index = total_rows - 1;
+        }
+    }
+    update_browse_scroll(path_edit);
+}
+
+static void path_edit_descend_into_row(PathEditState *path_edit)
+{
+    int file_index = path_edit_filelist_index(path_edit, path_edit->browse_index);
+    if (file_index == -1) {
+        const char *parent = GetPrevDirectoryPath(path_edit->buf);
+        if (parent != nullptr) {
+            path_edit_set_buf(path_edit, parent);
+            path_edit_refresh(path_edit);
+        }
+        return;
+    }
+    if (file_index >= 0 && file_index < (int)path_edit->dir_list.count) {
+        path_edit_set_buf(path_edit, path_edit->dir_list.paths[file_index]);
+        path_edit_refresh(path_edit);
+    }
+}
+
+static bool path_edit_pop_to_parent(PathEditState *path_edit)
+{
+    if (path_edit->at_root) {
+        return false;
+    }
+    const char *parent = GetPrevDirectoryPath(path_edit->buf);
+    if (parent == nullptr) {
+        return false;
+    }
+    path_edit_set_buf(path_edit, parent);
+    path_edit_refresh(path_edit);
+    return true;
+}
+
+static void handle_path_edit_browse(SettingsState *settings,
+                                    Preferences *preferences,
+                                    const InputState *input,
+                                    const BindingStore *store)
+{
+    PathEditState *path_edit = &settings->path_edit;
+    path_edit_navigate_index(path_edit, input, store);
+
+    if (input_pressed(input, store, ACTION_WB_KEYBOARD_MODE)) {
+        path_edit->mode = PATH_EDIT_KEYBOARD;
+        keyboard_widget_reset(&path_edit->kb, path_edit->buf, &path_edit->len, PATH_EDIT_BUF_SIZE);
+        return;
+    }
+    if (input_pressed(input, store, ACTION_INTERACT)) {
+        path_edit_commit(settings, preferences);
+        path_edit_exit(settings);
+        show_toast(settings, "Data directory saved");
+        return;
+    }
+    if (input_pressed(input, store, ACTION_CONFIRM)) {
+        path_edit_descend_into_row(path_edit);
+        return;
+    }
+    if (input_pressed(input, store, ACTION_CANCEL) && !path_edit_pop_to_parent(path_edit)) {
+        path_edit_exit(settings);
+    }
+}
+
+static void handle_path_edit_keyboard(SettingsState *settings,
+                                      Preferences *preferences,
+                                      const InputState *input,
+                                      const BindingStore *store)
+{
+    if (input_pressed(input, store, ACTION_WB_KEYBOARD_MODE)) {
+        settings->path_edit.mode = PATH_EDIT_BROWSE;
+        path_edit_refresh(&settings->path_edit);
+        return;
+    }
+    KeyboardWidgetResult result = keyboard_widget_handle_input(&settings->path_edit.kb, input, store);
+    if (result == KB_RESULT_EXIT_REQUESTED) {
+        path_edit_commit(settings, preferences);
+        path_edit_exit(settings);
+        show_toast(settings, "Data directory saved");
+    }
+}
+
+static void handle_path_edit_input(SettingsState *settings,
+                                   Preferences *preferences,
+                                   const InputState *input,
+                                   const BindingStore *store)
+{
+    if (settings->path_edit.mode == PATH_EDIT_KEYBOARD) {
+        handle_path_edit_keyboard(settings, preferences, input, store);
+    } else {
+        handle_path_edit_browse(settings, preferences, input, store);
+    }
+}
 
 static void handle_general_tab_input(SettingsState *settings,
                                      const InputState *input,
                                      const BindingStore *store,
+                                     const Preferences *preferences,
                                      bool *close_requested)
 {
     if (input_pressed(input, store, ACTION_NAV_UP) && settings->general_index > 0) {
@@ -379,7 +611,9 @@ static void handle_general_tab_input(SettingsState *settings,
         return;
     }
     if (input_pressed(input, store, ACTION_CONFIRM)) {
-        show_toast(settings, "Path editor coming soon");
+        if (settings->general_index == 0) {
+            path_edit_enter_screen(settings, preferences);
+        }
     }
 }
 
@@ -427,8 +661,12 @@ static void handle_input_tab_body(
     }
 }
 
-static void handle_list_input(
-    SettingsState *settings, const InputState *input, BindingStore *store, Allocator alloc, bool *close_requested)
+static void handle_list_input(SettingsState *settings,
+                              const InputState *input,
+                              BindingStore *store,
+                              Preferences *preferences,
+                              Allocator alloc,
+                              bool *close_requested)
 {
     /* Tab switching wins over per-tab navigation: TAB_PREV/NEXT are
      * checked first, then early-return so per-tab handlers do not also
@@ -448,7 +686,7 @@ static void handle_list_input(
         handle_input_tab_body(settings, input, store, alloc, close_requested);
         break;
     case SETTINGS_TAB_GENERAL:
-        handle_general_tab_input(settings, input, store, close_requested);
+        handle_general_tab_input(settings, input, store, preferences, close_requested);
         break;
     case SETTINGS_TAB_COUNT:
         break;
@@ -677,18 +915,18 @@ void settings_handle_input(SettingsState *settings,
                            Allocator alloc,
                            bool *close_requested)
 {
-    /* `preferences` is unused on the bindings flow today; the General
-     * tab will read it once the path-edit screen is wired in. */
-    (void)preferences;
     switch (settings->screen) {
     case SETTINGS_SCREEN_LIST:
-        handle_list_input(settings, input, store, alloc, close_requested);
+        handle_list_input(settings, input, store, preferences, alloc, close_requested);
         break;
     case SETTINGS_SCREEN_DETAIL:
         handle_detail_input(settings, input, store, alloc);
         break;
     case SETTINGS_SCREEN_CAPTURE:
         handle_capture_input(settings, input, store, alloc);
+        break;
+    case SETTINGS_SCREEN_PATH_EDIT:
+        handle_path_edit_input(settings, preferences, input, store);
         break;
     }
 }
@@ -985,6 +1223,69 @@ static void render_capture_screen(const SettingsState *settings, Rectangle scree
     draw_text(settings, hint, hint_x, hint_y, color_for_row(false, true));
 }
 
+static void path_edit_browse_label(const PathEditState *path_edit, int row, char *out, size_t cap)
+{
+    int file_index = path_edit_filelist_index(path_edit, row);
+    if (file_index == -1) {
+        (void)snprintf(out, cap, "../");
+        return;
+    }
+    if (file_index >= 0 && file_index < (int)path_edit->dir_list.count) {
+        const char *name = GetFileName(path_edit->dir_list.paths[file_index]);
+        (void)snprintf(out, cap, "%s/", name != nullptr ? name : "");
+        return;
+    }
+    out[0] = '\0';
+}
+
+static void render_path_edit_browse(const SettingsState *settings, Rectangle screen, int row_y)
+{
+    const PathEditState *path_edit = &settings->path_edit;
+    int total_rows = path_edit_total_rows(path_edit);
+    int last = path_edit->browse_scroll + PATH_EDIT_VISIBLE_ROWS;
+    if (last > total_rows) {
+        last = total_rows;
+    }
+    if (total_rows == 0) {
+        draw_text(settings, "(empty)", LIST_LEFT_PAD, row_y, color_for_row(false, true));
+    }
+    for (int row = path_edit->browse_scroll; row < last; row++) {
+        char label[ROW_BUF_CAP];
+        path_edit_browse_label(path_edit, row, label, sizeof(label));
+        bool selected = (row == path_edit->browse_index);
+        draw_text(settings, label, LIST_LEFT_PAD, row_y, color_for_row(selected, false));
+        row_y += LIST_LINE_HEIGHT;
+    }
+    const char *hint = "Confirm: enter   Cancel: up   Space: select   Delete: keyboard";
+    Vector2 hint_measured = MeasureTextEx(settings->font, hint, (float)SETTINGS_FONT_SIZE, LIST_LETTER_SPACING);
+    int hint_x = LIST_LEFT_PAD + (((int)screen.width - LIST_LEFT_PAD - LIST_RIGHT_PAD - (int)hint_measured.x) / 2);
+    int hint_y = (int)screen.height - LIST_LINE_HEIGHT - LIST_TITLE_PAD;
+    draw_text(settings, hint, hint_x, hint_y, color_for_row(false, true));
+}
+
+static void
+render_path_edit_screen(const SettingsState *settings, Rectangle screen, int screen_width, int screen_height)
+{
+    /* Top: title + current path. */
+    draw_text(settings, "Edit data directory:", LIST_LEFT_PAD, LIST_TITLE_PAD, color_for_row(false, false));
+    char buffer_line[ROW_BUF_CAP];
+    (void)snprintf(buffer_line, sizeof(buffer_line), "> %s", settings->path_edit.buf);
+    draw_text(settings, buffer_line, LIST_LEFT_PAD, LIST_TITLE_PAD + LIST_LINE_HEIGHT,
+              (Color){SETTINGS_TEXT_HIGHLIGHT_R, SETTINGS_TEXT_HIGHLIGHT_G, SETTINGS_TEXT_HIGHLIGHT_B, 255});
+
+    int body_y = LIST_TITLE_PAD + (LIST_LINE_HEIGHT * 3);
+    if (settings->path_edit.mode == PATH_EDIT_BROWSE) {
+        render_path_edit_browse(settings, screen, body_y);
+    } else {
+        keyboard_widget_draw(&settings->path_edit.kb, (KbScreenSize){screen_width, screen_height}, settings->font);
+        const char *hint = "Confirm: pick   Cancel: backspace   Delete: switch to browse";
+        Vector2 hint_measured = MeasureTextEx(settings->font, hint, (float)SETTINGS_FONT_SIZE, LIST_LETTER_SPACING);
+        int hint_x = LIST_LEFT_PAD + (((int)screen.width - LIST_LEFT_PAD - LIST_RIGHT_PAD - (int)hint_measured.x) / 2);
+        int hint_y = (int)screen.height - LIST_LINE_HEIGHT - LIST_TITLE_PAD;
+        draw_text(settings, hint, hint_x, hint_y, color_for_row(false, true));
+    }
+}
+
 void settings_render(const SettingsState *settings,
                      const BindingStore *store,
                      const Preferences *preferences,
@@ -1011,6 +1312,9 @@ void settings_render(const SettingsState *settings,
         break;
     case SETTINGS_SCREEN_CAPTURE:
         render_capture_screen(settings, screen);
+        break;
+    case SETTINGS_SCREEN_PATH_EDIT:
+        render_path_edit_screen(settings, screen, screen_width, screen_height);
         break;
     }
 }

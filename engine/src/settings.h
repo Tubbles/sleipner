@@ -4,6 +4,7 @@
 #include "blur.h"
 #include "input.h"
 #include "input_func.h"
+#include "keyboard_widget.h"
 #include "preferences.h"
 #include "raylib.h"
 
@@ -37,7 +38,36 @@ typedef enum {
     SETTINGS_SCREEN_LIST,
     SETTINGS_SCREEN_DETAIL,
     SETTINGS_SCREEN_CAPTURE,
+    SETTINGS_SCREEN_PATH_EDIT,
 } SettingsScreen;
+
+typedef enum {
+    PATH_EDIT_BROWSE,
+    PATH_EDIT_KEYBOARD,
+} PathEditMode;
+
+/* Path-edit screen state. The buf holds the working directory path
+ * being edited; len tracks its length (kept in sync with the
+ * KeyboardWidget when in KEYBOARD mode). dir_list is owned by raylib
+ * and freed via UnloadDirectoryFiles on screen exit and refresh.
+ *
+ * buf size is a deliberate justified MAX_* exception: paths are
+ * bounded by OS PATH_MAX (4096 on Linux, 260 on Windows). 512 is
+ * comfortably above typical user paths and below the smallest
+ * platform limit. */
+#define PATH_EDIT_BUF_SIZE 512
+
+typedef struct {
+    PathEditMode mode;
+    char buf[PATH_EDIT_BUF_SIZE];
+    int len;
+    KeyboardWidget kb;
+    FilePathList dir_list;
+    bool dir_list_loaded;
+    bool at_root;
+    int browse_index;
+    int browse_scroll;
+} PathEditState;
 
 typedef enum {
     SETTINGS_TARGET_ACTION,
@@ -75,6 +105,9 @@ typedef struct {
 
     int detail_index;  /* selected row inside DETAIL: alternative or "Add" / "Reset" */
     int detail_scroll; /* DETAIL list scroll position */
+
+    /* Path-edit screen: active when screen == SETTINGS_SCREEN_PATH_EDIT. */
+    PathEditState path_edit;
 
     /* Capture state */
     SettingsCaptureMode capture_mode;
