@@ -12,6 +12,10 @@
  * picker should be re-tuned to match. The two are kept independent so
  * settings (which uses keyboard_widget) does not transitively pull in
  * editor headers. */
+/* Local pi constant. M_PI is a _GNU_SOURCE extension that MinGW does not
+ * expose in <math.h>; declaring our own value keeps the file portable
+ * without leaning on platform-specific feature macros. */
+#define KB_PI 3.14159265358979323846F
 #define KB_INNER_RADIUS 50.0F
 #define KB_OUTER_RADIUS 140.0F
 #define KB_BG_PADDING 4.0F
@@ -51,8 +55,8 @@ static int sector_from_stick(Vector2 stick, int item_count)
         return -1;
     }
     float angle = atan2f(stick.y, stick.x);
-    float two_pi = 2.0F * (float)M_PI;
-    float normalized = fmodf(angle + ((float)M_PI / 2.0F) + two_pi, two_pi);
+    float two_pi = 2.0F * KB_PI;
+    float normalized = fmodf(angle + (KB_PI / 2.0F) + two_pi, two_pi);
     return (int)(normalized * (float)item_count / two_pi) % item_count;
 }
 
