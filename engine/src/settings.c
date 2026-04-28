@@ -1238,7 +1238,43 @@ static void path_edit_browse_label(const PathEditState *path_edit, int row, char
     out[0] = '\0';
 }
 
-static void render_path_edit_browse(const SettingsState *settings, Rectangle screen, int row_y)
+/* Render a centered footer hint by composing per-action labels through
+ * input_func_label, which emits gamepad-first / keyboard-second
+ * (e.g. "A/Enter"). pairs is an array of {InputAction, verb} ending
+ * with action == ACTION_COUNT. */
+typedef struct {
+    InputAction action;
+    const char *verb;
+} HintPair;
+
+static void render_path_edit_hints(const SettingsState *settings,
+                                   const BindingStore *store,
+                                   const HintPair *pairs,
+                                   Rectangle screen)
+{
+    char line[ROW_BUF_CAP];
+    int written = 0;
+    line[0] = '\0';
+    for (const HintPair *pair = pairs; pair->action != ACTION_COUNT; pair++) {
+        char binding[LABEL_BUF_CAP];
+        (void)input_func_label(store, pair->action, binding, sizeof(binding));
+        const char *separator = (written > 0) ? "   " : "";
+        int chunk =
+            snprintf(line + written, sizeof(line) - (size_t)written, "%s%s: %s", separator, binding, pair->verb);
+        if (chunk < 0 || (size_t)written + (size_t)chunk >= sizeof(line)) {
+            line[sizeof(line) - 1] = '\0';
+            break;
+        }
+        written += chunk;
+    }
+    Vector2 measured = MeasureTextEx(settings->font, line, (float)SETTINGS_FONT_SIZE, LIST_LETTER_SPACING);
+    int hint_x = LIST_LEFT_PAD + (((int)screen.width - LIST_LEFT_PAD - LIST_RIGHT_PAD - (int)measured.x) / 2);
+    int hint_y = (int)screen.height - LIST_LINE_HEIGHT - LIST_TITLE_PAD;
+    draw_text(settings, line, hint_x, hint_y, color_for_row(false, true));
+}
+
+static void
+render_path_edit_browse(const SettingsState *settings, const BindingStore *store, Rectangle screen, int row_y)
 {
     const PathEditState *path_edit = &settings->path_edit;
     int total_rows = path_edit_total_rows(path_edit);
@@ -1256,15 +1292,15 @@ static void render_path_edit_browse(const SettingsState *settings, Rectangle scr
         draw_text(settings, label, LIST_LEFT_PAD, row_y, color_for_row(selected, false));
         row_y += LIST_LINE_HEIGHT;
     }
-    const char *hint = "Confirm: enter   Cancel: up   Space: select   Delete: keyboard";
-    Vector2 hint_measured = MeasureTextEx(settings->font, hint, (float)SETTINGS_FONT_SIZE, LIST_LETTER_SPACING);
-    int hint_x = LIST_LEFT_PAD + (((int)screen.width - LIST_LEFT_PAD - LIST_RIGHT_PAD - (int)hint_measured.x) / 2);
-    int hint_y = (int)screen.height - LIST_LINE_HEIGHT - LIST_TITLE_PAD;
-    draw_text(settings, hint, hint_x, hint_y, color_for_row(false, true));
+    static const HintPair pairs[] = {
+        {ACTION_CONFIRM, "enter folder"},      {ACTION_CANCEL, "up"},   {ACTION_INTERACT, "select"},
+        {ACTION_WB_KEYBOARD_MODE, "keyboard"}, {ACTION_COUNT, nullptr},
+    };
+    render_path_edit_hints(settings, store, pairs, screen);
 }
 
-static void
-render_path_edit_screen(const SettingsState *settings, Rectangle screen, int screen_width, int screen_height)
+static void render_path_edit_screen(
+    const SettingsState *settings, const BindingStore *store, Rectangle screen, int screen_width, int screen_height)
 {
     /* Top: title + current path. */
     draw_text(settings, "Edit data directory:", LIST_LEFT_PAD, LIST_TITLE_PAD, color_for_row(false, false));
@@ -1275,14 +1311,16 @@ render_path_edit_screen(const SettingsState *settings, Rectangle screen, int scr
 
     int body_y = LIST_TITLE_PAD + (LIST_LINE_HEIGHT * 3);
     if (settings->path_edit.mode == PATH_EDIT_BROWSE) {
-        render_path_edit_browse(settings, screen, body_y);
+        render_path_edit_browse(settings, store, screen, body_y);
     } else {
         keyboard_widget_draw(&settings->path_edit.kb, (KbScreenSize){screen_width, screen_height}, settings->font);
-        const char *hint = "Confirm: pick   Cancel: backspace   Delete: switch to browse";
-        Vector2 hint_measured = MeasureTextEx(settings->font, hint, (float)SETTINGS_FONT_SIZE, LIST_LETTER_SPACING);
-        int hint_x = LIST_LEFT_PAD + (((int)screen.width - LIST_LEFT_PAD - LIST_RIGHT_PAD - (int)hint_measured.x) / 2);
-        int hint_y = (int)screen.height - LIST_LINE_HEIGHT - LIST_TITLE_PAD;
-        draw_text(settings, hint, hint_x, hint_y, color_for_row(false, true));
+        static const HintPair pairs[] = {
+            {ACTION_CONFIRM, "pick"},
+            {ACTION_CANCEL, "backspace"},
+            {ACTION_WB_KEYBOARD_MODE, "browse mode"},
+            {ACTION_COUNT, nullptr},
+        };
+        render_path_edit_hints(settings, store, pairs, screen);
     }
 }
 
@@ -1314,7 +1352,7 @@ void settings_render(const SettingsState *settings,
         render_capture_screen(settings, screen);
         break;
     case SETTINGS_SCREEN_PATH_EDIT:
-        render_path_edit_screen(settings, screen, screen_width, screen_height);
+        render_path_edit_screen(settings, store, screen, screen_width, screen_height);
         break;
     }
 }

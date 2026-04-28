@@ -1387,8 +1387,8 @@ screen with two modes that share one buffer.
   `KB_RESULT_EXIT_REQUESTED` (CANCEL at top-level group on empty
   buffer) commits and exits.
 
-ACTION_WB_KEYBOARD_MODE (Delete / RIGHT_FACE_LEFT) toggles between
-modes without leaving the screen.
+ACTION_WB_KEYBOARD_MODE (gamepad RIGHT_FACE_LEFT, keyboard Delete) toggles
+between modes without leaving the screen.
 
 **Trace log two-stage init:** `debug_init` opens trace.log at the
 boot-default path (compile-time) before preferences load, then
