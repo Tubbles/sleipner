@@ -36,6 +36,8 @@ typedef enum {
     ACTION_NAV_RIGHT,
     ACTION_PAGE_UP,
     ACTION_PAGE_DOWN,
+    ACTION_TAB_PREV,
+    ACTION_TAB_NEXT,
 
     /* Editor browse */
     ACTION_EDITOR_TOGGLE,

@@ -144,6 +144,37 @@ void test_gamepad_chord_fires_on_l1_plus_left(void)
     TEST_ASSERT_TRUE(input_pressed(&input, &store, ACTION_EDITOR_UNDO));
 }
 
+void test_tab_next_fires_on_tab_key(void)
+{
+    InputState input = {0};
+    input_state_press_key(&input, KEY_TAB);
+    TEST_ASSERT_TRUE(input_pressed(&input, &store, ACTION_TAB_NEXT));
+    TEST_ASSERT_FALSE(input_pressed(&input, &store, ACTION_TAB_PREV));
+}
+
+void test_tab_prev_chord_requires_shift(void)
+{
+    InputState input = {0};
+    input_state_press_key(&input, KEY_TAB); /* no shift */
+    TEST_ASSERT_FALSE(input_pressed(&input, &store, ACTION_TAB_PREV));
+
+    input = (InputState){0};
+    input_state_hold_key(&input, KEY_LEFT_SHIFT);
+    input_state_press_key(&input, KEY_TAB);
+    TEST_ASSERT_TRUE(input_pressed(&input, &store, ACTION_TAB_PREV));
+}
+
+void test_tab_actions_fire_on_shoulders(void)
+{
+    InputState input = {0};
+    input_state_press_gp_button(&input, GAMEPAD_BUTTON_LEFT_TRIGGER_1);
+    TEST_ASSERT_TRUE(input_pressed(&input, &store, ACTION_TAB_PREV));
+
+    input = (InputState){0};
+    input_state_press_gp_button(&input, GAMEPAD_BUTTON_RIGHT_TRIGGER_1);
+    TEST_ASSERT_TRUE(input_pressed(&input, &store, ACTION_TAB_NEXT));
+}
+
 /* ---- Axis evaluation --------------------------------------------------- */
 
 void test_axis_kb_neg_returns_minus_one(void)
@@ -394,6 +425,9 @@ int main(void)
     RUN_TEST(test_chord_fires_either_press_order);
     RUN_TEST(test_chord_held_requires_all_parts);
     RUN_TEST(test_gamepad_chord_fires_on_l1_plus_left);
+    RUN_TEST(test_tab_next_fires_on_tab_key);
+    RUN_TEST(test_tab_prev_chord_requires_shift);
+    RUN_TEST(test_tab_actions_fire_on_shoulders);
 
     RUN_TEST(test_axis_kb_neg_returns_minus_one);
     RUN_TEST(test_axis_kb_pos_returns_plus_one);

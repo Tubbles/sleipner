@@ -508,6 +508,21 @@ static const DefaultAtom default_nav_right[] = { K(KEY_RIGHT),  ATOM_END,  GB(GA
 static const DefaultAtom default_page_up[]   = { K(KEY_Q),      ATOM_END,  GB(GAMEPAD_BUTTON_LEFT_TRIGGER_1),   ATOM_END, ALTS_END };
 static const DefaultAtom default_page_down[] = { K(KEY_E),      ATOM_END,  GB(GAMEPAD_BUTTON_RIGHT_TRIGGER_1),  ATOM_END, ALTS_END };
 
+/* Tab switch: shares L1/R1 with PAGE_UP/DOWN and KEY_TAB with
+ * ACTION_EDITOR_OPEN_TOOLS. Tabbed UIs (Settings LIST) check TAB_PREV/NEXT
+ * first and early-return; non-tabbed contexts ignore these actions, so the
+ * shared physical bindings produce no observable double-fire. */
+static const DefaultAtom default_tab_prev[] = {
+    K(KEY_LEFT_SHIFT), K(KEY_TAB), ATOM_END,
+    GB(GAMEPAD_BUTTON_LEFT_TRIGGER_1), ATOM_END,
+    ALTS_END,
+};
+static const DefaultAtom default_tab_next[] = {
+    K(KEY_TAB), ATOM_END,
+    GB(GAMEPAD_BUTTON_RIGHT_TRIGGER_1), ATOM_END,
+    ALTS_END,
+};
+
 static const DefaultAtom default_editor_toggle[]          = { K(KEY_F5),  ATOM_END, GB(GAMEPAD_BUTTON_MIDDLE_RIGHT), ATOM_END, ALTS_END };
 static const DefaultAtom default_editor_open_blueprints[] = { ALTS_END }; /* opened via tools radial; no direct binding currently */
 static const DefaultAtom default_editor_open_tools[]      = { K(KEY_TAB), ATOM_END, GB(GAMEPAD_BUTTON_RIGHT_FACE_UP), ATOM_END, ALTS_END };
@@ -597,6 +612,8 @@ static const DefaultAtom *const default_action_atoms[ACTION_COUNT] = {
     [ACTION_NAV_RIGHT] = default_nav_right,
     [ACTION_PAGE_UP] = default_page_up,
     [ACTION_PAGE_DOWN] = default_page_down,
+    [ACTION_TAB_PREV] = default_tab_prev,
+    [ACTION_TAB_NEXT] = default_tab_next,
     [ACTION_EDITOR_TOGGLE] = default_editor_toggle,
     [ACTION_EDITOR_OPEN_BLUEPRINTS] = default_editor_open_blueprints,
     [ACTION_EDITOR_OPEN_TOOLS] = default_editor_open_tools,
@@ -857,6 +874,8 @@ static const char *const action_toml_names[ACTION_COUNT] = {
     [ACTION_NAV_RIGHT] = "NAV_RIGHT",
     [ACTION_PAGE_UP] = "PAGE_UP",
     [ACTION_PAGE_DOWN] = "PAGE_DOWN",
+    [ACTION_TAB_PREV] = "TAB_PREV",
+    [ACTION_TAB_NEXT] = "TAB_NEXT",
     [ACTION_EDITOR_TOGGLE] = "EDITOR_TOGGLE",
     [ACTION_EDITOR_OPEN_BLUEPRINTS] = "EDITOR_OPEN_BLUEPRINTS",
     [ACTION_EDITOR_OPEN_TOOLS] = "EDITOR_OPEN_TOOLS",
