@@ -41,6 +41,7 @@ set(ENGINE_SOURCE_FILES
     menu.c
     particle.c
     platform_paths.c
+    preferences.c
     render.c
     rule.c
     settings.c
