@@ -65,6 +65,23 @@ void debug_init(DebugState *dbg, const char *trace_path)
     }
 }
 
+void debug_reopen_trace(DebugState *dbg, const char *trace_path)
+{
+    if (trace_path == nullptr) {
+        return;
+    }
+    if (dbg->trace_file) {
+        (void)fclose(dbg->trace_file);
+        dbg->trace_file = nullptr;
+    }
+    dbg->trace_file = fopen(trace_path, FOPEN_APPEND);
+    if (dbg->trace_file) {
+        debug_log(dbg, "trace file reopened: %s", trace_path);
+    } else {
+        debug_log(dbg, "trace file FAILED to reopen: %s", trace_path);
+    }
+}
+
 void debug_shutdown(DebugState *dbg)
 {
     if (dbg->trace_file) {

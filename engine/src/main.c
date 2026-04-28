@@ -85,16 +85,42 @@ const char *__lsan_default_suppressions(void)
 VEC_IMPL(font_preview, FontPreviewEntry)
 VEC_IMPL(texture_entry, TextureEntry)
 
+/* Boot-time trace log path used by debug_init before preferences.toml
+ * has been overlaid. After preferences load, debug_reopen_trace switches
+ * to state->preferences.data_dir + "trace.log". */
 #ifdef __ANDROID__
-#define SYNCTHING_PATH "/storage/emulated/0/Sync"
-#define GAMEDATA_PATH SYNCTHING_PATH "/sleipner/gamedata.toml"
-#define KEYBINDINGS_PATH SYNCTHING_PATH "/sleipner/keybindings.toml"
-#define TRACE_LOG_PATH SYNCTHING_PATH "/sleipner/trace.log"
+#define BOOT_TRACE_LOG_PATH "/storage/emulated/0/Sync/sleipner/trace.log"
 #else
-#define GAMEDATA_PATH "data/gamedata.toml"
-#define KEYBINDINGS_PATH "data/keybindings.toml"
-#define TRACE_LOG_PATH "trace.log"
+#define BOOT_TRACE_LOG_PATH "trace.log"
 #endif
+
+/* Compose state->preferences.data_dir + filename into a Str allocated
+ * from `alloc`. Caller wraps with SCRATCH_SCOPE so the returned path
+ * is reclaimed at scope exit. */
+static Str compose_data_path(const GameState *state, const char *filename, Allocator alloc)
+{
+    Str path = str_new(alloc);
+    if (state->preferences.data_dir.ptr != nullptr) {
+        (void)str_append_cstr(&path, state->preferences.data_dir.ptr);
+    }
+    (void)str_append_cstr(&path, filename);
+    return path;
+}
+
+static Str gamedata_path(const GameState *state, Allocator alloc)
+{
+    return compose_data_path(state, "gamedata.toml", alloc);
+}
+
+static Str keybindings_path(const GameState *state, Allocator alloc)
+{
+    return compose_data_path(state, "keybindings.toml", alloc);
+}
+
+static Str trace_log_path(const GameState *state, Allocator alloc)
+{
+    return compose_data_path(state, "trace.log", alloc);
+}
 
 #define HEARTBEAT_INTERVAL 300
 #define TARGET_FPS 60
@@ -336,19 +362,10 @@ static void load_persistent_assets(GameState *state)
     debug_log(&state->debug, "ui_font: Golden Apple %dpx valid=%d", DEBUG_FONT_SIZE,
               IsFontValid(state->assets.ui_font));
 
-    /* Defaults are loaded in game_init. Overlay user customizations from
-     * KEYBINDINGS_PATH on top. Missing file is OK (defaults remain).
-     * Bindings live alongside textures and fonts: persistent, below
-     * gamedata_base, freed only at game exit. */
-    if (!input_func_load_bindings_toml(&state->bindings, gamedata_alloc, &state->error, KEYBINDINGS_PATH)) {
-        debug_log(&state->debug, "input bindings: %s", error_get(&state->error));
-        error_clear(&state->error);
-    }
-
-    /* Resolve and overlay preferences.toml. Missing file is OK
-     * (preferences_init_defaults already populated data_dir). The
-     * resolved path is cached in state->preferences_path so the save
-     * dispatcher writes to the same location at runtime. */
+    /* Resolve and overlay preferences.toml first so data_dir is final
+     * before we use it to compose keybindings.toml and trace.log paths.
+     * Missing file is OK; preferences_init_defaults already populated
+     * data_dir at game_init. */
     if (!platform_preferences_path(&state->preferences_path, gamedata_alloc, &state->error)) {
         debug_log(&state->debug, "platform_preferences_path: %s", error_get(&state->error));
         error_clear(&state->error);
@@ -360,6 +377,28 @@ static void load_persistent_assets(GameState *state)
         }
         debug_log(&state->debug, "preferences: data_dir=%s (%s)", state->preferences.data_dir.ptr,
                   state->preferences_path.ptr);
+    }
+
+    /* Reopen the trace log under the resolved data_dir if it differs
+     * from the boot path. main_init opened debug at BOOT_TRACE_LOG_PATH
+     * before preferences were available; this is the catch-up. */
+    {
+        SCRATCH_SCOPE(&state->scratch_arena);
+        Str trace_path = trace_log_path(state, allocator_arena(&state->scratch_arena));
+        debug_reopen_trace(&state->debug, trace_path.ptr);
+    }
+
+    /* Defaults are loaded in game_init. Overlay user customizations from
+     * <data_dir>/keybindings.toml on top. Missing file is OK (defaults
+     * remain). Bindings live alongside textures and fonts: persistent,
+     * below gamedata_base, freed only at game exit. */
+    {
+        SCRATCH_SCOPE(&state->scratch_arena);
+        Str kb_path = keybindings_path(state, allocator_arena(&state->scratch_arena));
+        if (!input_func_load_bindings_toml(&state->bindings, gamedata_alloc, &state->error, kb_path.ptr)) {
+            debug_log(&state->debug, "input bindings: %s", error_get(&state->error));
+            error_clear(&state->error);
+        }
     }
 }
 
@@ -466,14 +505,19 @@ static bool backup_file(GameState *state, const char *path)
 
 static bool save_gamedata(GameState *state)
 {
-    if (!backup_file(state, GAMEDATA_PATH)) {
+    /* All path uses share one scratch scope: the resolved data path
+     * lives until the function returns. */
+    SCRATCH_SCOPE(&state->scratch_arena);
+    Allocator scratch = allocator_arena(&state->scratch_arena);
+    Str gd_path = gamedata_path(state, scratch);
+
+    if (!backup_file(state, gd_path.ptr)) {
         error_wrap(&state->error, "save_gamedata");
         return false;
     }
 
     /* Build a combined level array: current level first, then other levels.
-     * Allocate on scratch arena to avoid permanent allocation. */
-    SCRATCH_SCOPE(&state->scratch_arena);
+     * Allocate on the same scratch arena. */
     int total_levels = 1 + state->gamedata.other_levels.count;
     Level *all_levels = (Level *)arena_alloc(&state->scratch_arena, sizeof(Level) * (size_t)total_levels);
     all_levels[0] = state->gamedata.current_level;
@@ -489,23 +533,23 @@ static bool save_gamedata(GameState *state)
         return false;
     }
 
-    FILE *file = fopen(GAMEDATA_PATH, FOPEN_WRITE);
+    FILE *file = fopen(gd_path.ptr, FOPEN_WRITE);
     if (!file) {
-        error_set(&state->error, "fopen(%s): %s", GAMEDATA_PATH, strerror(errno));
+        error_set(&state->error, "fopen(%s): %s", gd_path.ptr, strerror(errno));
         error_wrap(&state->error, "save_gamedata");
         return false;
     }
 
     size_t to_write = (size_t)written;
     if (fwrite(buffer, 1, to_write, file) != to_write) {
-        error_set(&state->error, "fwrite(%s): %s", GAMEDATA_PATH, strerror(errno));
+        error_set(&state->error, "fwrite(%s): %s", gd_path.ptr, strerror(errno));
         (void)fclose(file);
         error_wrap(&state->error, "save_gamedata");
         return false;
     }
     (void)fclose(file);
 
-    debug_log(&state->debug, "saved gamedata: %d bytes to %s", written, GAMEDATA_PATH);
+    debug_log(&state->debug, "saved gamedata: %d bytes to %s", written, gd_path.ptr);
     return true;
 }
 
@@ -525,23 +569,26 @@ static bool save_keybindings(GameState *state)
         return false;
     }
 
-    FILE *file = fopen(KEYBINDINGS_PATH, FOPEN_WRITE);
+    SCRATCH_SCOPE(&state->scratch_arena);
+    Str kb_path = keybindings_path(state, allocator_arena(&state->scratch_arena));
+
+    FILE *file = fopen(kb_path.ptr, FOPEN_WRITE);
     if (!file) {
-        error_set(&state->error, "fopen(%s): %s", KEYBINDINGS_PATH, strerror(errno));
+        error_set(&state->error, "fopen(%s): %s", kb_path.ptr, strerror(errno));
         error_wrap(&state->error, "save_keybindings");
         return false;
     }
 
     size_t to_write = (size_t)written;
     if (fwrite(buffer, 1, to_write, file) != to_write) {
-        error_set(&state->error, "fwrite(%s): %s", KEYBINDINGS_PATH, strerror(errno));
+        error_set(&state->error, "fwrite(%s): %s", kb_path.ptr, strerror(errno));
         (void)fclose(file);
         error_wrap(&state->error, "save_keybindings");
         return false;
     }
     (void)fclose(file);
 
-    debug_log(&state->debug, "saved keybindings: %d bytes to %s", written, KEYBINDINGS_PATH);
+    debug_log(&state->debug, "saved keybindings: %d bytes to %s", written, kb_path.ptr);
     return true;
 }
 
@@ -617,7 +664,9 @@ static char *read_file_text(GameState *state, const char *path, Arena *arena)
 
 static void load_gamedata(Diag *diag, GameState *state, const char *level_name)
 {
-    char *content = read_file_text(state, GAMEDATA_PATH, &state->gamedata_arena);
+    SCRATCH_SCOPE(&state->scratch_arena);
+    Str gd_path = gamedata_path(state, allocator_arena(&state->scratch_arena));
+    char *content = read_file_text(state, gd_path.ptr, &state->gamedata_arena);
     if (!content) {
         error_wrap(diag->error, "load_gamedata");
         debug_log(diag->debug, "error: %s", error_get(diag->error));
@@ -668,7 +717,7 @@ static void load_gamedata(Diag *diag, GameState *state, const char *level_name)
         error_clear(diag->error);
     }
 
-    state->gamedata_mtime = GetFileModTime(GAMEDATA_PATH);
+    state->gamedata_mtime = GetFileModTime(gd_path.ptr);
 }
 
 static bool poll_hot_reload(Diag *diag, GameState *state)
@@ -678,7 +727,9 @@ static bool poll_hot_reload(Diag *diag, GameState *state)
         return true;
     }
 
-    long current_mtime = GetFileModTime(GAMEDATA_PATH);
+    SCRATCH_SCOPE(&state->scratch_arena);
+    Str gd_path = gamedata_path(state, allocator_arena(&state->scratch_arena));
+    long current_mtime = GetFileModTime(gd_path.ptr);
     if (current_mtime > 0 && current_mtime != state->gamedata_mtime) {
         debug_log(diag->debug, "gamedata: hot-reload triggered");
         load_gamedata(diag, state, nullptr);
@@ -763,7 +814,9 @@ static void menu_dispatch_save(Diag *diag, GameState *state, EditorState *editor
         error_clear(diag->error);
         editor_state->toast_text = strv_from_cstr("Save failed");
     } else {
-        state->gamedata_mtime = GetFileModTime(GAMEDATA_PATH);
+        SCRATCH_SCOPE(&state->scratch_arena);
+        Str gd_path = gamedata_path(state, allocator_arena(&state->scratch_arena));
+        state->gamedata_mtime = GetFileModTime(gd_path.ptr);
         undo_history_mark_saved(undo_history);
         debug_log(diag->debug, "gamedata saved");
         editor_state->toast_text = strv_from_cstr("Saved");
@@ -921,12 +974,14 @@ int main(void)
     state->screen_width = SCREEN_WIDTH_DEFAULT;
     state->screen_height = SCREEN_HEIGHT_DEFAULT;
 
-    debug_init(&state->debug, TRACE_LOG_PATH);
+    debug_init(&state->debug, BOOT_TRACE_LOG_PATH);
 
 #ifdef _WIN32
     /* GUI subsystem has no console — stdout is dead. Reopen it to the trace
-     * file so raylib's built-in TraceLog output is captured. */
-    (void)freopen(TRACE_LOG_PATH, FOPEN_APPEND, stdout);
+     * file so raylib's built-in TraceLog output is captured. The boot
+     * path matches debug_init; load_persistent_assets later reopens to
+     * the preferences-resolved path if data_dir differs. */
+    (void)freopen(BOOT_TRACE_LOG_PATH, FOPEN_APPEND, stdout);
 #endif
 
 #if defined(__linux__) && !defined(__ANDROID__)
@@ -1037,7 +1092,11 @@ int main(void)
         return 1;
     }
 
-    debug_log(&state->debug, "gamedata path: %s", GAMEDATA_PATH);
+    {
+        SCRATCH_SCOPE(&state->scratch_arena);
+        Str gd_path = gamedata_path(state, allocator_arena(&state->scratch_arena));
+        debug_log(&state->debug, "gamedata path: %s", gd_path.ptr);
+    }
     debug_log(&state->debug, "screen %dx%d  game %ux%u  scale %d", state->screen_width, state->screen_height,
               game_bounds.width, game_bounds.height, PIXEL_SCALE);
     debug_log(&state->debug, "GetScreen %dx%d  GetRender %dx%d", GetScreenWidth(), GetScreenHeight(), GetRenderWidth(),

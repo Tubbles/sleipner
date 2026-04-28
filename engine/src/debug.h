@@ -17,6 +17,12 @@ typedef struct {
  * If trace_path is non-nullptr, opens a trace file at that path. */
 void debug_init(DebugState *dbg, const char *trace_path);
 
+/* Re-open the trace log at a new path. Closes the existing fd (if
+ * any) and opens `trace_path` in append mode so prior content is
+ * preserved. Used after preferences load if data_dir changed away
+ * from the boot default. */
+void debug_reopen_trace(DebugState *dbg, const char *trace_path);
+
 /* Shut down the debug logging system. Closes the trace file if open. */
 void debug_shutdown(DebugState *dbg);
 
