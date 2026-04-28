@@ -11,6 +11,7 @@
 #include "input.h"
 #include "input_func.h"
 #include "level.h"
+#include "preferences.h"
 #include "rect.h"
 #include "rule.h"
 #include "str.h"
@@ -40,14 +41,17 @@ bool game_init(Diag *diag, GameState *state, RectU32 game_bounds)
         error_wrap(diag->error, "game_init");
         return false;
     }
-    /* Default input bindings live in the gamedata arena. main.c overlays
-     * the TOML file on top once persistent assets are loaded. Bindings are
-     * loaded BEFORE the gamedata_base checkpoint is established so they
-     * sit below it and survive every game_load_gamedata arena_restore.
-     * gamedata_base is set here at the end of init so tests that skip
-     * load_persistent_assets still have a valid checkpoint above the
-     * bindings; production overwrites it after textures and fonts. */
+    /* Default input bindings and preferences live in the gamedata arena.
+     * main.c overlays the TOML files on top once persistent assets are
+     * loaded. Both are populated BEFORE the gamedata_base checkpoint is
+     * established so they sit below it and survive every
+     * game_load_gamedata arena_restore. gamedata_base is set here at the
+     * end of init so tests that skip load_persistent_assets still have a
+     * valid checkpoint above them; production overwrites it after
+     * textures and fonts. */
     input_func_load_defaults(&state->bindings, allocator_arena(&state->gamedata_arena));
+    preferences_init_defaults(&state->preferences, allocator_arena(&state->gamedata_arena));
+    state->preferences_path = str_new(allocator_arena(&state->gamedata_arena));
     state->gamedata_base = arena_save(&state->gamedata_arena);
     return true;
 }

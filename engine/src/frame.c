@@ -243,6 +243,12 @@ static void run_settings_frame(GameState *state, FrameContext *ctx, InputState i
             (void)ctx->keybindings_save_fn(state);
         }
     }
+    if (ctx->settings->save_preferences_requested) {
+        ctx->settings->save_preferences_requested = false;
+        if (ctx->preferences_save_fn) {
+            (void)ctx->preferences_save_fn(state);
+        }
+    }
     if (close_requested) {
         settings_close(ctx->settings);
         if (ctx->menu) {

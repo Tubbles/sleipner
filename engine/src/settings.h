@@ -83,6 +83,10 @@ typedef struct {
      * callback after a successful mutation. settings_handle_input sets
      * this to true; the dispatcher consumes it and clears it. */
     bool save_requested;
+    /* Sibling flag for preferences.toml writes. Kept separate from
+     * save_requested so each dispatcher branch stays independent and
+     * either flag can be raised without coupling to the other. */
+    bool save_preferences_requested;
     /* Toast text shown below the title for a couple of frames after a
      * save / reset. Pointer to a string literal; no ownership. */
     const char *toast_text;

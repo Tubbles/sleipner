@@ -53,6 +53,8 @@ const char *__lsan_default_suppressions(void)
 #include "keyboard_widget.h"
 #include "level.h"
 #include "menu.h"
+#include "platform_paths.h"
+#include "preferences.h"
 #include "rect.h"
 #include "rule.h"
 #include "str.h"
@@ -342,6 +344,23 @@ static void load_persistent_assets(GameState *state)
         debug_log(&state->debug, "input bindings: %s", error_get(&state->error));
         error_clear(&state->error);
     }
+
+    /* Resolve and overlay preferences.toml. Missing file is OK
+     * (preferences_init_defaults already populated data_dir). The
+     * resolved path is cached in state->preferences_path so the save
+     * dispatcher writes to the same location at runtime. */
+    if (!platform_preferences_path(&state->preferences_path, gamedata_alloc, &state->error)) {
+        debug_log(&state->debug, "platform_preferences_path: %s", error_get(&state->error));
+        error_clear(&state->error);
+    }
+    if (state->preferences_path.ptr != nullptr) {
+        if (!preferences_load(&state->preferences, &state->error, state->preferences_path.ptr)) {
+            debug_log(&state->debug, "preferences: %s", error_get(&state->error));
+            error_clear(&state->error);
+        }
+        debug_log(&state->debug, "preferences: data_dir=%s (%s)", state->preferences.data_dir.ptr,
+                  state->preferences_path.ptr);
+    }
 }
 
 static void unload_textures(GameState *state)
@@ -533,6 +552,28 @@ static bool dispatch_save_keybindings(GameState *state)
         error_clear(&state->error);
         return false;
     }
+    return true;
+}
+
+static bool dispatch_save_preferences(GameState *state)
+{
+    if (state->preferences_path.ptr == nullptr) {
+        debug_log(&state->debug, "save preferences: no path resolved at startup");
+        return false;
+    }
+    Allocator scratch = allocator_arena(&state->scratch_arena);
+    if (!platform_ensure_parent_dir(state->preferences_path.ptr, scratch, &state->error)) {
+        debug_log(&state->debug, "save preferences: %s", error_get(&state->error));
+        error_clear(&state->error);
+        return false;
+    }
+    if (!preferences_save(&state->preferences, &state->error, state->preferences_path.ptr)) {
+        debug_log(&state->debug, "save preferences: %s", error_get(&state->error));
+        error_clear(&state->error);
+        return false;
+    }
+    debug_log(&state->debug, "saved preferences: data_dir=%s to %s", state->preferences.data_dir.ptr,
+              state->preferences_path.ptr);
     return true;
 }
 
@@ -1039,6 +1080,7 @@ int main(void)
         .save_fn = menu_dispatch_save,
         .restore_fn = menu_dispatch_restore,
         .keybindings_save_fn = dispatch_save_keybindings,
+        .preferences_save_fn = dispatch_save_preferences,
         .level_loader_fn = production_level_loader,
         .level_loader_user_data = nullptr,
     };

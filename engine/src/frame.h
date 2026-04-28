@@ -41,6 +41,11 @@ typedef void (*MenuRestoreFn)(
  * (the right shape for headless tests). */
 typedef bool (*KeybindingsSaveFn)(GameState *state);
 
+/* Persist Preferences mutations to disk. Same nullptr-is-OK contract as
+ * KeybindingsSaveFn: in-memory mutation always works, disk write is
+ * optional. */
+typedef bool (*PreferencesSaveFn)(GameState *state);
+
 /* Pluggable level loader for handle_transition. Production wires this
  * to a wrapper around its file-I/O load_gamedata; tests wire it to a
  * wrapper around game_load_gamedata against an in-memory TOML
@@ -109,6 +114,7 @@ typedef struct {
     MenuSaveFn save_fn;
     MenuRestoreFn restore_fn;
     KeybindingsSaveFn keybindings_save_fn;
+    PreferencesSaveFn preferences_save_fn;
     LevelLoaderFn level_loader_fn;
     void *level_loader_user_data;
 } FrameContext;

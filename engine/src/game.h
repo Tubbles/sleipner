@@ -6,6 +6,7 @@
 #include "gamedata.h"
 #include "input.h"
 #include "input_func.h"
+#include "preferences.h"
 #include "raylib.h"
 #include "rect.h"
 
@@ -67,6 +68,10 @@ typedef struct {
     AudioState audio;
     AssetRegistry assets;
     BindingStore bindings;
+    Preferences preferences;
+    /* Cached path to preferences.toml resolved at startup via
+     * platform_paths. Owned by gamedata_arena (set once, never freed). */
+    Str preferences_path;
     long gamedata_mtime;
     int screen_width;
     int screen_height;
