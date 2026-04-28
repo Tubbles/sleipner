@@ -235,7 +235,8 @@ static void run_settings_frame(GameState *state, FrameContext *ctx, InputState i
 {
     Allocator gamedata_alloc = allocator_arena(&state->gamedata_arena);
     bool close_requested = false;
-    settings_handle_input(ctx->settings, &input, &state->bindings, gamedata_alloc, &close_requested);
+    settings_handle_input(ctx->settings, &input, &state->bindings, &state->preferences, gamedata_alloc,
+                          &close_requested);
     settings_tick(ctx->settings, delta_time);
     if (ctx->settings->save_requested) {
         ctx->settings->save_requested = false;

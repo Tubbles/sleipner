@@ -883,3 +883,54 @@ void test_integration_menu_gamepad_navigation(void)
 
     test_game_teardown(&game);
 }
+
+/* Open the Settings overlay from the pause menu, then switch from the
+ * default Input tab to General via ACTION_TAB_NEXT (gamepad R1 / Tab
+ * key). Tab state must change without leaving the LIST screen. The
+ * test drives only through the input layer so any change to internal
+ * settings handler structure must preserve the observable tab switch. */
+void test_integration_settings_tab_switch(void)
+{
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_gamedata));
+
+    /* Open menu (F3) → walk to SETTINGS (3 down-presses from RESUME) → confirm. */
+    InputState menu_open = {0};
+    input_state_press_key(&menu_open, KEY_F3);
+    test_advance_frame(&game, menu_open);
+    TEST_ASSERT_TRUE(game.menu.open);
+
+    for (int step = 0; step < 3; step++) {
+        InputState down = {0};
+        input_state_press_key(&down, KEY_DOWN);
+        test_advance_frame(&game, down);
+    }
+    TEST_ASSERT_EQUAL_INT(MENU_ENTRY_SETTINGS, game.menu.selected);
+
+    InputState confirm = {0};
+    input_state_press_key(&confirm, KEY_ENTER);
+    test_advance_frame(&game, confirm);
+    TEST_ASSERT_TRUE(game.settings.open);
+    TEST_ASSERT_EQUAL_INT(SETTINGS_TAB_INPUT, (int)game.settings.tab);
+
+    /* Tab forward: KEY_TAB fires ACTION_TAB_NEXT. */
+    InputState tab_next = {0};
+    input_state_press_key(&tab_next, KEY_TAB);
+    test_advance_frame(&game, tab_next);
+    TEST_ASSERT_EQUAL_INT(SETTINGS_TAB_GENERAL, (int)game.settings.tab);
+
+    /* Right shoulder also advances; clamps at the rightmost tab. */
+    InputState right_shoulder = {0};
+    input_state_press_gp_button(&right_shoulder, GAMEPAD_BUTTON_RIGHT_TRIGGER_1);
+    test_advance_frame(&game, right_shoulder);
+    TEST_ASSERT_EQUAL_INT(SETTINGS_TAB_GENERAL, (int)game.settings.tab);
+
+    /* Tab backward: shift+tab fires ACTION_TAB_PREV. */
+    InputState tab_prev = {0};
+    input_state_hold_key(&tab_prev, KEY_LEFT_SHIFT);
+    input_state_press_key(&tab_prev, KEY_TAB);
+    test_advance_frame(&game, tab_prev);
+    TEST_ASSERT_EQUAL_INT(SETTINGS_TAB_INPUT, (int)game.settings.tab);
+
+    test_game_teardown(&game);
+}

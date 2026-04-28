@@ -13,6 +13,7 @@
 #include "menu.h"
 #include "raylib.h"
 #include "rule.h"
+#include "settings.h"
 #include "undo.h"
 
 /* Construct a heap-backed allocator (malloc/realloc/free). Test-only. */
@@ -43,6 +44,7 @@ typedef struct {
     GameState state;
     UndoHistory undo_history;
     MenuState menu;
+    SettingsState settings;
     EditorState editor_state;
     Camera2D editor_camera;
     WatchList watches;

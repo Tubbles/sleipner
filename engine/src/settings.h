@@ -4,6 +4,7 @@
 #include "blur.h"
 #include "input.h"
 #include "input_func.h"
+#include "preferences.h"
 #include "raylib.h"
 
 #include <stdbool.h>
@@ -14,21 +15,23 @@
  * frame dispatcher routes input here instead of the editor or game,
  * mirroring how the menu suspends normal logic.
  *
- * Three screens:
- *   LIST    — scrollable list of every action, axis, and a final
- *             "Reset all to defaults" entry. CONFIRM enters DETAIL,
- *             CANCEL closes back to the menu.
- *   DETAIL  — shows each alternative for the selected target plus
- *             "Add new alternative" and "Reset to defaults" rows.
- *             CONFIRM enters CAPTURE, EDITOR_DELETE removes an
- *             alternative, CANCEL returns to LIST.
- *   CAPTURE — high-water-mark chord capture for an action target,
- *             or two-step kb_axis / single-axis capture for an axis
- *             target. KEY_ESCAPE / GAMEPAD_BUTTON_MIDDLE_RIGHT are
- *             reserved cancels, read raw and never bindable from the
- *             UI. */
+ * The LIST screen renders a tab header at the top: TAB_PREV / TAB_NEXT
+ * (gamepad L1/R1, keyboard Tab/Shift+Tab) switch tabs. Each tab has its
+ * own body and selection cursor.
+ *
+ *   Input tab    : the keybinding LIST → DETAIL → CAPTURE flow.
+ *   General tab  : non-binding settings (currently just Data directory).
+ *
+ * Detail and Capture screens are reachable only from the Input tab.
+ * Path-edit reachable only from the General tab. */
 
 #define SETTINGS_FONT_SIZE 32
+
+typedef enum {
+    SETTINGS_TAB_INPUT,
+    SETTINGS_TAB_GENERAL,
+    SETTINGS_TAB_COUNT,
+} SettingsTab;
 
 typedef enum {
     SETTINGS_SCREEN_LIST,
@@ -59,8 +62,13 @@ typedef struct {
     bool blur_captured;
 
     SettingsScreen screen;
+    SettingsTab tab;
     int list_index;
     int list_scroll;
+    /* Selection within the General tab. Kept separate from list_index
+     * so tab switches do not lose place. */
+    int general_index;
+    int general_scroll;
 
     SettingsTargetKind target_kind; /* what kind of row was selected on LIST */
     int target_index;               /* InputAction or InputAxis enum value */
@@ -104,19 +112,27 @@ void settings_close(SettingsState *settings);
 [[nodiscard]] bool settings_is_open(const SettingsState *settings);
 
 /* Run one frame of input. Mutates the BindingStore via the input_func
- * mutation API. Sets settings->save_requested when the caller should
- * persist the store to disk. Toggles `*close_requested` if the user
- * pressed cancel from the LIST screen. */
-void settings_handle_input(
-    SettingsState *settings, const InputState *input, BindingStore *store, Allocator alloc, bool *close_requested);
+ * mutation API and Preferences via str_clear+append on data_dir. Sets
+ * settings->save_requested or save_preferences_requested when the
+ * caller should persist the corresponding store to disk. Toggles
+ * `*close_requested` if the user pressed cancel from the LIST screen. */
+void settings_handle_input(SettingsState *settings,
+                           const InputState *input,
+                           BindingStore *store,
+                           Preferences *preferences,
+                           Allocator alloc,
+                           bool *close_requested);
 
 /* Decay the toast timer. Caller drives this with delta_time. */
 void settings_tick(SettingsState *settings, float delta_time);
 
 /* Render the blurred backdrop and the active screen. Caller is
- * responsible for being inside BeginDrawing(). */
+ * responsible for being inside BeginDrawing(). The General tab reads
+ * `preferences` for the current data_dir value; pass nullptr only if
+ * the General tab will not be entered (tests). */
 void settings_render(const SettingsState *settings,
                      const BindingStore *store,
+                     const Preferences *preferences,
                      const BlurPipeline *blur,
                      int screen_width,
                      int screen_height);

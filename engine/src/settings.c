@@ -4,6 +4,7 @@
 #include "blur.h"
 #include "input.h"
 #include "input_func.h"
+#include "preferences.h"
 #include "raylib.h"
 
 #include <math.h>
@@ -353,7 +354,36 @@ static void enter_detail_axis(SettingsState *settings, InputAxis axis)
     settings->detail_scroll = 0;
 }
 
-static void handle_list_input(
+/* General tab: one row in v1, "Data directory: <value>". CONFIRM is a
+ * placeholder until SETTINGS_SCREEN_PATH_EDIT lands in the next commit;
+ * for now it shows a toast so the row is reachable from gamepad. */
+#define GENERAL_TOTAL_ROWS 1
+
+static void handle_general_tab_input(SettingsState *settings,
+                                     const InputState *input,
+                                     const BindingStore *store,
+                                     bool *close_requested)
+{
+    if (input_pressed(input, store, ACTION_NAV_UP) && settings->general_index > 0) {
+        settings->general_index--;
+    }
+    /* NAV_DOWN clamp is structured for future rows; today GENERAL_TOTAL_ROWS == 1
+     * makes the bounds check trivially false. Lint correctly notes the
+     * degeneracy; suppressing it keeps the parameterized shape. */
+    // NOLINTNEXTLINE(misc-redundant-expression)
+    if (input_pressed(input, store, ACTION_NAV_DOWN) && settings->general_index < GENERAL_TOTAL_ROWS - 1) {
+        settings->general_index++;
+    }
+    if (input_pressed(input, store, ACTION_CANCEL)) {
+        *close_requested = true;
+        return;
+    }
+    if (input_pressed(input, store, ACTION_CONFIRM)) {
+        show_toast(settings, "Path editor coming soon");
+    }
+}
+
+static void handle_input_tab_body(
     SettingsState *settings, const InputState *input, BindingStore *store, Allocator alloc, bool *close_requested)
 {
     if (input_pressed(input, store, ACTION_NAV_UP) && settings->list_index > 0) {
@@ -394,6 +424,34 @@ static void handle_list_input(
         input_func_reset_all_to_defaults(store, alloc);
         settings->save_requested = true;
         show_toast(settings, "All bindings reset");
+    }
+}
+
+static void handle_list_input(
+    SettingsState *settings, const InputState *input, BindingStore *store, Allocator alloc, bool *close_requested)
+{
+    /* Tab switching wins over per-tab navigation: TAB_PREV/NEXT are
+     * checked first, then early-return so per-tab handlers do not also
+     * see the press (PAGE_UP/DOWN share L1/R1 with TAB_PREV/NEXT on
+     * gamepad — same order-sensitivity pattern as ACTION_EDITOR_UNDO
+     * vs ACTION_NAV_LEFT). */
+    if (input_pressed(input, store, ACTION_TAB_PREV) && settings->tab > SETTINGS_TAB_INPUT) {
+        settings->tab--;
+        return;
+    }
+    if (input_pressed(input, store, ACTION_TAB_NEXT) && settings->tab < SETTINGS_TAB_COUNT - 1) {
+        settings->tab++;
+        return;
+    }
+    switch (settings->tab) {
+    case SETTINGS_TAB_INPUT:
+        handle_input_tab_body(settings, input, store, alloc, close_requested);
+        break;
+    case SETTINGS_TAB_GENERAL:
+        handle_general_tab_input(settings, input, store, close_requested);
+        break;
+    case SETTINGS_TAB_COUNT:
+        break;
     }
 }
 
@@ -612,9 +670,16 @@ static void handle_capture_input(SettingsState *settings, const InputState *inpu
     }
 }
 
-void settings_handle_input(
-    SettingsState *settings, const InputState *input, BindingStore *store, Allocator alloc, bool *close_requested)
+void settings_handle_input(SettingsState *settings,
+                           const InputState *input,
+                           BindingStore *store,
+                           Preferences *preferences,
+                           Allocator alloc,
+                           bool *close_requested)
 {
+    /* `preferences` is unused on the bindings flow today; the General
+     * tab will read it once the path-edit screen is wired in. */
+    (void)preferences;
     switch (settings->screen) {
     case SETTINGS_SCREEN_LIST:
         handle_list_input(settings, input, store, alloc, close_requested);
@@ -665,10 +730,39 @@ static void list_row_label(int row, char *out, size_t cap, const BindingStore *s
     (void)snprintf(out, cap, "Reset all to defaults");
 }
 
-static void render_list_screen(const SettingsState *settings, const BindingStore *store, Rectangle screen)
+static const char *tab_label(SettingsTab tab)
 {
-    draw_text(settings, "Settings: keybindings", LIST_LEFT_PAD, LIST_TITLE_PAD, color_for_row(false, false));
-    int row_y = LIST_TITLE_PAD + LIST_LINE_HEIGHT + (LIST_LINE_HEIGHT / 2);
+    switch (tab) {
+    case SETTINGS_TAB_INPUT:
+        return "Input";
+    case SETTINGS_TAB_GENERAL:
+        return "General";
+    case SETTINGS_TAB_COUNT:
+        break;
+    }
+    return "";
+}
+
+static void render_tab_header(const SettingsState *settings)
+{
+    int pen_x = LIST_LEFT_PAD;
+    int pen_y = LIST_TITLE_PAD;
+    for (int tab = 0; tab < SETTINGS_TAB_COUNT; tab++) {
+        const char *label = tab_label((SettingsTab)tab);
+        bool selected = (tab == (int)settings->tab);
+        draw_text(settings, label, pen_x, pen_y, color_for_row(selected, false));
+        Vector2 measured = MeasureTextEx(settings->font, label, (float)SETTINGS_FONT_SIZE, LIST_LETTER_SPACING);
+        if (selected) {
+            DrawRectangle(
+                pen_x, pen_y + (int)measured.y + 2, (int)measured.x, 2,
+                (Color){SETTINGS_TEXT_HIGHLIGHT_R, SETTINGS_TEXT_HIGHLIGHT_G, SETTINGS_TEXT_HIGHLIGHT_B, 255});
+        }
+        pen_x += (int)measured.x + LIST_LINE_HEIGHT; /* gap between tab labels */
+    }
+}
+
+static void render_input_tab_body(const SettingsState *settings, const BindingStore *store, Rectangle screen, int row_y)
+{
     int last = settings->list_scroll + LIST_VISIBLE_ROWS;
     if (last > LIST_TOTAL_ROWS) {
         last = LIST_TOTAL_ROWS;
@@ -686,6 +780,43 @@ static void render_list_screen(const SettingsState *settings, const BindingStore
             MeasureTextEx(settings->font, settings->toast_text, (float)SETTINGS_FONT_SIZE, LIST_LETTER_SPACING);
         int toast_x = LIST_LEFT_PAD + ((inner - (int)measured.x) / 2);
         draw_text(settings, settings->toast_text, toast_x, row_y + LIST_LINE_HEIGHT, color_for_row(false, false));
+    }
+}
+
+static void
+render_general_tab_body(const SettingsState *settings, const Preferences *preferences, Rectangle screen, int row_y)
+{
+    char buf[ROW_BUF_CAP];
+    const char *value =
+        (preferences != nullptr && preferences->data_dir.ptr != nullptr) ? preferences->data_dir.ptr : "(unknown)";
+    (void)snprintf(buf, sizeof(buf), "Data directory:  %s", value);
+    bool selected = (settings->general_index == 0);
+    draw_text(settings, buf, LIST_LEFT_PAD, row_y, color_for_row(selected, false));
+    if (settings->toast_text) {
+        int inner = (int)screen.width - LIST_LEFT_PAD - LIST_RIGHT_PAD;
+        Vector2 measured =
+            MeasureTextEx(settings->font, settings->toast_text, (float)SETTINGS_FONT_SIZE, LIST_LETTER_SPACING);
+        int toast_x = LIST_LEFT_PAD + ((inner - (int)measured.x) / 2);
+        draw_text(settings, settings->toast_text, toast_x, row_y + (LIST_LINE_HEIGHT * 2), color_for_row(false, false));
+    }
+}
+
+static void render_list_screen(const SettingsState *settings,
+                               const BindingStore *store,
+                               const Preferences *preferences,
+                               Rectangle screen)
+{
+    render_tab_header(settings);
+    int row_y = LIST_TITLE_PAD + LIST_LINE_HEIGHT + (LIST_LINE_HEIGHT / 2);
+    switch (settings->tab) {
+    case SETTINGS_TAB_INPUT:
+        render_input_tab_body(settings, store, screen, row_y);
+        break;
+    case SETTINGS_TAB_GENERAL:
+        render_general_tab_body(settings, preferences, screen, row_y);
+        break;
+    case SETTINGS_TAB_COUNT:
+        break;
     }
 }
 
@@ -856,6 +987,7 @@ static void render_capture_screen(const SettingsState *settings, Rectangle scree
 
 void settings_render(const SettingsState *settings,
                      const BindingStore *store,
+                     const Preferences *preferences,
                      const BlurPipeline *blur,
                      int screen_width,
                      int screen_height)
@@ -872,7 +1004,7 @@ void settings_render(const SettingsState *settings,
     }
     switch (settings->screen) {
     case SETTINGS_SCREEN_LIST:
-        render_list_screen(settings, store, screen);
+        render_list_screen(settings, store, preferences, screen);
         break;
     case SETTINGS_SCREEN_DETAIL:
         render_detail_screen(settings, store, screen);

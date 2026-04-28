@@ -960,7 +960,8 @@ static void render_frame(GameState *state, RenderParams params)
     capture_overlay_blur_if_needed(params);
     menu_render(params.menu, params.blur, state->screen_width, state->screen_height);
     if (params.settings && params.settings->open) {
-        settings_render(params.settings, &state->bindings, params.blur, state->screen_width, state->screen_height);
+        settings_render(params.settings, &state->bindings, &state->preferences, params.blur, state->screen_width,
+                        state->screen_height);
     }
     EndDrawing();
 }

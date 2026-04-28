@@ -152,6 +152,7 @@ bool test_game_setup_with_level(TestGame *out, const char *toml_string, const ch
                            out->state.gamedata_base, strv_from_cstr("Initial"));
 
     menu_init(&out->menu);
+    settings_init(&out->settings);
     out->editor_state = (EditorState){.top_mode = EDITOR_TOP_SCENE,
                                       .selected_entity_index = -1,
                                       .sub_mode = EDITOR_SUB_BROWSE,
@@ -168,10 +169,13 @@ bool test_game_setup_with_level(TestGame *out, const char *toml_string, const ch
         .watches = &out->watches,
         .undo_history = &out->undo_history,
         .menu = &out->menu,
+        .settings = &out->settings,
         .font_preview_enabled = &out->font_preview_enabled,
         .quit_requested = &out->quit_requested,
         .save_fn = nullptr,
         .restore_fn = nullptr,
+        .keybindings_save_fn = nullptr,
+        .preferences_save_fn = nullptr,
         .level_loader_fn = test_level_loader,
         .level_loader_user_data = out,
     };
@@ -182,6 +186,7 @@ void test_game_teardown(TestGame *game)
 {
     undo_history_free(&game->undo_history);
     menu_cleanup(&game->menu);
+    settings_cleanup(&game->settings);
     game_free(&game->diag, &game->state);
 }
 
