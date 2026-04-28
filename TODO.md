@@ -165,3 +165,65 @@ Carried over from the pause-overlay menu landing:
   test target, restructure `embed_all_assets` to apply to any target
   that links the engine lib, or formalise inline C strings as the
   engine-lib-internal convention for text assets and document it.
+
+## Possible action items
+
+Carried over from the Settings tabs + path picker series (commits
+d890de8 through 3641352).
+
+- **`preferences_load` doesn't normalize trailing slash on
+  `data_dir`.** The Settings UI commit path appends `/` when missing
+  (see `path_edit_commit` in `engine/src/settings.c`), but
+  `preferences_load` in `engine/src/preferences.c` does not. A user
+  manually editing `preferences.toml` to `data_dir = "data"` will
+  make `gamedata_path()` compose `datagamedata.toml`. One-line fix
+  at the end of `preferences_load`.
+- **No path validation on commit.** `path_edit_commit` accepts any
+  string the user types; failure surfaces only at the next gamedata
+  reload via the existing fopen/stat error path. Out of scope in
+  v1, but the path picker could flag obviously-bad paths
+  (non-existent, not a directory, not writable) before exiting the
+  screen and offer the user a chance to fix it.
+- **TestGame can't verify on-disk preferences write.**
+  `frame_ctx.preferences_save_fn = nullptr` in
+  `engine/test/test_helpers.c::test_game_setup_with_level`, so
+  `test_integration_settings_path_edit_commit` can only assert
+  `save_preferences_requested` was raised + consumed. Add a
+  settable fake save fn (mirror of how `KeybindingsSaveFn` would
+  need similar treatment) so tests can assert that the actual
+  preferences.toml write happened.
+- **Rename test-side `GAMEDATA_PATH`.** The `engine_tests` CMake
+  target still defines `GAMEDATA_PATH=...` as a compile-time
+  pointer to the repo fixture
+  (`engine/test/CMakeLists.txt:54-55`). The macro is gone from
+  engine code but the name overlaps with what used to be the
+  runtime path. Rename to `GAMEDATA_FIXTURE_PATH` (or similar) and
+  update the integration_test.c references.
+- **Browse mode swallows `LoadDirectoryFilesEx` failures.** A
+  permission-denied or stat-failed target directory shows an empty
+  list with no explanation (`path_edit_refresh` in
+  `engine/src/settings.c`). Surface a toast or an explicit "(no
+  permission)" row.
+- **Hardcoded filenames in path helpers.** `gamedata_path` /
+  `keybindings_path` / `trace_log_path` in `engine/src/main.c` bake
+  the filename into the helper. If per-file overrides are wanted
+  later (separate `gamedata_dir`, `keybindings_dir`, `trace_dir`),
+  that's where to start.
+- **General tab `NAV_DOWN` clamp is dead code.**
+  `handle_general_tab_input` in `engine/src/settings.c` has
+  `general_index < GENERAL_TOTAL_ROWS - 1` which is always false
+  with `GENERAL_TOTAL_ROWS == 1`. Currently NOLINTNEXTLINE'd; the
+  suppression goes away naturally when the second General row
+  lands.
+- **Desktop `trace.log` path migrated.** Pre-refactor the desktop
+  trace lived at cwd; post-refactor it resolves to
+  `<data_dir>/trace.log` (so `data/trace.log` by default). Anyone
+  with tooling pointed at the old location needs to update or wire
+  up a CLI/env override that reads the boot-stage path.
+- **Future top-level `.c` files using `M_PI` will break MinGW.**
+  The engine library's `_GNU_SOURCE` opt-in is gated on `!WIN32`,
+  so MinGW does not see `M_PI` from `<math.h>`. `keyboard_widget.c`
+  hit this in commit 626b0e4 and was hot-fixed with a local
+  `KB_PI` constant in 2642e6d. The editor's `widgets.c` happens to
+  compile because of which transitive headers it pulls in; do not
+  count on that for new files.
