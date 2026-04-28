@@ -40,6 +40,7 @@ set(ENGINE_SOURCE_FILES
     map.c
     menu.c
     particle.c
+    platform_paths.c
     render.c
     rule.c
     settings.c
