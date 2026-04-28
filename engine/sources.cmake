@@ -35,6 +35,7 @@ set(ENGINE_SOURCE_FILES
     input.c
     input_func.c
     input_func_toml.c
+    keyboard_widget.c
     level.c
     map.c
     menu.c

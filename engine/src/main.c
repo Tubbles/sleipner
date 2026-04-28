@@ -50,6 +50,7 @@ const char *__lsan_default_suppressions(void)
 #include "game.h"
 #include "input.h"
 #include "input_func.h"
+#include "keyboard_widget.h"
 #include "level.h"
 #include "menu.h"
 #include "rect.h"
@@ -675,6 +676,8 @@ static void reset_editor_after_reload(GameState *state,
                                   .selected_blueprint_index = -1,
                                   .blueprint_attr_index = -1,
                                   .blueprint_tree_index = -1};
+    keyboard_widget_reset(&editor_state->word_builder_kb, editor_state->word_builder_buf,
+                          &editor_state->word_builder_len, WORD_BUILDER_BUF_SIZE);
     *watches = (WatchList){0};
 }
 
@@ -983,6 +986,8 @@ int main(void)
                                 .selected_blueprint_index = -1,
                                 .blueprint_attr_index = -1,
                                 .blueprint_tree_index = -1};
+    keyboard_widget_reset(&editor_state.word_builder_kb, editor_state.word_builder_buf, &editor_state.word_builder_len,
+                          WORD_BUILDER_BUF_SIZE);
     WatchList watches = {0};
     UndoHistory undo_history = {0};
     if (!undo_history_init(&state->error, &undo_history)) {

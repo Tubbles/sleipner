@@ -3,6 +3,7 @@
 #include "diag.h"
 #include "game.h"
 #include "input.h"
+#include "keyboard_widget.h"
 #include "level.h"
 #include "raylib.h"
 #include "rect.h"
@@ -47,8 +48,6 @@ typedef struct {
 #define WORD_BUILDER_BUF_SIZE 256        /* max length of word builder output */
 #define WORD_BUILDER_PAGE_SIZE 5         /* page-jump size for L1/R1 in word builder */
 #define FUZZY_FINDER_PAGE_SIZE 5         /* page-jump size for L1/R1 in name picker */
-#define KEYBOARD_GROUP_COUNT 9           /* number of character groups in gamepad keyboard */
-#define KEYBOARD_MAX_CHARS_PER_GROUP 5   /* max characters in any single group */
 #define TOAST_DURATION 2.0F              /* seconds before toast fades out */
 #define TOAST_FADE_TIME 0.5F             /* seconds of fade-out at the end */
 #define TOAST_FONT_SIZE 32               /* toast text font size */
@@ -108,8 +107,7 @@ typedef struct {
     int fuzzy_finder_scroll;                      /* selected index (0 = "[ NEW... ]") */
     const char **fuzzy_finder_items;              /* sorted unique name pointers (gamedata_arena) */
     int fuzzy_finder_item_count;                  /* number of names (excludes the NEW sentinel) */
-    int keyboard_group;                           /* -1 = level 1 (group select), 0..8 = level 2 (char select) */
-    int keyboard_selected;                        /* radial sector highlighted by stick (-1 = dead zone) */
+    KeyboardWidget word_builder_kb;               /* reused two-level radial keyboard for word builder typing */
     bool adding_attr;                             /* true when fuzzy finder is open for adding a runtime attribute */
     bool adding_persisted_attr;                   /* true when fuzzy finder is open for adding a persisted attribute */
     int selected_tree_index;                      /* -1 = not in tree section; >=0 = parent/child/ADD CHILD */
