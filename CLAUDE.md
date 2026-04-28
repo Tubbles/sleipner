@@ -110,7 +110,7 @@ Int-keyed maps (`map_int_bool`, `map_int_int`, `map_int_str`, etc.) are pre-decl
 
 All gameplay, editor, menu, and widget code reads input through a high-level **function layer** (`engine/src/input_func.h`) — never raw keys, gamepad buttons, or stick values. Two enums separate discrete actions from analog axes for static type safety:
 
-- **`InputAction`** — discrete events: `ACTION_CONFIRM`, `ACTION_CANCEL`, `ACTION_NAV_*`, `ACTION_PAGE_*`, `ACTION_INTERACT`, `ACTION_EDITOR_*`, `ACTION_ATTR_*`, `ACTION_BLUEPRINT_*`, `ACTION_WB_*`, `ACTION_MENU_TOGGLE`, `ACTION_FONT_PREVIEW_TOGGLE`, `ACTION_QUIT`. Hybrid naming: shared verbs unprefixed, context-specific actions prefixed.
+- **`InputAction`** — discrete events: `ACTION_CONFIRM`, `ACTION_CANCEL`, `ACTION_NAV_*`, `ACTION_PAGE_*`, `ACTION_TAB_PREV`, `ACTION_TAB_NEXT`, `ACTION_INTERACT`, `ACTION_EDITOR_*`, `ACTION_ATTR_*`, `ACTION_BLUEPRINT_*`, `ACTION_WB_*`, `ACTION_MENU_TOGGLE`, `ACTION_FONT_PREVIEW_TOGGLE`, `ACTION_QUIT`. Hybrid naming: shared verbs unprefixed, context-specific actions prefixed. `ACTION_TAB_PREV/NEXT` (gamepad L1/R1, keyboard Shift+Tab/Tab) is the universal tab-switch verb consumed by the Settings overlay; it shares L1/R1 with `ACTION_PAGE_UP/DOWN`, so tabbed UIs check `TAB_*` first and early-return.
 - **`InputAxis`** — analog scalars: `AXIS_PRIMARY_X/Y` (left stick / arrows-WASD), `AXIS_SECONDARY_X/Y` (right stick / Q-E), `AXIS_TRIGGER_LEFT/RIGHT`.
 
 Bindings live in a `BindingStore` on `GameState.bindings`, loaded once in `game_init` from baked-in defaults. The store is enum-indexed fixed-size arrays — a justified `MAX_*` exception per the "no MAX_*" rule because there is exactly one binding per enum value.
@@ -145,6 +145,14 @@ The legacy `test_input_mock` `--wrap` shim still exists for pre-existing integra
 ### Arena philosophy
 
 Keep the number of arenas as low as possible, but don't force incompatible lifetimes into a single arena — object lifetimes can cross arena boundaries. Each arena must have a clearly defined lifetime and purpose. Add new arenas consciously and document what lifetime they correspond to.
+
+### Arena growth strategy
+
+The rule that decides whether an allocation is permitted in `gamedata_arena` is about **growth shape**, not absolute size. Allocations whose count grows with frame count `n` (one per frame, one per game tick) are forbidden — they leak forever and the arena grows without bound. Allocations whose count is bounded by user actions or events (settings saves, level loads, blueprint reloads, occasional editor commits) are explicitly fine even if they orphan a previous block, because total leaked bytes are `<events> * <size per event>` — kilobytes at most over a session.
+
+Before adding a new dedicated `Arena` field on `GameState`, ask: does this allocation's count grow with frame count, or is it bounded by user/event count? If bounded, allocate against `gamedata_arena`. If frame-count-proportional, that's a real architectural problem and a new arena is not the right fix either — restructure the data flow.
+
+`Preferences.data_dir` is a worked example: it lives in `gamedata_arena`, and the Settings UI's commit path (`str_clear` + `str_append_cstr`) reuses the existing buffer when the new value fits. Only an unprecedentedly long path triggers an arena bump, and even then the leaked block is bounded by one per session per longest-yet path.
 
 ### Current arenas in `GameState`
 
@@ -334,10 +342,19 @@ If `data/gamedata.toml` and `~/Sync/sleipner/gamedata.toml` have diverged (both 
 
 ### Runtime paths
 
-- **Desktop:** `data/gamedata.toml` (repo-relative, from working directory).
-- **Android:** `/storage/emulated/0/Sync/sleipner/gamedata.toml` (hardcoded).
-- **Trace log (Android):** `/storage/emulated/0/Sync/sleipner/trace.log` — readable from desktop via Syncthing at `~/Sync/sleipner/trace.log`.
-- **Trace log (desktop):** `trace.log` in the working directory.
+The path to `gamedata.toml`, `keybindings.toml`, and `trace.log` is composed at runtime from `state->preferences.data_dir + filename` (see `gamedata_path` / `keybindings_path` / `trace_log_path` in `engine/src/main.c`). The directory itself is overridable from the in-game Settings → General tab. Defaults match the pre-prefs constants:
+
+- **Desktop default:** `data_dir = "data/"`, so `data/gamedata.toml`, `data/keybindings.toml`, `data/trace.log`.
+- **Android default:** `data_dir = "/storage/emulated/0/Sync/sleipner/"`, so `<that>/gamedata.toml` etc.
+
+`preferences.toml` itself is NOT inside `data_dir` — that would be a chicken-and-egg cycle since `preferences.toml` is what overrides `data_dir`. It lives at the OS-conventional config path resolved by `engine/src/platform_paths.c`:
+
+- Linux/BSD: `$XDG_CONFIG_HOME/sleipner/preferences.toml` (fallback `$HOME/.config/sleipner/preferences.toml`).
+- Windows: `%APPDATA%/sleipner/preferences.toml`.
+- Android: `<internalDataPath>/preferences.toml` (raylib `GetApplicationDirectory()`).
+- A `<binary_dir>/preferences.toml` next to the executable trumps the OS path if it exists, for portable installs.
+
+Trace.log opens twice: once at the boot-default path before preferences are loaded (so even pre-prefs failures get logged), then `debug_reopen_trace` switches to the resolved `data_dir`-based path once preferences load. Append mode preserves any boot-stage entries.
 
 ### Keybindings overlay
 

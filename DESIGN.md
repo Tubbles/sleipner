@@ -644,8 +644,10 @@ Two separate copies exist — hard links do not work because Syncthing's atomic 
 
 Kept in sync by explicit copy (see CLAUDE.md "Gamedata Sync Workflow" for the full procedure).
 
-**Desktop path:** Game reads `data/gamedata.toml` (relative to binary / repo root).
-**Android path:** Game reads from Syncthing folder (`/storage/emulated/0/Sync/sleipner/gamedata.toml`).
+**Desktop default:** Game reads `<data_dir>/gamedata.toml`, where `data_dir` defaults to `data/`.
+**Android default:** `data_dir = /storage/emulated/0/Sync/sleipner/`.
+
+`data_dir` is a runtime preference, overridable via the Settings → General tab. The same `data_dir` controls `keybindings.toml` and `trace.log`. See "Preferences and Path Configuration" below for the full hierarchy and the path picker UX.
 
 ### Game Data Format (TOML)
 
@@ -873,6 +875,27 @@ lower-level header. This hides the cycle rather than fixing it.
 - **Never** call `arena_reset` on `gamedata_arena` from game code — it would wipe the texture registry, causing a black screen.
 - The asset registry (textures, fonts) uses a dynamic vec backed by the arena. Adding a new asset is one line in `main.c`; no fixed-size arrays to resize.
 - **Prefer `vec` over fixed-size arrays with `MAX_*` constants.** If a collection's size isn't known at compile time, use a `vec` backed by the appropriate arena. `MAX_*` constants invite off-by-one bugs, silent truncation, and inflexibility — the arena makes dynamic sizing essentially free.
+
+### Arena growth strategy
+
+The rule that decides whether an allocation belongs in `gamedata_arena` is about
+**growth shape**, not absolute size. Allocations whose count grows with frame count `n`
+(one per frame, one per game tick) are forbidden — they leak forever and the arena grows
+without bound. Allocations whose count is bounded by user actions or events (settings
+saves, level loads, blueprint reloads, occasional editor commits) are explicitly fine
+even when they orphan a previous block, because total leaked bytes are
+`<events> * <size per event>` — kilobytes at most over a session.
+
+Before adding a new dedicated `Arena` field on `GameState`, ask: does this allocation's
+count grow with frame count, or is it bounded by user/event count? If bounded, allocate
+against `gamedata_arena`. If frame-count-proportional, the issue is the data flow itself
+and a new arena is not the right fix either.
+
+`Preferences.data_dir` is the worked example. It lives in `gamedata_arena`. The Settings
+UI commits via `str_clear` followed by `str_append_cstr`, which reuses the existing
+buffer when the new value fits inside the current capacity. Only an unprecedentedly long
+path triggers an arena bump, and even then the orphaned block is bounded by one per
+session per longest-yet path. No dedicated `prefs_arena` is justified.
 
 ### Vec Growth and Pointer Stability
 
@@ -1306,6 +1329,81 @@ user customizations win.
 
 Settings shares the menu's blur backdrop and reopens fresh after
 hot-reload (its memory lives in `gamedata_arena`).
+
+### Preferences and Path Configuration
+
+Beyond keybindings, Settings exposes a "General" tab that surfaces
+runtime preferences via a small `Preferences` struct
+(`engine/src/preferences.{h,c}`). v1 carries a single field,
+`data_dir`, that controls where `gamedata.toml`, `keybindings.toml`,
+and `trace.log` are read and written. Defaults match the pre-prefs
+constants — `data/` on desktop, `/storage/emulated/0/Sync/sleipner/`
+on Android — so behavior is unchanged out of the box.
+
+**On-disk file:** `preferences.toml` at the OS-conventional config
+location resolved by `engine/src/platform_paths.c`:
+
+- Linux/BSD: `$XDG_CONFIG_HOME/sleipner/preferences.toml` if
+  `$XDG_CONFIG_HOME` is set, otherwise
+  `$HOME/.config/sleipner/preferences.toml`.
+- Windows: `%APPDATA%/sleipner/preferences.toml`.
+- Android: `<internalDataPath>/preferences.toml` via raylib
+  `GetApplicationDirectory()`.
+- A `<binary_dir>/preferences.toml` next to the executable trumps
+  the OS path if it exists, supporting portable installs.
+
+The file does not live inside `data_dir` — that would be a
+chicken-and-egg cycle, since `preferences.toml` is what overrides
+`data_dir`. The OS-conventional parent directory is created on
+first save via raylib `MakeDirectory` (covered by
+`platform_ensure_parent_dir`).
+
+**Schema:**
+
+```
+[paths]
+data_dir = "/path/to/dir/"
+```
+
+**Loading:** missing file is silent (defaults remain). Parse error
+sets `ErrorState` and proceeds with defaults so a corrupt user file
+never blocks startup. Fields not present in the file keep whatever
+value `Preferences` already held, so adding new keys later does not
+break old saved files.
+
+**Path Picker UX (Settings → General → Data directory):** a hybrid
+screen with two modes that share one buffer.
+
+- BROWSE (default): raylib `LoadDirectoryFilesEx(buf, "DIRS*",
+  false)` lists subdirectories. NAV_UP/DOWN, PAGE_UP/DOWN navigate;
+  CONFIRM enters a folder, CANCEL goes up; a synthesized "../" row
+  shows when not at filesystem root. ACTION_INTERACT commits the
+  current path to `preferences.data_dir` and returns to the LIST
+  screen.
+- KEYBOARD: reuses the two-level radial `KeyboardWidget` from
+  `engine/src/keyboard_widget.{h,c}` (extracted from the editor's
+  word builder so it has no editor dependency). Type into the same
+  buffer. CANCEL backspaces; the widget's
+  `KB_RESULT_EXIT_REQUESTED` (CANCEL at top-level group on empty
+  buffer) commits and exits.
+
+ACTION_WB_KEYBOARD_MODE (Delete / RIGHT_FACE_LEFT) toggles between
+modes without leaving the screen.
+
+**Trace log two-stage init:** `debug_init` opens trace.log at the
+boot-default path (compile-time) before preferences load, then
+`debug_reopen_trace` switches to the `data_dir`-resolved path once
+preferences are available. Append mode preserves any boot-stage
+content. When `data_dir` matches the boot path the reopen is a
+fast close + reopen at the same location.
+
+**Tab system:** the LIST screen now renders a tab header. Two new
+universal `InputAction` values, `ACTION_TAB_PREV` / `ACTION_TAB_NEXT`
+(gamepad L1/R1, keyboard Shift+Tab/Tab), switch tabs at the LIST
+level. They share L1/R1 with `ACTION_PAGE_UP/DOWN`, so the list
+handler checks `TAB_*` first and early-returns — same
+order-sensitivity pattern as `ACTION_EDITOR_UNDO` vs
+`ACTION_NAV_LEFT` on L1+Left.
 
 ### AI & Pathfinding
 - Enemy behaviors beyond static — chase, patrol, flee, guard?
