@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **DO NOT default to traditional C idioms.** This is C23 with its own abstractions (`Str`, `vec`, `map`, arenas, `Allocator`). Reaching for `char[]`, `malloc`/`free`, or `MAX_*`-sized arrays is almost always wrong. See "Coding Style" and "Core Types" below.
 
+**FINISHING A TASK MEANS COMMITTING AND PUSHING.** Every task ends with `git add`, `git commit`, and `git push`, in the same turn, without being asked. A reply that says "done" or "changes look good" without a push is a half-finished task. The only exception is when the user explicitly says not to commit, or when the change is staged for an in-progress series the user is reviewing. If you forget, the user has to ask, which means you failed the rule. See "Git Workflow" below for the mechanics.
+
 ## Project Overview
 
 Sleipner is a top-down Zelda-like action RPG written in C using raylib. The game is controller-driven and targets Linux x86_64, Windows x86_64 (cross-compiled via MinGW), and native Android arm64 (APK built with Gradle and the NDK, raylib `PLATFORM=Android`). Proton provides Windows-to-Linux translation and FEX provides x86-to-ARM emulation, so the Windows binary can additionally be run on Linux via Proton, or on Android via Proton layered on FEX (for example through the "Game Native" app).
@@ -406,7 +408,7 @@ Android requires update APKs to be signed with the same key as the original inst
 
 ## Git Workflow
 
-- **Always commit and push when you're done with a task.** Do not wait to be asked — committing and pushing is part of completing the work. This applies to all changes, including documentation updates, unless explicitly instructed otherwise.
+- **Always commit and push when you're done with a task.** Do not wait to be asked. Committing and pushing is part of completing the work, not a follow-up step. This applies to all changes, including documentation updates, unless the user explicitly says not to commit. See the top-of-file callout for the rationale.
 - Create small, focused commits as you go so changes are easy to review and revert.
 - Each commit should address a single concern (one bug fix, one feature, one refactor).
 - Use a succinct imperative commit title (e.g. "Add player dash mechanic").
