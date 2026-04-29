@@ -11,6 +11,18 @@ docs, and the Zig build scripts are intentionally omitted.
 
 ## Patches applied in place
 
+- **0002-android-sleipner-raw-event-introspection.patch** —
+  Diagnostic instrumentation for the multi-class-controller work. Adds a
+  16-entry ring buffer in `src/platforms/rcore_android.c` that captures
+  the raw `(source, keycode, action, event_type)` of every event delivered
+  to `AndroidInputCallback` before any source-bit gating, plus two
+  Sleipner-only getters (`GetSleipnerAndroidRawInputEventCount` and
+  `GetSleipnerAndroidRawInputEvent`) the engine's debug overlay reads to
+  display recent events on the Android build. Not intended for upstream;
+  the engine declares the getters extern at the call site so no raylib.h
+  changes are needed. Patch source:
+  `recipes/raylib/patches/0002-android-sleipner-raw-event-introspection.patch`.
+
 - **0001-android-trust-keycode-not-source-bits.patch** —
   `src/platforms/rcore_android.c` `AndroidInputCallback` regression
   introduced by upstream PR #5439 (commit `5e14ac5`, shipped in

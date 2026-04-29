@@ -131,7 +131,7 @@ static Str trace_log_path(const GameState *state, Allocator alloc)
 #define DEBUG_FONT_SIZE 32
 #define DEBUG_LINE_HEIGHT 26
 #define DEBUG_PANEL_WIDTH 420
-#define DEBUG_LINES 20
+#define DEBUG_LINES 24
 #define FONT_PREVIEW_SIZE 32
 
 /* UI text helpers — wrap DrawTextEx with the same ergonomics as DrawText */
@@ -370,6 +370,29 @@ static void draw_debug_info(GameState *state, RectU32 game_bounds)
         draw_ui_text(font, keys.ptr, DEBUG_MARGIN, DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE,
                      debug_text_color);
     }
+
+#if defined(__ANDROID__)
+    /* Raw Android input events (newest first). Wired to a Sleipner-only patch
+     * in rcore_android.c that captures every event before any source-bit
+     * gating, so we can see what the kernel actually delivers for each press
+     * on multi-class controllers like the GameSir X2. */
+    extern int GetSleipnerAndroidRawInputEventCount(void);
+    extern void GetSleipnerAndroidRawInputEvent(int index, int32_t *source, int32_t *keycode, int32_t *action,
+                                                int32_t *event_type);
+    int raw_total = GetSleipnerAndroidRawInputEventCount();
+    int raw_show = raw_total < 6 ? raw_total : 6;
+    draw_ui_text(font, TextFormat("evt: %d captured, showing last %d", raw_total, raw_show), DEBUG_MARGIN,
+                 DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, debug_text_color);
+    for (int slot = raw_show - 1; slot >= 0; slot--) {
+        int32_t src = 0;
+        int32_t kc = 0;
+        int32_t act = 0;
+        int32_t evt = 0;
+        GetSleipnerAndroidRawInputEvent(raw_total - 1 - (raw_show - 1 - slot), &src, &kc, &act, &evt);
+        draw_ui_text(font, TextFormat("  t=%d src=0x%08X kc=%d act=%d", evt, src, kc, act), DEBUG_MARGIN,
+                     DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, debug_text_color);
+    }
+#endif
 
     /* Log panel at bottom */
     int line_count = debug_get_line_count(&state->debug);

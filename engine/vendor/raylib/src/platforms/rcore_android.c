@@ -258,6 +258,22 @@ static const KeyboardKey mapKeycode[KEYCODE_MAP_SIZE] = {
 
 static TouchRaw touchRaw = { 0 };
 
+// SLEIPNER PATCH: raw input event ring buffer for diagnosing source-bit and
+// keycode behaviour on multi-class controllers (e.g. GameSir X2, Razr 2024).
+// Captured unconditionally inside AndroidInputCallback before any other
+// processing, exposed via the Sleipner-only GetSleipnerAndroidRawInputEvent*
+// functions defined at the end of this file. Out-of-tree, not for upstream.
+#define SLEIPNER_RAW_EVENT_RING 16
+typedef struct {
+    int32_t source;
+    int32_t keycode;
+    int32_t action;
+    int32_t event_type;
+} SleipnerRawEvent;
+static SleipnerRawEvent sleipnerRawEvents[SLEIPNER_RAW_EVENT_RING] = { 0 };
+static int sleipnerRawEventHead = 0;
+static int sleipnerRawEventCount = 0;
+
 //----------------------------------------------------------------------------------
 // Module Internal Functions Declaration
 //----------------------------------------------------------------------------------
@@ -1208,6 +1224,23 @@ static int32_t AndroidInputCallback(struct android_app *app, AInputEvent *event)
     int type = AInputEvent_getType(event);
     int source = AInputEvent_getSource(event);
 
+    // SLEIPNER PATCH: capture every event into the raw ring buffer before any
+    // gating, so the in-game debug overlay can show the source bitmask and
+    // keycode that the kernel actually delivered for each press/release.
+    {
+        int32_t sleipner_keycode = (type == AINPUT_EVENT_TYPE_KEY) ? AKeyEvent_getKeyCode(event) : 0;
+        int32_t sleipner_action = (type == AINPUT_EVENT_TYPE_KEY) ? AKeyEvent_getAction(event)
+                                                                  : AMotionEvent_getAction(event);
+        sleipnerRawEvents[sleipnerRawEventHead] = (SleipnerRawEvent){
+            .source = source,
+            .keycode = sleipner_keycode,
+            .action = sleipner_action,
+            .event_type = (int32_t)type,
+        };
+        sleipnerRawEventHead = (sleipnerRawEventHead + 1) % SLEIPNER_RAW_EVENT_RING;
+        if (sleipnerRawEventCount < SLEIPNER_RAW_EVENT_RING) sleipnerRawEventCount++;
+    }
+
     if (type == AINPUT_EVENT_TYPE_MOTION)
     {
         if (FLAG_IS_SET(source, AINPUT_SOURCE_JOYSTICK) ||
@@ -1610,6 +1643,46 @@ static int android_close(void *cookie)
 {
     AAsset_close((AAsset *)cookie);
     return 0;
+}
+
+// SLEIPNER PATCH: raw input event introspection. Returns the number of events
+// currently held in the ring buffer (capped at SLEIPNER_RAW_EVENT_RING). The
+// indexed accessor returns events oldest-first, where index 0 is the oldest
+// event still in the ring and index (count - 1) is the most recent. Out-params
+// may be NULL if the caller does not care about a particular field. Out-of-tree,
+// no upstream declaration; Sleipner declares these extern at the call site.
+int GetSleipnerAndroidRawInputEventCount(void)
+{
+    return sleipnerRawEventCount;
+}
+
+void GetSleipnerAndroidRawInputEvent(int index, int32_t *source, int32_t *keycode,
+                                     int32_t *action, int32_t *event_type)
+{
+    if (index < 0 || index >= sleipnerRawEventCount)
+    {
+        if (source) *source = 0;
+        if (keycode) *keycode = 0;
+        if (action) *action = 0;
+        if (event_type) *event_type = 0;
+        return;
+    }
+    int slot;
+    if (sleipnerRawEventCount < SLEIPNER_RAW_EVENT_RING)
+    {
+        // Ring not yet wrapped: oldest is at slot 0, head points at next free.
+        slot = index;
+    }
+    else
+    {
+        // Ring wrapped: head points at oldest (next slot to overwrite).
+        slot = (sleipnerRawEventHead + index) % SLEIPNER_RAW_EVENT_RING;
+    }
+    SleipnerRawEvent *e = &sleipnerRawEvents[slot];
+    if (source) *source = e->source;
+    if (keycode) *keycode = e->keycode;
+    if (action) *action = e->action;
+    if (event_type) *event_type = e->event_type;
 }
 
 // EOF
