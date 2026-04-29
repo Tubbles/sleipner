@@ -227,3 +227,18 @@ d890de8 through 3641352).
   `KB_PI` constant in 2642e6d. The editor's `widgets.c` happens to
   compile because of which transitive headers it pulls in; do not
   count on that for new files.
+- **DRIVE_SELECT on POSIX shows a single `/` entry.** The user
+  picker is functional but degenerate on Linux/Android, where the
+  OS has no drive concept. On Android in particular, useful roots
+  are `/storage/emulated/0/`, `/sdcard`, and the app-specific
+  `getExternalFilesDir()` path. Populate those into
+  `path_edit_populate_drives` (POSIX branch in
+  `engine/src/settings.c`) so the row also serves as a "jump to
+  common Android root" shortcut, gated on `__ANDROID__`.
+- **Path picker has no manual edit field on top.** The user can
+  switch into KEYBOARD mode to type a path, but cannot directly
+  edit the buffer line shown above the browse list — they have to
+  delete to empty and rebuild via the radial. A simple in-place
+  text-edit cursor on that line (or a "press CONFIRM on the buf
+  display row to enter edit") would shave clicks off, especially
+  on desktop where a real keyboard is hooked up.
