@@ -44,6 +44,11 @@ typedef enum {
 typedef enum {
     PATH_EDIT_BROWSE,
     PATH_EDIT_KEYBOARD,
+    /* Pick a filesystem root: drive letters on Windows, "/" on POSIX.
+     * Reached from the synthesized "<SELECT DRIVE>" row in the browse
+     * view. The user picks an entry, the screen drops them at that
+     * drive's root in BROWSE mode. */
+    PATH_EDIT_DRIVE_SELECT,
 } PathEditMode;
 
 /* Path-edit screen state. The buf holds the working directory path
@@ -57,6 +62,13 @@ typedef enum {
  * platform limit. */
 #define PATH_EDIT_BUF_SIZE 512
 
+/* Drive listing for the DRIVE_SELECT mode. 26 letters is the upper
+ * bound of Windows drive letters (A-Z); on POSIX the table holds a
+ * single "/" entry, also a justified MAX_* (the OS, not us, defines
+ * the count). */
+#define PATH_EDIT_DRIVE_MAX 26
+#define PATH_EDIT_DRIVE_PATH_BUF 8
+
 typedef struct {
     PathEditMode mode;
     char buf[PATH_EDIT_BUF_SIZE];
@@ -67,6 +79,10 @@ typedef struct {
     bool at_root;
     int browse_index;
     int browse_scroll;
+    char drives[PATH_EDIT_DRIVE_MAX][PATH_EDIT_DRIVE_PATH_BUF];
+    int drive_count;
+    int drive_index;
+    int drive_scroll;
 } PathEditState;
 
 typedef enum {

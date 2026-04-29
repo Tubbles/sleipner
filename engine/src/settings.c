@@ -15,6 +15,15 @@
 #include <stdio.h>
 #include <string.h>
 
+#if defined(_WIN32)
+/* Minimal forward declaration for GetLogicalDrives instead of pulling in
+ * <windows.h>: the Windows GDI / USER headers redefine raylib's Rectangle,
+ * CloseWindow, ShowCursor, and DrawTextEx, which would shred this whole
+ * file's signatures. We only need one Win32 function. */
+typedef unsigned long DWORD; // NOLINT(readability-identifier-naming) — Win32 ABI symbol
+extern __declspec(dllimport) DWORD __stdcall GetLogicalDrives(void);
+#endif
+
 #define LIST_VISIBLE_ROWS 14
 #define LIST_LINE_HEIGHT 40
 #define LIST_TITLE_PAD 80
@@ -503,37 +512,47 @@ static void path_edit_refresh(PathEditState *path_edit)
 }
 
 /* Row index meanings (in the browse list):
- *   PATH_EDIT_ROW_USE_THIS  : synthesized first row "<USE THIS DIRECTORY>".
- *                             CONFIRM commits the current buf and exits.
- *   PATH_EDIT_ROW_DOTDOT    : synthesized ".." row, only present when not at
- *                             filesystem root. CONFIRM goes up one level.
- *   >= file_offset          : index into FilePathList, points at a
- *                             subdirectory. CONFIRM enters that folder.
+ *   PATH_EDIT_KIND_USE_THIS    : synthesized first row "<USE THIS DIRECTORY>".
+ *                                CONFIRM commits the current buf and exits.
+ *   PATH_EDIT_KIND_SELECT_DRIVE: synthesized second row "<SELECT DRIVE>".
+ *                                CONFIRM transitions to DRIVE_SELECT mode so
+ *                                the user can jump to another filesystem
+ *                                root. Always present, useful primarily on
+ *                                Windows; on POSIX the drive list collapses
+ *                                to a single "/" entry.
+ *   PATH_EDIT_KIND_DOTDOT      : synthesized ".." row, only present when not
+ *                                at filesystem root. CONFIRM goes up one level.
+ *   PATH_EDIT_KIND_DIR         : index into FilePathList, points at a
+ *                                subdirectory. CONFIRM enters that folder.
  *
- * The two synthesized rows live at fixed UI indices so the user lands on
+ * The synthesized rows live at fixed UI indices so the user lands on
  * USE_THIS by default (browse_index initialized to 0), making the
  * one-press "open screen, A, save current path" workflow work without
  * needing a separate ACTION_INTERACT binding (which would clash with
  * ACTION_CONFIRM since both default to gamepad RIGHT_FACE_DOWN). */
 typedef enum {
     PATH_EDIT_KIND_USE_THIS,
+    PATH_EDIT_KIND_SELECT_DRIVE,
     PATH_EDIT_KIND_DOTDOT,
     PATH_EDIT_KIND_DIR,
 } PathEditRowKind;
 
+#define PATH_EDIT_ROW_USE_THIS 0
+#define PATH_EDIT_ROW_SELECT_DRIVE 1
+
 static int path_edit_dotdot_row_index(const PathEditState *path_edit)
 {
-    return path_edit->at_root ? -1 : 1;
+    return path_edit->at_root ? -1 : 2;
 }
 
 static int path_edit_first_dir_row(const PathEditState *path_edit)
 {
-    return path_edit->at_root ? 1 : 2;
+    return path_edit->at_root ? 2 : 3;
 }
 
 static int path_edit_total_rows(const PathEditState *path_edit)
 {
-    int rows = 1; /* USE_THIS */
+    int rows = 2; /* USE_THIS + SELECT_DRIVE */
     if (!path_edit->at_root) {
         rows += 1; /* .. */
     }
@@ -546,8 +565,11 @@ static int path_edit_total_rows(const PathEditState *path_edit)
 static PathEditRowKind path_edit_row_kind(const PathEditState *path_edit, int row, int *file_index_out)
 {
     *file_index_out = -1;
-    if (row == 0) {
+    if (row == PATH_EDIT_ROW_USE_THIS) {
         return PATH_EDIT_KIND_USE_THIS;
+    }
+    if (row == PATH_EDIT_ROW_SELECT_DRIVE) {
+        return PATH_EDIT_KIND_SELECT_DRIVE;
     }
     if (row == path_edit_dotdot_row_index(path_edit)) {
         return PATH_EDIT_KIND_DOTDOT;
@@ -555,6 +577,43 @@ static PathEditRowKind path_edit_row_kind(const PathEditState *path_edit, int ro
     int file_index = row - path_edit_first_dir_row(path_edit);
     *file_index_out = file_index;
     return PATH_EDIT_KIND_DIR;
+}
+
+/* Populate path_edit->drives with the OS-visible filesystem roots.
+ * Windows: read GetLogicalDrives() and emit "X:\" for each set bit.
+ * POSIX (Linux/Android/macOS): a single "/" entry — the platform has
+ * no drive concept, but the entry still gives the user a "jump to
+ * root" shortcut without leaving the picker. */
+static void path_edit_populate_drives(PathEditState *path_edit)
+{
+    path_edit->drive_count = 0;
+    path_edit->drive_index = 0;
+    path_edit->drive_scroll = 0;
+#if defined(_WIN32)
+    DWORD mask = GetLogicalDrives();
+    for (int letter = 0; letter < 26 && path_edit->drive_count < PATH_EDIT_DRIVE_MAX; letter++) {
+        if ((mask & (1U << letter)) == 0) {
+            continue;
+        }
+        char *slot = path_edit->drives[path_edit->drive_count];
+        slot[0] = (char)('A' + letter);
+        slot[1] = ':';
+        slot[2] = '/';
+        slot[3] = '\0';
+        path_edit->drive_count++;
+    }
+    if (path_edit->drive_count > 0) {
+        return;
+    }
+#endif
+    /* POSIX fallback (also reached on Windows when GetLogicalDrives
+     * returns no bits, which would only happen in heavily sandboxed
+     * environments): present "/" so the user can still escape to
+     * a deterministic root. */
+    char *slot = path_edit->drives[0];
+    slot[0] = '/';
+    slot[1] = '\0';
+    path_edit->drive_count = 1;
 }
 
 static void path_edit_enter_screen(SettingsState *settings, const Preferences *preferences)
@@ -634,6 +693,12 @@ static void path_edit_navigate_index(PathEditState *path_edit, const InputState 
     update_browse_scroll(path_edit);
 }
 
+static void path_edit_enter_drive_select(PathEditState *path_edit)
+{
+    path_edit_populate_drives(path_edit);
+    path_edit->mode = PATH_EDIT_DRIVE_SELECT;
+}
+
 /* Returns true when the row dispatch already committed + exited the
  * screen (row was USE_THIS); the caller must not touch settings/path_edit
  * after that point. */
@@ -648,6 +713,9 @@ static bool path_edit_dispatch_confirm(SettingsState *settings, Preferences *pre
         path_edit_exit(settings);
         show_toast(settings, "Data directory saved");
         return true;
+    case PATH_EDIT_KIND_SELECT_DRIVE:
+        path_edit_enter_drive_select(path_edit);
+        return false;
     case PATH_EDIT_KIND_DOTDOT: {
         const char *parent = GetPrevDirectoryPath(path_edit->buf);
         if (parent != nullptr) {
@@ -726,15 +794,63 @@ static void handle_path_edit_keyboard(SettingsState *settings,
     }
 }
 
+static void handle_path_edit_drive_select(SettingsState *settings, const InputState *input, const BindingStore *store)
+{
+    PathEditState *path_edit = &settings->path_edit;
+    int total = path_edit->drive_count;
+    if (total <= 0) {
+        path_edit->mode = PATH_EDIT_BROWSE;
+        return;
+    }
+    if (input_pressed(input, store, ACTION_NAV_UP) && path_edit->drive_index > 0) {
+        path_edit->drive_index--;
+    }
+    if (input_pressed(input, store, ACTION_NAV_DOWN) && path_edit->drive_index < total - 1) {
+        path_edit->drive_index++;
+    }
+    if (input_pressed(input, store, ACTION_PAGE_UP)) {
+        path_edit->drive_index -= PATH_EDIT_VISIBLE_ROWS;
+        if (path_edit->drive_index < 0) {
+            path_edit->drive_index = 0;
+        }
+    }
+    if (input_pressed(input, store, ACTION_PAGE_DOWN)) {
+        path_edit->drive_index += PATH_EDIT_VISIBLE_ROWS;
+        if (path_edit->drive_index >= total) {
+            path_edit->drive_index = total - 1;
+        }
+    }
+    if (path_edit->drive_index < path_edit->drive_scroll) {
+        path_edit->drive_scroll = path_edit->drive_index;
+    } else if (path_edit->drive_index >= path_edit->drive_scroll + PATH_EDIT_VISIBLE_ROWS) {
+        path_edit->drive_scroll = path_edit->drive_index - PATH_EDIT_VISIBLE_ROWS + 1;
+    }
+    if (input_pressed(input, store, ACTION_CANCEL)) {
+        path_edit->mode = PATH_EDIT_BROWSE;
+        return;
+    }
+    if (input_pressed(input, store, ACTION_CONFIRM)) {
+        path_edit_set_buf(path_edit, path_edit->drives[path_edit->drive_index]);
+        path_edit->mode = PATH_EDIT_BROWSE;
+        path_edit_refresh(path_edit);
+    }
+}
+
 static void handle_path_edit_input(SettingsState *settings,
                                    Preferences *preferences,
                                    const InputState *input,
                                    const BindingStore *store)
 {
-    if (settings->path_edit.mode == PATH_EDIT_KEYBOARD) {
+    switch (settings->path_edit.mode) {
+    case PATH_EDIT_KEYBOARD:
         handle_path_edit_keyboard(settings, preferences, input, store);
-    } else {
+        break;
+    case PATH_EDIT_DRIVE_SELECT:
+        handle_path_edit_drive_select(settings, input, store);
+        break;
+    case PATH_EDIT_BROWSE:
         handle_path_edit_browse(settings, preferences, input, store);
+        break;
     }
 }
 
@@ -1379,6 +1495,9 @@ static void path_edit_browse_label(const PathEditState *path_edit, int row, char
     case PATH_EDIT_KIND_USE_THIS:
         (void)snprintf(out, cap, "<USE THIS DIRECTORY>");
         return;
+    case PATH_EDIT_KIND_SELECT_DRIVE:
+        (void)snprintf(out, cap, "<SELECT DRIVE>");
+        return;
     case PATH_EDIT_KIND_DOTDOT:
         (void)snprintf(out, cap, "../");
         return;
@@ -1457,6 +1576,37 @@ render_path_edit_browse(const SettingsState *settings, const BindingStore *store
     render_path_edit_hints(settings, store, pairs, screen);
 }
 
+static void
+render_path_edit_drive_select(const SettingsState *settings, const BindingStore *store, Rectangle screen, int row_y)
+{
+    const PathEditState *path_edit = &settings->path_edit;
+    static const HintPair pairs[] = {
+        {ACTION_CONFIRM, "pick drive"},
+        {ACTION_CANCEL, "back"},
+        {ACTION_COUNT, nullptr},
+    };
+    /* Early return on the empty case keeps the loop guarded by a known
+     * non-zero drive_count and a non-negative drive_scroll, which the
+     * static analyzer cannot otherwise prove (it does not propagate
+     * the populate-drives invariants to the renderer). */
+    if (path_edit->drive_count <= 0) {
+        draw_text(settings, "(no drives)", LIST_LEFT_PAD, row_y, color_for_row(false, true));
+        render_path_edit_hints(settings, store, pairs, screen);
+        return;
+    }
+    int scroll = path_edit->drive_scroll < 0 ? 0 : path_edit->drive_scroll;
+    int last = scroll + PATH_EDIT_VISIBLE_ROWS;
+    if (last > path_edit->drive_count) {
+        last = path_edit->drive_count;
+    }
+    for (int row = scroll; row < last; row++) {
+        bool selected = (row == path_edit->drive_index);
+        draw_text(settings, path_edit->drives[row], LIST_LEFT_PAD, row_y, color_for_row(selected, false));
+        row_y += LIST_LINE_HEIGHT;
+    }
+    render_path_edit_hints(settings, store, pairs, screen);
+}
+
 static void render_path_edit_screen(
     const SettingsState *settings, const BindingStore *store, Rectangle screen, int screen_width, int screen_height)
 {
@@ -1468,9 +1618,14 @@ static void render_path_edit_screen(
               (Color){SETTINGS_TEXT_HIGHLIGHT_R, SETTINGS_TEXT_HIGHLIGHT_G, SETTINGS_TEXT_HIGHLIGHT_B, 255});
 
     int body_y = LIST_TITLE_PAD + (LIST_LINE_HEIGHT * 3);
-    if (settings->path_edit.mode == PATH_EDIT_BROWSE) {
+    switch (settings->path_edit.mode) {
+    case PATH_EDIT_BROWSE:
         render_path_edit_browse(settings, store, screen, body_y);
-    } else {
+        break;
+    case PATH_EDIT_DRIVE_SELECT:
+        render_path_edit_drive_select(settings, store, screen, body_y);
+        break;
+    case PATH_EDIT_KEYBOARD: {
         keyboard_widget_draw(&settings->path_edit.kb, (KbScreenSize){screen_width, screen_height}, settings->font);
         static const HintPair pairs[] = {
             {ACTION_CONFIRM, "pick"}, {ACTION_KEYBOARD_BACKSPACE, "backspace"},
@@ -1478,6 +1633,8 @@ static void render_path_edit_screen(
             {ACTION_COUNT, nullptr},
         };
         render_path_edit_hints(settings, store, pairs, screen);
+        break;
+    }
     }
 }
 

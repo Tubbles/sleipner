@@ -1372,32 +1372,51 @@ value `Preferences` already held, so adding new keys later does not
 break old saved files.
 
 **Path Picker UX (Settings → General → Data directory):** a hybrid
-screen with two modes that share one buffer.
+screen with three modes that share one buffer.
 
 - BROWSE (default): raylib `LoadDirectoryFilesEx(buf, "DIRS*",
   false)` lists subdirectories. The list always starts with a
   synthesized `<USE THIS DIRECTORY>` row at index 0 — the screen
   opens with that row selected, so a single CONFIRM (gamepad
   RIGHT_FACE_DOWN, keyboard Enter) commits the seeded `data_dir`
-  and exits. A `..` row follows when not at filesystem root.
-  Subdirectory rows come after. CONFIRM dispatches per row:
-  USE_THIS commits, `..` goes up, anything else enters that folder.
-  NAV_UP/DOWN and PAGE_UP/DOWN move the cursor, CANCEL goes up one
-  level (or exits at root). One action verb (CONFIRM) means no
-  binding clash — the earlier draft used `ACTION_INTERACT` for
-  commit, which shared the gamepad south face with `ACTION_CONFIRM`
-  and broke "enter folder" on gamepad entirely.
+  and exits. A `<SELECT DRIVE>` row follows at index 1, then a
+  `..` row when not at filesystem root, then subdirectories.
+  CONFIRM dispatches per row: USE_THIS commits, SELECT_DRIVE
+  enters DRIVE_SELECT mode, `..` goes up, anything else enters
+  that folder. NAV_UP/DOWN and PAGE_UP/DOWN move the cursor;
+  CANCEL goes up one level (or exits at root). One action verb
+  (CONFIRM) means no binding clash — the earlier draft used
+  `ACTION_INTERACT` for commit, which shared the gamepad south
+  face with `ACTION_CONFIRM` and broke "enter folder" on gamepad
+  entirely.
+
+  Both the seed and every refresh run through `path_normalize`
+  (backslash → slash, collapse runs of slashes) and
+  `path_edit_make_absolute` (prepend `GetWorkingDirectory()` if
+  the buffer is relative). The first defends against raylib's
+  `_WIN32` path joiner emitting `/\data` from `basePath="/"` and
+  `entry="data"`; the second defends against the default seed
+  `data/` falling off the end of `GetPrevDirectoryPath` after one
+  `..` press. Commit re-normalizes once more before writing the
+  Str so a path typed via KEYBOARD mode lands forward-slash-only.
+- DRIVE_SELECT: presents filesystem roots. On Windows
+  `GetLogicalDrives()` produces `A:/` … `Z:/`; on POSIX a single
+  `/` is shown so the user always has a "jump to root" shortcut
+  inside the picker. CONFIRM picks a drive and returns to BROWSE
+  rooted at it; CANCEL returns to BROWSE without changing buf.
 - KEYBOARD: reuses the two-level radial `KeyboardWidget` from
   `engine/src/keyboard_widget.{h,c}` (extracted from the editor's
-  word builder so it has no editor dependency). Type into the same
-  buffer. CANCEL backspaces; the widget's
-  `KB_RESULT_EXIT_REQUESTED` (CANCEL at top-level group on empty
-  buffer) drops back to BROWSE rather than committing — commit
-  always goes through the BROWSE list's USE_THIS row, so the user
-  cannot accidentally save by emptying the keyboard buffer.
+  word builder so it has no editor dependency). Type into the
+  same buffer. ACTION_KEYBOARD_BACKSPACE (default Backspace key,
+  gamepad Y / RIGHT_FACE_UP) deletes one character; CANCEL always
+  exits the widget in a single press, no matter how deep into a
+  sub-group the user has navigated. The host treats
+  `KB_RESULT_EXIT_REQUESTED` as "drop back to BROWSE" rather than
+  committing — commit always goes through BROWSE's USE_THIS row,
+  so the user cannot accidentally save by emptying the buffer.
 
 ACTION_WB_KEYBOARD_MODE (gamepad RIGHT_FACE_LEFT, keyboard Delete) toggles
-between modes without leaving the screen.
+between BROWSE and KEYBOARD without leaving the screen.
 
 **Trace log two-stage init:** `debug_init` opens trace.log at the
 boot-default path (compile-time) before preferences load, then

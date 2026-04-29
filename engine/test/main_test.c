@@ -68,6 +68,7 @@ void test_integration_menu_gamepad_navigation(void);
 void test_integration_settings_tab_switch(void);
 void test_integration_settings_path_edit_commit(void);
 void test_integration_settings_path_edit_parent_lists_contents(void);
+void test_integration_settings_path_edit_drive_select_round_trip(void);
 void test_integration_settings_path_edit_commit_normalizes_separators(void);
 
 /* toml_emitter_test.c */
@@ -183,6 +184,7 @@ int main(void)
     RUN_TEST(test_integration_settings_tab_switch);
     RUN_TEST(test_integration_settings_path_edit_commit);
     RUN_TEST(test_integration_settings_path_edit_parent_lists_contents);
+    RUN_TEST(test_integration_settings_path_edit_drive_select_round_trip);
     RUN_TEST(test_integration_settings_path_edit_commit_normalizes_separators);
 
     RUN_TEST(test_level_load_first);

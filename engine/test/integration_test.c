@@ -1061,6 +1061,63 @@ void test_integration_settings_path_edit_parent_lists_contents(void)
     (void)rmdir(base);
 }
 
+/* The synthesized "<SELECT DRIVE>" row at index 1 in the browse list
+ * must transition path-edit into DRIVE_SELECT mode. Picking the first
+ * drive (which on Linux is always "/") returns to BROWSE rooted there.
+ *
+ * The test drives the screen as a black box: no internal mode helpers
+ * are called — only input frames and observable state assertions. */
+void test_integration_settings_path_edit_drive_select_round_trip(void)
+{
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_gamedata));
+
+    InputState menu_open = {0};
+    input_state_press_key(&menu_open, KEY_F3);
+    test_advance_frame(&game, menu_open);
+    for (int step = 0; step < 3; step++) {
+        InputState down = {0};
+        input_state_press_key(&down, KEY_DOWN);
+        test_advance_frame(&game, down);
+    }
+    InputState confirm = {0};
+    input_state_press_key(&confirm, KEY_ENTER);
+    test_advance_frame(&game, confirm);
+
+    InputState tab_next = {0};
+    input_state_press_key(&tab_next, KEY_TAB);
+    test_advance_frame(&game, tab_next);
+
+    InputState confirm_path = {0};
+    input_state_press_key(&confirm_path, KEY_ENTER);
+    test_advance_frame(&game, confirm_path);
+    TEST_ASSERT_EQUAL_INT(SETTINGS_SCREEN_PATH_EDIT, (int)game.settings.screen);
+    TEST_ASSERT_EQUAL_INT(PATH_EDIT_BROWSE, (int)game.settings.path_edit.mode);
+
+    /* Move down once: row 0 is USE THIS, row 1 is SELECT DRIVE. */
+    InputState nav_down = {0};
+    input_state_press_key(&nav_down, KEY_DOWN);
+    test_advance_frame(&game, nav_down);
+    TEST_ASSERT_EQUAL_INT(1, game.settings.path_edit.browse_index);
+
+    /* Confirm enters DRIVE_SELECT mode. The drive list is populated. */
+    InputState enter_drive = {0};
+    input_state_press_key(&enter_drive, KEY_ENTER);
+    test_advance_frame(&game, enter_drive);
+    TEST_ASSERT_EQUAL_INT(PATH_EDIT_DRIVE_SELECT, (int)game.settings.path_edit.mode);
+    TEST_ASSERT_GREATER_THAN_INT(0, game.settings.path_edit.drive_count);
+
+    /* Picking the first drive sets the buffer and flips back to BROWSE.
+     * On Linux the drive is "/", so we land at filesystem root. */
+    InputState pick = {0};
+    input_state_press_key(&pick, KEY_ENTER);
+    test_advance_frame(&game, pick);
+    TEST_ASSERT_EQUAL_INT(PATH_EDIT_BROWSE, (int)game.settings.path_edit.mode);
+    TEST_ASSERT_TRUE(game.settings.path_edit.at_root);
+
+    test_game_teardown(&game);
+}
+
 /* Commit a path that contains backslashes (as raylib's _WIN32 path-join
  * code can produce when the Proton build joins "/" with "data") and
  * verify the saved data_dir is normalized to forward slashes with no
