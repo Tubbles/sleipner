@@ -383,8 +383,8 @@ static void draw_debug_info(GameState *state, RectU32 game_bounds)
     int raw_total = GetSleipnerAndroidRawInputEventCount();
     int raw_show = raw_total < 6 ? raw_total : 6;
     draw_ui_text(font,
-                 TextFormat("evt: %d captured, showing last %d  kc-trust: %s", raw_total, raw_show,
-                            GetSleipnerKeycodeTrust() ? "ON" : "OFF"),
+                 TextFormat("evt: %d captured, showing last %d  route: %s", raw_total, raw_show,
+                            GetSleipnerKeycodeTrust() ? "keycode" : "source-veto"),
                  DEBUG_MARGIN, DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, debug_text_color);
     for (int slot = raw_show - 1; slot >= 0; slot--) {
         int32_t src = 0;
@@ -1249,6 +1249,27 @@ int main(void)
 
         InputState input = {0};
         input_capture(&input);
+
+#if defined(__ANDROID__)
+        /* Debug chord for the raylib Android route toggle (gated on
+         * debug_enabled so it doesn't fire during normal play). LT held +
+         * D-pad Down freshly pressed flips between the patched (keycode)
+         * and upstream-broken (source-veto) routing logic. Both inputs
+         * arrive via motion events on the X2, so the chord works in either
+         * routing state. Keyboard equivalent: Shift + Down. */
+        if (state->debug_enabled) {
+            extern void SetSleipnerKeycodeTrust(bool enabled);
+            extern bool GetSleipnerKeycodeTrust(void);
+            bool gp_chord = GetGamepadAxisMovement(0, GAMEPAD_AXIS_LEFT_TRIGGER) > 0.0F &&
+                            IsGamepadButtonPressed(0, GAMEPAD_BUTTON_LEFT_FACE_DOWN);
+            bool kb_chord = IsKeyDown(KEY_LEFT_SHIFT) && IsKeyPressed(KEY_DOWN);
+            if (gp_chord || kb_chord) {
+                bool now = !GetSleipnerKeycodeTrust();
+                SetSleipnerKeycodeTrust(now);
+                debug_log(&state->debug, "android route toggled: %s", now ? "keycode" : "source-veto");
+            }
+        }
+#endif
 
         log_gamepad_changes(state, &prev_gamepads, state->frame);
 
