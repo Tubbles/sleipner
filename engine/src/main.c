@@ -131,7 +131,7 @@ static Str trace_log_path(const GameState *state, Allocator alloc)
 #define DEBUG_FONT_SIZE 32
 #define DEBUG_LINE_HEIGHT 26
 #define DEBUG_PANEL_WIDTH 420
-#define DEBUG_LINES 18
+#define DEBUG_LINES 20
 #define FONT_PREVIEW_SIZE 32
 
 /* UI text helpers — wrap DrawTextEx with the same ergonomics as DrawText */
@@ -343,6 +343,31 @@ static void draw_debug_info(GameState *state, RectU32 game_bounds)
             (void)str_append_cstr(&buttons, " (none)");
         }
         draw_ui_text(font, buttons.ptr, DEBUG_MARGIN, DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE,
+                     debug_text_color);
+    }
+
+    {
+        SCRATCH_SCOPE(&state->scratch_arena);
+        Str keys = str_new(allocator_arena(&state->scratch_arena));
+        (void)str_append_cstr(&keys, "keys:");
+        bool any_key_pressed = false;
+        for (int key = 1; key < INPUT_MAX_KEY_CODE; key++) {
+            if (!IsKeyDown(key)) {
+                continue;
+            }
+            const char *label = input_func_key_label(key);
+            if (strcmp(label, "?") == 0) {
+                (void)str_append_cstr(&keys, TextFormat(" k%d", key));
+            } else {
+                (void)str_append_cstr(&keys, " ");
+                (void)str_append_cstr(&keys, label);
+            }
+            any_key_pressed = true;
+        }
+        if (!any_key_pressed) {
+            (void)str_append_cstr(&keys, " (none)");
+        }
+        draw_ui_text(font, keys.ptr, DEBUG_MARGIN, DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE,
                      debug_text_color);
     }
 
