@@ -131,7 +131,7 @@ static Str trace_log_path(const GameState *state, Allocator alloc)
 #define DEBUG_FONT_SIZE 32
 #define DEBUG_LINE_HEIGHT 26
 #define DEBUG_PANEL_WIDTH 420
-#define DEBUG_LINES 14
+#define DEBUG_LINES 18
 #define FONT_PREVIEW_SIZE 32
 
 /* UI text helpers — wrap DrawTextEx with the same ergonomics as DrawText */
@@ -314,10 +314,32 @@ static void draw_debug_info(GameState *state, RectU32 game_bounds)
                  DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, debug_text_color);
 
     for (int index = 0; index < 4; index++) {
-        if (IsGamepadAvailable(index)) {
-            draw_ui_text(font, TextFormat("  gp%d: %s", index, GetGamepadName(index)), DEBUG_MARGIN,
-                         DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, debug_text_color);
+        if (!IsGamepadAvailable(index)) {
+            continue;
         }
+        draw_ui_text(font, TextFormat("  gp%d: %s", index, GetGamepadName(index)), DEBUG_MARGIN,
+                     DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, debug_text_color);
+        SCRATCH_SCOPE(&state->scratch_arena);
+        Str buttons = str_new(allocator_arena(&state->scratch_arena));
+        (void)str_append_cstr(&buttons, "       btn:");
+        bool any_pressed = false;
+        for (int button = 1; button < INPUT_GP_BUTTON_COUNT; button++) {
+            if (!IsGamepadButtonDown(index, button)) {
+                continue;
+            }
+            const char *label = input_func_gp_button_label(button);
+            if (strcmp(label, "?") == 0) {
+                continue;
+            }
+            (void)str_append_cstr(&buttons, " ");
+            (void)str_append_cstr(&buttons, label);
+            any_pressed = true;
+        }
+        if (!any_pressed) {
+            (void)str_append_cstr(&buttons, " (none)");
+        }
+        draw_ui_text(font, buttons.ptr, DEBUG_MARGIN, DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE,
+                     debug_text_color);
     }
 
     /* Log panel at bottom */
