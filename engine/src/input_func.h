@@ -66,8 +66,11 @@ typedef enum {
 
     /* Word builder / gamepad keyboard */
     ACTION_WB_KEYBOARD_MODE,
-    ACTION_WB_APPEND,
-    ACTION_WB_POP,
+    /* Backspace inside the on-screen keyboard widget (radial picker).
+     * Kept distinct from ACTION_CANCEL so the host screen can use B / Esc
+     * for "back / exit keyboard mode" without it also chewing characters
+     * out of the buffer. */
+    ACTION_KEYBOARD_BACKSPACE,
 
     /* Gameplay */
     ACTION_INTERACT,

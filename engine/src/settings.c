@@ -1369,9 +1369,8 @@ static void render_path_edit_screen(
     } else {
         keyboard_widget_draw(&settings->path_edit.kb, (KbScreenSize){screen_width, screen_height}, settings->font);
         static const HintPair pairs[] = {
-            {ACTION_CONFIRM, "pick"},
-            {ACTION_CANCEL, "backspace"},
-            {ACTION_WB_KEYBOARD_MODE, "browse mode"},
+            {ACTION_CONFIRM, "pick"}, {ACTION_KEYBOARD_BACKSPACE, "backspace"},
+            {ACTION_CANCEL, "back"},  {ACTION_WB_KEYBOARD_MODE, "browse mode"},
             {ACTION_COUNT, nullptr},
         };
         render_path_edit_hints(settings, store, pairs, screen);

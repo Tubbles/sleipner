@@ -722,8 +722,13 @@ const EditorHintTable *radial_hints_table(void)
 }
 
 static const EditorActionHint word_builder_hints[] = {
-    {ACTION_NAV_UP, "Prev"},         {ACTION_NAV_DOWN, "Next"},         {ACTION_PAGE_UP, "Page up"},
-    {ACTION_PAGE_DOWN, "Page down"}, {ACTION_CONFIRM, "Append / Done"}, {ACTION_WB_KEYBOARD_MODE, "Keyboard"},
+    {ACTION_NAV_UP, "Prev"},
+    {ACTION_NAV_DOWN, "Next"},
+    {ACTION_PAGE_UP, "Page up"},
+    {ACTION_PAGE_DOWN, "Page down"},
+    {ACTION_CONFIRM, "Append / Done"},
+    {ACTION_WB_KEYBOARD_MODE, "Keyboard"},
+    {ACTION_KEYBOARD_BACKSPACE, "Bksp"},
     {ACTION_CANCEL, "Pop / Cancel"},
 };
 
@@ -756,7 +761,8 @@ const EditorHintTable *fuzzy_finder_hints_table(void)
 
 static const EditorActionHint gamepad_kb_hints[] = {
     {ACTION_CONFIRM, "Select"},
-    {ACTION_CANCEL, "Back / Bksp"},
+    {ACTION_KEYBOARD_BACKSPACE, "Bksp"},
+    {ACTION_CANCEL, "Back"},
     {ACTION_WB_KEYBOARD_MODE, "Word builder"},
 };
 

@@ -124,8 +124,12 @@ void test_cancel_at_top_level_with_empty_buffer_emits_exit(void)
     TEST_ASSERT_EQUAL_INT(KB_RESULT_EXIT_REQUESTED, result);
 }
 
-void test_cancel_at_top_level_with_buffer_backspaces(void)
+void test_cancel_at_top_level_with_buffer_exits(void)
 {
+    /* New behavior: Cancel (Esc / B) is always "leave the widget" once
+     * the user is at the top-level group, regardless of buffer contents.
+     * The backspace path now lives on ACTION_KEYBOARD_BACKSPACE so the
+     * host screen can use B / Esc as "back" without it eating chars. */
     buf[0] = 'a';
     buf[1] = 'b';
     buf[2] = '\0';
@@ -133,20 +137,48 @@ void test_cancel_at_top_level_with_buffer_backspaces(void)
     InputState input = {0};
     input_state_press_key(&input, KEY_ESCAPE);
     KeyboardWidgetResult result = keyboard_widget_handle_input(&widget, &input, &store);
+    TEST_ASSERT_EQUAL_INT(KB_RESULT_EXIT_REQUESTED, result);
+    TEST_ASSERT_EQUAL_INT(2, len);
+    TEST_ASSERT_EQUAL_INT('a', buf[0]);
+    TEST_ASSERT_EQUAL_INT('b', buf[1]);
+}
+
+void test_backspace_deletes_one_character(void)
+{
+    buf[0] = 'a';
+    buf[1] = 'b';
+    buf[2] = '\0';
+    len = 2;
+    InputState input = {0};
+    input_state_press_key(&input, KEY_BACKSPACE);
+    KeyboardWidgetResult result = keyboard_widget_handle_input(&widget, &input, &store);
     TEST_ASSERT_EQUAL_INT(KB_RESULT_BACKSPACED, result);
     TEST_ASSERT_EQUAL_INT(1, len);
     TEST_ASSERT_EQUAL_INT('a', buf[0]);
     TEST_ASSERT_EQUAL_INT('\0', buf[1]);
 }
 
-void test_cancel_inside_group_returns_to_top_level(void)
+void test_backspace_on_empty_buffer_is_noop(void)
 {
+    InputState input = {0};
+    input_state_press_key(&input, KEY_BACKSPACE);
+    KeyboardWidgetResult result = keyboard_widget_handle_input(&widget, &input, &store);
+    TEST_ASSERT_EQUAL_INT(KB_RESULT_NONE, result);
+    TEST_ASSERT_EQUAL_INT(0, len);
+}
+
+void test_cancel_inside_group_exits_directly(void)
+{
+    /* New behavior: Cancel always exits in one press. The "pop group"
+     * intermediate step was removed so the host screen can rely on
+     * Cancel being a deterministic single-press exit, not a depth-
+     * dependent multi-press. The group state is left untouched; the
+     * host resets it via keyboard_widget_reset on next entry. */
     widget.group = 2;
     InputState input = {0};
     input_state_press_key(&input, KEY_ESCAPE);
     KeyboardWidgetResult result = keyboard_widget_handle_input(&widget, &input, &store);
-    TEST_ASSERT_EQUAL_INT(KB_RESULT_NONE, result);
-    TEST_ASSERT_EQUAL_INT(-1, widget.group);
+    TEST_ASSERT_EQUAL_INT(KB_RESULT_EXIT_REQUESTED, result);
 }
 
 void test_typing_at_capacity_does_not_overflow(void)
@@ -223,8 +255,10 @@ int main(void)
     RUN_TEST(test_reset_clears_group_and_selected);
     RUN_TEST(test_confirm_north_picks_first_group_then_first_char);
     RUN_TEST(test_cancel_at_top_level_with_empty_buffer_emits_exit);
-    RUN_TEST(test_cancel_at_top_level_with_buffer_backspaces);
-    RUN_TEST(test_cancel_inside_group_returns_to_top_level);
+    RUN_TEST(test_cancel_at_top_level_with_buffer_exits);
+    RUN_TEST(test_backspace_deletes_one_character);
+    RUN_TEST(test_backspace_on_empty_buffer_is_noop);
+    RUN_TEST(test_cancel_inside_group_exits_directly);
     RUN_TEST(test_typing_at_capacity_does_not_overflow);
     RUN_TEST(test_keyboard_group_sizes_consistent);
     RUN_TEST(test_keyboard_all_lowercase_alpha_present);

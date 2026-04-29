@@ -134,14 +134,20 @@ keyboard_widget_handle_input(KeyboardWidget *widget, const InputState *input, co
         return KB_RESULT_NONE;
     }
 
-    if (input_pressed(input, bindings, ACTION_CANCEL)) {
-        if (widget->group >= 0) {
-            widget->group = -1;
-            return KB_RESULT_NONE;
-        }
+    /* Backspace and "back / exit" are deliberately split so the host
+     * screen can bind them to different physical inputs. CANCEL (Esc, B)
+     * always means "leave the widget" — even from inside a sub-group, so
+     * the gesture is a single unambiguous press, never an arbitrary number
+     * of presses depending on group depth. BACKSPACE deletes one character
+     * and never exits. */
+    if (input_pressed(input, bindings, ACTION_KEYBOARD_BACKSPACE)) {
         if (kb_backspace(widget)) {
             return KB_RESULT_BACKSPACED;
         }
+        return KB_RESULT_NONE;
+    }
+
+    if (input_pressed(input, bindings, ACTION_CANCEL)) {
         return KB_RESULT_EXIT_REQUESTED;
     }
 

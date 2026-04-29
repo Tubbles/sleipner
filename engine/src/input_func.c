@@ -553,9 +553,8 @@ static const DefaultAtom default_attr_inc_100[] = { K(KEY_PAGE_UP),   ATOM_END, 
 static const DefaultAtom default_blueprint_duplicate[] = { K(KEY_LEFT_BRACKET), ATOM_END, GB(GAMEPAD_BUTTON_LEFT_TRIGGER_1), ATOM_END, ALTS_END };
 static const DefaultAtom default_blueprint_remove[]    = { K(KEY_DELETE), ATOM_END, GB(GAMEPAD_BUTTON_RIGHT_FACE_LEFT), ATOM_END, ALTS_END };
 
-static const DefaultAtom default_wb_keyboard_mode[] = { K(KEY_DELETE), ATOM_END, GB(GAMEPAD_BUTTON_RIGHT_FACE_LEFT), ATOM_END, ALTS_END };
-static const DefaultAtom default_wb_append[]        = { K(KEY_ENTER),  ATOM_END, GB(GAMEPAD_BUTTON_RIGHT_FACE_DOWN), ATOM_END, ALTS_END };
-static const DefaultAtom default_wb_pop[]           = { K(KEY_ESCAPE), ATOM_END, GB(GAMEPAD_BUTTON_RIGHT_FACE_RIGHT), ATOM_END, ALTS_END };
+static const DefaultAtom default_wb_keyboard_mode[]  = { K(KEY_DELETE),    ATOM_END, GB(GAMEPAD_BUTTON_RIGHT_FACE_LEFT), ATOM_END, ALTS_END };
+static const DefaultAtom default_keyboard_backspace[] = { K(KEY_BACKSPACE), ATOM_END, GB(GAMEPAD_BUTTON_RIGHT_FACE_UP),   ATOM_END, ALTS_END };
 
 static const DefaultAtom default_interact[] = { K(KEY_SPACE), ATOM_END, GB(GAMEPAD_BUTTON_RIGHT_FACE_DOWN), ATOM_END, ALTS_END };
 
@@ -634,8 +633,7 @@ static const DefaultAtom *const default_action_atoms[ACTION_COUNT] = {
     [ACTION_BLUEPRINT_DUPLICATE] = default_blueprint_duplicate,
     [ACTION_BLUEPRINT_REMOVE] = default_blueprint_remove,
     [ACTION_WB_KEYBOARD_MODE] = default_wb_keyboard_mode,
-    [ACTION_WB_APPEND] = default_wb_append,
-    [ACTION_WB_POP] = default_wb_pop,
+    [ACTION_KEYBOARD_BACKSPACE] = default_keyboard_backspace,
     [ACTION_INTERACT] = default_interact,
     [ACTION_MENU_TOGGLE] = default_menu_toggle,
     [ACTION_FONT_PREVIEW_TOGGLE] = default_font_preview_toggle,
@@ -896,8 +894,7 @@ static const char *const action_toml_names[ACTION_COUNT] = {
     [ACTION_BLUEPRINT_DUPLICATE] = "BLUEPRINT_DUPLICATE",
     [ACTION_BLUEPRINT_REMOVE] = "BLUEPRINT_REMOVE",
     [ACTION_WB_KEYBOARD_MODE] = "WB_KEYBOARD_MODE",
-    [ACTION_WB_APPEND] = "WB_APPEND",
-    [ACTION_WB_POP] = "WB_POP",
+    [ACTION_KEYBOARD_BACKSPACE] = "KEYBOARD_BACKSPACE",
     [ACTION_INTERACT] = "INTERACT",
     [ACTION_MENU_TOGGLE] = "MENU_TOGGLE",
     [ACTION_FONT_PREVIEW_TOGGLE] = "FONT_PREVIEW_TOGGLE",
