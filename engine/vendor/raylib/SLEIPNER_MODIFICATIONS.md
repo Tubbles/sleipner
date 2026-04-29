@@ -11,7 +11,24 @@ docs, and the Zig build scripts are intentionally omitted.
 
 ## Patches applied in place
 
-None. Both 5.5-era patches are absorbed in raylib 6.0 upstream.
+- **0001-android-trust-keycode-not-source-bits.patch** —
+  `src/platforms/rcore_android.c` `AndroidInputCallback` regression
+  introduced by upstream PR #5439 (commit `5e14ac5`, shipped in
+  raylib 6.0). The new guard
+  `!FLAG_IS_SET(source, AINPUT_SOURCE_KEYBOARD)` drops every
+  face-button event from controllers that advertise the
+  `AINPUT_SOURCE_KEYBOARD` bit alongside `JOYSTICK`/`GAMEPAD` (e.g.
+  GameSir X2 Type-C reports source `0x01000511`). The patch removes
+  that guard and uses `AndroidTranslateGamepadButton(keycode)` as
+  the authoritative discriminator: recognised gamepad keycodes route
+  to the gamepad path, anything else falls through to the keyboard
+  handler instead of being silently dropped. This also fixes the
+  original bug PR #5439 was trying to address (Motorola Razr volume
+  keys arriving with `GAMEPAD` source bit set), since
+  `AKEYCODE_VOLUME_*` is not in the gamepad translation table and
+  now reaches the keyboard handler. Patch source:
+  `recipes/raylib/patches/0001-android-trust-keycode-not-source-bits.patch`.
+  Upstream issue / PR not yet filed.
 
 ## Patches absorbed in 6.0 (no-op upgrade)
 
