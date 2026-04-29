@@ -1251,19 +1251,18 @@ int main(void)
         input_capture(&input);
 
 #if defined(__ANDROID__)
-        /* Debug chord for the raylib Android route toggle (gated on
-         * debug_enabled so it doesn't fire during normal play). LT held +
-         * D-pad Down freshly pressed flips between the patched (keycode)
-         * and upstream-broken (source-veto) routing logic. Both inputs
-         * arrive via motion events on the X2, so the chord works in either
-         * routing state. Keyboard equivalent: Shift + Down. */
+        /* Debug toggle for the raylib Android route flag, gated on
+         * debug_enabled so it does not fire when the overlay is closed.
+         * Plain D-pad Down or keyboard Down freshly pressed flips between
+         * the patched (keycode) and upstream-broken (source-veto) logic.
+         * Both inputs arrive via motion events on the X2, so the binding
+         * works regardless of which routing state is currently active.
+         * Temporary exploration aid; collisions with NAV_DOWN in debug
+         * context are accepted. */
         if (state->debug_enabled) {
             extern void SetSleipnerKeycodeTrust(bool enabled);
             extern bool GetSleipnerKeycodeTrust(void);
-            bool gp_chord = GetGamepadAxisMovement(0, GAMEPAD_AXIS_LEFT_TRIGGER) > 0.0F &&
-                            IsGamepadButtonPressed(0, GAMEPAD_BUTTON_LEFT_FACE_DOWN);
-            bool kb_chord = IsKeyDown(KEY_LEFT_SHIFT) && IsKeyPressed(KEY_DOWN);
-            if (gp_chord || kb_chord) {
+            if (IsGamepadButtonPressed(0, GAMEPAD_BUTTON_LEFT_FACE_DOWN) || IsKeyPressed(KEY_DOWN)) {
                 bool now = !GetSleipnerKeycodeTrust();
                 SetSleipnerKeycodeTrust(now);
                 debug_log(&state->debug, "android route toggled: %s", now ? "keycode" : "source-veto");
