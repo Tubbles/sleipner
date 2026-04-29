@@ -379,10 +379,13 @@ static void draw_debug_info(GameState *state, RectU32 game_bounds)
     extern int GetSleipnerAndroidRawInputEventCount(void);
     extern void GetSleipnerAndroidRawInputEvent(int index, int32_t *source, int32_t *keycode, int32_t *action,
                                                 int32_t *event_type);
+    extern bool GetSleipnerKeycodeTrust(void);
     int raw_total = GetSleipnerAndroidRawInputEventCount();
     int raw_show = raw_total < 6 ? raw_total : 6;
-    draw_ui_text(font, TextFormat("evt: %d captured, showing last %d", raw_total, raw_show), DEBUG_MARGIN,
-                 DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, debug_text_color);
+    draw_ui_text(font,
+                 TextFormat("evt: %d captured, showing last %d  kc-trust: %s", raw_total, raw_show,
+                            GetSleipnerKeycodeTrust() ? "ON" : "OFF"),
+                 DEBUG_MARGIN, DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, debug_text_color);
     for (int slot = raw_show - 1; slot >= 0; slot--) {
         int32_t src = 0;
         int32_t kc = 0;
@@ -1129,6 +1132,21 @@ int main(void)
     /* Load textures and fonts into gamedata_arena — these sit at the bottom of the arena
      * below gamedata_base and survive every gamedata reload (only freed at game exit). */
     load_persistent_assets(state);
+
+#if defined(__ANDROID__)
+    /* Runtime toggle for the raylib Android keycode-trust patch. Drop a file
+     * named "disable_keycode_trust" into data_dir to fall back to the upstream
+     * raylib 6.0 behaviour for A/B comparison; remove the file to re-enable
+     * the fix. The state is logged once at startup. */
+    extern void SetSleipnerKeycodeTrust(bool enabled);
+    {
+        SCRATCH_SCOPE(&state->scratch_arena);
+        Str marker_path = compose_data_path(state, "disable_keycode_trust", allocator_arena(&state->scratch_arena));
+        bool disable = FileExists(marker_path.ptr);
+        SetSleipnerKeycodeTrust(!disable);
+        debug_log(&state->debug, "android keycode trust: %s (marker: %s)", disable ? "OFF" : "ON", marker_path.ptr);
+    }
+#endif
     /* Mark the high-water point: everything below here survives gamedata reloads */
     state->gamedata_base = arena_save(&state->gamedata_arena);
 

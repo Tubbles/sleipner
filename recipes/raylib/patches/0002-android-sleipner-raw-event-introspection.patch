@@ -1,8 +1,8 @@
 diff --git a/engine/vendor/raylib/src/platforms/rcore_android.c b/engine/vendor/raylib/src/platforms/rcore_android.c
-index af15aca..0c09cc9 100644
+index af15aca..e1b2d65 100644
 --- a/engine/vendor/raylib/src/platforms/rcore_android.c
 +++ b/engine/vendor/raylib/src/platforms/rcore_android.c
-@@ -258,6 +258,22 @@ static const KeyboardKey mapKeycode[KEYCODE_MAP_SIZE] = {
+@@ -258,6 +258,28 @@ static const KeyboardKey mapKeycode[KEYCODE_MAP_SIZE] = {
  
  static TouchRaw touchRaw = { 0 };
  
@@ -22,10 +22,16 @@ index af15aca..0c09cc9 100644
 +static int sleipnerRawEventHead = 0;
 +static int sleipnerRawEventCount = 0;
 +
++// SLEIPNER PATCH: runtime toggle for the keycode-trust fix in
++// AndroidInputCallback. Defaults to true (fix active). Sleipner flips it to
++// false at startup if `<data_dir>/disable_keycode_trust` exists, so we can A/B
++// against the upstream broken raylib 6.0 behaviour without rebuilding.
++static bool sleipnerKeycodeTrustEnabled = true;
++
  //----------------------------------------------------------------------------------
  // Module Internal Functions Declaration
  //----------------------------------------------------------------------------------
-@@ -1208,6 +1224,23 @@ static int32_t AndroidInputCallback(struct android_app *app, AInputEvent *event)
+@@ -1208,6 +1230,23 @@ static int32_t AndroidInputCallback(struct android_app *app, AInputEvent *event)
      int type = AInputEvent_getType(event);
      int source = AInputEvent_getSource(event);
  
@@ -49,7 +55,69 @@ index af15aca..0c09cc9 100644
      if (type == AINPUT_EVENT_TYPE_MOTION)
      {
          if (FLAG_IS_SET(source, AINPUT_SOURCE_JOYSTICK) ||
-@@ -1612,4 +1645,44 @@ static int android_close(void *cookie)
+@@ -1283,16 +1322,47 @@ static int32_t AndroidInputCallback(struct android_app *app, AInputEvent *event)
+         // discriminator: a recognised gamepad keycode routes to the gamepad
+         // path, anything else falls through to the keyboard handler instead
+         // of being silently dropped. See SLEIPNER_MODIFICATIONS.md.
+-        if (FLAG_IS_SET(source, AINPUT_SOURCE_JOYSTICK) ||
+-            FLAG_IS_SET(source, AINPUT_SOURCE_GAMEPAD))
++        // Runtime toggle: set sleipnerKeycodeTrustEnabled = false to fall back
++        // to the upstream raylib 6.0 behaviour for A/B comparison.
++        if (sleipnerKeycodeTrustEnabled)
+         {
+-            GamepadButton button = AndroidTranslateGamepadButton(keycode);
++            if (FLAG_IS_SET(source, AINPUT_SOURCE_JOYSTICK) ||
++                FLAG_IS_SET(source, AINPUT_SOURCE_GAMEPAD))
++            {
++                GamepadButton button = AndroidTranslateGamepadButton(keycode);
++
++                if (button != GAMEPAD_BUTTON_UNKNOWN)
++                {
++                    // Assuming a single gamepad, "detected" on its input event
++                    CORE.Input.Gamepad.ready[0] = true;
+ 
+-            if (button != GAMEPAD_BUTTON_UNKNOWN)
++                    if (AKeyEvent_getAction(event) == AKEY_EVENT_ACTION_DOWN)
++                    {
++                        CORE.Input.Gamepad.currentButtonState[0][button] = 1;
++                    }
++                    else CORE.Input.Gamepad.currentButtonState[0][button] = 0;  // Key up
++
++                    return 1; // Handled gamepad button
++                }
++                // Unknown keycode despite gamepad-class source bits — fall through
++                // to keyboard handling below instead of dropping the event.
++            }
++        }
++        else
++        {
++            // Upstream raylib 6.0 behaviour with the AINPUT_SOURCE_KEYBOARD veto.
++            // Kept in-tree behind the runtime toggle so we can reproduce the
++            // pre-fix symptom side by side without juggling two APK builds.
++            if ((FLAG_IS_SET(source, AINPUT_SOURCE_JOYSTICK) ||
++                 FLAG_IS_SET(source, AINPUT_SOURCE_GAMEPAD)) &&
++                !FLAG_IS_SET(source, AINPUT_SOURCE_KEYBOARD))
+             {
+-                // Assuming a single gamepad, "detected" on its input event
+                 CORE.Input.Gamepad.ready[0] = true;
+ 
++                GamepadButton button = AndroidTranslateGamepadButton(keycode);
++
++                if (button == GAMEPAD_BUTTON_UNKNOWN) return 1;
++
+                 if (AKeyEvent_getAction(event) == AKEY_EVENT_ACTION_DOWN)
+                 {
+                     CORE.Input.Gamepad.currentButtonState[0][button] = 1;
+@@ -1301,8 +1371,6 @@ static int32_t AndroidInputCallback(struct android_app *app, AInputEvent *event)
+ 
+                 return 1; // Handled gamepad button
+             }
+-            // Unknown keycode despite gamepad-class source bits — fall through
+-            // to keyboard handling below instead of dropping the event.
+         }
+ 
+         KeyboardKey key = ((keycode > 0) && (keycode < KEYCODE_MAP_SIZE))? mapKeycode[keycode] : KEY_NULL;
+@@ -1612,4 +1680,57 @@ static int android_close(void *cookie)
      return 0;
  }
  
@@ -91,6 +159,19 @@ index af15aca..0c09cc9 100644
 +    if (keycode) *keycode = e->keycode;
 +    if (action) *action = e->action;
 +    if (event_type) *event_type = e->event_type;
++}
++
++// SLEIPNER PATCH: runtime toggle for the keycode-trust fix in
++// AndroidInputCallback. Defaults to true. Sleipner declares these extern at
++// the call site; no raylib.h change.
++void SetSleipnerKeycodeTrust(bool enabled)
++{
++    sleipnerKeycodeTrustEnabled = enabled;
++}
++
++bool GetSleipnerKeycodeTrust(void)
++{
++    return sleipnerKeycodeTrustEnabled;
 +}
 +
  // EOF
