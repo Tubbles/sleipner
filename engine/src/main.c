@@ -329,10 +329,14 @@ static void draw_debug_info(GameState *state, RectU32 game_bounds)
             }
             const char *label = input_func_gp_button_label(button);
             if (strcmp(label, "?") == 0) {
-                continue;
+                /* Unmapped raylib code — show the raw index so no-name pads
+                 * with non-standard SDL gamecontrollerdb mappings are
+                 * diagnosable instead of silently dropped. */
+                (void)str_append_cstr(&buttons, TextFormat(" b%d", button));
+            } else {
+                (void)str_append_cstr(&buttons, " ");
+                (void)str_append_cstr(&buttons, label);
             }
-            (void)str_append_cstr(&buttons, " ");
-            (void)str_append_cstr(&buttons, label);
             any_pressed = true;
         }
         if (!any_pressed) {
