@@ -86,6 +86,14 @@ bool settings_is_open(const SettingsState *settings)
 
 void settings_cleanup(SettingsState *settings)
 {
+    /* path_edit_unload uses the static helper below, which cannot be
+     * forward-declared without dragging the whole PathEditState block
+     * upward. Inline the equivalent: drop the FilePathList allocations
+     * raylib hands us while still on the live SettingsState pointer. */
+    if (settings->path_edit.dir_list_loaded) {
+        UnloadDirectoryFiles(settings->path_edit.dir_list);
+        settings->path_edit.dir_list_loaded = false;
+    }
     if (settings->font_loaded) {
         UnloadFont(settings->font);
     }
@@ -371,6 +379,55 @@ static void path_edit_unload(PathEditState *path_edit)
     }
 }
 
+/* Normalize separators in place: convert every backslash to forward slash
+ * and collapse runs of slashes to a single slash. raylib joins paths with
+ * '\\' on _WIN32 (so the Proton/MinGW build pulls "/\data" out of root),
+ * and our own concatenation can produce "//data". One canonical form
+ * means the commit, the parent walk, and the displayed string all agree. */
+static void path_normalize(char *buf, int *len_out)
+{
+    if (buf == nullptr) {
+        return;
+    }
+    for (char *cursor = buf; *cursor != '\0'; cursor++) {
+        if (*cursor == '\\') {
+            *cursor = '/';
+        }
+    }
+    char *write = buf;
+    char prev = '\0';
+    for (char *read = buf; *read != '\0'; read++) {
+        if (*read == '/' && prev == '/') {
+            continue;
+        }
+        *write = *read;
+        prev = *read;
+        write++;
+    }
+    *write = '\0';
+    if (len_out != nullptr) {
+        *len_out = (int)(write - buf);
+    }
+}
+
+/* True when path is filesystem-absolute. Linux/Android: leading '/'.
+ * Windows: 'X:' drive prefix or leading '/' (Wine canonicalizes both).
+ * The check is relaxed enough that the same code path serves a Windows
+ * binary running under Wine without a separate ifdef. */
+static bool path_is_absolute(const char *path)
+{
+    if (path == nullptr || path[0] == '\0') {
+        return false;
+    }
+    if (path[0] == '/' || path[0] == '\\') {
+        return true;
+    }
+    if (((path[0] >= 'A' && path[0] <= 'Z') || (path[0] >= 'a' && path[0] <= 'z')) && path[1] == ':') {
+        return true;
+    }
+    return false;
+}
+
 /* Detect whether a path is the filesystem root: parent of root resolves
  * to root again. */
 static bool path_is_root(const char *path)
@@ -379,14 +436,20 @@ static bool path_is_root(const char *path)
     return parent == nullptr || strcmp(parent, path) == 0;
 }
 
-static void path_edit_refresh(PathEditState *path_edit)
+/* Drop trailing slashes (except when the path itself is just "/"). raylib's
+ * LoadDirectoryFilesEx is fine either way on POSIX, but stripping the slash
+ * keeps GetPrevDirectoryPath's i==0 root check on the right branch and makes
+ * the displayed buffer line up with how the user typed it. */
+static void path_trim_trailing_slash(char *buf, int *len_out)
 {
-    path_edit_unload(path_edit);
-    path_edit->dir_list = LoadDirectoryFilesEx(path_edit->buf, "DIRS*", false);
-    path_edit->dir_list_loaded = true;
-    path_edit->at_root = path_is_root(path_edit->buf);
-    path_edit->browse_index = 0;
-    path_edit->browse_scroll = 0;
+    int len = (int)strlen(buf);
+    while (len > 1 && buf[len - 1] == '/') {
+        buf[len - 1] = '\0';
+        len--;
+    }
+    if (len_out != nullptr) {
+        *len_out = len;
+    }
 }
 
 static void path_edit_set_buf(PathEditState *path_edit, const char *value)
@@ -403,6 +466,40 @@ static void path_edit_set_buf(PathEditState *path_edit, const char *value)
     memcpy(path_edit->buf, value, length);
     path_edit->buf[length] = '\0';
     path_edit->len = (int)length;
+    path_normalize(path_edit->buf, &path_edit->len);
+}
+
+/* Compose buf = cwd + "/" + buf when buf is relative. Falls back to leaving
+ * buf untouched if raylib cannot resolve cwd (no real filesystem under tests
+ * is rare, but the guard keeps the headless test fixture safe). */
+static void path_edit_make_absolute(PathEditState *path_edit)
+{
+    if (path_is_absolute(path_edit->buf)) {
+        return;
+    }
+    const char *cwd = GetWorkingDirectory();
+    if (cwd == nullptr || cwd[0] == '\0') {
+        return;
+    }
+    char joined[PATH_EDIT_BUF_SIZE];
+    int written = snprintf(joined, sizeof(joined), "%s/%s", cwd, path_edit->buf);
+    if (written < 0 || (size_t)written >= sizeof(joined)) {
+        return;
+    }
+    path_edit_set_buf(path_edit, joined);
+}
+
+static void path_edit_refresh(PathEditState *path_edit)
+{
+    path_edit_unload(path_edit);
+    path_normalize(path_edit->buf, &path_edit->len);
+    path_trim_trailing_slash(path_edit->buf, &path_edit->len);
+    path_edit_make_absolute(path_edit);
+    path_edit->dir_list = LoadDirectoryFilesEx(path_edit->buf, "DIRS*", false);
+    path_edit->dir_list_loaded = true;
+    path_edit->at_root = path_is_root(path_edit->buf);
+    path_edit->browse_index = 0;
+    path_edit->browse_scroll = 0;
 }
 
 /* Row index meanings (in the browse list):
@@ -478,10 +575,17 @@ static void path_edit_commit(SettingsState *settings, Preferences *preferences)
     if (preferences == nullptr) {
         return;
     }
+    /* Final normalize before saving: the buffer already passed through
+     * path_normalize during refresh, but a fresh commit from keyboard
+     * mode (where the user can splice in any chars) needs the same
+     * canonicalization so the saved data_dir is forward-slash-only. */
+    PathEditState *path_edit = &settings->path_edit;
+    path_normalize(path_edit->buf, &path_edit->len);
     str_clear(&preferences->data_dir);
-    (void)str_append_cstr(&preferences->data_dir, settings->path_edit.buf);
-    /* Ensure trailing slash so "data_dir + filename" composition still
-     * works for downstream callers. */
+    (void)str_append_cstr(&preferences->data_dir, path_edit->buf);
+    /* Ensure exactly one trailing slash so "data_dir + filename"
+     * composition still works for downstream callers. path_normalize
+     * already collapsed any duplicate slashes. */
     if (preferences->data_dir.len == 0 || preferences->data_dir.ptr[preferences->data_dir.len - 1] != '/') {
         (void)str_append_cstr(&preferences->data_dir, "/");
     }

@@ -15,6 +15,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 /* Lazy-initialised default BindingStore for tests that need to drive the
  * function layer (input_pressed/input_axis). The store survives the
@@ -989,6 +991,120 @@ void test_integration_settings_path_edit_commit(void)
     TEST_ASSERT_EQUAL_INT(SETTINGS_SCREEN_LIST, (int)game.settings.screen);
     TEST_ASSERT_FALSE(game.settings.save_preferences_requested);
     TEST_ASSERT_NOT_NULL(game.state.preferences.data_dir.ptr);
+
+    test_game_teardown(&game);
+}
+
+/* Open path-edit, walk one folder up via the synthesized ".." row, and
+ * verify the browse list re-populates instead of falling off the end of
+ * the filesystem.
+ *
+ * The earlier failure mode: the default seed "data/" was relative, so
+ * raylib's GetPrevDirectoryPath stripped it down to "data", then "" on a
+ * second press. LoadDirectoryFilesEx("") returns zero entries silently
+ * and the user lands on a screen with nothing to navigate. The fix
+ * resolves the seed to absolute on entry and re-normalizes on every
+ * refresh, so the parent walk now traverses real filesystem ancestors. */
+void test_integration_settings_path_edit_parent_lists_contents(void)
+{
+    /* Build a known directory tree under tmp so the assertion is not
+     * tied to the developer's home layout. */
+    char base[512];
+    (void)snprintf(base, sizeof(base), "%s/sleipner_path_edit_XXXXXX", "/tmp");
+    TEST_ASSERT_NOT_NULL(mkdtemp(base));
+    char child[640];
+    (void)snprintf(child, sizeof(child), "%s/child", base);
+    TEST_ASSERT_EQUAL_INT(0, mkdir(child, 0755));
+
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_gamedata));
+
+    /* Reseed preferences.data_dir to the child directory so the path-edit
+     * screen opens already inside our fixture. */
+    str_clear(&game.state.preferences.data_dir);
+    (void)str_append_cstr(&game.state.preferences.data_dir, child);
+
+    InputState menu_open = {0};
+    input_state_press_key(&menu_open, KEY_F3);
+    test_advance_frame(&game, menu_open);
+    for (int step = 0; step < 3; step++) {
+        InputState down = {0};
+        input_state_press_key(&down, KEY_DOWN);
+        test_advance_frame(&game, down);
+    }
+    InputState confirm = {0};
+    input_state_press_key(&confirm, KEY_ENTER);
+    test_advance_frame(&game, confirm);
+
+    InputState tab_next = {0};
+    input_state_press_key(&tab_next, KEY_TAB);
+    test_advance_frame(&game, tab_next);
+
+    InputState confirm_path = {0};
+    input_state_press_key(&confirm_path, KEY_ENTER);
+    test_advance_frame(&game, confirm_path);
+    TEST_ASSERT_EQUAL_INT(SETTINGS_SCREEN_PATH_EDIT, (int)game.settings.screen);
+
+    /* Cancel pops up one level (the screen-handler maps CANCEL to
+     * "go to parent" while at_root is false). After the press, the
+     * dir_list must list at least one entry — our `child` subfolder. */
+    InputState back = {0};
+    input_state_press_key(&back, KEY_ESCAPE);
+    test_advance_frame(&game, back);
+    TEST_ASSERT_EQUAL_INT(SETTINGS_SCREEN_PATH_EDIT, (int)game.settings.screen);
+    TEST_ASSERT_TRUE(game.settings.path_edit.dir_list_loaded);
+    TEST_ASSERT_GREATER_THAN_INT(0, (int)game.settings.path_edit.dir_list.count);
+
+    test_game_teardown(&game);
+
+    (void)rmdir(child);
+    (void)rmdir(base);
+}
+
+/* Commit a path that contains backslashes (as raylib's _WIN32 path-join
+ * code can produce when the Proton build joins "/" with "data") and
+ * verify the saved data_dir is normalized to forward slashes with no
+ * duplicate separators. The keyboard widget cannot type a backslash
+ * directly, so the test seeds the buffer through preferences.data_dir
+ * before opening path-edit, mirroring how the bug surfaced in practice
+ * (raylib's directory listing populated buf with the bad separator). */
+void test_integration_settings_path_edit_commit_normalizes_separators(void)
+{
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_gamedata));
+
+    str_clear(&game.state.preferences.data_dir);
+    (void)str_append_cstr(&game.state.preferences.data_dir, "/\\data\\");
+
+    InputState menu_open = {0};
+    input_state_press_key(&menu_open, KEY_F3);
+    test_advance_frame(&game, menu_open);
+    for (int step = 0; step < 3; step++) {
+        InputState down = {0};
+        input_state_press_key(&down, KEY_DOWN);
+        test_advance_frame(&game, down);
+    }
+    InputState confirm = {0};
+    input_state_press_key(&confirm, KEY_ENTER);
+    test_advance_frame(&game, confirm);
+
+    InputState tab_next = {0};
+    input_state_press_key(&tab_next, KEY_TAB);
+    test_advance_frame(&game, tab_next);
+
+    InputState confirm_path = {0};
+    input_state_press_key(&confirm_path, KEY_ENTER);
+    test_advance_frame(&game, confirm_path);
+
+    InputState commit = {0};
+    input_state_press_key(&commit, KEY_ENTER);
+    test_advance_frame(&game, commit);
+
+    TEST_ASSERT_EQUAL_INT(SETTINGS_SCREEN_LIST, (int)game.settings.screen);
+    TEST_ASSERT_NOT_NULL(game.state.preferences.data_dir.ptr);
+    TEST_ASSERT_NULL(strchr(game.state.preferences.data_dir.ptr, '\\'));
+    TEST_ASSERT_NULL(strstr(game.state.preferences.data_dir.ptr, "//"));
+    TEST_ASSERT_EQUAL_STRING("/data/", game.state.preferences.data_dir.ptr);
 
     test_game_teardown(&game);
 }
