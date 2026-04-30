@@ -1279,8 +1279,8 @@ int main(void)
         {
             extern uint64_t GetSleipnerAndroidRawInputEventTotal(void);
             extern int GetSleipnerAndroidRawInputEventCount(void);
-            extern void GetSleipnerAndroidRawInputEvent(int index, int32_t *source, int32_t *keycode,
-                                                        int32_t *action, int32_t *event_type);
+            extern void GetSleipnerAndroidRawInputEvent(int index, int32_t *source, int32_t *keycode, int32_t *action,
+                                                        int32_t *event_type);
             uint64_t current_total = GetSleipnerAndroidRawInputEventTotal();
             if (current_total > last_logged_event_total) {
                 int ring_count = GetSleipnerAndroidRawInputEventCount();
