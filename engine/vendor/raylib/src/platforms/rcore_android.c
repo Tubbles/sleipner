@@ -273,6 +273,9 @@ typedef struct {
 static SleipnerRawEvent sleipnerRawEvents[SLEIPNER_RAW_EVENT_RING] = { 0 };
 static int sleipnerRawEventHead = 0;
 static int sleipnerRawEventCount = 0;
+// Monotonic total event count, never resets. Sleipner uses this to detect
+// new events since the last log poll (the count above caps at the ring size).
+static uint64_t sleipnerRawEventTotal = 0;
 
 // SLEIPNER PATCH: runtime toggle for the keycode-trust fix in
 // AndroidInputCallback. Defaults to true (fix active). Sleipner flips it to
@@ -1245,6 +1248,7 @@ static int32_t AndroidInputCallback(struct android_app *app, AInputEvent *event)
         };
         sleipnerRawEventHead = (sleipnerRawEventHead + 1) % SLEIPNER_RAW_EVENT_RING;
         if (sleipnerRawEventCount < SLEIPNER_RAW_EVENT_RING) sleipnerRawEventCount++;
+        sleipnerRawEventTotal++;
     }
 
     if (type == AINPUT_EVENT_TYPE_MOTION)
@@ -1689,6 +1693,11 @@ static int android_close(void *cookie)
 int GetSleipnerAndroidRawInputEventCount(void)
 {
     return sleipnerRawEventCount;
+}
+
+uint64_t GetSleipnerAndroidRawInputEventTotal(void)
+{
+    return sleipnerRawEventTotal;
 }
 
 void GetSleipnerAndroidRawInputEvent(int index, int32_t *source, int32_t *keycode,

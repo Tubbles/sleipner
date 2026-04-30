@@ -1237,6 +1237,9 @@ int main(void)
         .level_loader_user_data = nullptr,
     };
 
+#if defined(__ANDROID__)
+    uint64_t last_logged_event_total = 0;
+#endif
     while (!WindowShouldClose() && !quit_requested) {
         float delta_time = GetFrameTime();
 
@@ -1266,6 +1269,35 @@ int main(void)
                 bool now = !GetSleipnerKeycodeTrust();
                 SetSleipnerKeycodeTrust(now);
                 debug_log(&state->debug, "android route toggled: %s", now ? "keycode" : "source-veto");
+            }
+        }
+
+        /* Mirror new key events from raylib's raw ring buffer into the
+         * trace log so the user can copy-paste them. Motion events are
+         * filtered out (60Hz stick movement would drown the log); only
+         * AINPUT_EVENT_TYPE_KEY (== 1) is logged. */
+        {
+            extern uint64_t GetSleipnerAndroidRawInputEventTotal(void);
+            extern int GetSleipnerAndroidRawInputEventCount(void);
+            extern void GetSleipnerAndroidRawInputEvent(int index, int32_t *source, int32_t *keycode,
+                                                        int32_t *action, int32_t *event_type);
+            uint64_t current_total = GetSleipnerAndroidRawInputEventTotal();
+            if (current_total > last_logged_event_total) {
+                int ring_count = GetSleipnerAndroidRawInputEventCount();
+                uint64_t missed = current_total - last_logged_event_total;
+                int to_log = (missed < (uint64_t)ring_count) ? (int)missed : ring_count;
+                int start_index = ring_count - to_log;
+                for (int log_index = 0; log_index < to_log; log_index++) {
+                    int32_t src = 0;
+                    int32_t kc = 0;
+                    int32_t act = 0;
+                    int32_t evt = 0;
+                    GetSleipnerAndroidRawInputEvent(start_index + log_index, &src, &kc, &act, &evt);
+                    if (evt == 1) {
+                        debug_log(&state->debug, "evt: t=%d src=0x%X kc=%d act=%d", evt, src, kc, act);
+                    }
+                }
+                last_logged_event_total = current_total;
             }
         }
 #endif

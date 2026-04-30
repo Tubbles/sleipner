@@ -1,8 +1,8 @@
 diff --git a/engine/vendor/raylib/src/platforms/rcore_android.c b/engine/vendor/raylib/src/platforms/rcore_android.c
-index af15aca..e1b2d65 100644
+index af15aca..230c344 100644
 --- a/engine/vendor/raylib/src/platforms/rcore_android.c
 +++ b/engine/vendor/raylib/src/platforms/rcore_android.c
-@@ -258,6 +258,28 @@ static const KeyboardKey mapKeycode[KEYCODE_MAP_SIZE] = {
+@@ -258,6 +258,31 @@ static const KeyboardKey mapKeycode[KEYCODE_MAP_SIZE] = {
  
  static TouchRaw touchRaw = { 0 };
  
@@ -21,6 +21,9 @@ index af15aca..e1b2d65 100644
 +static SleipnerRawEvent sleipnerRawEvents[SLEIPNER_RAW_EVENT_RING] = { 0 };
 +static int sleipnerRawEventHead = 0;
 +static int sleipnerRawEventCount = 0;
++// Monotonic total event count, never resets. Sleipner uses this to detect
++// new events since the last log poll (the count above caps at the ring size).
++static uint64_t sleipnerRawEventTotal = 0;
 +
 +// SLEIPNER PATCH: runtime toggle for the keycode-trust fix in
 +// AndroidInputCallback. Defaults to true (fix active). Sleipner flips it to
@@ -31,7 +34,7 @@ index af15aca..e1b2d65 100644
  //----------------------------------------------------------------------------------
  // Module Internal Functions Declaration
  //----------------------------------------------------------------------------------
-@@ -1208,6 +1230,23 @@ static int32_t AndroidInputCallback(struct android_app *app, AInputEvent *event)
+@@ -1208,6 +1233,24 @@ static int32_t AndroidInputCallback(struct android_app *app, AInputEvent *event)
      int type = AInputEvent_getType(event);
      int source = AInputEvent_getSource(event);
  
@@ -50,12 +53,13 @@ index af15aca..e1b2d65 100644
 +        };
 +        sleipnerRawEventHead = (sleipnerRawEventHead + 1) % SLEIPNER_RAW_EVENT_RING;
 +        if (sleipnerRawEventCount < SLEIPNER_RAW_EVENT_RING) sleipnerRawEventCount++;
++        sleipnerRawEventTotal++;
 +    }
 +
      if (type == AINPUT_EVENT_TYPE_MOTION)
      {
          if (FLAG_IS_SET(source, AINPUT_SOURCE_JOYSTICK) ||
-@@ -1283,16 +1322,47 @@ static int32_t AndroidInputCallback(struct android_app *app, AInputEvent *event)
+@@ -1283,16 +1326,47 @@ static int32_t AndroidInputCallback(struct android_app *app, AInputEvent *event)
          // discriminator: a recognised gamepad keycode routes to the gamepad
          // path, anything else falls through to the keyboard handler instead
          // of being silently dropped. See SLEIPNER_MODIFICATIONS.md.
@@ -70,13 +74,13 @@ index af15aca..e1b2d65 100644
 +                FLAG_IS_SET(source, AINPUT_SOURCE_GAMEPAD))
 +            {
 +                GamepadButton button = AndroidTranslateGamepadButton(keycode);
-+
+ 
+-            if (button != GAMEPAD_BUTTON_UNKNOWN)
 +                if (button != GAMEPAD_BUTTON_UNKNOWN)
 +                {
 +                    // Assuming a single gamepad, "detected" on its input event
 +                    CORE.Input.Gamepad.ready[0] = true;
- 
--            if (button != GAMEPAD_BUTTON_UNKNOWN)
++
 +                    if (AKeyEvent_getAction(event) == AKEY_EVENT_ACTION_DOWN)
 +                    {
 +                        CORE.Input.Gamepad.currentButtonState[0][button] = 1;
@@ -108,7 +112,7 @@ index af15aca..e1b2d65 100644
                  if (AKeyEvent_getAction(event) == AKEY_EVENT_ACTION_DOWN)
                  {
                      CORE.Input.Gamepad.currentButtonState[0][button] = 1;
-@@ -1301,8 +1371,6 @@ static int32_t AndroidInputCallback(struct android_app *app, AInputEvent *event)
+@@ -1301,8 +1375,6 @@ static int32_t AndroidInputCallback(struct android_app *app, AInputEvent *event)
  
                  return 1; // Handled gamepad button
              }
@@ -117,7 +121,7 @@ index af15aca..e1b2d65 100644
          }
  
          KeyboardKey key = ((keycode > 0) && (keycode < KEYCODE_MAP_SIZE))? mapKeycode[keycode] : KEY_NULL;
-@@ -1612,4 +1680,57 @@ static int android_close(void *cookie)
+@@ -1612,4 +1684,62 @@ static int android_close(void *cookie)
      return 0;
  }
  
@@ -130,6 +134,11 @@ index af15aca..e1b2d65 100644
 +int GetSleipnerAndroidRawInputEventCount(void)
 +{
 +    return sleipnerRawEventCount;
++}
++
++uint64_t GetSleipnerAndroidRawInputEventTotal(void)
++{
++    return sleipnerRawEventTotal;
 +}
 +
 +void GetSleipnerAndroidRawInputEvent(int index, int32_t *source, int32_t *keycode,

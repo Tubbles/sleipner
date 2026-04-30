@@ -19,9 +19,12 @@ docs, and the Zig build scripts are intentionally omitted.
      captures the raw `(source, keycode, action, event_type)` of every
      event delivered to `AndroidInputCallback` before any source-bit
      gating, plus getters
-     (`GetSleipnerAndroidRawInputEventCount` and
+     (`GetSleipnerAndroidRawInputEventCount`,
+     `GetSleipnerAndroidRawInputEventTotal`, and
      `GetSleipnerAndroidRawInputEvent`) the engine's debug overlay reads
-     to display recent events on the Android build.
+     to display recent events on the Android build. The total getter is
+     a monotonic counter the engine uses to mirror new key events into
+     the trace log (filtering out motion events).
 
   2. A runtime toggle for the 0001 keycode-trust logic
      (`SetSleipnerKeycodeTrust` / `GetSleipnerKeycodeTrust`). The 0001
