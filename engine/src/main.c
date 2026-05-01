@@ -131,7 +131,7 @@ static Str trace_log_path(const GameState *state, Allocator alloc)
 #define DEBUG_FONT_SIZE 32
 #define DEBUG_LINE_HEIGHT 26
 #define DEBUG_PANEL_WIDTH 420
-#define DEBUG_LINES 24
+#define DEBUG_LINES 14
 #define FONT_PREVIEW_SIZE 32
 
 /* UI text helpers — wrap DrawTextEx with the same ergonomics as DrawText */
@@ -319,83 +319,7 @@ static void draw_debug_info(GameState *state, RectU32 game_bounds)
         }
         draw_ui_text(font, TextFormat("  gp%d: %s", index, GetGamepadName(index)), DEBUG_MARGIN,
                      DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, debug_text_color);
-        SCRATCH_SCOPE(&state->scratch_arena);
-        Str buttons = str_new(allocator_arena(&state->scratch_arena));
-        (void)str_append_cstr(&buttons, "       btn:");
-        bool any_pressed = false;
-        for (int button = 1; button < INPUT_GP_BUTTON_COUNT; button++) {
-            if (!IsGamepadButtonDown(index, button)) {
-                continue;
-            }
-            const char *label = input_func_gp_button_label(button);
-            if (strcmp(label, "?") == 0) {
-                /* Unmapped raylib code — show the raw index so no-name pads
-                 * with non-standard SDL gamecontrollerdb mappings are
-                 * diagnosable instead of silently dropped. */
-                (void)str_append_cstr(&buttons, TextFormat(" b%d", button));
-            } else {
-                (void)str_append_cstr(&buttons, " ");
-                (void)str_append_cstr(&buttons, label);
-            }
-            any_pressed = true;
-        }
-        if (!any_pressed) {
-            (void)str_append_cstr(&buttons, " (none)");
-        }
-        draw_ui_text(font, buttons.ptr, DEBUG_MARGIN, DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE,
-                     debug_text_color);
     }
-
-    {
-        SCRATCH_SCOPE(&state->scratch_arena);
-        Str keys = str_new(allocator_arena(&state->scratch_arena));
-        (void)str_append_cstr(&keys, "keys:");
-        bool any_key_pressed = false;
-        for (int key = 1; key < INPUT_MAX_KEY_CODE; key++) {
-            if (!IsKeyDown(key)) {
-                continue;
-            }
-            const char *label = input_func_key_label(key);
-            if (strcmp(label, "?") == 0) {
-                (void)str_append_cstr(&keys, TextFormat(" k%d", key));
-            } else {
-                (void)str_append_cstr(&keys, " ");
-                (void)str_append_cstr(&keys, label);
-            }
-            any_key_pressed = true;
-        }
-        if (!any_key_pressed) {
-            (void)str_append_cstr(&keys, " (none)");
-        }
-        draw_ui_text(font, keys.ptr, DEBUG_MARGIN, DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE,
-                     debug_text_color);
-    }
-
-#if defined(__ANDROID__)
-    /* Raw Android input events (newest first). Wired to a Sleipner-only patch
-     * in rcore_android.c that captures every event before any source-bit
-     * gating, so we can see what the kernel actually delivers for each press
-     * on multi-class controllers like the GameSir X2. */
-    extern int GetSleipnerAndroidRawInputEventCount(void);
-    extern void GetSleipnerAndroidRawInputEvent(int index, int32_t *source, int32_t *keycode, int32_t *action,
-                                                int32_t *event_type);
-    extern bool GetSleipnerKeycodeTrust(void);
-    int raw_total = GetSleipnerAndroidRawInputEventCount();
-    int raw_show = raw_total < 6 ? raw_total : 6;
-    draw_ui_text(font,
-                 TextFormat("evt: %d captured, showing last %d  route: %s", raw_total, raw_show,
-                            GetSleipnerKeycodeTrust() ? "keycode" : "source-veto"),
-                 DEBUG_MARGIN, DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, debug_text_color);
-    for (int slot = raw_show - 1; slot >= 0; slot--) {
-        int32_t src = 0;
-        int32_t kc = 0;
-        int32_t act = 0;
-        int32_t evt = 0;
-        GetSleipnerAndroidRawInputEvent(raw_total - 1 - (raw_show - 1 - slot), &src, &kc, &act, &evt);
-        draw_ui_text(font, TextFormat("  t=%d src=0x%08X kc=%d act=%d", evt, src, kc, act), DEBUG_MARGIN,
-                     DEBUG_MARGIN + (line++ * DEBUG_LINE_HEIGHT), DEBUG_FONT_SIZE, debug_text_color);
-    }
-#endif
 
     /* Log panel at bottom */
     int line_count = debug_get_line_count(&state->debug);
@@ -1133,20 +1057,6 @@ int main(void)
      * below gamedata_base and survive every gamedata reload (only freed at game exit). */
     load_persistent_assets(state);
 
-#if defined(__ANDROID__)
-    /* Runtime toggle for the raylib Android keycode-trust patch. Drop a file
-     * named "disable_keycode_trust" into data_dir to fall back to the upstream
-     * raylib 6.0 behaviour for A/B comparison; remove the file to re-enable
-     * the fix. The state is logged once at startup. */
-    extern void SetSleipnerKeycodeTrust(bool enabled);
-    {
-        SCRATCH_SCOPE(&state->scratch_arena);
-        Str marker_path = compose_data_path(state, "disable_keycode_trust", allocator_arena(&state->scratch_arena));
-        bool disable = FileExists(marker_path.ptr);
-        SetSleipnerKeycodeTrust(!disable);
-        debug_log(&state->debug, "android keycode trust: %s (marker: %s)", disable ? "OFF" : "ON", marker_path.ptr);
-    }
-#endif
     /* Mark the high-water point: everything below here survives gamedata reloads */
     state->gamedata_base = arena_save(&state->gamedata_arena);
 
@@ -1237,9 +1147,6 @@ int main(void)
         .level_loader_user_data = nullptr,
     };
 
-#if defined(__ANDROID__)
-    uint64_t last_logged_event_total = 0;
-#endif
     while (!WindowShouldClose() && !quit_requested) {
         float delta_time = GetFrameTime();
 
@@ -1252,55 +1159,6 @@ int main(void)
 
         InputState input = {0};
         input_capture(&input);
-
-#if defined(__ANDROID__)
-        /* Debug toggle for the raylib Android route flag, gated on
-         * debug_enabled so it does not fire when the overlay is closed.
-         * Plain D-pad Down or keyboard Down freshly pressed flips between
-         * the patched (keycode) and upstream-broken (source-veto) logic.
-         * Both inputs arrive via motion events on the X2, so the binding
-         * works regardless of which routing state is currently active.
-         * Temporary exploration aid; collisions with NAV_DOWN in debug
-         * context are accepted. */
-        if (state->debug_enabled) {
-            extern void SetSleipnerKeycodeTrust(bool enabled);
-            extern bool GetSleipnerKeycodeTrust(void);
-            if (IsGamepadButtonPressed(0, GAMEPAD_BUTTON_LEFT_FACE_DOWN) || IsKeyPressed(KEY_DOWN)) {
-                bool now = !GetSleipnerKeycodeTrust();
-                SetSleipnerKeycodeTrust(now);
-                debug_log(&state->debug, "android route toggled: %s", now ? "keycode" : "source-veto");
-            }
-        }
-
-        /* Mirror new key events from raylib's raw ring buffer into the
-         * trace log so the user can copy-paste them. Motion events are
-         * filtered out (60Hz stick movement would drown the log); only
-         * AINPUT_EVENT_TYPE_KEY (== 1) is logged. */
-        {
-            extern uint64_t GetSleipnerAndroidRawInputEventTotal(void);
-            extern int GetSleipnerAndroidRawInputEventCount(void);
-            extern void GetSleipnerAndroidRawInputEvent(int index, int32_t *source, int32_t *keycode, int32_t *action,
-                                                        int32_t *event_type);
-            uint64_t current_total = GetSleipnerAndroidRawInputEventTotal();
-            if (current_total > last_logged_event_total) {
-                int ring_count = GetSleipnerAndroidRawInputEventCount();
-                uint64_t missed = current_total - last_logged_event_total;
-                int to_log = (missed < (uint64_t)ring_count) ? (int)missed : ring_count;
-                int start_index = ring_count - to_log;
-                for (int log_index = 0; log_index < to_log; log_index++) {
-                    int32_t src = 0;
-                    int32_t kc = 0;
-                    int32_t act = 0;
-                    int32_t evt = 0;
-                    GetSleipnerAndroidRawInputEvent(start_index + log_index, &src, &kc, &act, &evt);
-                    if (evt == 1) {
-                        debug_log(&state->debug, "evt: t=%d src=0x%X kc=%d act=%d", evt, src, kc, act);
-                    }
-                }
-                last_logged_event_total = current_total;
-            }
-        }
-#endif
 
         log_gamepad_changes(state, &prev_gamepads, state->frame);
 
