@@ -953,9 +953,7 @@ static void render_frame(GameState *state, RenderParams params)
     draw_watch_overlay(screen, state, params.watches);
     draw_radial_picker(screen, &params.editor_state, state->assets.ui_font);
     draw_gamepad_kb(screen, &params.editor_state, state->assets.ui_font);
-    if (state->editor_mode) {
-        draw_toast(&params.editor_state, screen, state->assets.ui_font);
-    }
+    draw_toast(&params.editor_state, screen, state->assets.ui_font);
     draw_hints_bar(state->editor_mode, &params.editor_state, &state->bindings, params.is_dirty, screen,
                    state->assets.ui_font);
     capture_overlay_blur_if_needed(params);
