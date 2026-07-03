@@ -1,6 +1,3 @@
-# Sleipner game data
-# This file is shared via Syncthing between desktop and Android.
-
 [[blueprint]]
 name = "player"
 texture = "player.png"
@@ -18,8 +15,8 @@ texture = "tree.png"
 src = [0, 0, 64, 80]
 collision_offset = [20, 60]
 collision_size = [24, 16]
-behavior = "static"
 health = [100, 100]
+behavior = "static"
 solid = true
 
 [[blueprint.rule]]
@@ -50,8 +47,8 @@ behavior = "static"
 solid = true
 
 [[blueprint.child]]
-tag = "door"
 blueprint = "house_door"
+tag = "door"
 offset = [38, 88]
 
 [[blueprint]]
@@ -74,6 +71,66 @@ collision_size = [16, 48]
 behavior = "static"
 solid = true
 
+[[blueprint]]
+name = "switch"
+texture = "chest.png"
+src = [0, 0, 16, 16]
+collision_offset = [0, 0]
+collision_size = [16, 16]
+behavior = "static"
+solid = true
+
+[[blueprint.rule]]
+trigger = "interact"
+actions = ["fire_event:switch_activated"]
+
+[[blueprint]]
+name = "secret_door"
+texture = "tree.png"
+src = [0, 0, 64, 80]
+collision_offset = [20, 60]
+collision_size = [24, 16]
+behavior = "static"
+solid = true
+
+[[blueprint.rule]]
+trigger = "event:switch_activated"
+actions = ["set_flag:door_unlocked", "destroy"]
+
+[[blueprint]]
+name = "exit_door"
+collision_offset = [-10, -10]
+collision_size = [20, 16]
+behavior = "static"
+solid = false
+
+[[blueprint.rule]]
+trigger = "enter"
+actions = ["transition:overworld,78,135"]
+
+[[level]]
+name = "house_interior"
+size = [160, 128]
+floor_size = [160, 112]
+background_tile = "floor.png"
+background_tint = [180, 160, 140]
+
+[[level.entity]]
+blueprint = "player"
+pos = [103, 82]
+
+[[level.entity]]
+blueprint = "chest"
+pos = [16, 16]
+
+[[level.entity]]
+blueprint = "chest"
+pos = [128, 16]
+
+[[level.entity]]
+blueprint = "exit_door"
+pos = [79, 114]
+
 [[level]]
 name = "overworld"
 size = [960, 540]
@@ -81,7 +138,7 @@ music = "bgm.mp3"
 
 [[level.entity]]
 blueprint = "player"
-pos = [480, 270]
+pos = [199, 187]
 
 [[level.entity]]
 blueprint = "house"
@@ -175,32 +232,6 @@ pos = [600, 38]
 blueprint = "fence_v"
 pos = [600, 74]
 
-[[blueprint]]
-name = "switch"
-texture = "chest.png"
-src = [0, 0, 16, 16]
-collision_offset = [0, 0]
-collision_size = [16, 16]
-behavior = "static"
-solid = true
-
-[[blueprint.rule]]
-trigger = "interact"
-actions = ["fire_event:switch_activated"]
-
-[[blueprint]]
-name = "secret_door"
-texture = "tree.png"
-src = [0, 0, 64, 80]
-collision_offset = [20, 60]
-collision_size = [24, 16]
-behavior = "static"
-solid = true
-
-[[blueprint.rule]]
-trigger = "event:switch_activated"
-actions = ["set_flag:door_unlocked", "destroy"]
-
 [[level.entity]]
 blueprint = "switch"
 pos = [300, 150]
@@ -209,36 +240,3 @@ pos = [300, 150]
 blueprint = "secret_door"
 pos = [350, 150]
 
-[[blueprint]]
-name = "exit_door"
-collision_offset = [0, 0]
-collision_size = [20, 16]
-behavior = "static"
-solid = false
-
-[[blueprint.rule]]
-trigger = "enter"
-actions = ["transition:overworld,78,135"]
-
-[[level]]
-name = "house_interior"
-size = [160, 128]
-floor_size = [160, 112]
-background_tile = "floor.png"
-background_tint = [180, 160, 140]
-
-[[level.entity]]
-blueprint = "player"
-pos = [80, 96]
-
-[[level.entity]]
-blueprint = "chest"
-pos = [16, 16]
-
-[[level.entity]]
-blueprint = "chest"
-pos = [128, 16]
-
-[[level.entity]]
-blueprint = "exit_door"
-pos = [70, 100]
