@@ -18,6 +18,9 @@
 #define POP_DURATION_SEC 0.12F
 #define POP_VOLUME 0.3F
 
+// freq and duration are two of the three floats that together fully
+// describe one synthesized tone; a wrapper struct would just re-box the
+// same tone spec for this single-use helper.
 // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 static Sound generate_tone(float freq, float duration, float volume)
 {
@@ -41,6 +44,8 @@ static Sound generate_tone(float freq, float duration, float volume)
     return LoadSoundFromWave(wave);
 }
 
+// duration and volume are the pop envelope's length and loudness, the
+// same two-float DSP spec pattern as generate_tone above.
 // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 static Sound generate_bubble_pop(float duration, float volume)
 {

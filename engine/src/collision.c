@@ -32,6 +32,8 @@ void project_corners(const Vector2 *corners, int count, Vector2 axis, float *out
     }
 }
 
+// angle_deg, half_w, half_h together define the oriented box's rotation
+// and extents; a wrapper struct would just re-box the same OBB fields.
 // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 void obb_corners(Vector2 center, float angle_deg, float half_w, float half_h, Vector2 *out)
 {
@@ -120,6 +122,8 @@ Vector2 resolve_circle_circle(Vector2 pos_a, float r_a, Vector2 pos_b, float r_b
     return (Vector2){normal_x * overlap, normal_y * overlap};
 }
 
+// angle, half_w, half_h are the same OBB rotation+extent triplet as
+// obb_corners, inlined here alongside the circle's own position/radius.
 // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 Vector2 resolve_rect_circle(Vector2 rect_pos, float angle, float half_w, float half_h, Vector2 circ_pos, float radius)
 {
@@ -432,6 +436,11 @@ Vector2 resolve_composite_wall(const CollisionShape *shape, Vector2 pos, float a
     return resolve_composite(shape, pos, angle, &wall_shape, wall_center, 0);
 }
 
+// corner is a 0..3 arena-corner selector; clang-tidy flags it against
+// the adjacent float delta_x via its convertible-types (int->float)
+// modeling. A selector and a coordinate delta are not plausibly
+// confused, and reordering this internal helper would churn call
+// sites for no real safety gain, so the order is kept.
 // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 static bool is_in_corner_quadrant(int corner, float delta_x, float delta_y)
 {
@@ -449,6 +458,11 @@ static bool is_in_corner_quadrant(int corner, float delta_x, float delta_y)
     }
 }
 
+// The flagged pair is the float arc radius next to the 0..3 corner
+// selector; clang-tidy pairs them through its convertible-types
+// (float<->int) modeling, not a genuine same-type ambiguity. A radius
+// and a selector are not plausibly confused, and reordering this
+// internal helper would churn call sites for no real safety gain.
 // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 static void push_point_out_of_arc(Vector2 *pos, Vector2 center, Vector2 point, float radius, int corner)
 {
@@ -482,6 +496,11 @@ static void resolve_arena_corner_rect(const CollisionPrimitive *prim,
     }
 }
 
+// Same convertible-types case as push_point_out_of_arc: the float arc
+// radius sits next to the 0..3 corner selector, which clang-tidy pairs
+// via int<->float modeling rather than a real same-type ambiguity.
+// Reordering to dodge the heuristic would churn call sites for no
+// safety gain, so the parameters are kept in place.
 // NOLINTBEGIN(bugprone-easily-swappable-parameters)
 static void resolve_arena_corner_circle(
     const CollisionPrimitive *prim, Vector2 world_pos, Vector2 *pos, Vector2 center, float radius, int corner)

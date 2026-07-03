@@ -29,6 +29,8 @@ void render_background(RectU32 bounds)
     DrawRectangleRounded(arena, ARENA_ROUND, ARENA_SEGMENTS, arena_color);
 }
 
+// size and rotation are the star's radius and spin angle, the two
+// scalars that define its silhouette alongside pos and color.
 // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 static void draw_star(Vector2 pos, float size, float rotation, Color color)
 {
@@ -49,6 +51,8 @@ static void draw_star(Vector2 pos, float size, float rotation, Color color)
     }
 }
 
+// size and rotation are the square's half-extent and spin angle,
+// mirroring draw_star's shape-transform pair above.
 // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 static void draw_rotated_square(Vector2 pos, float size, float rotation, Color color)
 {
@@ -64,6 +68,8 @@ static void draw_rotated_square(Vector2 pos, float size, float rotation, Color c
     DrawTriangle(corners[3], corners[2], corners[0], color);
 }
 
+// size and rotation are the triangle's radius and spin angle, the same
+// shape-transform pair as the other draw_rotated_* helpers.
 // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 static void draw_rotated_triangle(Vector2 pos, float size, float rotation, Color color)
 {
@@ -75,6 +81,8 @@ static void draw_rotated_triangle(Vector2 pos, float size, float rotation, Color
     DrawTriangle(verts[2], verts[1], verts[0], color);
 }
 
+// rotation and scale are the shape's spin angle and size multiplier,
+// forwarded verbatim to whichever draw_* helper kind selects.
 // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 void render_shape(ShapeKind kind, Vector2 pos, float rotation, float scale, Color color)
 {
