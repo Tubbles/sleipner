@@ -32,7 +32,11 @@
         {
             "name": "linux",
             "configurePreset": "linux",
-            "output": { "outputOnFailure": true }
+            "output": { "outputOnFailure": true },
+            "environment": {
+                "ASAN_OPTIONS": "log_path=${sourceDir}/tmp/asan.log",
+                "UBSAN_OPTIONS": "log_path=${sourceDir}/tmp/ubsan.log"
+            }
         }
     ],
     "workflowPresets": [

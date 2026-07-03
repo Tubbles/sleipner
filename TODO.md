@@ -131,7 +131,6 @@ Carried over from `work/keybinding-audit.md`:
   sprite. could be related to float position not scaling up correctly or other
   scaling issue.
 - the radial menu is hard to use using a keyboard, not all directions are easily representable
-- right now i think our sanitisers write to stdout, is it possible to redirect this through our normal logging channels?
 
 ## Pause menu follow-ups
 

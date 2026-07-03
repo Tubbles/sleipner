@@ -244,6 +244,10 @@ Two levels of testing, both run in CI:
 ### Testing Discipline
 - **Bugs get tests FIRST, not last.** See "Bug Investigation Discipline" below — every bug report begins with a failing integration test that doubles as the regression guard.
 
+### Sanitizer output
+
+`CMakeLists.txt` builds the `linux` target with ASan, UBSan, and LSan unconditionally. Their reports cannot be safely rerouted through the normal `debug_log` channel: they report through their own runtime, often mid-crash, not through stdio you can wrap. The correct mechanism is each sanitizer's `log_path` option. The `linux` test preset in `CMakePresets.json` sets `ASAN_OPTIONS`/`UBSAN_OPTIONS` so reports land in `tmp/asan.log.<pid>` / `tmp/ubsan.log.<pid>` next to the other test logs (LSan rides `ASAN_OPTIONS`).
+
 ## Bug Investigation Discipline
 
 **READ THIS BEFORE INVESTIGATING ANY BUG REPORT.** Two rules, both non-negotiable:
