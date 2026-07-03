@@ -56,6 +56,13 @@ typedef struct {
      * here on transitions, mirroring how production main.c re-reads
      * gamedata.toml from disk. */
     const char *toml_string;
+    /* Populated by the recording preferences_save_fn fake wired in
+     * test_game_setup_with_level: incremented on every invocation, and
+     * the data_dir the fake observed at save time. Lets tests assert
+     * the save was actually invoked with the committed value, not just
+     * that save_preferences_requested was raised and consumed. */
+    int preferences_save_count;
+    char saved_data_dir[512];
 } TestGame;
 
 /* Initialise a TestGame from a TOML string. Mirrors main.c's startup:

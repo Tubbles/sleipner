@@ -946,9 +946,9 @@ void test_integration_settings_tab_switch(void)
  * (frame.c clears it after the save dispatcher runs), and
  * state.preferences.data_dir reflects the buffer that was committed.
  *
- * The TestGame's preferences_save_fn is null, so the dispatcher is a
- * no-op on disk — exactly the headless contract the FrameContext
- * design encodes. */
+ * The TestGame wires a recording preferences_save_fn fake (see
+ * test_helpers.c) instead of a null one, so the test also asserts the
+ * dispatcher was actually invoked, with the committed data_dir. */
 void test_integration_settings_path_edit_commit(void)
 {
     TestGame game;
@@ -991,6 +991,8 @@ void test_integration_settings_path_edit_commit(void)
     TEST_ASSERT_EQUAL_INT(SETTINGS_SCREEN_LIST, (int)game.settings.screen);
     TEST_ASSERT_FALSE(game.settings.save_preferences_requested);
     TEST_ASSERT_NOT_NULL(game.state.preferences.data_dir.ptr);
+    TEST_ASSERT_EQUAL_INT(1, game.preferences_save_count);
+    TEST_ASSERT_EQUAL_STRING(game.state.preferences.data_dir.ptr, game.saved_data_dir);
 
     test_game_teardown(&game);
 }

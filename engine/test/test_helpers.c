@@ -16,8 +16,16 @@
 #include "undo.h"
 
 #include <stdbool.h>
+#include <stddef.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+/* Recording fakes (e.g. test_recording_preferences_save) cast the
+ * GameState* they receive back to TestGame* to reach fixture-only
+ * bookkeeping fields. That cast is only sound because state is the
+ * first member of TestGame. */
+static_assert(offsetof(TestGame, state) == 0, "recording fakes cast GameState* back to TestGame*");
 
 /* --- Heap allocator wrappers (test-only) --- */
 
@@ -125,6 +133,20 @@ static bool test_level_loader(Diag *diag, GameState *state, const char *level_na
                                                .texture_lookup = test_dummy_texture_lookup});
 }
 
+/* Recording preferences_save_fn fake. Recovers the TestGame fixture
+ * from the GameState pointer (state is TestGame's first member, see
+ * the static_assert above) and records the invocation instead of
+ * touching disk, so tests can assert a save actually happened with
+ * the committed data_dir. */
+static bool test_recording_preferences_save(GameState *state)
+{
+    TestGame *game = (TestGame *)state;
+    game->preferences_save_count++;
+    const char *dir = state->preferences.data_dir.ptr ? state->preferences.data_dir.ptr : "";
+    (void)snprintf(game->saved_data_dir, sizeof(game->saved_data_dir), "%s", dir);
+    return true;
+}
+
 bool test_game_setup(TestGame *out, const char *toml_string)
 {
     return test_game_setup_with_level(out, toml_string, nullptr);
@@ -175,7 +197,7 @@ bool test_game_setup_with_level(TestGame *out, const char *toml_string, const ch
         .save_fn = nullptr,
         .restore_fn = nullptr,
         .keybindings_save_fn = nullptr,
-        .preferences_save_fn = nullptr,
+        .preferences_save_fn = test_recording_preferences_save,
         .level_loader_fn = test_level_loader,
         .level_loader_user_data = out,
     };
