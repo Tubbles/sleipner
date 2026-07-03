@@ -577,9 +577,12 @@ static PathEditRowKind path_edit_row_kind(const PathEditState *path_edit, int ro
 
 /* Populate path_edit->drives with the OS-visible filesystem roots.
  * Windows: read GetLogicalDrives() and emit "X:\" for each set bit.
- * POSIX (Linux/Android/macOS): a single "/" entry — the platform has
- * no drive concept, but the entry still gives the user a "jump to
- * root" shortcut without leaving the picker. */
+ * Android: the shared-storage roots plus the app directory (see the
+ * __ANDROID__ branch below) since "/" alone is not a useful jump
+ * target on that platform. Other POSIX (Linux/macOS): a single "/"
+ * entry — the platform has no drive concept, but the entry still
+ * gives the user a "jump to root" shortcut without leaving the
+ * picker. */
 static void path_edit_populate_drives(PathEditState *path_edit)
 {
     path_edit->drive_count = 0;
@@ -602,14 +605,35 @@ static void path_edit_populate_drives(PathEditState *path_edit)
         return;
     }
 #endif
+#if defined(__ANDROID__)
+    /* Android has no drive-letter concept and "/" is not a useful
+     * jump target since the app cannot write there; offer the
+     * user-visible shared-storage roots instead, plus the app's own
+     * directory when raylib can report one that fits a slot. */
+    static const char *const android_roots[] = {
+        "/storage/emulated/0/",
+        "/sdcard/",
+    };
+    for (size_t index = 0;
+         index < sizeof(android_roots) / sizeof(android_roots[0]) && path_edit->drive_count < PATH_EDIT_DRIVE_MAX;
+         index++) {
+        (void)snprintf(path_edit->drives[path_edit->drive_count], PATH_EDIT_DRIVE_PATH_BUF, "%s", android_roots[index]);
+        path_edit->drive_count++;
+    }
+    const char *app_dir = GetApplicationDirectory();
+    if (app_dir != nullptr && app_dir[0] != '\0' && strlen(app_dir) < PATH_EDIT_DRIVE_PATH_BUF &&
+        path_edit->drive_count < PATH_EDIT_DRIVE_MAX) {
+        (void)snprintf(path_edit->drives[path_edit->drive_count], PATH_EDIT_DRIVE_PATH_BUF, "%s", app_dir);
+        path_edit->drive_count++;
+    }
+#else
     /* POSIX fallback (also reached on Windows when GetLogicalDrives
      * returns no bits, which would only happen in heavily sandboxed
      * environments): present "/" so the user can still escape to
      * a deterministic root. */
-    char *slot = path_edit->drives[0];
-    slot[0] = '/';
-    slot[1] = '\0';
+    (void)snprintf(path_edit->drives[0], PATH_EDIT_DRIVE_PATH_BUF, "/");
     path_edit->drive_count = 1;
+#endif
 }
 
 static void path_edit_enter_screen(SettingsState *settings, const Preferences *preferences)

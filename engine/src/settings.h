@@ -63,11 +63,15 @@ typedef enum {
 #define PATH_EDIT_BUF_SIZE 512
 
 /* Drive listing for the DRIVE_SELECT mode. 26 letters is the upper
- * bound of Windows drive letters (A-Z); on POSIX the table holds a
- * single "/" entry, also a justified MAX_* (the OS, not us, defines
- * the count). */
+ * bound of Windows drive letters (A-Z); on non-Android POSIX the
+ * table holds a single "/" entry; on Android it holds the
+ * shared-storage roots. Also a justified MAX_* (the OS, not us,
+ * defines the count). */
 #define PATH_EDIT_DRIVE_MAX 26
-#define PATH_EDIT_DRIVE_PATH_BUF 8
+/* Must fit the longest string written into a slot, currently
+ * Android's "/storage/emulated/0/" (20 chars) and whatever
+ * GetApplicationDirectory() returns. */
+#define PATH_EDIT_DRIVE_PATH_BUF 64
 
 typedef struct {
     PathEditMode mode;
