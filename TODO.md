@@ -1,20 +1,5 @@
 # Sleipner TODO
 
-## Engineering Goals
-
-- **Vec types for all linear data** — `ActionNode.children` /
-  `ActionNode.else_children` still use raw pointers (blocked, see below)
-
----
-
-## Promote vec types — remaining
-
-- **`ActionNode.children`** / **`ActionNode.else_children`** — raw
-  `ActionNode *` + count fields → `vec_action_node` — **Blocked**:
-  self-referential struct constraint. `VEC_DECL(action_node, ActionNode)`
-  requires `ActionNode` to be complete, but `ActionNode` can't embed
-  `vec_action_node` before the vec type is declared.
-
 ## Architecture audit findings
 
 - **Editor test coverage — Phase 4+5** — 176 unit tests across 6 files (draw 14,

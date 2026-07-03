@@ -3,6 +3,7 @@
 
 #include "../src/strv.c"        // NOLINT(bugprone-suspicious-include)
 #include "../src/str.c"         // NOLINT(bugprone-suspicious-include)
+#include "../src/vec.c"         // NOLINT(bugprone-suspicious-include)
 #include "../src/attribute.c"   // NOLINT(bugprone-suspicious-include)
 #include "../src/entity.c"      // NOLINT(bugprone-suspicious-include)
 #include "../src/error.c"       // NOLINT(bugprone-suspicious-include)
@@ -819,10 +820,12 @@ void test_evaluate_interact_sets_flag(void)
     memset(rule, 0, sizeof(*rule));
     rule->trigger.type = TRIGGER_INTERACT;
     rule->action_tree.nodes.alloc = rule_alloc;
+    rule->action_tree.roots.alloc = rule_alloc;
     ActionNode node_interact = {.type = ACTION_SET_FLAG};
     node_interact.argument = str_new(rule_alloc);
     TEST_ASSERT_TRUE(str_from_cstr(&node_interact.argument, "chest_opened"));
     TEST_ASSERT_TRUE(vec_action_node_push(&rule->action_tree.nodes, node_interact));
+    TEST_ASSERT_TRUE(vec_int_push(&rule->action_tree.roots, 0));
 
     blueprint.rules.alloc = rule_alloc;
     TEST_ASSERT_TRUE(vec_rule_push(&blueprint.rules, *rule));
@@ -873,10 +876,12 @@ void test_evaluate_condition_blocks_action(void)
     TEST_ASSERT_TRUE(str_from_cstr(&cond_blocked.argument, "has_key"));
     TEST_ASSERT_TRUE(vec_condition_push(&rule->conditions, cond_blocked));
     rule->action_tree.nodes.alloc = rule_alloc;
+    rule->action_tree.roots.alloc = rule_alloc;
     ActionNode node_blocked = {.type = ACTION_SET_FLAG};
     node_blocked.argument = str_new(rule_alloc);
     TEST_ASSERT_TRUE(str_from_cstr(&node_blocked.argument, "chest_opened"));
     TEST_ASSERT_TRUE(vec_action_node_push(&rule->action_tree.nodes, node_blocked));
+    TEST_ASSERT_TRUE(vec_int_push(&rule->action_tree.roots, 0));
 
     blueprint.rules.alloc = rule_alloc;
     TEST_ASSERT_TRUE(vec_rule_push(&blueprint.rules, *rule));
@@ -921,10 +926,12 @@ void test_evaluate_fire_event_cascading(void)
     memset(switch_rule, 0, sizeof(*switch_rule));
     switch_rule->trigger.type = TRIGGER_INTERACT;
     switch_rule->action_tree.nodes.alloc = rule_alloc;
+    switch_rule->action_tree.roots.alloc = rule_alloc;
     ActionNode switch_node = {.type = ACTION_FIRE_EVENT};
     switch_node.argument = str_new(rule_alloc);
     TEST_ASSERT_TRUE(str_from_cstr(&switch_node.argument, "switch_pulled"));
     TEST_ASSERT_TRUE(vec_action_node_push(&switch_rule->action_tree.nodes, switch_node));
+    TEST_ASSERT_TRUE(vec_int_push(&switch_rule->action_tree.roots, 0));
     bp_switch.rules.alloc = rule_alloc;
     TEST_ASSERT_TRUE(vec_rule_push(&bp_switch.rules, *switch_rule));
 
@@ -938,10 +945,12 @@ void test_evaluate_fire_event_cascading(void)
     door_rule->trigger.argument = str_new(rule_alloc);
     TEST_ASSERT_TRUE(str_from_cstr(&door_rule->trigger.argument, "switch_pulled"));
     door_rule->action_tree.nodes.alloc = rule_alloc;
+    door_rule->action_tree.roots.alloc = rule_alloc;
     ActionNode door_node = {.type = ACTION_SET_FLAG};
     door_node.argument = str_new(rule_alloc);
     TEST_ASSERT_TRUE(str_from_cstr(&door_node.argument, "door_opened"));
     TEST_ASSERT_TRUE(vec_action_node_push(&door_rule->action_tree.nodes, door_node));
+    TEST_ASSERT_TRUE(vec_int_push(&door_rule->action_tree.roots, 0));
     bp_door.rules.alloc = rule_alloc;
     TEST_ASSERT_TRUE(vec_rule_push(&bp_door.rules, *door_rule));
 
@@ -997,12 +1006,14 @@ void test_evaluate_batch_handles_over_64_seeded_events(void)
     memset(rule, 0, sizeof(*rule));
     rule->trigger.type = TRIGGER_INTERACT;
     rule->action_tree.nodes.alloc = rule_alloc;
+    rule->action_tree.roots.alloc = rule_alloc;
     ActionNode set_hit_count = {.type = ACTION_SET_ATTR};
     set_hit_count.argument = str_new(rule_alloc);
     TEST_ASSERT_TRUE(str_from_cstr(&set_hit_count.argument, "hit_count"));
     set_hit_count.second_argument = str_new(rule_alloc);
     TEST_ASSERT_TRUE(str_from_cstr(&set_hit_count.second_argument, "1"));
     TEST_ASSERT_TRUE(vec_action_node_push(&rule->action_tree.nodes, set_hit_count));
+    TEST_ASSERT_TRUE(vec_int_push(&rule->action_tree.roots, 0));
 
     vec_rule shared_rules = {0};
     shared_rules.alloc = rule_alloc;

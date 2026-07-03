@@ -110,17 +110,17 @@ struct ActionNode {
      * for_each uses it as the per-iteration filter. */
     vec_condition conditions;
 
-    /* For control flow nodes (raw pointers — self-referential, can't use vec) */
-    ActionNode *children;
-    int child_count;
-    ActionNode *else_children;
-    int else_child_count;
+    /* For control flow nodes: index lists into the owning ActionTree's flat
+     * node pool (ActionTree.nodes). Empty for simple (non-control-flow) nodes. */
+    vec_int children;
+    vec_int else_children;
 };
 
 VEC_DECL(action_node, ActionNode)
 
 typedef struct {
-    vec_action_node nodes;
+    vec_action_node nodes; /* flat pool: every node in the tree, top-level and nested */
+    vec_int roots;         /* indices into nodes of the top-level actions, in order */
 } ActionTree;
 
 /* --- Rule --- */
@@ -232,11 +232,12 @@ typedef struct {
     vec_trigger_event *event_queue;
     AttrSet *local_vars;
     AttrSet *global_vars;
-    const LocalScope *scope;           /* entity binding chain — walked by resolve_target */
-    const vec_subroutine *subroutines; /* read-only subroutine table */
-    vec_timer *timers;                 /* mutable timer list for create_timer/destroy_timer */
-    TransitionRequest *transition;     /* written by transition action */
-    int call_depth;                    /* recursion guard for call: */
+    const LocalScope *scope;            /* entity binding chain — walked by resolve_target */
+    const vec_subroutine *subroutines;  /* read-only subroutine table */
+    vec_timer *timers;                  /* mutable timer list for create_timer/destroy_timer */
+    TransitionRequest *transition;      /* written by transition action */
+    int call_depth;                     /* recursion guard for call: */
+    const vec_action_node *action_pool; /* pool the current tree's children/else_children indices resolve against */
 } ActionContext;
 
 [[nodiscard]] bool action_node_execute(Diag *diag, Allocator *alloc, const ActionNode *node, ActionContext context);

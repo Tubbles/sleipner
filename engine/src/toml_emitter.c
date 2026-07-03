@@ -263,14 +263,17 @@ static int emit_child_node_simple(char *buffer, int capacity, int offset, const 
     return emit_simple_action_string(buffer, capacity, offset, node);
 }
 
-static int emit_child_nodes_inline_array(char *buffer, int capacity, int offset, const ActionNode *nodes, int count)
+/* `indices` are pool indices (ActionNode.children / else_children); resolve each
+ * against `pool` before emitting. */
+static int emit_child_nodes_inline_array(
+    char *buffer, int capacity, int offset, const vec_action_node *pool, const vec_int *indices)
 {
     offset = emit_append(buffer, capacity, offset, "[");
-    for (int index = 0; index < count; index++) {
+    for (int index = 0; index < indices->count; index++) {
         if (index > 0) {
             offset = emit_append(buffer, capacity, offset, ", ");
         }
-        offset = emit_child_node_simple(buffer, capacity, offset, &nodes[index]);
+        offset = emit_child_node_simple(buffer, capacity, offset, &pool->data[indices->data[index]]);
     }
     return emit_append(buffer, capacity, offset, "]");
 }
@@ -278,23 +281,23 @@ static int emit_child_nodes_inline_array(char *buffer, int capacity, int offset,
 /* Emit a top-level action node: simple actions as quoted strings, control flow as inline tables.
  * Control-flow children are serialised with emit_child_nodes_inline_array (one level deep only)
  * to avoid mutual recursion flagged by misc-no-recursion. */
-static int emit_action_node_inline(char *buffer, int capacity, int offset, const ActionNode *node)
+static int
+emit_action_node_inline(char *buffer, int capacity, int offset, const vec_action_node *pool, const ActionNode *node)
 {
     switch (node->type) {
     case ACTION_IF_ELSE:
         offset = emit_append(buffer, capacity, offset, "{if = ");
         offset = emit_conditions_inline_array(buffer, capacity, offset, node->conditions.data, node->conditions.count);
         offset = emit_append(buffer, capacity, offset, ", then = ");
-        offset = emit_child_nodes_inline_array(buffer, capacity, offset, node->children, node->child_count);
-        if (node->else_child_count > 0) {
+        offset = emit_child_nodes_inline_array(buffer, capacity, offset, pool, &node->children);
+        if (node->else_children.count > 0) {
             offset = emit_append(buffer, capacity, offset, ", else = ");
-            offset =
-                emit_child_nodes_inline_array(buffer, capacity, offset, node->else_children, node->else_child_count);
+            offset = emit_child_nodes_inline_array(buffer, capacity, offset, pool, &node->else_children);
         }
         return emit_append(buffer, capacity, offset, "}");
     case ACTION_REPEAT:
         offset = emit_append(buffer, capacity, offset, "{repeat = \"%s\", do = ", node->argument.ptr);
-        offset = emit_child_nodes_inline_array(buffer, capacity, offset, node->children, node->child_count);
+        offset = emit_child_nodes_inline_array(buffer, capacity, offset, pool, &node->children);
         return emit_append(buffer, capacity, offset, "}");
     case ACTION_FOR_EACH:
         offset = emit_append(buffer, capacity, offset, "{for_each = \"%s\"", node->argument.ptr);
@@ -307,21 +310,23 @@ static int emit_action_node_inline(char *buffer, int capacity, int offset, const
                 emit_conditions_inline_array(buffer, capacity, offset, node->conditions.data, node->conditions.count);
         }
         offset = emit_append(buffer, capacity, offset, ", do = ");
-        offset = emit_child_nodes_inline_array(buffer, capacity, offset, node->children, node->child_count);
+        offset = emit_child_nodes_inline_array(buffer, capacity, offset, pool, &node->children);
         return emit_append(buffer, capacity, offset, "}");
     default:
         return emit_simple_action_string(buffer, capacity, offset, node);
     }
 }
 
-static int emit_action_nodes_inline_array(char *buffer, int capacity, int offset, const vec_action_node *nodes)
+/* Emits the tree's top-level actions, resolving each root index against the flat node pool. */
+static int emit_action_nodes_inline_array(char *buffer, int capacity, int offset, const ActionTree *tree)
 {
     offset = emit_append(buffer, capacity, offset, "[");
-    for (int index = 0; index < nodes->count; index++) {
+    for (int index = 0; index < tree->roots.count; index++) {
         if (index > 0) {
             offset = emit_append(buffer, capacity, offset, ", ");
         }
-        offset = emit_action_node_inline(buffer, capacity, offset, &nodes->data[index]);
+        offset =
+            emit_action_node_inline(buffer, capacity, offset, &tree->nodes, &tree->nodes.data[tree->roots.data[index]]);
     }
     return emit_append(buffer, capacity, offset, "]");
 }
@@ -337,9 +342,9 @@ static int emit_rule(char *buffer, int capacity, int offset, const Rule *rule)
         offset = emit_conditions_inline_array(buffer, capacity, offset, rule->conditions.data, rule->conditions.count);
         offset = emit_append(buffer, capacity, offset, "\n");
     }
-    if (rule->action_tree.nodes.count > 0) {
+    if (rule->action_tree.roots.count > 0) {
         offset = emit_append(buffer, capacity, offset, "actions = ");
-        offset = emit_action_nodes_inline_array(buffer, capacity, offset, &rule->action_tree.nodes);
+        offset = emit_action_nodes_inline_array(buffer, capacity, offset, &rule->action_tree);
         offset = emit_append(buffer, capacity, offset, "\n");
     }
     return emit_append(buffer, capacity, offset, "\n");

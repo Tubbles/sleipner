@@ -375,20 +375,31 @@ static bool parse_simple_action(Diag *diag, Allocator *alloc, ActionNode *node, 
 }
 
 typedef struct {
-    ActionNode *target;
+    int target_index; /* index into pool of the node to fill in */
     toml_table_t *table;
 } ParseCFTask;
 
+/* Parses `array` into fresh pool nodes and appends their indices to
+ * parent_index's children (or else_children) list. Each child is pushed onto
+ * the pool as a zeroed placeholder first (capturing its stable index), then
+ * filled in — either directly (simple actions) or deferred via task_stack
+ * (nested control flow, drained by the caller). Every pool dereference is
+ * re-derived from parent_index/node_index right before use, since any
+ * vec_action_node_push above can reallocate the pool and invalidate a
+ * previously taken ActionNode pointer (see CLAUDE.md "Vec growth and pointer
+ * stability"). */
 static bool parse_branch_array_into(Diag *diag,
                                     Allocator *alloc,
-                                    ActionNode **out_nodes,
-                                    int *out_count,
+                                    vec_action_node *pool,
+                                    int parent_index,
+                                    bool into_else,
                                     toml_array_t *array,
                                     Arena *arena,
                                     const char *branch_name,
                                     ParseCFTask *task_stack,
                                     int *task_top)
 {
+    (void)arena;
     if (!array) {
         return true;
     }
@@ -396,15 +407,17 @@ static bool parse_branch_array_into(Diag *diag,
     if (count <= 0) {
         return true;
     }
-    ActionNode *nodes = arena_alloc(arena, (size_t)count * sizeof(ActionNode));
-    if (!nodes) {
-        error_wrap(diag->error, "parse_branch_array_into: arena_alloc");
-        return false;
-    }
     for (int child_index = 0; child_index < count; child_index++) {
+        ActionNode blank = {0};
+        if (!vec_action_node_push(pool, blank)) {
+            error_set(diag->error, "%s[%d]: out of memory", branch_name, child_index);
+            return false;
+        }
+        int node_index = pool->count - 1;
+
         toml_datum_t value = toml_string_at(array, child_index);
         if (value.ok) {
-            if (!action_node_parse(diag, alloc, &nodes[child_index], value)) {
+            if (!action_node_parse(diag, alloc, &pool->data[node_index], value)) {
                 error_wrap(diag->error, "%s[%d]", branch_name, child_index);
                 free(value.u.s);
                 return false;
@@ -420,12 +433,17 @@ static bool parse_branch_array_into(Diag *diag,
                 error_set(diag->error, "parse_branch_array_into: task stack overflow");
                 return false;
             }
-            memset(&nodes[child_index], 0, sizeof(ActionNode));
-            task_stack[(*task_top)++] = (ParseCFTask){&nodes[child_index], table};
+            task_stack[(*task_top)++] = (ParseCFTask){node_index, table};
+        }
+
+        ActionNode *parent = &pool->data[parent_index];
+        vec_int *target = into_else ? &parent->else_children : &parent->children;
+        target->alloc = *alloc;
+        if (!vec_int_push(target, node_index)) {
+            error_set(diag->error, "%s[%d]: out of memory", branch_name, child_index);
+            return false;
         }
     }
-    *out_nodes = nodes;
-    *out_count = count;
     return true;
 }
 
@@ -462,90 +480,96 @@ parse_conditions_into(Diag *diag, Allocator *alloc, vec_condition *out, toml_arr
     return true;
 }
 
+/* Fills in pool->data[node_index] — already a zeroed placeholder pushed by the
+ * caller. Every field write is a fresh pool->data[node_index] dereference so
+ * that a pool reallocation triggered by a nested parse_branch_array_into call
+ * (e.g. parsing "then" before "else") never leaves a stale pointer in play. */
 static bool parse_one_cf_node(Diag *diag,
                               Allocator *alloc,
-                              ActionNode *node,
+                              vec_action_node *pool,
+                              int node_index,
                               toml_table_t *table,
                               Arena *arena,
                               ParseCFTask *task_stack,
                               int *task_top)
 {
-    memset(node, 0, sizeof(*node));
-
     toml_array_t *if_conds = toml_array_in(table, "if");
     if (if_conds) {
-        node->type = ACTION_IF_ELSE;
-        if (!parse_conditions_into(diag, alloc, &node->conditions, if_conds, "if")) {
+        pool->data[node_index].type = ACTION_IF_ELSE;
+        if (!parse_conditions_into(diag, alloc, &pool->data[node_index].conditions, if_conds, "if")) {
             return false;
         }
-        if (!parse_branch_array_into(diag, alloc, &node->children, &node->child_count, toml_array_in(table, "then"),
-                                     arena, "then", task_stack, task_top)) {
+        if (!parse_branch_array_into(diag, alloc, pool, node_index, false, toml_array_in(table, "then"), arena, "then",
+                                     task_stack, task_top)) {
             return false;
         }
-        return parse_branch_array_into(diag, alloc, &node->else_children, &node->else_child_count,
-                                       toml_array_in(table, "else"), arena, "else", task_stack, task_top);
+        return parse_branch_array_into(diag, alloc, pool, node_index, true, toml_array_in(table, "else"), arena, "else",
+                                       task_stack, task_top);
     }
 
     toml_datum_t repeat_str = toml_string_in(table, "repeat");
     if (repeat_str.ok) {
-        node->type = ACTION_REPEAT;
-        node->argument = str_new(*alloc);
-        bool alloc_ok = str_from_cstr(&node->argument, repeat_str.u.s);
+        pool->data[node_index].type = ACTION_REPEAT;
+        pool->data[node_index].argument = str_new(*alloc);
+        bool alloc_ok = str_from_cstr(&pool->data[node_index].argument, repeat_str.u.s);
         free(repeat_str.u.s);
         if (!alloc_ok) {
             error_set(diag->error, "parse_one_cf_node: allocation failed");
             return false;
         }
-        return parse_branch_array_into(diag, alloc, &node->children, &node->child_count, toml_array_in(table, "do"),
-                                       arena, "do", task_stack, task_top);
+        return parse_branch_array_into(diag, alloc, pool, node_index, false, toml_array_in(table, "do"), arena, "do",
+                                       task_stack, task_top);
     }
 
     toml_datum_t for_each_str = toml_string_in(table, "for_each");
     if (for_each_str.ok) {
-        node->type = ACTION_FOR_EACH;
-        node->argument = str_new(*alloc);
-        bool alloc_ok = str_from_cstr(&node->argument, for_each_str.u.s);
+        pool->data[node_index].type = ACTION_FOR_EACH;
+        pool->data[node_index].argument = str_new(*alloc);
+        bool alloc_ok = str_from_cstr(&pool->data[node_index].argument, for_each_str.u.s);
         free(for_each_str.u.s);
         if (!alloc_ok) {
             error_set(diag->error, "parse_one_cf_node: allocation failed for for_each");
             return false;
         }
-        if (strcmp(node->argument.ptr, "entities") != 0) {
-            error_set(diag->error, "for_each: unknown collection '%s' (supported: 'entities')", node->argument.ptr);
+        if (strcmp(pool->data[node_index].argument.ptr, "entities") != 0) {
+            error_set(diag->error, "for_each: unknown collection '%s' (supported: 'entities')",
+                      pool->data[node_index].argument.ptr);
             return false;
         }
         toml_datum_t bind_str = toml_string_in(table, "bind");
         if (bind_str.ok) {
-            node->second_argument = str_new(*alloc);
-            bool bind_ok = str_from_cstr(&node->second_argument, bind_str.u.s);
+            pool->data[node_index].second_argument = str_new(*alloc);
+            bool bind_ok = str_from_cstr(&pool->data[node_index].second_argument, bind_str.u.s);
             free(bind_str.u.s);
             if (!bind_ok) {
                 error_set(diag->error, "parse_one_cf_node: allocation failed for bind");
                 return false;
             }
         }
-        if (!parse_conditions_into(diag, alloc, &node->conditions, toml_array_in(table, "conditions"), "for_each")) {
+        if (!parse_conditions_into(diag, alloc, &pool->data[node_index].conditions, toml_array_in(table, "conditions"),
+                                   "for_each")) {
             return false;
         }
-        return parse_branch_array_into(diag, alloc, &node->children, &node->child_count, toml_array_in(table, "do"),
-                                       arena, "do", task_stack, task_top);
+        return parse_branch_array_into(diag, alloc, pool, node_index, false, toml_array_in(table, "do"), arena, "do",
+                                       task_stack, task_top);
     }
 
     error_set(diag->error, "unknown control flow structure");
     return false;
 }
 
-static bool parse_control_flow_node(Diag *diag, Allocator *alloc, ActionNode *node, toml_table_t *table, Arena *arena)
+static bool parse_control_flow_node(
+    Diag *diag, Allocator *alloc, vec_action_node *pool, int node_index, toml_table_t *table, Arena *arena)
 {
     ParseCFTask task_stack[MAX_PARSE_CF_STACK];
     int task_top = 0;
 
-    if (!parse_one_cf_node(diag, alloc, node, table, arena, task_stack, &task_top)) {
+    if (!parse_one_cf_node(diag, alloc, pool, node_index, table, arena, task_stack, &task_top)) {
         return false;
     }
     while (task_top > 0) {
         ParseCFTask task = task_stack[--task_top];
-        if (!parse_one_cf_node(diag, alloc, task.target, task.table, arena, task_stack, &task_top)) {
+        if (!parse_one_cf_node(diag, alloc, pool, task.target_index, task.table, arena, task_stack, &task_top)) {
             return false;
         }
     }
@@ -568,8 +592,10 @@ static bool parse_conditions_array(Diag *diag, Allocator *alloc, Rule *rule, tom
     return parse_conditions_into(diag, alloc, &rule->conditions, conditions, "rule");
 }
 
-static bool
-parse_action_nodes_into(Diag *diag, Allocator *alloc, vec_action_node *nodes, toml_array_t *actions, Arena *arena)
+/* Parses a top-level actions array into tree->nodes (the tree's flat node
+ * pool) and tree->roots (the indices of these top-level entries, in order).
+ * Nested control flow grows the same pool — see parse_branch_array_into. */
+static bool parse_action_nodes_into(Diag *diag, Allocator *alloc, ActionTree *tree, toml_array_t *actions, Arena *arena)
 {
     if (!actions) {
         return true;
@@ -579,13 +605,20 @@ parse_action_nodes_into(Diag *diag, Allocator *alloc, vec_action_node *nodes, to
         error_set(diag->error, "too many actions (%d, max %d)", count, MAX_ACTIONS);
         return false;
     }
-    nodes->alloc = *alloc;
+    tree->nodes.alloc = *alloc;
+    tree->roots.alloc = *alloc;
 
     for (int index = 0; index < count; index++) {
-        ActionNode node = {0};
+        ActionNode blank = {0};
+        if (!vec_action_node_push(&tree->nodes, blank)) {
+            error_set(diag->error, "action[%d]: out of memory", index);
+            return false;
+        }
+        int node_index = tree->nodes.count - 1;
+
         toml_datum_t value = toml_string_at(actions, index);
         if (value.ok) {
-            if (!action_node_parse(diag, alloc, &node, value)) {
+            if (!action_node_parse(diag, alloc, &tree->nodes.data[node_index], value)) {
                 error_wrap(diag->error, "action[%d]", index);
                 free(value.u.s);
                 return false;
@@ -594,7 +627,7 @@ parse_action_nodes_into(Diag *diag, Allocator *alloc, vec_action_node *nodes, to
         } else {
             toml_table_t *table_value = toml_table_at(actions, index);
             if (table_value) {
-                if (!parse_control_flow_node(diag, alloc, &node, table_value, arena)) {
+                if (!parse_control_flow_node(diag, alloc, &tree->nodes, node_index, table_value, arena)) {
                     error_wrap(diag->error, "action[%d]", index);
                     return false;
                 }
@@ -603,7 +636,7 @@ parse_action_nodes_into(Diag *diag, Allocator *alloc, vec_action_node *nodes, to
                 return false;
             }
         }
-        if (!vec_action_node_push(nodes, node)) {
+        if (!vec_int_push(&tree->roots, node_index)) {
             error_set(diag->error, "action[%d]: out of memory", index);
             return false;
         }
@@ -613,7 +646,7 @@ parse_action_nodes_into(Diag *diag, Allocator *alloc, vec_action_node *nodes, to
 
 static bool parse_actions_array(Diag *diag, Allocator *alloc, Rule *rule, toml_array_t *actions, Arena *arena)
 {
-    return parse_action_nodes_into(diag, alloc, &rule->action_tree.nodes, actions, arena);
+    return parse_action_nodes_into(diag, alloc, &rule->action_tree, actions, arena);
 }
 
 static bool parse_single_rule(Diag *diag, Allocator *alloc, Rule *rule, toml_table_t *entry, Arena *arena)
@@ -677,12 +710,14 @@ bool rules_parse(Diag *diag, Allocator *alloc, vec_rule *rules, toml_table_t *to
         if (!parse_single_rule(diag, alloc, &rule, entry, arena)) {
             vec_condition_free(&rule.conditions);
             vec_action_node_free(&rule.action_tree.nodes);
+            vec_int_free(&rule.action_tree.roots);
             error_wrap(diag->error, "rule[%d]", index);
             return false;
         }
         if (!vec_rule_push(rules, rule)) {
             vec_condition_free(&rule.conditions);
             vec_action_node_free(&rule.action_tree.nodes);
+            vec_int_free(&rule.action_tree.roots);
             error_set(diag->error, "rule[%d]: out of memory", index);
             return false;
         }
@@ -1063,15 +1098,23 @@ static bool execute_set_var_action(Diag *diag, Allocator *alloc, const ActionNod
     return attr_set_string(alloc, target_vars, (AttrStringPair){.name = var_name, .value = resolved_value});
 }
 
-static bool
-push_branch_nodes(Diag *diag, const ActionNode **exec_stack, int *stack_top, const ActionNode *nodes, int count)
+/* Resolves each index in `indices` against `pool` and pushes the resulting
+ * node pointers onto exec_stack. Safe to hold these ActionNode pointers past
+ * this call because the pool is read-only at runtime — all pushes happen at
+ * parse time. */
+static bool push_branch_nodes(
+    Diag *diag, const vec_action_node *pool, const ActionNode **exec_stack, int *stack_top, const vec_int *indices)
 {
-    for (int push_index = count - 1; push_index >= 0; push_index--) {
+    if (!pool) {
+        error_set(diag->error, "push_branch_nodes: control flow node reached with no context.action_pool set");
+        return false;
+    }
+    for (int push_index = indices->count - 1; push_index >= 0; push_index--) {
         if (*stack_top >= MAX_EXEC_STACK) {
             error_set(diag->error, "action execution stack overflow");
             return false;
         }
-        exec_stack[(*stack_top)++] = &nodes[push_index];
+        exec_stack[(*stack_top)++] = &pool->data[indices->data[push_index]];
     }
     return true;
 }
@@ -1089,26 +1132,19 @@ static bool expand_if_else_node(
         .global_vars = context.global_vars,
     };
     bool condition_met = conditions_evaluate(node->conditions.data, node->conditions.count, cond_ctx);
-    const ActionNode *branch;
-    int branch_count;
-    if (condition_met) {
-        branch = node->children;
-        branch_count = node->child_count;
-    } else {
-        branch = node->else_children;
-        branch_count = node->else_child_count;
-    }
-    return push_branch_nodes(diag, exec_stack, stack_top, branch, branch_count);
+    const vec_int *branch = condition_met ? &node->children : &node->else_children;
+    return push_branch_nodes(diag, context.action_pool, exec_stack, stack_top, branch);
 }
 
-static bool expand_repeat_node(Diag *diag, const ActionNode *node, const ActionNode **exec_stack, int *stack_top)
+static bool expand_repeat_node(
+    Diag *diag, const ActionNode *node, const vec_action_node *pool, const ActionNode **exec_stack, int *stack_top)
 {
     int repeat_count = (int)strtol(node->argument.ptr, nullptr, RADIX_DECIMAL);
     if (repeat_count <= 0) {
         repeat_count = 1;
     }
     for (int repeat_index = 0; repeat_index < repeat_count; repeat_index++) {
-        if (!push_branch_nodes(diag, exec_stack, stack_top, node->children, node->child_count)) {
+        if (!push_branch_nodes(diag, pool, exec_stack, stack_top, &node->children)) {
             return false;
         }
     }
@@ -1232,9 +1268,11 @@ static bool dispatch_simple_action(Diag *diag, Allocator *alloc, const ActionNod
     }
 }
 
-/* Forward declaration — execute_action_nodes and execute_for_each_node are mutually recursive */
+/* Forward declarations — execute_from_stack, execute_action_nodes and
+ * execute_for_each_node/execute_call_node are mutually recursive. */
+static bool execute_action_nodes(Diag *diag, Allocator *alloc, const vec_int *node_indices, ActionContext context);
 static bool
-execute_action_nodes(Diag *diag, Allocator *alloc, const ActionNode *nodes, int count, ActionContext context);
+execute_from_stack(Diag *diag, Allocator *alloc, ActionContext context, const ActionNode **exec_stack, int stack_top);
 
 // NOLINTBEGIN(misc-no-recursion) -- mutually recursive; bounded by for_each nesting depth
 static bool execute_for_each_node(Diag *diag, Allocator *alloc, const ActionNode *node, ActionContext context)
@@ -1266,7 +1304,7 @@ static bool execute_for_each_node(Diag *diag, Allocator *alloc, const ActionNode
             };
             ActionContext iter_ctx = context;
             iter_ctx.scope = &iter_scope;
-            if (!execute_action_nodes(diag, alloc, node->children, node->child_count, iter_ctx)) {
+            if (!execute_action_nodes(diag, alloc, &node->children, iter_ctx)) {
                 return false;
             }
         } else {
@@ -1274,7 +1312,7 @@ static bool execute_for_each_node(Diag *diag, Allocator *alloc, const ActionNode
             ActionContext iter_ctx = context;
             iter_ctx.entity = context.views[entity_index].entity;
             iter_ctx.entity_index = entity_index;
-            if (!execute_action_nodes(diag, alloc, node->children, node->child_count, iter_ctx)) {
+            if (!execute_action_nodes(diag, alloc, &node->children, iter_ctx)) {
                 return false;
             }
         }
@@ -1297,8 +1335,8 @@ static bool execute_call_node(Diag *diag, Allocator *alloc, const ActionNode *no
         if (strcmp(sub->name.ptr, node->argument.ptr) == 0) {
             ActionContext sub_ctx = context;
             sub_ctx.call_depth++;
-            return execute_action_nodes(diag, alloc, sub->action_tree.nodes.data, sub->action_tree.nodes.count,
-                                        sub_ctx);
+            sub_ctx.action_pool = &sub->action_tree.nodes;
+            return execute_action_nodes(diag, alloc, &sub->action_tree.roots, sub_ctx);
         }
     }
     debug_log(diag->debug, "call: subroutine '%s' not found", node->argument.ptr);
@@ -1306,18 +1344,8 @@ static bool execute_call_node(Diag *diag, Allocator *alloc, const ActionNode *no
 }
 
 static bool
-execute_action_nodes(Diag *diag, Allocator *alloc, const ActionNode *nodes, int count, ActionContext context)
+execute_from_stack(Diag *diag, Allocator *alloc, ActionContext context, const ActionNode **exec_stack, int stack_top)
 {
-    const ActionNode *exec_stack[MAX_EXEC_STACK];
-    int stack_top = 0;
-    for (int index = count - 1; index >= 0; index--) {
-        if (stack_top >= MAX_EXEC_STACK) {
-            error_set(diag->error, "action execution stack overflow");
-            return false;
-        }
-        exec_stack[stack_top++] = &nodes[index];
-    }
-
     while (stack_top > 0) {
         const ActionNode *current = exec_stack[--stack_top];
         if (current->type == ACTION_IF_ELSE) {
@@ -1325,7 +1353,7 @@ execute_action_nodes(Diag *diag, Allocator *alloc, const ActionNode *nodes, int 
                 return false;
             }
         } else if (current->type == ACTION_REPEAT) {
-            if (!expand_repeat_node(diag, current, exec_stack, &stack_top)) {
+            if (!expand_repeat_node(diag, current, context.action_pool, exec_stack, &stack_top)) {
                 return false;
             }
         } else if (current->type == ACTION_FOR_EACH) {
@@ -1342,11 +1370,24 @@ execute_action_nodes(Diag *diag, Allocator *alloc, const ActionNode *nodes, int 
     }
     return true;
 }
+
+static bool execute_action_nodes(Diag *diag, Allocator *alloc, const vec_int *node_indices, ActionContext context)
+{
+    const ActionNode *exec_stack[MAX_EXEC_STACK];
+    int stack_top = 0;
+    if (!push_branch_nodes(diag, context.action_pool, exec_stack, &stack_top, node_indices)) {
+        return false;
+    }
+    return execute_from_stack(diag, alloc, context, exec_stack, stack_top);
+}
 // NOLINTEND(misc-no-recursion)
 
 bool action_node_execute(Diag *diag, Allocator *alloc, const ActionNode *node, ActionContext context)
 {
-    return execute_action_nodes(diag, alloc, node, 1, context);
+    const ActionNode *exec_stack[MAX_EXEC_STACK];
+    int stack_top = 0;
+    exec_stack[stack_top++] = node;
+    return execute_from_stack(diag, alloc, context, exec_stack, stack_top);
 }
 
 /* ---- Evaluation loop ---- */
@@ -1411,6 +1452,7 @@ static void evaluate_entity_rules(Diag *diag,
             .subroutines = subroutines,
             .timers = timers,
             .transition = transition,
+            .action_pool = &rule->action_tree.nodes,
         };
         debug_log(diag->debug, "Rule triggered for entity %d (type: %s), rule %d", entity_index,
                   entity->blueprint_name.ptr, rule_index);
@@ -1421,8 +1463,9 @@ static void evaluate_entity_rules(Diag *diag,
         }
         debug_log(diag->debug, "Executing actions for rule %d on entity %d (type: %s)", rule_index, entity_index,
                   entity->blueprint_name.ptr);
-        for (int action_index = 0; action_index < rule->action_tree.nodes.count; action_index++) {
-            (void)action_node_execute(diag, alloc, &rule->action_tree.nodes.data[action_index], act_ctx);
+        for (int root_index = 0; root_index < rule->action_tree.roots.count; root_index++) {
+            int node_index = rule->action_tree.roots.data[root_index];
+            (void)action_node_execute(diag, alloc, &rule->action_tree.nodes.data[node_index], act_ctx);
         }
         attr_set_free(alloc, &local_vars);
     }
@@ -1511,13 +1554,12 @@ bool subroutines_parse(Diag *diag, Allocator *alloc, vec_subroutine *subroutines
             return false;
         }
         Subroutine *pushed = &subroutines->data[subroutines->count - 1];
-        if (!parse_action_nodes_into(diag, alloc, &pushed->action_tree.nodes, toml_array_in(sub_table, "actions"),
-                                     arena)) {
+        if (!parse_action_nodes_into(diag, alloc, &pushed->action_tree, toml_array_in(sub_table, "actions"), arena)) {
             error_wrap(diag->error, "subroutine '%s'", pushed->name.ptr);
             return false;
         }
         debug_log(diag->debug, "subroutine: parsed '%s' (%d actions)", pushed->name.ptr,
-                  pushed->action_tree.nodes.count);
+                  pushed->action_tree.roots.count);
     }
     return true;
 }
