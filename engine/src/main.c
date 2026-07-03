@@ -45,6 +45,7 @@ const char *__lsan_default_suppressions(void)
 #include "editor/editor.h"
 #include "entity.h"
 #include "diag.h"
+#include "font_cache.h"
 #include "frame.h"
 #include "settings.h"
 #include "game.h"
@@ -174,7 +175,7 @@ static void font_preview_add(GameState *state, const char *name, EmbeddedAsset a
 {
     FontPreviewEntry entry = {0};
     strncpy(entry.name, name, FONT_NAME_LEN - 1);
-    entry.font = LoadFontFromMemory(".ttf", asset.data, asset.size, FONT_PREVIEW_SIZE, nullptr, 0);
+    entry.font = font_cache_get(&state->assets.font_cache, asset, FONT_PREVIEW_SIZE, alloc);
     entry.valid = IsFontValid(entry.font);
     if (entry.valid) {
         debug_log(&state->debug, "font[%d]: '%s' (%d bytes)", state->assets.font_previews.count, name, asset.size);
@@ -358,10 +359,18 @@ static void load_persistent_assets(GameState *state)
     font_preview_add(state, "RoyalFibre", ASSET(royalfibre_ttf), &gamedata_alloc);
 
     EmbeddedAsset ui_font_asset = ASSET(golden_apple_ttf);
-    state->assets.ui_font =
-        LoadFontFromMemory(".ttf", ui_font_asset.data, ui_font_asset.size, DEBUG_FONT_SIZE, nullptr, 0);
+    state->assets.ui_font = font_cache_get(&state->assets.font_cache, ui_font_asset, DEBUG_FONT_SIZE, &gamedata_alloc);
     debug_log(&state->debug, "ui_font: Golden Apple %dpx valid=%d", DEBUG_FONT_SIZE,
               IsFontValid(state->assets.ui_font));
+
+    /* Pre-warm the menu font's cache entry (CardboardCrown @ MENU_FONT_SIZE)
+     * here, before main() checkpoints gamedata_base below. The menu is
+     * constructed later in main(), after that checkpoint; a cache miss
+     * there would push a new FontCacheEntry above gamedata_base, and the
+     * next hot-reload's arena_restore would silently overwrite it. Golden
+     * Apple @ SETTINGS_FONT_SIZE needs no equivalent pre-warm: it is the
+     * same (asset, size) as ui_font above, already cached here. */
+    (void)font_cache_get(&state->assets.font_cache, ASSET(cardboardcrown_ttf), MENU_FONT_SIZE, &gamedata_alloc);
 
     /* Resolve and overlay preferences.toml first so data_dir is final
      * before we use it to compose keybindings.toml and trace.log paths.
@@ -410,16 +419,12 @@ static void unload_textures(GameState *state)
     }
 }
 
+/* Fonts held here (font_previews entries, ui_font) are non-owning
+ * copies from state->assets.font_cache; the cache is unloaded once via
+ * font_cache_cleanup, so this only clears the preview list itself. */
 static void font_preview_cleanup(GameState *state)
 {
-    for (int index = 0; index < state->assets.font_previews.count; index++) {
-        if (state->assets.font_previews.data[index].valid) {
-            UnloadFont(state->assets.font_previews.data[index].font);
-        }
-    }
-    if (IsFontValid(state->assets.ui_font)) {
-        UnloadFont(state->assets.ui_font);
-    }
+    vec_font_preview_clear(&state->assets.font_previews);
 }
 
 static void draw_font_preview(GameState *state)
@@ -1111,18 +1116,19 @@ int main(void)
      * already-rendered scene directly. */
     MenuState menu = {0};
     menu_init(&menu);
+    Allocator gamedata_alloc = allocator_arena(&state->gamedata_arena);
     EmbeddedAsset menu_font_asset = ASSET(cardboardcrown_ttf);
-    menu_set_font(&menu,
-                  LoadFontFromMemory(".ttf", menu_font_asset.data, menu_font_asset.size, MENU_FONT_SIZE, nullptr, 0));
+    menu_set_font(&menu, font_cache_get(&state->assets.font_cache, menu_font_asset, MENU_FONT_SIZE, &gamedata_alloc));
 
     /* Settings overlay shares the menu's blur backdrop. Uses the smaller
      * Golden Apple font since list rows are denser than the menu's
-     * five-entry layout. */
+     * five-entry layout. Same (asset, size) as ui_font, so this is
+     * always a cache hit. */
     SettingsState settings = {0};
     settings_init(&settings);
     EmbeddedAsset settings_font_asset = ASSET(golden_apple_ttf);
-    settings_set_font(&settings, LoadFontFromMemory(".ttf", settings_font_asset.data, settings_font_asset.size,
-                                                    SETTINGS_FONT_SIZE, nullptr, 0));
+    settings_set_font(
+        &settings, font_cache_get(&state->assets.font_cache, settings_font_asset, SETTINGS_FONT_SIZE, &gamedata_alloc));
 
     BlurPipeline blur = {0};
     blur_init(&blur, (int)game_bounds.width, (int)game_bounds.height);
@@ -1188,6 +1194,7 @@ int main(void)
     UnloadRenderTexture(target);
     unload_textures(state);
     font_preview_cleanup(state);
+    font_cache_cleanup(&state->assets.font_cache);
     game_free(diag, state);
     audio_shutdown(&state->audio);
     debug_shutdown(&state->debug);

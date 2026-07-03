@@ -67,9 +67,6 @@ void menu_init(MenuState *menu)
 
 void menu_set_font(MenuState *menu, Font font)
 {
-    if (menu->font_loaded) {
-        UnloadFont(menu->font);
-    }
     menu->font = font;
     menu->font_loaded = true;
 }
@@ -143,9 +140,5 @@ void menu_render(const MenuState *menu, const BlurPipeline *blur, int screen_wid
 
 void menu_cleanup(MenuState *menu)
 {
-    if (menu->font_loaded) {
-        UnloadFont(menu->font);
-        menu->font_loaded = false;
-    }
     *menu = (MenuState){0};
 }

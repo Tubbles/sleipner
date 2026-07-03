@@ -60,9 +60,6 @@ void settings_init(SettingsState *settings)
 
 void settings_set_font(SettingsState *settings, Font font)
 {
-    if (settings->font_loaded) {
-        UnloadFont(settings->font);
-    }
     settings->font = font;
     settings->font_loaded = true;
 }
@@ -103,9 +100,8 @@ void settings_cleanup(SettingsState *settings)
         UnloadDirectoryFiles(settings->path_edit.dir_list);
         settings->path_edit.dir_list_loaded = false;
     }
-    if (settings->font_loaded) {
-        UnloadFont(settings->font);
-    }
+    /* settings->font is a non-owning copy from the shared font cache
+     * (font_cache_get); it is not unloaded here. */
     *settings = (SettingsState){0};
 }
 

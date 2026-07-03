@@ -45,10 +45,23 @@ typedef struct {
 
 VEC_DECL(font_preview, FontPreviewEntry)
 
+/* One shared Font keyed on (asset data pointer, pixel size). ASSET()
+ * symbols live in .rodata, so pointer identity is a stable cache key.
+ * The cache is the SOLE owner of every Font it hands out — see
+ * font_cache.h for the ownership contract. */
+typedef struct {
+    const unsigned char *data;
+    int size;
+    Font font;
+} FontCacheEntry;
+
+VEC_DECL(font_cache, FontCacheEntry)
+
 typedef struct {
     vec_texture_entry textures;
     vec_font_preview font_previews;
     Font ui_font;
+    vec_font_cache font_cache;
 } AssetRegistry;
 
 typedef struct {

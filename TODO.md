@@ -139,10 +139,6 @@ Carried over from the pause-overlay menu landing:
   `game_bounds`/the render texture, set `menu->blur_captured = false`
   (and the settings sibling), then call `blur_resize`. Function kept
   for that future.
-- **CardboardCrown is loaded twice.** Once at `FONT_PREVIEW_SIZE`
-  (32px) for the font preview panel, again at `MENU_FONT_SIZE` (64px)
-  for the menu. Wasteful; the asset bytes are identical. Add a tiny
-  font cache keyed on (asset, size) and share.
 - **Engine-lib text assets can't use `embed_asset()`.** The blur
   shader source had to live as a C string literal in `blur.c` because
   `embed_*_start` symbols are only resolved on the `sleipner`

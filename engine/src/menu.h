@@ -58,10 +58,10 @@ typedef struct {
  * library and break the unit-test target's link. */
 void menu_init(MenuState *menu);
 
-/* Hand over a loaded font for the entry list. The caller retains
- * ownership of the underlying texture/glyph data; menu_cleanup unloads
- * it via UnloadFont. Re-entrant: passing a new font replaces the old
- * one and unloads the previous. */
+/* Hand over a font for the entry list, e.g. from font_cache_get. The
+ * menu holds a non-owning copy: it never calls UnloadFont on it, and
+ * menu_cleanup does not unload it either. The shared font cache is the
+ * sole owner. Re-entrant: passing a new font just replaces the field. */
 void menu_set_font(MenuState *menu, Font font);
 
 /* Mark the menu as open and reset the selected entry to Resume. */
@@ -82,5 +82,6 @@ MenuAction menu_handle_input(MenuState *menu, const InputState *input, const Bin
  * menu-open time and frozen; menu_render only reads it. */
 void menu_render(const MenuState *menu, const BlurPipeline *blur, int screen_width, int screen_height);
 
-/* Free the loaded font. Safe on a zero-initialised menu. */
+/* Reset menu state. Safe on a zero-initialised menu. Does not unload
+ * the font — it is owned by the shared font cache (font_cache_cleanup). */
 void menu_cleanup(MenuState *menu);

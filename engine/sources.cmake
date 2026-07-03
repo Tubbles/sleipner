@@ -30,6 +30,7 @@ set(ENGINE_SOURCE_FILES
     editor/widgets.c
     entity.c
     error.c
+    font_cache.c
     frame.c
     game.c
     input.c
