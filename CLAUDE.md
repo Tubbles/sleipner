@@ -380,7 +380,7 @@ Conflict resolution mirrors the gamedata workflow if both desktop and Android ed
 
 ## Toolchain Reference
 
-- LLVM/Clang 22.1.0 (provided by `llvmPackages_22` in `flake.nix`)
+- LLVM/Clang 22.1.2 (provided by `llvmPackages_22` in `flake.nix`)
 - Clang Static Analyzer checkers: https://releases.llvm.org/22.1.0/tools/clang/docs/analyzer/checkers.html
 - LLVM 22 release docs root: https://releases.llvm.org/22.1.0/
 - Note: `ReportMode` for `security.insecureAPI.DeprecatedOrUnsafeBufferHandling` is NOT available in LLVM 22 — trunk-only feature (LLVM 23+).
