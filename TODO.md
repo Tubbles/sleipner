@@ -200,9 +200,12 @@ d890de8 through 3641352).
   The engine library's `_GNU_SOURCE` opt-in is gated on `!WIN32`,
   so MinGW does not see `M_PI` from `<math.h>`. `keyboard_widget.c`
   hit this in commit 626b0e4 and was hot-fixed with a local
-  `KB_PI` constant in 2642e6d. The editor's `widgets.c` happens to
-  compile because of which transitive headers it pulls in; do not
-  count on that for new files.
+  `KB_PI` constant in 2642e6d. `engine/src/math_consts.h` now
+  provides a shared `SLEIPNER_PI` constant for this;
+  `keyboard_widget.c` has been migrated to it. `editor/widgets.c`
+  still uses `M_PI` via the fallback `#define` in
+  `editor/internal.h`, which is fine for editor code, but new
+  top-level `.c` files should use `SLEIPNER_PI` instead of `M_PI`.
 - **DRIVE_SELECT on POSIX shows a single `/` entry.** The user
   picker is functional but degenerate on Linux/Android, where the
   OS has no drive concept. On Android in particular, useful roots
