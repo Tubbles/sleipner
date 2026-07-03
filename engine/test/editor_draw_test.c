@@ -128,11 +128,16 @@ void test_editor_hint_table_renders_mode_label_and_entries(void)
 
 void test_editor_hint_table_skips_unbound_action(void)
 {
-    /* ACTION_EDITOR_OPEN_BLUEPRINTS has no defaults — its label is empty,
-     * so it must not render even if the description is present. */
+    /* No action ships with an empty default binding anymore, so synthesize an
+     * unbound action on a local copy of the store: struct-copying the store
+     * copies each ActionBinding's alternatives vec by value, so zeroing the
+     * copy's alternatives.count makes that action label empty without touching
+     * the shared store (we only read count == 0 -> skip, never touch .data). */
+    BindingStore store = *get_test_bindings();
+    store.actions[ACTION_CANCEL].alternatives.count = 0;
     const EditorActionHint hints[] = {
         {ACTION_CONFIRM, "Confirm"},
-        {ACTION_EDITOR_OPEN_BLUEPRINTS, "Should not appear"},
+        {ACTION_CANCEL, "Should not appear"},
     };
     const EditorHintTable table = {
         .hints = hints,
@@ -140,7 +145,7 @@ void test_editor_hint_table_skips_unbound_action(void)
         .mode_label = "M",
     };
     char out[128];
-    (void)editor_hint_table_render(get_test_bindings(), &table, out, (int)sizeof(out));
+    (void)editor_hint_table_render(&store, &table, out, (int)sizeof(out));
     TEST_ASSERT_NOT_NULL(strstr(out, "Confirm"));
     TEST_ASSERT_NULL(strstr(out, "Should not appear"));
 }

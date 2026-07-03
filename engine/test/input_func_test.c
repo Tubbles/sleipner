@@ -268,12 +268,8 @@ void test_label_truncation_safe(void)
 
 void test_defaults_populate_every_action(void)
 {
-    /* Every action must have at least one alternative (or be intentionally
-     * empty — only ACTION_EDITOR_OPEN_BLUEPRINTS today). */
+    /* Every action must have at least one alternative. */
     for (int act = 0; act < ACTION_COUNT; act++) {
-        if (act == ACTION_EDITOR_OPEN_BLUEPRINTS) {
-            continue;
-        }
         TEST_ASSERT_GREATER_THAN_INT_MESSAGE(0, store.actions[act].alternatives.count, "action has no default binding");
     }
     for (int axis = 0; axis < AXIS_COUNT; axis++) {

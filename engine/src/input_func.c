@@ -524,7 +524,6 @@ static const DefaultAtom default_tab_next[] = {
 };
 
 static const DefaultAtom default_editor_toggle[]          = { K(KEY_F5),  ATOM_END, GB(GAMEPAD_BUTTON_MIDDLE_RIGHT), ATOM_END, ALTS_END };
-static const DefaultAtom default_editor_open_blueprints[] = { ALTS_END }; /* opened via tools radial; no direct binding currently */
 static const DefaultAtom default_editor_open_tools[]      = { K(KEY_TAB), ATOM_END, GB(GAMEPAD_BUTTON_RIGHT_FACE_UP), ATOM_END, ALTS_END };
 static const DefaultAtom default_editor_delete[]          = { K(KEY_DELETE), ATOM_END, GB(GAMEPAD_BUTTON_RIGHT_FACE_LEFT), ATOM_END, ALTS_END };
 static const DefaultAtom default_editor_place[]           = { K(KEY_P),   ATOM_END, GB(GAMEPAD_BUTTON_RIGHT_TRIGGER_1), ATOM_END, ALTS_END };
@@ -614,7 +613,6 @@ static const DefaultAtom *const default_action_atoms[ACTION_COUNT] = {
     [ACTION_TAB_PREV] = default_tab_prev,
     [ACTION_TAB_NEXT] = default_tab_next,
     [ACTION_EDITOR_TOGGLE] = default_editor_toggle,
-    [ACTION_EDITOR_OPEN_BLUEPRINTS] = default_editor_open_blueprints,
     [ACTION_EDITOR_OPEN_TOOLS] = default_editor_open_tools,
     [ACTION_EDITOR_DELETE] = default_editor_delete,
     [ACTION_EDITOR_PLACE] = default_editor_place,
@@ -875,7 +873,6 @@ static const char *const action_toml_names[ACTION_COUNT] = {
     [ACTION_TAB_PREV] = "TAB_PREV",
     [ACTION_TAB_NEXT] = "TAB_NEXT",
     [ACTION_EDITOR_TOGGLE] = "EDITOR_TOGGLE",
-    [ACTION_EDITOR_OPEN_BLUEPRINTS] = "EDITOR_OPEN_BLUEPRINTS",
     [ACTION_EDITOR_OPEN_TOOLS] = "EDITOR_OPEN_TOOLS",
     [ACTION_EDITOR_DELETE] = "EDITOR_DELETE",
     [ACTION_EDITOR_PLACE] = "EDITOR_PLACE",
