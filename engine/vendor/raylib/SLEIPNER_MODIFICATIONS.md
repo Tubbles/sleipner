@@ -28,7 +28,17 @@ docs, and the Zig build scripts are intentionally omitted.
   `AKEYCODE_VOLUME_*` is not in the gamepad translation table and
   now reaches the keyboard handler. Patch source:
   `recipes/raylib/patches/0001-android-trust-keycode-not-source-bits.patch`.
-  Upstream issue / PR not yet filed.
+  Upstream status: now fixed upstream in raysan5/raylib PR #5824
+  ("[rcore_android] Restore face-button input on Android gamepads",
+  merged 2026-05-10 as commit `a005a044d`). That fix is functionally
+  identical to this patch: it removes the same
+  `!FLAG_IS_SET(source, AINPUT_SOURCE_KEYBOARD)` guard and routes on
+  `AndroidTranslateGamepadButton(keycode)`, differing only in comment
+  wording. PR #5824 landed on master after the 6.0 release
+  (2026-04-23), so it is not in any tagged release yet and 6.0 remains
+  the latest. Decision (2026-07-03): keep this patch in place until a
+  raylib release includes PR #5824 (expected 6.1+), then re-vendor and
+  move this entry to "Patches absorbed in 6.0" below.
 
 ## Patches absorbed in 6.0 (no-op upgrade)
 
