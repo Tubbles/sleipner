@@ -93,14 +93,6 @@ below is a new set of submodes plus their handlers, pickers, and hint tables.
   requires editing gamedata. Add a "Switch level" entry to the Tools radial
   that opens a scroll picker of level names.
 
-## Editor: small residual keybinding issues
-
-Carried over from `work/keybinding-audit.md`:
-
-- **ATTR_EDIT ±100 labels.** Hint text shows `PgDn/L2: -100 | PgUp/R2: +100`,
-  but `L2 / R2` are already bound to `-10 / +10`. Either drop the `L2 / R2`
-  labels for ±100 or rebind ±100 to a different gamepad combo.
-
 ## Input system future work
 
 - **Plugin-declared actions.** When a plugin/engine system arrives,
