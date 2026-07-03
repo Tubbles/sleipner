@@ -80,6 +80,10 @@ typedef struct {
     KeyboardWidget kb;
     FilePathList dir_list;
     bool dir_list_loaded;
+    /* Whether buf named a readable directory as of the last refresh.
+     * Drives the "(cannot read directory)" annotation in the browse
+     * view; does not affect row content or navigation. */
+    bool dir_exists;
     bool at_root;
     int browse_index;
     int browse_scroll;

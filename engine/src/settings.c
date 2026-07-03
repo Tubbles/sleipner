@@ -500,6 +500,11 @@ static void path_edit_refresh(PathEditState *path_edit)
     path_normalize(path_edit->buf, &path_edit->len);
     path_trim_trailing_slash(path_edit->buf, &path_edit->len);
     path_edit_make_absolute(path_edit);
+    /* DirectoryExists is raylib's only portable readability signal; it
+     * catches a non-existent or non-directory buf. A directory that
+     * exists but is permission-denied still returns true here and the
+     * list below comes back empty with no distinct annotation. */
+    path_edit->dir_exists = DirectoryExists(path_edit->buf);
     path_edit->dir_list = LoadDirectoryFilesEx(path_edit->buf, "DIRS*", false);
     path_edit->dir_list_loaded = true;
     path_edit->at_root = path_is_root(path_edit->buf);
@@ -1586,6 +1591,9 @@ render_path_edit_browse(const SettingsState *settings, const BindingStore *store
         bool selected = (row == path_edit->browse_index);
         draw_text(settings, label, LIST_LEFT_PAD, row_y, color_for_row(selected, false));
         row_y += LIST_LINE_HEIGHT;
+    }
+    if (!path_edit->dir_exists) {
+        draw_text(settings, "(cannot read directory)", LIST_LEFT_PAD, row_y, color_for_row(false, true));
     }
     static const HintPair pairs[] = {
         {ACTION_CONFIRM, "select / enter"},
