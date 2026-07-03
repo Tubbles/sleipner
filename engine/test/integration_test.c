@@ -5,6 +5,7 @@
 #include "game.h"
 #include "input.h"
 #include "input_func.h"
+#include "level.h"
 #include "menu.h"
 #include "test_helpers.h"
 
@@ -709,8 +710,8 @@ void test_integration_editor_attr_edit_tap_decrements_by_one(void)
      * handle_browse_select does when the user confirms on an INT row
      * (engine/src/editor/core.c:377-379). The black-box portion is the
      * input simulation and dispatch below, not this setup. */
-    game.editor_state.selected_entity_index = game.state.gamedata.player_index;
-    game.editor_state.selected_attr_index = speed_attr_index;
+    game.editor_state.selected_entity_id = player_entity->id;
+    test_set_selected_attr(&game.state, &game.editor_state, player_entity, speed_attr_index);
     game.editor_state.sub_mode = EDITOR_SUB_ATTR_EDIT;
     game.editor_state.saved_attr_int = starting_speed;
 
@@ -761,8 +762,8 @@ void test_integration_editor_attr_edit_hold_repeats_after_delay(void)
 
     int starting_speed = test_player_int_attr(&game.state, "speed");
 
-    game.editor_state.selected_entity_index = game.state.gamedata.player_index;
-    game.editor_state.selected_attr_index = speed_attr_index;
+    game.editor_state.selected_entity_id = player_entity->id;
+    test_set_selected_attr(&game.state, &game.editor_state, player_entity, speed_attr_index);
     game.editor_state.sub_mode = EDITOR_SUB_ATTR_EDIT;
     game.editor_state.saved_attr_int = starting_speed;
 
@@ -775,6 +776,171 @@ void test_integration_editor_attr_edit_hold_repeats_after_delay(void)
 
     int total_drop = starting_speed - test_player_int_attr(&game.state, "speed");
     TEST_ASSERT_TRUE_MESSAGE(total_drop >= 3, "holding KEY_LEFT for 1s should fire several decrements");
+
+    test_game_teardown(&game);
+}
+
+/* F27 regression guard: selected_entity_index used to be a raw array index,
+ * so any compaction of the entity array (e.g. deleting a DIFFERENT entity)
+ * silently invalidated it. EditorState now stores the entity's stable id
+ * instead, resolved to an index via level_find_entity_by_id at the point of
+ * use, so a selection survives structural changes elsewhere in the level.
+ *
+ * "wagon" has one blueprint child ("lantern", tag "front_light"); "player"
+ * is an unrelated second root entity. The scenario drives entirely through
+ * the real input layer: F5 into editor mode, CONFIRM to select the nearest
+ * root entity (deterministically "wagon" — the editor camera starts at the
+ * origin and "wagon" at (50,50) is closer than "player" at (160,120)),
+ * NAV_DOWN to enter the tree section onto the lantern child row, then
+ * EDITOR_DELETE. Deleting a blueprint child removes the spawned child
+ * entity from every instance — a DIFFERENT entity than the selected wagon,
+ * which is never itself touched. */
+static const char *fixture_child_delete = "[[blueprint]]\n"
+                                          "name = \"player\"\n"
+                                          "texture = \"player.png\"\n"
+                                          "src = [0, 0, 32, 32]\n"
+                                          "collision_offset = [0, 0]\n"
+                                          "collision_size = [16, 16]\n"
+                                          "behavior = \"player\"\n"
+                                          "speed = 80\n"
+                                          "\n"
+                                          "[[blueprint]]\n"
+                                          "name = \"lantern\"\n"
+                                          "texture = \"lantern.png\"\n"
+                                          "src = [0, 0, 8, 8]\n"
+                                          "\n"
+                                          "[[blueprint]]\n"
+                                          "name = \"wagon\"\n"
+                                          "texture = \"wagon.png\"\n"
+                                          "src = [0, 0, 32, 32]\n"
+                                          "\n"
+                                          "[[blueprint.child]]\n"
+                                          "blueprint = \"lantern\"\n"
+                                          "tag = \"front_light\"\n"
+                                          "offset = [10, 0]\n"
+                                          "\n"
+                                          "[[level]]\n"
+                                          "name = \"field\"\n"
+                                          "size = [320, 240]\n"
+                                          "\n"
+                                          "[[level.entity]]\n"
+                                          "blueprint = \"player\"\n"
+                                          "pos = [160, 120]\n"
+                                          "\n"
+                                          "[[level.entity]]\n"
+                                          "blueprint = \"wagon\"\n"
+                                          "pos = [50, 50]\n";
+
+void test_integration_editor_selection_survives_deleting_different_entity(void)
+{
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_child_delete));
+    TEST_ASSERT_EQUAL_INT(1, test_count_entities_by_blueprint(&game.state, "lantern"));
+
+    InputState editor_toggle = {0};
+    input_state_press_key(&editor_toggle, KEY_F5);
+    test_advance_frame(&game, editor_toggle);
+    TEST_ASSERT_TRUE(game.state.editor_mode);
+
+    InputState select_input = {0};
+    input_state_press_key(&select_input, KEY_ENTER);
+    test_advance_frame(&game, select_input);
+
+    Entity *wagon = test_find_entity_by_blueprint(&game.state, "wagon");
+    TEST_ASSERT_NOT_NULL(wagon);
+    int wagon_id = wagon->id;
+    TEST_ASSERT_EQUAL_INT(wagon_id, game.editor_state.selected_entity_id);
+
+    /* Enter the tree section: wagon has no parent row, so tree index 0
+     * is its only child row (the lantern). */
+    InputState nav_down = {0};
+    input_state_press_key(&nav_down, KEY_DOWN);
+    test_advance_frame(&game, nav_down);
+    TEST_ASSERT_EQUAL_INT(0, game.editor_state.selected_tree_index);
+
+    InputState delete_input = {0};
+    input_state_press_key(&delete_input, KEY_DELETE);
+    test_advance_frame(&game, delete_input);
+
+    /* The lantern child is really gone... */
+    TEST_ASSERT_EQUAL_INT(0, test_count_entities_by_blueprint(&game.state, "lantern"));
+    /* ...but wagon's selection survived the compaction that removed it. */
+    TEST_ASSERT_EQUAL_INT(wagon_id, game.editor_state.selected_entity_id);
+    int resolved_index =
+        level_find_entity_by_id(&game.state.gamedata.current_level, game.editor_state.selected_entity_id);
+    TEST_ASSERT_TRUE(resolved_index >= 0);
+    TEST_ASSERT_EQUAL_STRING("wagon",
+                             game.state.gamedata.current_level.entities.data[resolved_index].blueprint_name.ptr);
+
+    test_game_teardown(&game);
+}
+
+/* F27 regression guard (undo path): selection is now keyed by stable entity
+ * id, so it must survive an undo that restores different gamedata, as long as
+ * the selected entity still exists in the undone state. The scenario drives
+ * entirely through the real input layer: F5 into editor, CONFIRM to select
+ * the nearest root entity (deterministically "tall_tree" — the editor camera
+ * starts at (0,0) and the tree at (50,50) is the closest root), grab + move
+ * it right (a real edit that pushes a "Move entity" undo entry), CONFIRM the
+ * move, then ACTION_EDITOR_UNDO. Undo restores the pre-move position but the
+ * tree entity still exists, so its id-keyed selection must remain intact. */
+void test_integration_editor_selection_survives_undo_of_edit(void)
+{
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_gamedata));
+
+    InputState editor_toggle = {0};
+    input_state_press_key(&editor_toggle, KEY_F5);
+    test_advance_frame(&game, editor_toggle);
+    TEST_ASSERT_TRUE(game.state.editor_mode);
+
+    InputState select_input = {0};
+    input_state_press_key(&select_input, KEY_ENTER);
+    test_advance_frame(&game, select_input);
+
+    Entity *tree = test_find_entity_by_blueprint(&game.state, "tall_tree");
+    TEST_ASSERT_NOT_NULL(tree);
+    int tree_id = tree->id;
+    float original_x = tree->position.x;
+    TEST_ASSERT_EQUAL_INT(tree_id, game.editor_state.selected_entity_id);
+
+    /* Grab (KEY_G) enters DRAG on the selected tree. */
+    InputState grab_input = {0};
+    input_state_press_key(&grab_input, KEY_G);
+    test_advance_frame(&game, grab_input);
+
+    /* Hold KEY_RIGHT (AXIS_PRIMARY_X positive) for several frames to move the
+     * tree a clearly non-zero distance to the right. */
+    for (int step = 0; step < 5; step++) {
+        InputState move_input = {0};
+        input_state_hold_key(&move_input, KEY_RIGHT);
+        test_advance_frame(&game, move_input);
+    }
+
+    InputState confirm_move = {0};
+    input_state_press_key(&confirm_move, KEY_ENTER);
+    test_advance_frame(&game, confirm_move);
+
+    int moved_index = level_find_entity_by_id(&game.state.gamedata.current_level, tree_id);
+    TEST_ASSERT_TRUE(moved_index >= 0);
+    float moved_x = game.state.gamedata.current_level.entities.data[moved_index].position.x;
+    TEST_ASSERT_TRUE_MESSAGE(moved_x > original_x + 1.0F, "grab+move should have shifted the tree right");
+
+    /* Real Ctrl+Z chord: hold Ctrl (level), press Z (edge). */
+    InputState undo_input = {0};
+    input_state_hold_key(&undo_input, KEY_LEFT_CONTROL);
+    input_state_press_key(&undo_input, KEY_Z);
+    test_advance_frame(&game, undo_input);
+
+    /* Undo restored the pre-move position (proves it undid a real edit)... */
+    int undone_index = level_find_entity_by_id(&game.state.gamedata.current_level, tree_id);
+    TEST_ASSERT_TRUE(undone_index >= 0);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, original_x,
+                             game.state.gamedata.current_level.entities.data[undone_index].position.x);
+    /* ...and the id-keyed selection survived the undo. */
+    TEST_ASSERT_EQUAL_INT(tree_id, game.editor_state.selected_entity_id);
+    TEST_ASSERT_EQUAL_STRING("tall_tree",
+                             game.state.gamedata.current_level.entities.data[undone_index].blueprint_name.ptr);
 
     test_game_teardown(&game);
 }

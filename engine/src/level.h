@@ -30,6 +30,12 @@ VEC_DECL(level, Level)
 /* Free level name, music name, and all entity Str fields and attrs. */
 void level_free(Allocator *alloc, Level *level);
 
+/* Find an entity by its stable id (Entity.id). Returns its current index
+ * into level->entities, or -1 if no entity has that id. Ids survive
+ * undo/redo restores, compaction on delete, and vec reallocation, so
+ * this is the safe way to re-locate an entity across those events. */
+int level_find_entity_by_id(const Level *level, int entity_id);
+
 /* Spawn a single child entity from a BlueprintChild definition under the given parent.
  * Instantiates grandchildren recursively; assigns next_entity_id. Returns true on success. */
 [[nodiscard]] bool level_spawn_single_child(Diag *diag,

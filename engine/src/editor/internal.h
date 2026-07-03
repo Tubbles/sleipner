@@ -65,15 +65,8 @@ const EditorHintTable *blueprint_detail_hints_table(void);
 
 /* --- Shared helpers: core.c --- */
 
-/* The editor attr panel for an entity is split into three sections:
- * persisted (saved to TOML), runtime (live read path, mutated by rules),
- * and blueprint (shared defaults from the blueprint table). Child entities
- * hide the persisted section — they have no TOML representation in v1. */
-typedef enum {
-    ATTR_SECTION_PERSISTED,
-    ATTR_SECTION_RUNTIME,
-    ATTR_SECTION_BLUEPRINT,
-} AttrSection;
+/* AttrSection lives in editor/editor.h — it is part of EditorState's
+ * stable attr-selection identity, not just a core.c implementation detail. */
 
 typedef enum {
     ATTR_ROW_KIND_ATTR,    /* row is an attribute, index_in_section is the AttrSet index */
@@ -93,6 +86,12 @@ typedef struct {
 int total_attr_count(const GameState *state, const Entity *entity);
 bool entity_has_persisted_section(const Entity *entity);
 AttrRow attr_row_at(const GameState *state, const Entity *entity, int attr_index);
+
+/* Resolve EditorState's stable attr identity (selected_attr_kind/section/name)
+ * to a display index for `entity`, by scanning attr_row_at over every row.
+ * Returns -1 if the identity is EDITOR_ATTR_SEL_NONE or no longer matches any
+ * row (e.g. the named attribute was removed elsewhere). */
+int editor_resolve_selected_attr_index(const GameState *state, const Entity *entity, const EditorState *editor_state);
 
 Blueprint *find_blueprint_by_name(GameState *state, const char *name);
 Attribute *attr_at_display_index(GameState *state, Entity *entity, int attr_index);

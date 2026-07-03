@@ -31,16 +31,6 @@
   coercion in `attr_get_scoped_*` silently papers over type mismatches — should
   probably be strict, with the parser deciding canonical types.
 
-## Editor index caching
-
-- **Replace cached entity/attr indices with ID-based getters** —
-  `EditorState.selected_entity_index`, `selected_attr_index`, and
-  `WatchList.entity_indices[]` store raw vec indices into gamedata. These are a
-  form of caching over a getter function and require manual invalidation on
-  undo/redo, hot-reload, and entity deletion. Store stable identifiers (entity
-  IDs) instead and resolve via getter functions, eliminating the invalidation
-  edge cases entirely.
-
 ## Editor: missing top-level modes
 
 Phase 6 of the keybinding audit (`work/keybinding-audit.md`) enumerated five

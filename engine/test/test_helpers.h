@@ -95,6 +95,16 @@ void test_advance_frames(TestGame *game, InputState input, int frames);
  * attribute panel. */
 int test_find_int_attr_display_index(GameState *state, Entity *entity, const char *name);
 
+/* Point editor_state's stable attr-selection identity (selected_attr_kind /
+ * selected_attr_section / selected_attr_name) at whatever attr_row_at
+ * resolves `display_index` to for `entity`. Mirrors editor_set_selected_attr
+ * in editor/core.c, which is file-local there. Tests that jump straight
+ * into EDITOR_SUB_ATTR_EDIT without walking the selection UI (see
+ * test_integration_editor_attr_edit_* in integration_test.c) need this to
+ * populate the identity the same way handle_browse_select would. No-op
+ * (selection cleared) if display_index does not resolve to an attribute row. */
+void test_set_selected_attr(GameState *state, EditorState *editor_state, Entity *entity, int display_index);
+
 /* Read the player entity's named INT attribute. Returns the fallback
  * 0 if the attribute is missing — callers that want to assert on the
  * presence of the attribute should use test_find_int_attr_display_index

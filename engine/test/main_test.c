@@ -62,6 +62,8 @@ void test_integration_editor_pan_does_not_reset_player_position(void);
 void test_integration_editor_undo_at_left_edge_preserves_play_state(void);
 void test_integration_editor_attr_edit_tap_decrements_by_one(void);
 void test_integration_editor_attr_edit_hold_repeats_after_delay(void);
+void test_integration_editor_selection_survives_deleting_different_entity(void);
+void test_integration_editor_selection_survives_undo_of_edit(void);
 void test_integration_menu_navigation_and_quit(void);
 void test_integration_menu_escape_returns_resume(void);
 void test_integration_menu_gamepad_navigation(void);
@@ -178,6 +180,8 @@ int main(void)
     RUN_TEST(test_integration_editor_undo_at_left_edge_preserves_play_state);
     RUN_TEST(test_integration_editor_attr_edit_tap_decrements_by_one);
     RUN_TEST(test_integration_editor_attr_edit_hold_repeats_after_delay);
+    RUN_TEST(test_integration_editor_selection_survives_deleting_different_entity);
+    RUN_TEST(test_integration_editor_selection_survives_undo_of_edit);
     RUN_TEST(test_integration_menu_navigation_and_quit);
     RUN_TEST(test_integration_menu_escape_returns_resume);
     RUN_TEST(test_integration_menu_gamepad_navigation);

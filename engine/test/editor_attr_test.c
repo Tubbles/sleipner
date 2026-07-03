@@ -41,6 +41,10 @@ void debug_log(DebugState *dbg, const char *format, ...)
 FAKE_VALUE_FUNC(Blueprint *, find_blueprint_by_name, GameState *, const char *);
 FAKE_VALUE_FUNC(bool, is_blueprint_attr, const GameState *, const Entity *, int);
 FAKE_VALUE_FUNC(Attribute *, attr_at_display_index, GameState *, Entity *, int);
+FAKE_VALUE_FUNC(int, editor_resolve_selected_attr_index, const GameState *, const Entity *, const EditorState *);
+
+/* Cross-file editor fakes: level.c */
+FAKE_VALUE_FUNC(int, level_find_entity_by_id, const Level *, int);
 
 /* Cross-file editor fakes: child.c */
 FAKE_VOID_FUNC(propagate_child_tag, GameState *, const Blueprint *, int, const char *);
@@ -92,8 +96,10 @@ void test_editor_apply_attr_delta_int(void)
 
     /* Point attr_at_display_index fake at the actual attribute */
     attr_at_display_index_fake.return_val = &state.gamedata.current_level.entities.data[0].attrs.entries.data[0];
+    level_find_entity_by_id_fake.return_val = 0;
+    editor_resolve_selected_attr_index_fake.return_val = 0;
 
-    EditorState editor_state = {.selected_entity_index = 0, .selected_attr_index = 0};
+    EditorState editor_state = {.selected_entity_id = 0};
     apply_attr_delta(&state, &editor_state, 5);
 
     Attribute *attr = &state.gamedata.current_level.entities.data[0].attrs.entries.data[0];
@@ -112,8 +118,10 @@ void test_editor_apply_attr_delta_float(void)
     TEST_ASSERT_TRUE(vec_entity_push(&state.gamedata.current_level.entities, entity));
 
     attr_at_display_index_fake.return_val = &state.gamedata.current_level.entities.data[0].attrs.entries.data[0];
+    level_find_entity_by_id_fake.return_val = 0;
+    editor_resolve_selected_attr_index_fake.return_val = 0;
 
-    EditorState editor_state = {.selected_entity_index = 0, .selected_attr_index = 0};
+    EditorState editor_state = {.selected_entity_id = 0};
     apply_attr_delta(&state, &editor_state, 3);
 
     Attribute *attr = &state.gamedata.current_level.entities.data[0].attrs.entries.data[0];
@@ -131,8 +139,10 @@ void test_editor_apply_attr_delta_null_attr_no_crash(void)
     TEST_ASSERT_TRUE(vec_entity_push(&state.gamedata.current_level.entities, entity));
 
     attr_at_display_index_fake.return_val = nullptr;
+    level_find_entity_by_id_fake.return_val = 0;
+    editor_resolve_selected_attr_index_fake.return_val = 99;
 
-    EditorState editor_state = {.selected_entity_index = 0, .selected_attr_index = 99};
+    EditorState editor_state = {.selected_entity_id = 0};
     apply_attr_delta(&state, &editor_state, 1);
 
     vec_entity_free(&state.gamedata.current_level.entities);
@@ -304,7 +314,8 @@ void test_dispatch_child_props_tag_mode(void)
     TEST_ASSERT_TRUE(vec_blueprint_child_push(&blueprint.children, child));
 
     find_blueprint_by_name_fake.return_val = &blueprint;
-    EditorState editor_state = {.selected_entity_index = 0, .child_edit_index = 0};
+    level_find_entity_by_id_fake.return_val = 0;
+    EditorState editor_state = {.selected_entity_id = 0, .child_edit_index = 0};
 
     dispatch_child_props(&state, &editor_state, 0);
 
@@ -340,7 +351,8 @@ void test_dispatch_child_props_offset_x(void)
     TEST_ASSERT_TRUE(vec_blueprint_child_push(&blueprint.children, child));
 
     find_blueprint_by_name_fake.return_val = &blueprint;
-    EditorState editor_state = {.selected_entity_index = 0, .child_edit_index = 0};
+    level_find_entity_by_id_fake.return_val = 0;
+    EditorState editor_state = {.selected_entity_id = 0, .child_edit_index = 0};
 
     dispatch_child_props(&state, &editor_state, 1);
 
@@ -360,7 +372,8 @@ void test_dispatch_child_props_invalid(void)
 {
     RESET_FAKE(find_blueprint_by_name);
     GameState state = {0};
-    EditorState editor_state = {.selected_entity_index = -1};
+    level_find_entity_by_id_fake.return_val = -1;
+    EditorState editor_state = {.selected_entity_id = -1};
 
     dispatch_child_props(&state, &editor_state, 0);
     TEST_ASSERT_EQUAL_INT(0, find_blueprint_by_name_fake.call_count);
@@ -392,8 +405,9 @@ void test_confirm_child_tag_edit_updates_tag(void)
     TEST_ASSERT_TRUE(vec_blueprint_child_push(&blueprint.children, child));
 
     find_blueprint_by_name_fake.return_val = &blueprint;
+    level_find_entity_by_id_fake.return_val = 0;
     EditorState editor_state = {
-        .selected_entity_index = 0,
+        .selected_entity_id = 0,
         .child_edit_index = 0,
         .editing_child_tag = true,
     };
@@ -419,8 +433,9 @@ void test_confirm_child_tag_edit_invalid(void)
 {
     RESET_FAKE(undo_history_new_entry);
     GameState state = {0};
+    level_find_entity_by_id_fake.return_val = -1;
     EditorState editor_state = {
-        .selected_entity_index = -1,
+        .selected_entity_id = -1,
         .editing_child_tag = true,
     };
     Diag diag = {0};

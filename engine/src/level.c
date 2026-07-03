@@ -375,6 +375,16 @@ void level_free(Allocator *alloc, Level *level)
     vec_entity_free(&level->entities);
 }
 
+int level_find_entity_by_id(const Level *level, int entity_id)
+{
+    for (int index = 0; index < level->entities.count; index++) {
+        if (level->entities.data[index].id == entity_id) {
+            return index;
+        }
+    }
+    return -1;
+}
+
 static void parse_toml_int_pair(toml_table_t *table, const char *key, int output[static 2])
 {
     toml_array_t *array = toml_array_in(table, key);

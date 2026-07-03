@@ -244,8 +244,8 @@ void draw_editor_highlights(const GameState *state, const EditorState *editor_st
         DrawRectangleLinesEx(
             entity_outline_rect(state, &state->gamedata.current_level.entities.data[hover_entity_index]), 1.0F, YELLOW);
     }
-    int sel = editor_state->selected_entity_index;
-    if (sel >= 0 && sel < state->gamedata.current_level.entities.count) {
+    int sel = level_find_entity_by_id(&state->gamedata.current_level, editor_state->selected_entity_id);
+    if (sel >= 0) {
         DrawRectangleLinesEx(entity_outline_rect(state, &state->gamedata.current_level.entities.data[sel]), 2.0F,
                              WHITE);
     }
@@ -343,8 +343,8 @@ static void draw_section_header(Font font, const char *label, int panel_x, int *
 
 void draw_editor_panel(ScreenSize screen, const GameState *state, const EditorState *editor_state)
 {
-    int sel = editor_state->selected_entity_index;
-    if (sel < 0 || sel >= state->gamedata.current_level.entities.count) {
+    int sel = level_find_entity_by_id(&state->gamedata.current_level, editor_state->selected_entity_id);
+    if (sel < 0) {
         return;
     }
     Font font = state->assets.ui_font;
@@ -391,7 +391,7 @@ void draw_editor_panel(ScreenSize screen, const GameState *state, const EditorSt
     draw_ui_text(font, "  [ + ADD CHILD ]", panel_x + DEBUG_MARGIN, y_offset, EDITOR_PANEL_FONT_SIZE, add_child_color);
     y_offset += EDITOR_PANEL_LINE_HEIGHT * 2;
 
-    int sel_attr = editor_state->selected_attr_index;
+    int sel_attr = editor_resolve_selected_attr_index(state, entity, editor_state);
     const AttrSet *defaults = entity_resolve_defaults(state, entity->id);
     int base_idx = 0;
 
@@ -431,8 +431,8 @@ void draw_watch_overlay(ScreenSize screen, const GameState *state, const WatchLi
     DrawRectangle(panel_x, 0, EDITOR_PANEL_WIDTH, panel_height, debug_bg_color);
     int y_offset = 0;
     for (int index = 0; index < watches->count; index++) {
-        int entity_index = watches->entity_indices[index];
-        if (entity_index >= state->gamedata.current_level.entities.count) {
+        int entity_index = level_find_entity_by_id(&state->gamedata.current_level, watches->watch_ids[index]);
+        if (entity_index < 0) {
             y_offset += EDITOR_PANEL_LINE_HEIGHT * 2;
             continue;
         }
@@ -458,8 +458,8 @@ void draw_collision_handles(const GameState *state, const EditorState *editor_st
     if (editor_state->sub_mode != EDITOR_SUB_HANDLES) {
         return;
     }
-    int sel = editor_state->selected_entity_index;
-    if (sel < 0 || sel >= state->gamedata.current_level.entities.count) {
+    int sel = level_find_entity_by_id(&state->gamedata.current_level, editor_state->selected_entity_id);
+    if (sel < 0) {
         return;
     }
     const Entity *handle_entity = &state->gamedata.current_level.entities.data[sel];

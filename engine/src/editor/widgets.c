@@ -216,7 +216,7 @@ static bool add_attr_by_name(Diag *diag, GameState *state, EditorState *editor_s
         int bp_idx = editor_state->selected_blueprint_index;
         /* In scene mode, selected_blueprint_index isn't set; resolve from the selected entity. */
         if (editor_state->top_mode == EDITOR_TOP_SCENE) {
-            int sel = editor_state->selected_entity_index;
+            int sel = level_find_entity_by_id(&state->gamedata.current_level, editor_state->selected_entity_id);
             if (sel < 0) {
                 return false;
             }
@@ -233,7 +233,7 @@ static bool add_attr_by_name(Diag *diag, GameState *state, EditorState *editor_s
             target = &state->gamedata.blueprints.entries.data[bp_idx].attrs;
         }
     } else {
-        int sel = editor_state->selected_entity_index;
+        int sel = level_find_entity_by_id(&state->gamedata.current_level, editor_state->selected_entity_id);
         if (sel < 0) {
             return false;
         }
@@ -269,12 +269,15 @@ static void word_builder_confirm(Diag *diag, GameState *state, EditorState *edit
         attr = &blueprint->attrs.entries.data[attr_idx];
         target = &blueprint->attrs;
     } else {
-        int sel = editor_state->selected_entity_index;
-        int attr_idx = editor_state->selected_attr_index;
-        if (sel < 0 || attr_idx < 0) {
+        int sel = level_find_entity_by_id(&state->gamedata.current_level, editor_state->selected_entity_id);
+        if (sel < 0) {
             return;
         }
         Entity *entity = &state->gamedata.current_level.entities.data[sel];
+        int attr_idx = editor_resolve_selected_attr_index(state, entity, editor_state);
+        if (attr_idx < 0) {
+            return;
+        }
         attr = attr_at_display_index(state, entity, attr_idx);
         if (!attr) {
             return;
@@ -562,12 +565,12 @@ fuzzy_finder_navigate(EditorState *editor_state, const InputState *input, const 
 
 static void fuzzy_finder_enter_word_builder(GameState *state, EditorState *editor_state)
 {
-    int sel = editor_state->selected_entity_index;
-    int attr_idx = editor_state->selected_attr_index;
+    int sel = level_find_entity_by_id(&state->gamedata.current_level, editor_state->selected_entity_id);
     const char *existing = "";
-    if (sel >= 0 && attr_idx >= 0) {
+    if (sel >= 0) {
         Entity *entity = &state->gamedata.current_level.entities.data[sel];
-        const Attribute *attr = attr_at_display_index(state, entity, attr_idx);
+        int attr_idx = editor_resolve_selected_attr_index(state, entity, editor_state);
+        const Attribute *attr = (attr_idx >= 0) ? attr_at_display_index(state, entity, attr_idx) : nullptr;
         if (attr && attr->type == ATTR_STRING && attr->value.str.ptr) {
             existing = attr->value.str.ptr;
         }
@@ -600,12 +603,15 @@ static void fuzzy_finder_confirm(Diag *diag, GameState *state, EditorState *edit
         attr = &blueprint->attrs.entries.data[attr_idx];
         target = &blueprint->attrs;
     } else {
-        int sel = editor_state->selected_entity_index;
-        int attr_idx = editor_state->selected_attr_index;
-        if (sel < 0 || attr_idx < 0) {
+        int sel = level_find_entity_by_id(&state->gamedata.current_level, editor_state->selected_entity_id);
+        if (sel < 0) {
             return;
         }
         Entity *entity = &state->gamedata.current_level.entities.data[sel];
+        int attr_idx = editor_resolve_selected_attr_index(state, entity, editor_state);
+        if (attr_idx < 0) {
+            return;
+        }
         attr = attr_at_display_index(state, entity, attr_idx);
         if (!attr) {
             return;

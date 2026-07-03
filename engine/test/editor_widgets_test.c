@@ -51,6 +51,10 @@ FAKE_VALUE_FUNC(Attribute *, attr_at_display_index, GameState *, Entity *, int);
 FAKE_VALUE_FUNC(AttrRow, attr_row_at, const GameState *, const Entity *, int);
 FAKE_VALUE_FUNC(AttrSet *, attr_section_set, GameState *, Entity *, AttrSection);
 FAKE_VALUE_FUNC(int, place_visible_count, int);
+FAKE_VALUE_FUNC(int, editor_resolve_selected_attr_index, const GameState *, const Entity *, const EditorState *);
+
+/* Cross-file editor fakes: level.c */
+FAKE_VALUE_FUNC(int, level_find_entity_by_id, const Level *, int);
 
 /* Cross-file editor fakes: attr.c */
 FAKE_VOID_FUNC(confirm_child_tag_edit, Diag *, GameState *, EditorState *, UndoHistory *);
@@ -422,7 +426,8 @@ void test_attr_add_by_name_creates_int_attr(void)
     state.gamedata.current_level.entities.alloc = allocator_arena(&state.gamedata_arena);
     Entity entity = {.id = 1};
     TEST_ASSERT_TRUE(vec_entity_push(&state.gamedata.current_level.entities, entity));
-    EditorState editor_state = {.selected_entity_index = 0};
+    EditorState editor_state = {.selected_entity_id = 1};
+    level_find_entity_by_id_fake.return_val = 0;
 
     TEST_ASSERT_TRUE(add_attr_by_name(&diag, &state, &editor_state, "new_attr"));
 
@@ -446,10 +451,11 @@ void test_attr_add_by_name_persisted_targets_persisted_set(void)
     Entity entity = {.id = 1, .parent_index = -1};
     TEST_ASSERT_TRUE(vec_entity_push(&state.gamedata.current_level.entities, entity));
     EditorState editor_state = {
-        .selected_entity_index = 0,
+        .selected_entity_id = 1,
         .top_mode = EDITOR_TOP_SCENE,
         .adding_persisted_attr = true,
     };
+    level_find_entity_by_id_fake.return_val = 0;
 
     TEST_ASSERT_TRUE(add_attr_by_name(&diag, &state, &editor_state, "hp"));
 
@@ -474,10 +480,11 @@ void test_attr_add_by_name_runtime_targets_runtime_set(void)
     Entity entity = {.id = 1, .parent_index = -1};
     TEST_ASSERT_TRUE(vec_entity_push(&state.gamedata.current_level.entities, entity));
     EditorState editor_state = {
-        .selected_entity_index = 0,
+        .selected_entity_id = 1,
         .top_mode = EDITOR_TOP_SCENE,
         .adding_persisted_attr = false,
     };
+    level_find_entity_by_id_fake.return_val = 0;
 
     TEST_ASSERT_TRUE(add_attr_by_name(&diag, &state, &editor_state, "speed"));
 
@@ -502,7 +509,8 @@ void test_attr_add_by_name_duplicate_returns_false(void)
     Entity entity = {.id = 1};
     TEST_ASSERT_TRUE(attr_set_int(&alloc, &entity.attrs, "existing", 42));
     TEST_ASSERT_TRUE(vec_entity_push(&state.gamedata.current_level.entities, entity));
-    EditorState editor_state = {.selected_entity_index = 0};
+    EditorState editor_state = {.selected_entity_id = 1};
+    level_find_entity_by_id_fake.return_val = 0;
 
     TEST_ASSERT_FALSE(add_attr_by_name(&diag, &state, &editor_state, "existing"));
 
@@ -849,8 +857,10 @@ void test_word_builder_confirm_sets_string_value(void)
     attr_row_at_fake.return_val =
         (AttrRow){.kind = ATTR_ROW_KIND_ATTR, .section = ATTR_SECTION_RUNTIME, .index_in_section = 0};
     attr_section_set_fake.return_val = &state.gamedata.current_level.entities.data[0].attrs;
+    level_find_entity_by_id_fake.return_val = 0;
+    editor_resolve_selected_attr_index_fake.return_val = 0;
 
-    EditorState editor_state = {.selected_entity_index = 0, .selected_attr_index = 0};
+    EditorState editor_state = {.selected_entity_id = 0};
     strcpy(editor_state.word_builder_buf, "hello");
     editor_state.word_builder_len = 5;
     Diag diag = {.error = &err};
@@ -890,11 +900,12 @@ void test_fuzzy_finder_confirm_sets_string_value(void)
     attr_row_at_fake.return_val =
         (AttrRow){.kind = ATTR_ROW_KIND_ATTR, .section = ATTR_SECTION_RUNTIME, .index_in_section = 0};
     attr_section_set_fake.return_val = &state.gamedata.current_level.entities.data[0].attrs;
+    level_find_entity_by_id_fake.return_val = 0;
+    editor_resolve_selected_attr_index_fake.return_val = 0;
 
     const char *items[] = {"chosen_name"};
     EditorState editor_state = {
-        .selected_entity_index = 0,
-        .selected_attr_index = 0,
+        .selected_entity_id = 0,
         .fuzzy_finder_scroll = 1,
         .fuzzy_finder_items = items,
         .fuzzy_finder_item_count = 1,

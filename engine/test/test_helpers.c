@@ -176,9 +176,9 @@ bool test_game_setup_with_level(TestGame *out, const char *toml_string, const ch
     menu_init(&out->menu);
     settings_init(&out->settings);
     out->editor_state = (EditorState){.top_mode = EDITOR_TOP_SCENE,
-                                      .selected_entity_index = -1,
+                                      .selected_entity_id = -1,
                                       .sub_mode = EDITOR_SUB_BROWSE,
-                                      .selected_attr_index = -1,
+                                      .selected_attr_kind = EDITOR_ATTR_SEL_NONE,
                                       .radial_confirmed = -1,
                                       .radial_selected = -1,
                                       .selected_blueprint_index = -1,
@@ -254,6 +254,21 @@ int test_player_int_attr(GameState *state, const char *name)
         return 0;
     }
     return attr->value.i;
+}
+
+void test_set_selected_attr(GameState *state, EditorState *editor_state, Entity *entity, int display_index)
+{
+    AttrRow row = attr_row_at(state, entity, display_index);
+    Attribute *attr = attr_at_display_index(state, entity, display_index);
+    if (row.kind != ATTR_ROW_KIND_ATTR || !attr) {
+        editor_state->selected_attr_kind = EDITOR_ATTR_SEL_NONE;
+        return;
+    }
+    editor_state->selected_attr_kind = EDITOR_ATTR_SEL_NAMED;
+    editor_state->selected_attr_section = row.section;
+    size_t copy_len = attr->name.len < EDITOR_ATTR_NAME_MAX - 1 ? attr->name.len : EDITOR_ATTR_NAME_MAX - 1;
+    memcpy(editor_state->selected_attr_name, attr->name.ptr, copy_len);
+    editor_state->selected_attr_name[copy_len] = '\0';
 }
 
 Entity *test_find_entity_by_blueprint(GameState *state, const char *blueprint_name)

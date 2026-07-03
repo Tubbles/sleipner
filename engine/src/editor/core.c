@@ -109,6 +109,60 @@ AttrSet *attr_section_set(GameState *state, Entity *entity, AttrSection section)
     return nullptr;
 }
 
+/* Const, non-blueprint-lookup counterpart of attr_section_set. Blueprint
+ * defaults are read via entity_resolve_defaults (keyed by entity id) rather
+ * than find_blueprint_by_name, so this stays const-correct end to end —
+ * needed by editor_resolve_selected_attr_index below, which only reads. */
+static const AttrSet *attr_set_for_section_const(const GameState *state, const Entity *entity, AttrSection section)
+{
+    switch (section) {
+    case ATTR_SECTION_PERSISTED:
+        return &entity->persisted_attrs;
+    case ATTR_SECTION_RUNTIME:
+        return &entity->attrs;
+    case ATTR_SECTION_BLUEPRINT:
+        return entity_resolve_defaults(state, entity->id);
+    }
+    return nullptr;
+}
+
+static bool attr_row_name_matches(const AttrRow *row, const AttrSet *set, const char *name)
+{
+    if (!set || row->index_in_section >= set->entries.count) {
+        return false;
+    }
+    const Str *row_name = &set->entries.data[row->index_in_section].name;
+    return row_name->len == strlen(name) && strncmp(row_name->ptr, name, row_name->len) == 0;
+}
+
+int editor_resolve_selected_attr_index(const GameState *state, const Entity *entity, const EditorState *editor_state)
+{
+    if (editor_state->selected_attr_kind == EDITOR_ATTR_SEL_NONE) {
+        return -1;
+    }
+    int total = total_attr_count(state, entity);
+    for (int index = 0; index < total; index++) {
+        AttrRow row = attr_row_at(state, entity, index);
+        if (row.section != editor_state->selected_attr_section) {
+            continue;
+        }
+        if (editor_state->selected_attr_kind == EDITOR_ATTR_SEL_ADD) {
+            if (row.kind == ATTR_ROW_KIND_ADD) {
+                return index;
+            }
+            continue;
+        }
+        if (row.kind != ATTR_ROW_KIND_ATTR) {
+            continue;
+        }
+        const AttrSet *set = attr_set_for_section_const(state, entity, row.section);
+        if (attr_row_name_matches(&row, set, editor_state->selected_attr_name)) {
+            return index;
+        }
+    }
+    return -1;
+}
+
 Attribute *attr_at_display_index(GameState *state, Entity *entity, int attr_index)
 {
     AttrRow row = attr_row_at(state, entity, attr_index);
@@ -165,8 +219,8 @@ int place_visible_count(int screen_height)
 
 int find_place_blueprint_index(const GameState *state, const EditorState *editor_state)
 {
-    int sel = editor_state->selected_entity_index;
-    if (sel < 0 || sel >= state->gamedata.current_level.entities.count) {
+    int sel = level_find_entity_by_id(&state->gamedata.current_level, editor_state->selected_entity_id);
+    if (sel < 0) {
         return 0;
     }
     const char *name = state->gamedata.current_level.entities.data[sel].blueprint_name.ptr;
@@ -201,11 +255,11 @@ void mark_deleted_descendants(const Level *level, bool *is_deleted, int count)
 
 static void delete_selected_entity(GameState *state, EditorState *editor_state, WatchList *watches)
 {
-    int sel = editor_state->selected_entity_index;
-    if (sel < 0 || sel >= state->gamedata.current_level.entities.count) {
+    Level *level = &state->gamedata.current_level;
+    int sel = level_find_entity_by_id(level, editor_state->selected_entity_id);
+    if (sel < 0) {
         return;
     }
-    Level *level = &state->gamedata.current_level;
     int count = level->entities.count;
     SCRATCH_SCOPE(&state->scratch_arena);
     bool *is_deleted = arena_alloc(&state->scratch_arena, (size_t)count * sizeof(bool));
@@ -243,33 +297,32 @@ static void delete_selected_entity(GameState *state, EditorState *editor_state, 
     if (state->gamedata.player_index >= 0) {
         state->gamedata.player_index = new_index_map[state->gamedata.player_index];
     }
-    /* Fix watches */
+    /* Watches are keyed by stable id, so a deleted entity's watch simply
+     * stops resolving — prune it and keep the rest in order. Selection
+     * (selected_entity_id / selected_attr_*) is left alone: the entity
+     * just deleted was the selection, so it naturally resolves to "none"
+     * next time it's looked up via level_find_entity_by_id. */
+    int watch_write = 0;
     for (int index = 0; index < watches->count; index++) {
-        int old = watches->entity_indices[index];
-        if (old >= count || is_deleted[old]) {
-            watches->entity_indices[index] = watches->entity_indices[watches->count - 1];
-            watches->count--;
-            index--;
-        } else {
-            watches->entity_indices[index] = new_index_map[old];
+        if (level_find_entity_by_id(level, watches->watch_ids[index]) >= 0) {
+            watches->watch_ids[watch_write++] = watches->watch_ids[index];
         }
     }
-    editor_state->selected_entity_index = -1;
-    editor_state->selected_attr_index = -1;
+    watches->count = watch_write;
     editor_state->selected_tree_index = -1;
 }
 
 static void select_entity_and_pan(EditorState *editor_state, Camera2D *camera, const Level *level, int entity_index)
 {
-    editor_state->selected_entity_index = entity_index;
+    editor_state->selected_entity_id = level->entities.data[entity_index].id;
     editor_state->selected_tree_index = -1;
-    editor_state->selected_attr_index = -1;
+    editor_state->selected_attr_kind = EDITOR_ATTR_SEL_NONE;
     camera->target = level->entities.data[entity_index].position;
 }
 
 static void handle_tree_select(GameState *state, Camera2D *camera, EditorState *editor_state)
 {
-    int sel = editor_state->selected_entity_index;
+    int sel = level_find_entity_by_id(&state->gamedata.current_level, editor_state->selected_entity_id);
     const Entity *entity = &state->gamedata.current_level.entities.data[sel];
     int tree_idx = editor_state->selected_tree_index;
     const Blueprint *blueprint = blueprint_find(&state->gamedata.blueprints, entity->blueprint_name.ptr);
@@ -303,10 +356,12 @@ static void handle_tree_select(GameState *state, Camera2D *camera, EditorState *
 static void
 handle_browse_select(GameState *state, Camera2D *camera, EditorState *editor_state, UndoHistory *undo_history)
 {
-    int sel = editor_state->selected_entity_index;
+    int sel = level_find_entity_by_id(&state->gamedata.current_level, editor_state->selected_entity_id);
     if (sel < 0) {
-        editor_state->selected_entity_index = find_nearest_entity(&state->gamedata.current_level, camera->target);
-        editor_state->selected_attr_index = -1;
+        int nearest = find_nearest_entity(&state->gamedata.current_level, camera->target);
+        editor_state->selected_entity_id =
+            (nearest >= 0) ? state->gamedata.current_level.entities.data[nearest].id : -1;
+        editor_state->selected_attr_kind = EDITOR_ATTR_SEL_NONE;
         editor_state->selected_tree_index = -1;
         return;
     }
@@ -317,7 +372,7 @@ handle_browse_select(GameState *state, Camera2D *camera, EditorState *editor_sta
         return;
     }
 
-    int attr_idx = editor_state->selected_attr_index;
+    int attr_idx = editor_resolve_selected_attr_index(state, entity, editor_state);
     if (attr_idx < 0) {
         return;
     }
@@ -358,21 +413,52 @@ handle_browse_select(GameState *state, Camera2D *camera, EditorState *editor_sta
 
 static void handle_browse_cancel(EditorState *editor_state)
 {
-    if (editor_state->selected_attr_index >= 0) {
-        editor_state->selected_attr_index = -1;
+    if (editor_state->selected_attr_kind != EDITOR_ATTR_SEL_NONE) {
+        editor_state->selected_attr_kind = EDITOR_ATTR_SEL_NONE;
     } else if (editor_state->selected_tree_index >= 0) {
         editor_state->selected_tree_index = -1;
     } else {
-        editor_state->selected_entity_index = -1;
-        editor_state->selected_attr_index = -1;
+        editor_state->selected_entity_id = -1;
+        editor_state->selected_attr_kind = EDITOR_ATTR_SEL_NONE;
         editor_state->selected_tree_index = -1;
     }
 }
 
+/* Write side of the stable attr identity: point selected_attr_* at whatever
+ * row_at resolves `display_index` to for `entity`. Pairs with
+ * editor_resolve_selected_attr_index (the read side, declared in
+ * internal.h since it's called from other editor split files too). This
+ * writer is only ever called from handle_browse_navigate below, so it
+ * stays file-local. */
+static void
+editor_set_selected_attr(EditorState *editor_state, const GameState *state, const Entity *entity, int display_index)
+{
+    AttrRow row = attr_row_at(state, entity, display_index);
+    if (row.kind == ATTR_ROW_KIND_ADD) {
+        editor_state->selected_attr_kind = EDITOR_ATTR_SEL_ADD;
+        editor_state->selected_attr_section = row.section;
+        editor_state->selected_attr_name[0] = '\0';
+        return;
+    }
+    if (row.kind == ATTR_ROW_KIND_ATTR) {
+        const AttrSet *set = attr_set_for_section_const(state, entity, row.section);
+        if (set && row.index_in_section < set->entries.count) {
+            const Str *name = &set->entries.data[row.index_in_section].name;
+            size_t copy_len = name->len < EDITOR_ATTR_NAME_MAX - 1 ? name->len : EDITOR_ATTR_NAME_MAX - 1;
+            memcpy(editor_state->selected_attr_name, name->ptr, copy_len);
+            editor_state->selected_attr_name[copy_len] = '\0';
+            editor_state->selected_attr_kind = EDITOR_ATTR_SEL_NAMED;
+            editor_state->selected_attr_section = row.section;
+            return;
+        }
+    }
+    editor_state->selected_attr_kind = EDITOR_ATTR_SEL_NONE;
+}
+
 static void handle_browse_navigate(const GameState *state, EditorState *editor_state, int direction)
 {
-    int sel = editor_state->selected_entity_index;
-    if (sel < 0 || sel >= state->gamedata.current_level.entities.count) {
+    int sel = level_find_entity_by_id(&state->gamedata.current_level, editor_state->selected_entity_id);
+    if (sel < 0) {
         return;
     }
     const Entity *entity = &state->gamedata.current_level.entities.data[sel];
@@ -388,25 +474,26 @@ static void handle_browse_navigate(const GameState *state, EditorState *editor_s
             editor_state->selected_tree_index = -1;
         } else if (new_tree >= tree_total) {
             editor_state->selected_tree_index = -1;
-            editor_state->selected_attr_index = 0;
+            editor_set_selected_attr(editor_state, state, entity, 0);
         } else {
             editor_state->selected_tree_index = new_tree;
         }
-    } else if (editor_state->selected_attr_index >= 0) {
-        int new_attr = editor_state->selected_attr_index + direction;
+    } else if (editor_state->selected_attr_kind != EDITOR_ATTR_SEL_NONE) {
+        int current_attr = editor_resolve_selected_attr_index(state, entity, editor_state);
+        int new_attr = current_attr + direction;
         if (new_attr < 0) {
-            editor_state->selected_attr_index = -1;
+            editor_state->selected_attr_kind = EDITOR_ATTR_SEL_NONE;
             editor_state->selected_tree_index = tree_total - 1;
         } else if (new_attr > attr_last) {
-            editor_state->selected_attr_index = attr_last;
+            editor_set_selected_attr(editor_state, state, entity, attr_last);
         } else {
-            editor_state->selected_attr_index = new_attr;
+            editor_set_selected_attr(editor_state, state, entity, new_attr);
         }
     } else {
         if (direction > 0) {
             editor_state->selected_tree_index = 0;
         } else {
-            editor_state->selected_attr_index = attr_last;
+            editor_set_selected_attr(editor_state, state, entity, attr_last);
         }
     }
 }
@@ -414,18 +501,19 @@ static void handle_browse_navigate(const GameState *state, EditorState *editor_s
 static void
 handle_browse_delete(GameState *state, EditorState *editor_state, WatchList *watches, UndoHistory *undo_history)
 {
-    int del_sel = editor_state->selected_entity_index;
+    int del_sel = level_find_entity_by_id(&state->gamedata.current_level, editor_state->selected_entity_id);
     if (del_sel < 0) {
         return;
     }
+    Entity *del_entity = &state->gamedata.current_level.entities.data[del_sel];
 
     /* Tree section: X on child row -> remove blueprint child */
     int tree_idx = editor_state->selected_tree_index;
     if (tree_idx >= 0) {
-        const Entity *entity = &state->gamedata.current_level.entities.data[del_sel];
-        const Blueprint *blueprint = blueprint_find(&state->gamedata.blueprints, entity->blueprint_name.ptr);
-        if (blueprint && !tree_is_parent_row(entity, tree_idx) && !tree_is_add_child_row(entity, blueprint, tree_idx)) {
-            int child_idx = tree_child_index(entity, tree_idx);
+        const Blueprint *blueprint = blueprint_find(&state->gamedata.blueprints, del_entity->blueprint_name.ptr);
+        if (blueprint && !tree_is_parent_row(del_entity, tree_idx) &&
+            !tree_is_add_child_row(del_entity, blueprint, tree_idx)) {
+            int child_idx = tree_child_index(del_entity, tree_idx);
             if (child_idx >= 0 && child_idx < blueprint->children.count) {
                 remove_blueprint_child(state, editor_state, undo_history, child_idx);
             }
@@ -435,8 +523,7 @@ handle_browse_delete(GameState *state, EditorState *editor_state, WatchList *wat
 
     /* Attr section: X on persisted/runtime attr -> remove from that set;
      * X on blueprint attr (or no attr selected) -> delete entity. */
-    Entity *del_entity = &state->gamedata.current_level.entities.data[del_sel];
-    int del_attr = editor_state->selected_attr_index;
+    int del_attr = editor_resolve_selected_attr_index(state, del_entity, editor_state);
     AttrRow del_row = attr_row_at(state, del_entity, del_attr);
     if (del_row.kind == ATTR_ROW_KIND_ATTR &&
         (del_row.section == ATTR_SECTION_PERSISTED || del_row.section == ATTR_SECTION_RUNTIME)) {
@@ -444,7 +531,7 @@ handle_browse_delete(GameState *state, EditorState *editor_state, WatchList *wat
         Attribute *del_target = &target->entries.data[del_row.index_in_section];
         Allocator alloc = allocator_arena(&state->gamedata_arena);
         attr_remove(&alloc, target, del_target->name.ptr);
-        editor_state->selected_attr_index = -1;
+        editor_state->selected_attr_kind = EDITOR_ATTR_SEL_NONE;
         undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
                                strv_from_cstr("Remove attribute"));
     } else if (del_attr < 0 || (del_row.kind == ATTR_ROW_KIND_ATTR && del_row.section == ATTR_SECTION_BLUEPRINT)) {
@@ -454,29 +541,33 @@ handle_browse_delete(GameState *state, EditorState *editor_state, WatchList *wat
     }
 }
 
-static void reset_editor_selection(EditorState *editor_state, WatchList *watches)
+/* Called on undo/redo. The entity/attr selection (selected_entity_id +
+ * selected_attr_* identity) and the watch list all resolve by stable id/name
+ * against the restored gamedata, so they survive the step — a selection whose
+ * entity no longer exists simply resolves to -1 on next use, and dead watch
+ * ids are skipped at draw time. Only selected_tree_index is genuinely stale:
+ * it's a raw cursor into the rule-tree node list, which has no stable id yet,
+ * and undo can restore a different node layout underneath it. */
+static void clear_stale_tree_cursor(EditorState *editor_state)
 {
-    editor_state->selected_entity_index = -1;
-    editor_state->selected_attr_index = -1;
     editor_state->selected_tree_index = -1;
-    watches->count = 0;
 }
 
 static void toggle_watch(EditorState *editor_state, WatchList *watches)
 {
-    int sel = editor_state->selected_entity_index;
-    if (sel < 0) {
+    int entity_id = editor_state->selected_entity_id;
+    if (entity_id < 0) {
         return;
     }
     for (int index = 0; index < watches->count; index++) {
-        if (watches->entity_indices[index] == sel) {
-            watches->entity_indices[index] = watches->entity_indices[watches->count - 1];
+        if (watches->watch_ids[index] == entity_id) {
+            watches->watch_ids[index] = watches->watch_ids[watches->count - 1];
             watches->count--;
             return;
         }
     }
     if (watches->count < EDITOR_WATCH_MAX) {
-        watches->entity_indices[watches->count] = sel;
+        watches->watch_ids[watches->count] = entity_id;
         watches->count++;
     }
 }
@@ -487,7 +578,7 @@ dispatch_radial_confirm(GameState *state, EditorState *editor_state, WatchList *
     int confirmed = editor_state->radial_confirmed;
     editor_state->radial_confirmed = -1;
     if (editor_state->radial_context == RADIAL_CTX_TOOLS) {
-        int sel = editor_state->selected_entity_index;
+        int sel = level_find_entity_by_id(&state->gamedata.current_level, editor_state->selected_entity_id);
         if (confirmed == 0 && sel >= 0) { /* Grab */
             editor_state->saved_position = state->gamedata.current_level.entities.data[sel].position;
             editor_state->sub_mode = EDITOR_SUB_DRAG;
@@ -518,7 +609,7 @@ dispatch_radial_confirm(GameState *state, EditorState *editor_state, WatchList *
             editor_state->blueprint_list_scroll = 0;
             editor_state->blueprint_attr_index = -1;
             editor_state->blueprint_tree_index = -1;
-            editor_state->selected_entity_index = -1;
+            editor_state->selected_entity_id = -1;
         }
     } else if (editor_state->radial_context == RADIAL_CTX_ATTR_TYPE) {
         dispatch_attr_type_change(state, editor_state, confirmed, undo_history);
@@ -556,14 +647,14 @@ void handle_browse_input(GameState *state,
      * priority; callers must check chords first and early-return. */
     if (input_pressed(&input, &state->bindings, ACTION_EDITOR_UNDO)) {
         undo_history_step_back(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base);
-        reset_editor_selection(editor_state, watches);
+        clear_stale_tree_cursor(editor_state);
         editor_state->toast_text = undo_history_description(undo_history);
         editor_state->toast_timer = TOAST_DURATION;
         return;
     }
     if (input_pressed(&input, &state->bindings, ACTION_EDITOR_REDO)) {
         undo_history_step_forward(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base);
-        reset_editor_selection(editor_state, watches);
+        clear_stale_tree_cursor(editor_state);
         editor_state->toast_text = undo_history_description(undo_history);
         editor_state->toast_timer = TOAST_DURATION;
         return;
@@ -593,14 +684,14 @@ void handle_browse_input(GameState *state,
         }
     }
     if (input_pressed(&input, &state->bindings, ACTION_EDITOR_TYPE_PROPS)) {
-        if (editor_state->selected_attr_index >= 0) {
+        if (editor_state->selected_attr_kind != EDITOR_ATTR_SEL_NONE) {
             editor_state->radial_selected = -1;
             editor_state->radial_confirmed = -1;
             editor_state->radial_item_count = 4;
             editor_state->radial_context = RADIAL_CTX_ATTR_TYPE;
             editor_state->sub_mode = EDITOR_SUB_RADIAL;
         } else if (editor_state->selected_tree_index >= 0) {
-            int r2_sel = editor_state->selected_entity_index;
+            int r2_sel = level_find_entity_by_id(&state->gamedata.current_level, editor_state->selected_entity_id);
             const Entity *r2_entity = &state->gamedata.current_level.entities.data[r2_sel];
             const Blueprint *r2_bp = blueprint_find(&state->gamedata.blueprints, r2_entity->blueprint_name.ptr);
             int r2_tree = editor_state->selected_tree_index;
@@ -622,8 +713,8 @@ void handle_mode_transitions(GameState *state, EditorState *editor_state, const 
     if (editor_state->sub_mode != EDITOR_SUB_BROWSE) {
         return;
     }
-    int sel = editor_state->selected_entity_index;
-    if (sel < 0 || sel >= state->gamedata.current_level.entities.count) {
+    int sel = level_find_entity_by_id(&state->gamedata.current_level, editor_state->selected_entity_id);
+    if (sel < 0) {
         return;
     }
     const Entity *entity = &state->gamedata.current_level.entities.data[sel];
@@ -652,8 +743,8 @@ void handle_mode_transitions(GameState *state, EditorState *editor_state, const 
 void handle_drag_input(
     GameState *state, EditorState *editor_state, UndoHistory *undo_history, InputState input, float delta_time)
 {
-    int sel = editor_state->selected_entity_index;
-    if (sel < 0 || sel >= state->gamedata.current_level.entities.count) {
+    int sel = level_find_entity_by_id(&state->gamedata.current_level, editor_state->selected_entity_id);
+    if (sel < 0) {
         return;
     }
     Entity *entity = &state->gamedata.current_level.entities.data[sel];
@@ -676,8 +767,8 @@ void handle_drag_input(
 void handle_handle_input(
     GameState *state, EditorState *editor_state, UndoHistory *undo_history, InputState input, float delta_time)
 {
-    int sel = editor_state->selected_entity_index;
-    if (sel < 0 || sel >= state->gamedata.current_level.entities.count) {
+    int sel = level_find_entity_by_id(&state->gamedata.current_level, editor_state->selected_entity_id);
+    if (sel < 0) {
         return;
     }
     Entity *entity = &state->gamedata.current_level.entities.data[sel];

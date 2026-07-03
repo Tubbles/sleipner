@@ -135,8 +135,8 @@ void remove_blueprint_child(GameState *state, EditorState *editor_state, UndoHis
             blueprint = &state->gamedata.blueprints.entries.data[bp_idx];
         }
     } else {
-        int sel = editor_state->selected_entity_index;
-        if (sel >= 0 && sel < state->gamedata.current_level.entities.count) {
+        int sel = level_find_entity_by_id(&state->gamedata.current_level, editor_state->selected_entity_id);
+        if (sel >= 0) {
             Entity *entity = &state->gamedata.current_level.entities.data[sel];
             blueprint = find_blueprint_by_name(state, entity->blueprint_name.ptr);
         }
@@ -178,8 +178,8 @@ void add_blueprint_child(Diag *diag,
             blueprint = &state->gamedata.blueprints.entries.data[bp_idx];
         }
     } else {
-        int sel = editor_state->selected_entity_index;
-        if (sel >= 0 && sel < state->gamedata.current_level.entities.count) {
+        int sel = level_find_entity_by_id(&state->gamedata.current_level, editor_state->selected_entity_id);
+        if (sel >= 0) {
             Entity *entity = &state->gamedata.current_level.entities.data[sel];
             blueprint = find_blueprint_by_name(state, entity->blueprint_name.ptr);
         }

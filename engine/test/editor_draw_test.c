@@ -57,6 +57,14 @@ FAKE_VALUE_FUNC(const Blueprint *, blueprint_find, const BlueprintTable *, const
 FAKE_VALUE_FUNC(int, total_attr_count, const GameState *, const Entity *);
 FAKE_VALUE_FUNC(bool, entity_has_persisted_section, const Entity *);
 FAKE_VALUE_FUNC(int, place_visible_count, int);
+FAKE_VALUE_FUNC(int, editor_resolve_selected_attr_index, const GameState *, const Entity *, const EditorState *);
+
+/* Cross-file fake: level.c. draw_editor_panel/draw_editor_highlights/
+ * draw_watch_overlay/draw_collision_handles resolve selection by stable id
+ * via level_find_entity_by_id, but none of those are exercised by the
+ * render-only tests below — this fake exists purely to satisfy the linker,
+ * same rationale as the hint table fakes above. */
+FAKE_VALUE_FUNC(int, level_find_entity_by_id, const Level *, int);
 
 /* Cross-file editor fakes: per-submode hint table accessors are owned by
  * the other editor TUs and pulled in via the linker only when draw.c

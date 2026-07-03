@@ -16,6 +16,9 @@ DEFINE_FFF_GLOBALS;
 FAKE_VALUE_FUNC(Blueprint *, find_blueprint_by_name, GameState *, const char *);
 FAKE_VOID_FUNC(mark_deleted_descendants, const Level *, bool *, int);
 
+/* Cross-file editor fakes: level.c */
+FAKE_VALUE_FUNC(int, level_find_entity_by_id, const Level *, int);
+
 /* External module fakes */
 FAKE_VOID_FUNC(undo_history_new_entry, UndoHistory *, GamedataState *, Arena *, ArenaCheckpoint, Strv);
 FAKE_VALUE_FUNC(bool,
@@ -55,6 +58,7 @@ void setUp(void)
     RESET_FAKE(mark_deleted_descendants);
     RESET_FAKE(undo_history_new_entry);
     RESET_FAKE(level_spawn_single_child);
+    RESET_FAKE(level_find_entity_by_id);
 }
 
 void tearDown(void) {}
@@ -428,7 +432,8 @@ void test_remove_blueprint_child_removes_from_vec(void)
     (void)vec_blueprint_child_push(&blueprint.children, child_b);
 
     find_blueprint_by_name_fake.return_val = &blueprint;
-    EditorState editor_state = {.selected_entity_index = 0};
+    level_find_entity_by_id_fake.return_val = 0;
+    EditorState editor_state = {.selected_entity_id = 1};
     UndoHistory undo_history = {0};
     state.gamedata.player_index = -1;
 
@@ -462,7 +467,8 @@ void test_remove_blueprint_child_deletes_entities(void)
     (void)vec_blueprint_child_push(&blueprint.children, child);
 
     find_blueprint_by_name_fake.return_val = &blueprint;
-    EditorState editor_state = {.selected_entity_index = 0};
+    level_find_entity_by_id_fake.return_val = 0;
+    EditorState editor_state = {.selected_entity_id = 1};
     UndoHistory undo_history = {0};
     state.gamedata.player_index = -1;
 
@@ -499,8 +505,9 @@ void test_remove_blueprint_child_cascades_descendants(void)
     find_blueprint_by_name_fake.return_val = &blueprint;
 
     mark_deleted_descendants_fake.custom_fake = mark_descendants_custom;
+    level_find_entity_by_id_fake.return_val = 0;
 
-    EditorState editor_state = {.selected_entity_index = 0};
+    EditorState editor_state = {.selected_entity_id = 1};
     UndoHistory undo_history = {0};
     state.gamedata.player_index = -1;
 
@@ -528,7 +535,8 @@ void test_remove_blueprint_child_invalid_index(void)
     blueprint.children.alloc = test_heap_alloc;
 
     find_blueprint_by_name_fake.return_val = &blueprint;
-    EditorState editor_state = {.selected_entity_index = 0};
+    level_find_entity_by_id_fake.return_val = 0;
+    EditorState editor_state = {.selected_entity_id = 1};
     UndoHistory undo_history = {0};
 
     remove_blueprint_child(&state, &editor_state, &undo_history, -1);
@@ -560,7 +568,8 @@ void test_remove_blueprint_child_records_undo(void)
     (void)vec_blueprint_child_push(&blueprint.children, child);
 
     find_blueprint_by_name_fake.return_val = &blueprint;
-    EditorState editor_state = {.selected_entity_index = 0};
+    level_find_entity_by_id_fake.return_val = 0;
+    EditorState editor_state = {.selected_entity_id = 1};
     UndoHistory undo_history = {0};
     state.gamedata.player_index = -1;
 
@@ -590,7 +599,8 @@ void test_add_blueprint_child_adds_to_vec(void)
 
     find_blueprint_by_name_fake.return_val = &blueprint;
     level_spawn_single_child_fake.return_val = true;
-    EditorState editor_state = {.selected_entity_index = 0};
+    level_find_entity_by_id_fake.return_val = 0;
+    EditorState editor_state = {.selected_entity_id = 1};
     UndoHistory undo_history = {0};
     Diag diag = {0};
 
@@ -621,7 +631,8 @@ void test_add_blueprint_child_spawns_for_instances(void)
 
     find_blueprint_by_name_fake.return_val = &blueprint;
     level_spawn_single_child_fake.return_val = true;
-    EditorState editor_state = {.selected_entity_index = 0};
+    level_find_entity_by_id_fake.return_val = 0;
+    EditorState editor_state = {.selected_entity_id = 1};
     UndoHistory undo_history = {0};
     Diag diag = {0};
 
@@ -638,7 +649,8 @@ void test_add_blueprint_child_spawns_for_instances(void)
 void test_add_blueprint_child_no_selection(void)
 {
     GameState state = {0};
-    EditorState editor_state = {.selected_entity_index = -1};
+    level_find_entity_by_id_fake.return_val = -1;
+    EditorState editor_state = {.selected_entity_id = -1};
     UndoHistory undo_history = {0};
     Diag diag = {0};
 

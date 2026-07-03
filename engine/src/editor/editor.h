@@ -46,12 +46,18 @@ typedef struct {
 #define RADIAL_NORTH_OFFSET_DEG 90.0F    /* rotation offset so top is north (12 o'clock) */
 #define RADIAL_DEG_TO_RAD 0.01745329252F /* multiplier to convert degrees to radians */
 #define WORD_BUILDER_BUF_SIZE 256        /* max length of word builder output */
-#define WORD_BUILDER_PAGE_SIZE 5         /* page-jump size for L1/R1 in word builder */
-#define FUZZY_FINDER_PAGE_SIZE 5         /* page-jump size for L1/R1 in name picker */
-#define TOAST_DURATION 2.0F              /* seconds before toast fades out */
-#define TOAST_FADE_TIME 0.5F             /* seconds of fade-out at the end */
-#define TOAST_FONT_SIZE 32               /* toast text font size */
-#define ALPHA_MAX 255.0F                 /* max alpha value for color byte conversion */
+/* Attribute names created through the editor are typed via the word
+ * builder, so WORD_BUILDER_BUF_SIZE is the only enforced bound on an
+ * editor-authored attr name. Reuse it here so the stable-identity
+ * selection below can never truncate a name it will later need to
+ * match exactly. */
+#define EDITOR_ATTR_NAME_MAX WORD_BUILDER_BUF_SIZE
+#define WORD_BUILDER_PAGE_SIZE 5 /* page-jump size for L1/R1 in word builder */
+#define FUZZY_FINDER_PAGE_SIZE 5 /* page-jump size for L1/R1 in name picker */
+#define TOAST_DURATION 2.0F      /* seconds before toast fades out */
+#define TOAST_FADE_TIME 0.5F     /* seconds of fade-out at the end */
+#define TOAST_FONT_SIZE 32       /* toast text font size */
+#define ALPHA_MAX 255.0F         /* max alpha value for color byte conversion */
 
 extern const Color debug_text_color;
 extern const Color debug_bg_color;
@@ -80,53 +86,81 @@ typedef enum {
     EDITOR_SUB_GAMEPAD_KB,   /* two-level radial character picker */
 } EditorSubMode;
 
+/* The editor attr panel for an entity is split into three sections:
+ * persisted (saved to TOML), runtime (live read path, mutated by rules),
+ * and blueprint (shared defaults from the blueprint table). Child entities
+ * hide the persisted section — they have no TOML representation in v1.
+ * Part of EditorState's stable attr-selection identity below, so it lives
+ * in the public editor header rather than editor/internal.h. */
+typedef enum {
+    ATTR_SECTION_PERSISTED,
+    ATTR_SECTION_RUNTIME,
+    ATTR_SECTION_BLUEPRINT,
+} AttrSection;
+
+/* Identity kind for the entity attr panel's selection (see
+ * EditorState.selected_attr_kind below). */
+typedef enum {
+    EDITOR_ATTR_SEL_NONE,  /* nothing selected in the attr panel */
+    EDITOR_ATTR_SEL_NAMED, /* selected_attr_name identifies a live attribute in selected_attr_section */
+    EDITOR_ATTR_SEL_ADD,   /* selected the ADD sentinel row of selected_attr_section */
+} EditorAttrSelKind;
+
 typedef struct {
     EditorTopMode top_mode;
-    int selected_entity_index; /* -1 = nothing selected */
+    int selected_entity_id; /* -1 = nothing selected; stable Entity.id, resolved to an
+                             * index via level_find_entity_by_id at point of use. Survives
+                             * undo/reload/delete instead of going stale like a raw index. */
     EditorSubMode sub_mode;
     Vector2 saved_position;
     Vector2 saved_col_offset;
     Vector2 saved_col_size;
-    int place_blueprint_index;                    /* index into state->gamedata.blueprints.entries */
-    int selected_attr_index;                      /* -1 = none; index into merged instance+blueprint list */
-    float saved_attr_float;                       /* original float value saved on entering ATTR_EDIT */
-    int saved_attr_int;                           /* original int value saved on entering ATTR_EDIT */
-    bool saved_attr_bool;                         /* original bool value saved on entering ATTR_EDIT */
-    float attr_hold_total;                        /* cumulative time held in current direction */
-    float attr_hold_subtick;                      /* time since last auto-repeat fire */
-    int attr_hold_dir;                            /* -1 / 0 / +1: direction currently held for auto-repeat */
-    int radial_selected;                          /* -1 = center/none; 0..N-1 = highlighted sector */
-    int radial_confirmed;                         /* -1 = no pending; >=0 = confirmed index (read+cleared in browse) */
-    int radial_item_count;                        /* N items in the current picker */
-    RadialContext radial_context;                 /* which context opened the picker */
-    int word_builder_scroll;                      /* scroll index in vocabulary list (0 = DONE) */
-    int word_builder_len;                         /* current built string length */
-    char word_builder_buf[WORD_BUILDER_BUF_SIZE]; /* current built string (null-terminated) */
-    float toast_timer;                            /* seconds remaining for toast display */
-    Strv toast_text;                              /* current toast message (non-owning, points into undo arena) */
-    int fuzzy_finder_scroll;                      /* selected index (0 = "[ NEW... ]") */
-    const char **fuzzy_finder_items;              /* sorted unique name pointers (gamedata_arena) */
-    int fuzzy_finder_item_count;                  /* number of names (excludes the NEW sentinel) */
-    KeyboardWidget word_builder_kb;               /* reused two-level radial keyboard for word builder typing */
-    bool adding_attr;                             /* true when fuzzy finder is open for adding a runtime attribute */
-    bool adding_persisted_attr;                   /* true when fuzzy finder is open for adding a persisted attribute */
-    int selected_tree_index;                      /* -1 = not in tree section; >=0 = parent/child/ADD CHILD */
-    bool editing_child_tag;                       /* word builder is editing a blueprint child tag */
-    bool editing_child_offset;                    /* attr_edit is editing a blueprint child offset */
-    int child_edit_axis;                          /* 0=x, 1=y — which offset axis */
-    int child_edit_index;                         /* which child in blueprint->children is being edited */
-    bool adding_child;                            /* true when fuzzy finder is open for adding a blueprint child */
-    int blueprint_list_scroll;                    /* scroll position in blueprint list view */
-    int selected_blueprint_index;                 /* -1 = list view; >=0 = detail view */
-    int blueprint_attr_index;                     /* -1 = none; index into blueprint attrs (detail view) */
-    int blueprint_tree_index;                     /* -1 = not in tree; >=0 = child/ADD CHILD row */
-    bool adding_blueprint_attr;                   /* fuzzy finder is adding a blueprint-level attr */
-    bool creating_blueprint;                      /* word builder is naming a new blueprint */
-    bool duplicating_blueprint;                   /* word builder is naming a duplicate blueprint */
+    int place_blueprint_index; /* index into state->gamedata.blueprints.entries */
+    /* Stable identity for the entity attr panel selection, resolved to a display
+     * index each frame via editor_resolve_selected_attr_index(). Replaces a raw
+     * "index into merged instance+blueprint list", which went stale whenever the
+     * row layout shifted (attr added/removed elsewhere, undo, reload). */
+    EditorAttrSelKind selected_attr_kind;
+    AttrSection selected_attr_section;             /* section the identity refers to (kind != NONE) */
+    char selected_attr_name[EDITOR_ATTR_NAME_MAX]; /* attr name for EDITOR_ATTR_SEL_NAMED; unused otherwise */
+    float saved_attr_float;                        /* original float value saved on entering ATTR_EDIT */
+    int saved_attr_int;                            /* original int value saved on entering ATTR_EDIT */
+    bool saved_attr_bool;                          /* original bool value saved on entering ATTR_EDIT */
+    float attr_hold_total;                         /* cumulative time held in current direction */
+    float attr_hold_subtick;                       /* time since last auto-repeat fire */
+    int attr_hold_dir;                             /* -1 / 0 / +1: direction currently held for auto-repeat */
+    int radial_selected;                           /* -1 = center/none; 0..N-1 = highlighted sector */
+    int radial_confirmed;                          /* -1 = no pending; >=0 = confirmed index (read+cleared in browse) */
+    int radial_item_count;                         /* N items in the current picker */
+    RadialContext radial_context;                  /* which context opened the picker */
+    int word_builder_scroll;                       /* scroll index in vocabulary list (0 = DONE) */
+    int word_builder_len;                          /* current built string length */
+    char word_builder_buf[WORD_BUILDER_BUF_SIZE];  /* current built string (null-terminated) */
+    float toast_timer;                             /* seconds remaining for toast display */
+    Strv toast_text;                               /* current toast message (non-owning, points into undo arena) */
+    int fuzzy_finder_scroll;                       /* selected index (0 = "[ NEW... ]") */
+    const char **fuzzy_finder_items;               /* sorted unique name pointers (gamedata_arena) */
+    int fuzzy_finder_item_count;                   /* number of names (excludes the NEW sentinel) */
+    KeyboardWidget word_builder_kb;                /* reused two-level radial keyboard for word builder typing */
+    bool adding_attr;                              /* true when fuzzy finder is open for adding a runtime attribute */
+    bool adding_persisted_attr;                    /* true when fuzzy finder is open for adding a persisted attribute */
+    int selected_tree_index;                       /* -1 = not in tree section; >=0 = parent/child/ADD CHILD */
+    bool editing_child_tag;                        /* word builder is editing a blueprint child tag */
+    bool editing_child_offset;                     /* attr_edit is editing a blueprint child offset */
+    int child_edit_axis;                           /* 0=x, 1=y — which offset axis */
+    int child_edit_index;                          /* which child in blueprint->children is being edited */
+    bool adding_child;                             /* true when fuzzy finder is open for adding a blueprint child */
+    int blueprint_list_scroll;                     /* scroll position in blueprint list view */
+    int selected_blueprint_index;                  /* -1 = list view; >=0 = detail view */
+    int blueprint_attr_index;                      /* -1 = none; index into blueprint attrs (detail view) */
+    int blueprint_tree_index;                      /* -1 = not in tree; >=0 = child/ADD CHILD row */
+    bool adding_blueprint_attr;                    /* fuzzy finder is adding a blueprint-level attr */
+    bool creating_blueprint;                       /* word builder is naming a new blueprint */
+    bool duplicating_blueprint;                    /* word builder is naming a duplicate blueprint */
 } EditorState;
 
 typedef struct {
-    int entity_indices[EDITOR_WATCH_MAX];
+    int watch_ids[EDITOR_WATCH_MAX]; /* stable Entity.id values, not indices */
     int count;
 } WatchList;
 
