@@ -104,8 +104,7 @@ Carried over from `work/keybinding-audit.md`:
 ## Input system future work
 
 - **Plugin-declared actions.** When a plugin/engine system arrives,
-  bindings need a parallel registry alongside the central enum. See
-  `plans/parsed-floating-dolphin.md` § "Forward-Looking Context".
+  bindings need a parallel registry alongside the central enum.
 - **Conflict warnings in Settings.** The Settings UI lets the user bind
   the same key/button to two actions without warning. The function
   layer documents that the *caller* resolves order-sensitivity, so

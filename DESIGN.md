@@ -617,7 +617,7 @@ Game data is split into two concerns with separate storage:
 
 ### Asset Database (`assets/`)
 
-Binary resources: sprites, music, sound effects. These rarely change, are large, and don't diff well. Checked into git as-is. Loaded at runtime from the filesystem via raylib.
+Binary resources: sprites, music, sound effects. These rarely change, are large, and don't diff well. Checked into git as-is. Embedded in the binary via `.incbin` and loaded at runtime from memory via raylib's `Load*FromMemory` functions.
 
 ```
 assets/
@@ -1101,9 +1101,9 @@ The function-layer overhaul (2026-04) unblocked black-box bug-repro tests: every
 - [x] Tiled grass background
 - [x] Player avatar with animation and gamepad control
 - [x] Static obstacles with AABB collision (hardcoded in main.c)
-- [x] Depth-sorted rendering (by collision bottom edge Y)
+- [x] Depth-sorted rendering (by entity position.y, tiebroken by x then insertion index)
 - [x] Background music (embedded mp3)
-- [x] Debug overlay (F3 / gamepad Select — collision boxes, info panel, scrolling log)
+- [x] Debug overlay (toggled from the pause menu — collision boxes, info panel, scrolling log)
 - [x] Android APK build (signed, sensorLandscape, 1920x1080)
 - [x] GitHub Actions CI (format, build, test, lint + Android APK artifact)
 

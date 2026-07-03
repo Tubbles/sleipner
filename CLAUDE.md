@@ -138,8 +138,6 @@ The function layer is a **binding lookup, not a priority resolver**. If `ACTION_
 
 Construct an `InputState` directly and drive it through the helpers in `input.h`: `input_state_press_key` (edge: sets both `_pressed` and `_down`), `input_state_hold_key` (level: sets `_down` only), `input_state_press_gp_button`, `input_state_set_gp_axis`. Then assert against `input_pressed` / `input_held` / etc. against the test's `BindingStore`.
 
-The legacy `test_input_mock` `--wrap` shim still exists for pre-existing integration tests but should not be the preferred path for new tests.
-
 ## Arena Architecture
 
 **ALL engine memory is arena-backed. Using `malloc`, `realloc`, or `free` anywhere in engine code is strictly forbidden — no exceptions, no workarounds, no "just this once".** The only permitted exemptions are: (1) the `NULL`-allocator fallback path inside the allocator infrastructure itself, and (2) `free(datum.u.s)` calls for TOML vendor string datums (a vendor limitation). If you find yourself reaching for `malloc`, the architecture is wrong — restructure to pass an arena allocator instead.
