@@ -128,20 +128,17 @@ below is a new set of submodes plus their handlers, pickers, and hint tables.
 
 Carried over from the pause-overlay menu landing:
 
-- **Toasts from menu Save / Restore are invisible in play mode.**
-  `menu_dispatch_save` and `menu_dispatch_restore` set
-  `editor_state.toast_text`, but `draw_toast` in `render_frame`
-  is gated on `state->editor_mode` (engine/src/main.c around
-  line 814). Save / Restore from the pause menu in play mode
-  succeeds silently. Either ungate `draw_toast` or move the toast
-  to a play-mode-aware surface.
-- **`blur_resize` is implemented but never called.** Resizing the
-  window while the menu is open leaves the blur backdrop stretched
-  over a stale capture at the old game-bounds size. The lazy
-  capture hook landed (render_frame re-captures when
-  `menu->open && !menu->blur_captured`), so the resize path needs
-  to set `menu->blur_captured = false` and call `blur_resize` —
-  the next render then re-captures at the new dimensions.
+- **`blur_resize` is implemented but never called (moot today).**
+  Verified 2026-07-03: the window is created non-resizable (no
+  `FLAG_WINDOW_RESIZABLE`; fullscreen or fixed-size) and `game_bounds`
+  plus the scene render texture are computed once at startup and never
+  recomputed, so `IsWindowResized()` cannot fire and `blur_resize`
+  would be a no-op (the blur is `game_bounds`-sized and scales with the
+  scene). This only becomes meaningful once a resizable-window feature
+  exists, at which point the resize path should recompute
+  `game_bounds`/the render texture, set `menu->blur_captured = false`
+  (and the settings sibling), then call `blur_resize`. Function kept
+  for that future.
 - **CardboardCrown is loaded twice.** Once at `FONT_PREVIEW_SIZE`
   (32px) for the font preview panel, again at `MENU_FONT_SIZE` (64px)
   for the menu. Wasteful; the asset bytes are identical. Add a tiny
