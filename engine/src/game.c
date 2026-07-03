@@ -169,7 +169,7 @@ bool game_load_gamedata(Diag *diag, GameState *state, GamedataParams params)
                 rules_evaluate_batch(diag, &gamedata_alloc, spawn_views, spawn_count, spawn_events.data,
                                      spawn_events.count, &state->gamedata.flags, &state->gamedata.vars,
                                      &state->gamedata.rule_table, &state->gamedata.subroutines, &state->gamedata.timers,
-                                     &state->transition);
+                                     &scratch_alloc, &state->transition);
             }
         }
         game_snap_camera(state);
@@ -554,7 +554,7 @@ void game_update(Diag *diag, GameState *state, InputState input, float delta_tim
             rules_evaluate_batch(diag, &rule_alloc, update_views, update_count, trigger_events.data,
                                  trigger_events.count, &state->gamedata.flags, &state->gamedata.vars,
                                  &state->gamedata.rule_table, &state->gamedata.subroutines, &state->gamedata.timers,
-                                 &state->transition);
+                                 &scratch_alloc, &state->transition);
         }
     }
 }

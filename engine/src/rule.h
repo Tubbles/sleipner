@@ -179,23 +179,6 @@ typedef struct {
 
 VEC_DECL(trigger_event, TriggerEvent)
 
-#define MAX_CASCADE_EVENTS 64
-
-typedef struct {
-    TriggerEvent events[MAX_CASCADE_EVENTS];
-    int count;
-} TriggerEventQueue;
-
-[[nodiscard]] static inline bool trigger_event_queue_push(TriggerEventQueue *queue, TriggerEvent event)
-{
-    if (queue->count >= MAX_CASCADE_EVENTS) {
-        return false;
-    }
-    queue->events[queue->count] = event;
-    queue->count++;
-    return true;
-}
-
 /* --- Parsing (from TOML) --- */
 [[nodiscard]] bool trigger_parse(Diag *diag, Allocator *alloc, Trigger *trigger, const char *string);
 [[nodiscard]] bool condition_parse(Diag *diag, Allocator *alloc, Condition *condition, const char *string);
@@ -246,7 +229,7 @@ typedef struct {
     EntityView *views;
     int view_count;
     FlagSet *flags;
-    TriggerEventQueue *event_queue;
+    vec_trigger_event *event_queue;
     AttrSet *local_vars;
     AttrSet *global_vars;
     const LocalScope *scope;           /* entity binding chain — walked by resolve_target */
@@ -258,7 +241,12 @@ typedef struct {
 
 [[nodiscard]] bool action_node_execute(Diag *diag, Allocator *alloc, const ActionNode *node, ActionContext context);
 
-/* --- Evaluation loop --- */
+/* --- Evaluation loop ---
+ * `alloc` is the persistent gamedata allocator (the ACTION_TRANSITION handler
+ * reads `transition->level`, allocated from it, after the batch returns).
+ * `scratch_alloc` backs the per-batch cascade event vecs and may be safely
+ * rewound as soon as the batch returns. Keeping the two non-adjacent avoids
+ * bugprone-easily-swappable-parameters on the pair. */
 void rules_evaluate_batch(Diag *diag,
                           Allocator *alloc,
                           EntityView *views,
@@ -270,4 +258,5 @@ void rules_evaluate_batch(Diag *diag,
                           map_entity_ruleset *rule_table,
                           const vec_subroutine *subroutines,
                           vec_timer *timers,
+                          Allocator *scratch_alloc,
                           TransitionRequest *transition);

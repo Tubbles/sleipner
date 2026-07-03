@@ -974,7 +974,7 @@ static bool execute_set_attr_action(Diag *diag, Allocator *alloc, const ActionNo
     if (strcmp(attr_name, "health") == 0 && old_health > 0.0F &&
         attr_get_scoped_float(&target->attrs, target_defaults, "health", 0.0F) <= 0.0F) {
         TriggerEvent defeat = {.type = TRIGGER_DEFEAT, .entity_index = view_index};
-        (void)trigger_event_queue_push(context.event_queue, defeat);
+        (void)vec_trigger_event_push(context.event_queue, defeat);
     }
     return true;
 }
@@ -1009,7 +1009,7 @@ static bool execute_add_attr_action(Diag *diag, Allocator *alloc, const ActionNo
     if (strcmp(attr_name, "health") == 0 && old_health > 0.0F &&
         attr_get_scoped_float(&target->attrs, target_defaults, "health", 0.0F) <= 0.0F) {
         TriggerEvent defeat = {.type = TRIGGER_DEFEAT, .entity_index = view_index};
-        (void)trigger_event_queue_push(context.event_queue, defeat);
+        (void)vec_trigger_event_push(context.event_queue, defeat);
     }
     return true;
 }
@@ -1210,13 +1210,13 @@ static bool dispatch_simple_action(Diag *diag, Allocator *alloc, const ActionNod
         return execute_set_var_action(diag, alloc, node, context);
     case ACTION_DESTROY: {
         TriggerEvent destroy_event = {.type = TRIGGER_ON_DESTROY, .entity_index = context.entity_index};
-        (void)trigger_event_queue_push(context.event_queue, destroy_event);
+        (void)vec_trigger_event_push(context.event_queue, destroy_event);
         (void)attr_set_bool(alloc, &context.entity->attrs, "active", false);
         return true;
     }
     case ACTION_FIRE_EVENT: {
         TriggerEvent fire = {.type = TRIGGER_EVENT, .entity_index = -1, .argument = node->argument};
-        return trigger_event_queue_push(context.event_queue, fire);
+        return vec_trigger_event_push(context.event_queue, fire);
     }
     case ACTION_CREATE_TIMER:
         return execute_create_timer_action(diag, node, context, false);
@@ -1351,10 +1351,10 @@ bool action_node_execute(Diag *diag, Allocator *alloc, const ActionNode *node, A
 
 /* ---- Evaluation loop ---- */
 
-static bool rule_triggered_by_events(const Rule *rule, int entity_index, const TriggerEventQueue *pending_events)
+static bool rule_triggered_by_events(const Rule *rule, int entity_index, const vec_trigger_event *pending_events)
 {
     for (int pending_index = 0; pending_index < pending_events->count; pending_index++) {
-        const TriggerEvent *pending = &pending_events->events[pending_index];
+        const TriggerEvent *pending = &pending_events->data[pending_index];
         if (pending->entity_index >= 0 && pending->entity_index != entity_index) {
             continue;
         }
@@ -1373,8 +1373,8 @@ static void evaluate_entity_rules(Diag *diag,
                                   int view_count,
                                   FlagSet *flags,
                                   AttrSet *global_vars,
-                                  const TriggerEventQueue *pending_events,
-                                  TriggerEventQueue *next_events,
+                                  const vec_trigger_event *pending_events,
+                                  vec_trigger_event *next_events,
                                   map_entity_ruleset *rule_table,
                                   const vec_subroutine *subroutines,
                                   vec_timer *timers,
@@ -1439,15 +1439,16 @@ void rules_evaluate_batch(Diag *diag,
                           map_entity_ruleset *rule_table,
                           const vec_subroutine *subroutines,
                           vec_timer *timers,
+                          Allocator *scratch_alloc,
                           TransitionRequest *transition)
 {
-    TriggerEventQueue pending_events = {0};
+    vec_trigger_event pending_events = vec_trigger_event_new(*scratch_alloc);
     for (int event_index = 0; event_index < event_count; event_index++) {
-        (void)trigger_event_queue_push(&pending_events, events[event_index]);
+        (void)vec_trigger_event_push(&pending_events, events[event_index]);
     }
 
     for (int cascade = 0; cascade < MAX_EVENT_CASCADES && pending_events.count > 0; cascade++) {
-        TriggerEventQueue next_events = {0};
+        vec_trigger_event next_events = vec_trigger_event_new(*scratch_alloc);
 
         for (int entity_index = 0; entity_index < view_count; entity_index++) {
             Entity *entity = views[entity_index].entity;
@@ -1456,8 +1457,8 @@ void rules_evaluate_batch(Diag *diag,
                  * on_destroy event — those rules must still fire. */
                 bool has_on_destroy = false;
                 for (int event_index = 0; event_index < pending_events.count; event_index++) {
-                    if (pending_events.events[event_index].type == TRIGGER_ON_DESTROY &&
-                        pending_events.events[event_index].entity_index == entity_index) {
+                    if (pending_events.data[event_index].type == TRIGGER_ON_DESTROY &&
+                        pending_events.data[event_index].entity_index == entity_index) {
                         has_on_destroy = true;
                         break;
                     }

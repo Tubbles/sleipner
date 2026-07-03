@@ -554,7 +554,7 @@ void test_condition_and_logic_one_fails(void)
 void test_action_set_flag_executes(void)
 {
     FlagSet flags = {0};
-    TriggerEventQueue queue = {0};
+    vec_trigger_event queue = vec_trigger_event_new(test_heap_alloc);
     Entity entity = {0};
 
     ActionNode action = {.type = ACTION_SET_FLAG};
@@ -571,6 +571,7 @@ void test_action_set_flag_executes(void)
     TEST_ASSERT_TRUE(action_node_execute(&test_diag, &test_heap_alloc, &action, context));
     TEST_ASSERT_TRUE(flag_get(&flags, "chest_opened"));
     str_free(&action.argument);
+    vec_trigger_event_free(&queue);
     test_flag_set_free_local(&flags);
 }
 
@@ -578,7 +579,7 @@ void test_action_clear_flag_executes(void)
 {
     FlagSet flags = {0};
     flag_set(&test_diag, &test_heap_alloc, &flags, "door_locked");
-    TriggerEventQueue queue = {0};
+    vec_trigger_event queue = vec_trigger_event_new(test_heap_alloc);
     Entity entity = {0};
 
     ActionNode action = {.type = ACTION_CLEAR_FLAG};
@@ -595,13 +596,14 @@ void test_action_clear_flag_executes(void)
     TEST_ASSERT_TRUE(action_node_execute(&test_diag, &test_heap_alloc, &action, context));
     TEST_ASSERT_FALSE(flag_get(&flags, "door_locked"));
     str_free(&action.argument);
+    vec_trigger_event_free(&queue);
     test_flag_set_free_local(&flags);
 }
 
 void test_action_set_attr_bool(void)
 {
     FlagSet flags = {0};
-    TriggerEventQueue queue = {0};
+    vec_trigger_event queue = vec_trigger_event_new(test_heap_alloc);
     Entity entity = {0};
     (void)attr_set_bool(&test_heap_alloc, &entity.attrs, "is_locked", true);
 
@@ -628,13 +630,14 @@ void test_action_set_attr_bool(void)
     str_free(&action.argument);
     str_free(&action.second_argument);
     attr_set_free(&test_heap_alloc, &entity.attrs);
+    vec_trigger_event_free(&queue);
     test_flag_set_free_local(&flags);
 }
 
 void test_action_set_attr_int(void)
 {
     FlagSet flags = {0};
-    TriggerEventQueue queue = {0};
+    vec_trigger_event queue = vec_trigger_event_new(test_heap_alloc);
     Entity entity = {0};
 
     ActionNode action = {.type = ACTION_SET_ATTR};
@@ -656,13 +659,14 @@ void test_action_set_attr_int(void)
     str_free(&action.argument);
     str_free(&action.second_argument);
     attr_set_free(&test_heap_alloc, &entity.attrs);
+    vec_trigger_event_free(&queue);
     test_flag_set_free_local(&flags);
 }
 
 void test_action_add_attr(void)
 {
     FlagSet flags = {0};
-    TriggerEventQueue queue = {0};
+    vec_trigger_event queue = vec_trigger_event_new(test_heap_alloc);
     Entity entity = {0};
     (void)attr_set_int(&test_heap_alloc, &entity.attrs, "health", 10);
 
@@ -685,13 +689,14 @@ void test_action_add_attr(void)
     str_free(&action.argument);
     str_free(&action.second_argument);
     attr_set_free(&test_heap_alloc, &entity.attrs);
+    vec_trigger_event_free(&queue);
     test_flag_set_free_local(&flags);
 }
 
 void test_action_toggle_attr(void)
 {
     FlagSet flags = {0};
-    TriggerEventQueue queue = {0};
+    vec_trigger_event queue = vec_trigger_event_new(test_heap_alloc);
     Entity entity = {0};
     (void)attr_set_bool(&test_heap_alloc, &entity.attrs, "visible", true);
 
@@ -711,13 +716,14 @@ void test_action_toggle_attr(void)
     TEST_ASSERT_FALSE(attr_get_bool(&entity.attrs, "visible", true));
     str_free(&action.argument);
     attr_set_free(&test_heap_alloc, &entity.attrs);
+    vec_trigger_event_free(&queue);
     test_flag_set_free_local(&flags);
 }
 
 void test_action_destroy(void)
 {
     FlagSet flags = {0};
-    TriggerEventQueue queue = {0};
+    vec_trigger_event queue = vec_trigger_event_new(test_heap_alloc);
     Entity entity = {0};
 
     ActionNode action = {.type = ACTION_DESTROY};
@@ -731,6 +737,7 @@ void test_action_destroy(void)
     };
     TEST_ASSERT_TRUE(action_node_execute(&test_diag, &test_heap_alloc, &action, context));
     TEST_ASSERT_FALSE(attr_get_bool(&entity.attrs, "active", true));
+    vec_trigger_event_free(&queue);
     test_flag_set_free_local(&flags);
     test_attr_set_free_local(&entity.attrs);
 }
@@ -738,7 +745,7 @@ void test_action_destroy(void)
 void test_action_fire_event_queues(void)
 {
     FlagSet flags = {0};
-    TriggerEventQueue queue = {0};
+    vec_trigger_event queue = vec_trigger_event_new(test_heap_alloc);
     Entity entity = {0};
 
     ActionNode action = {.type = ACTION_FIRE_EVENT};
@@ -754,16 +761,17 @@ void test_action_fire_event_queues(void)
     };
     TEST_ASSERT_TRUE(action_node_execute(&test_diag, &test_heap_alloc, &action, context));
     TEST_ASSERT_EQUAL_INT(1, queue.count);
-    TEST_ASSERT_EQUAL_INT(TRIGGER_EVENT, queue.events[0].type);
-    TEST_ASSERT_EQUAL_STRING("boss_defeated", queue.events[0].argument.ptr);
+    TEST_ASSERT_EQUAL_INT(TRIGGER_EVENT, queue.data[0].type);
+    TEST_ASSERT_EQUAL_STRING("boss_defeated", queue.data[0].argument.ptr);
     str_free(&action.argument);
+    vec_trigger_event_free(&queue);
     test_flag_set_free_local(&flags);
 }
 
 void test_action_execution_order(void)
 {
     FlagSet flags = {0};
-    TriggerEventQueue queue = {0};
+    vec_trigger_event queue = vec_trigger_event_new(test_heap_alloc);
     Entity entity = {0};
 
     ActionNode actions[2] = {
@@ -790,6 +798,7 @@ void test_action_execution_order(void)
     TEST_ASSERT_EQUAL_INT(2, flags.names.count);
     str_free(&actions[0].argument);
     str_free(&actions[1].argument);
+    vec_trigger_event_free(&queue);
     test_flag_set_free_local(&flags);
 }
 
@@ -833,7 +842,7 @@ void test_evaluate_interact_sets_flag(void)
     EntityView views[] = {{.entity = &entity, .defaults = &blueprint.attrs}};
 
     rules_evaluate_batch(&test_diag, &test_heap_alloc, views, 1, &event, 1, &flags, &global_vars, &rule_table, nullptr,
-                         nullptr, nullptr);
+                         nullptr, &rule_alloc, nullptr);
     TEST_ASSERT_TRUE(flag_get(&flags, "chest_opened"));
 
     arena_free(&arena);
@@ -887,7 +896,7 @@ void test_evaluate_condition_blocks_action(void)
     EntityView views[] = {{.entity = &entity, .defaults = &blueprint.attrs}};
 
     rules_evaluate_batch(&test_diag, &test_heap_alloc, views, 1, &event, 1, &flags, &global_vars, &rule_table, nullptr,
-                         nullptr, nullptr);
+                         nullptr, &rule_alloc, nullptr);
     TEST_ASSERT_FALSE(flag_get(&flags, "chest_opened"));
 
     arena_free(&arena);
@@ -958,7 +967,7 @@ void test_evaluate_fire_event_cascading(void)
     };
 
     rules_evaluate_batch(&test_diag, &test_heap_alloc, views, 2, &event, 1, &flags, &global_vars, &rule_table, nullptr,
-                         nullptr, nullptr);
+                         nullptr, &rule_alloc, nullptr);
     TEST_ASSERT_TRUE(flag_get(&flags, "door_opened"));
 
     arena_free(&arena);
@@ -971,12 +980,72 @@ void test_evaluate_fire_event_cascading(void)
     test_attr_set_free_local(&global_vars);
 }
 
+void test_evaluate_batch_handles_over_64_seeded_events(void)
+{
+    /* Regression for the fixed 64-slot TriggerEventQueue: it silently
+     * dropped events past index 64, so only the first 64 of these 100
+     * entities would ever see their matching event and set hit_count.
+     * The vec_trigger_event-backed queue must process all 100. */
+    enum { ENTITY_COUNT = 100 };
+
+    Arena arena;
+    TEST_ASSERT_TRUE(arena_init(&test_err, &arena));
+    Allocator rule_alloc = allocator_arena(&arena);
+
+    Rule *rule = arena_alloc(&arena, sizeof(Rule));
+    TEST_ASSERT_NOT_NULL(rule);
+    memset(rule, 0, sizeof(*rule));
+    rule->trigger.type = TRIGGER_INTERACT;
+    rule->action_tree.nodes.alloc = rule_alloc;
+    ActionNode set_hit_count = {.type = ACTION_SET_ATTR};
+    set_hit_count.argument = str_new(rule_alloc);
+    TEST_ASSERT_TRUE(str_from_cstr(&set_hit_count.argument, "hit_count"));
+    set_hit_count.second_argument = str_new(rule_alloc);
+    TEST_ASSERT_TRUE(str_from_cstr(&set_hit_count.second_argument, "1"));
+    TEST_ASSERT_TRUE(vec_action_node_push(&rule->action_tree.nodes, set_hit_count));
+
+    vec_rule shared_rules = {0};
+    shared_rules.alloc = rule_alloc;
+    TEST_ASSERT_TRUE(vec_rule_push(&shared_rules, *rule));
+
+    Allocator heap_alloc = allocator_heap();
+    map_entity_ruleset rule_table = map_entity_ruleset_new(heap_alloc);
+
+    Entity entities[ENTITY_COUNT] = {0};
+    EntityView views[ENTITY_COUNT];
+    TriggerEvent events[ENTITY_COUNT];
+    for (int index = 0; index < ENTITY_COUNT; index++) {
+        entities[index].id = index;
+        views[index] = (EntityView){.entity = &entities[index], .defaults = nullptr};
+        events[index] = (TriggerEvent){.type = TRIGGER_INTERACT, .entity_index = index};
+        TEST_ASSERT_TRUE(map_entity_ruleset_set(&rule_table, entities[index].id, shared_rules));
+    }
+
+    FlagSet flags = {0};
+    AttrSet global_vars = {0};
+
+    rules_evaluate_batch(&test_diag, &test_heap_alloc, views, ENTITY_COUNT, events, ENTITY_COUNT, &flags, &global_vars,
+                         &rule_table, nullptr, nullptr, &rule_alloc, nullptr);
+
+    for (int index = 0; index < ENTITY_COUNT; index++) {
+        TEST_ASSERT_EQUAL_INT(1, attr_get_int(&entities[index].attrs, "hit_count", 0));
+    }
+
+    arena_free(&arena);
+    for (int index = 0; index < ENTITY_COUNT; index++) {
+        attr_set_free(&test_heap_alloc, &entities[index].attrs);
+    }
+    map_entity_ruleset_free(&rule_table);
+    test_flag_set_free_local(&flags);
+    test_attr_set_free_local(&global_vars);
+}
+
 /* ---- Variable system tests ---- */
 
 void test_var_set_local(void)
 {
     FlagSet flags = {0};
-    TriggerEventQueue queue = {0};
+    vec_trigger_event queue = vec_trigger_event_new(test_heap_alloc);
     Entity entity = {0};
     AttrSet local_vars = {0};
     AttrSet global_vars = {0};
@@ -1003,6 +1072,7 @@ void test_var_set_local(void)
     str_free(&action.argument);
     str_free(&action.second_argument);
     attr_set_free(&test_heap_alloc, &local_vars);
+    vec_trigger_event_free(&queue);
     test_flag_set_free_local(&flags);
     test_attr_set_free_local(&local_vars);
 }
@@ -1010,7 +1080,7 @@ void test_var_set_local(void)
 void test_var_set_global(void)
 {
     FlagSet flags = {0};
-    TriggerEventQueue queue = {0};
+    vec_trigger_event queue = vec_trigger_event_new(test_heap_alloc);
     Entity entity = {0};
     AttrSet local_vars = {0};
     AttrSet global_vars = {0};
@@ -1037,6 +1107,7 @@ void test_var_set_global(void)
     str_free(&action.argument);
     str_free(&action.second_argument);
     attr_set_free(&test_heap_alloc, &global_vars);
+    vec_trigger_event_free(&queue);
     test_flag_set_free_local(&flags);
     test_attr_set_free_local(&local_vars);
 }
@@ -1098,7 +1169,7 @@ void test_var_condition_falsy_when_unset(void)
 void test_var_substitution_in_set_attr(void)
 {
     FlagSet flags = {0};
-    TriggerEventQueue queue = {0};
+    vec_trigger_event queue = vec_trigger_event_new(test_heap_alloc);
     Entity entity = {0};
     AttrSet local_vars = {0};
     AttrSet global_vars = {0};
@@ -1126,6 +1197,7 @@ void test_var_substitution_in_set_attr(void)
     str_free(&action.second_argument);
     attr_set_free(&test_heap_alloc, &local_vars);
     attr_set_free(&test_heap_alloc, &entity.attrs);
+    vec_trigger_event_free(&queue);
     test_flag_set_free_local(&flags);
     test_attr_set_free_local(&local_vars);
 }
@@ -1133,7 +1205,7 @@ void test_var_substitution_in_set_attr(void)
 void test_local_var_scoped_per_rule(void)
 {
     FlagSet flags = {0};
-    TriggerEventQueue queue = {0};
+    vec_trigger_event queue = vec_trigger_event_new(test_heap_alloc);
     Entity entity = {0};
     AttrSet local_vars_a = {0};
     AttrSet local_vars_b = {0};
@@ -1161,6 +1233,7 @@ void test_local_var_scoped_per_rule(void)
     str_free(&action.argument);
     str_free(&action.second_argument);
     attr_set_free(&test_heap_alloc, &local_vars_a);
+    vec_trigger_event_free(&queue);
     test_flag_set_free_local(&flags);
     test_attr_set_free_local(&global_vars);
 }
@@ -1225,6 +1298,7 @@ int main(void)
     RUN_TEST(test_evaluate_interact_sets_flag);
     RUN_TEST(test_evaluate_condition_blocks_action);
     RUN_TEST(test_evaluate_fire_event_cascading);
+    RUN_TEST(test_evaluate_batch_handles_over_64_seeded_events);
     RUN_TEST(test_var_set_local);
     RUN_TEST(test_var_set_global);
     RUN_TEST(test_var_condition_truthy);
