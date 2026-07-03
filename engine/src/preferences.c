@@ -73,6 +73,12 @@ bool preferences_load(Preferences *prefs, ErrorState *err, const char *path)
         }
     }
     toml_free(root);
+    /* Mirrors path_edit_commit in settings.c: hand-edited preferences.toml
+     * files without a trailing slash must still compose correctly with
+     * "data_dir + filename" downstream. */
+    if (prefs->data_dir.len == 0 || prefs->data_dir.ptr[prefs->data_dir.len - 1] != '/') {
+        (void)str_append_cstr(&prefs->data_dir, "/");
+    }
     return true;
 }
 

@@ -59,6 +59,17 @@ void test_load_overrides_data_dir(void)
     TEST_ASSERT_EQUAL_STRING("/custom/path/", prefs.data_dir.ptr);
 }
 
+void test_load_appends_trailing_slash_when_missing(void)
+{
+    FILE *file = fopen(tmp_path, "we");
+    TEST_ASSERT_NOT_NULL(file);
+    fprintf(file, "[paths]\ndata_dir = \"data\"\n");
+    fclose(file);
+
+    TEST_ASSERT_TRUE(preferences_load(&prefs, &err, tmp_path));
+    TEST_ASSERT_EQUAL_STRING("data/", prefs.data_dir.ptr);
+}
+
 void test_load_keeps_default_when_field_absent(void)
 {
     FILE *file = fopen(tmp_path, "we");
@@ -113,6 +124,7 @@ int main(void)
     RUN_TEST(test_defaults_have_data_dir_set);
     RUN_TEST(test_load_missing_file_keeps_defaults);
     RUN_TEST(test_load_overrides_data_dir);
+    RUN_TEST(test_load_appends_trailing_slash_when_missing);
     RUN_TEST(test_load_keeps_default_when_field_absent);
     RUN_TEST(test_load_propagates_parse_error);
     RUN_TEST(test_save_then_load_round_trip);
