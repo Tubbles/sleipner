@@ -175,13 +175,6 @@ d890de8 through 3641352).
   settable fake save fn (mirror of how `KeybindingsSaveFn` would
   need similar treatment) so tests can assert that the actual
   preferences.toml write happened.
-- **Rename test-side `GAMEDATA_PATH`.** The `engine_tests` CMake
-  target still defines `GAMEDATA_PATH=...` as a compile-time
-  pointer to the repo fixture
-  (`engine/test/CMakeLists.txt:54-55`). The macro is gone from
-  engine code but the name overlaps with what used to be the
-  runtime path. Rename to `GAMEDATA_FIXTURE_PATH` (or similar) and
-  update the integration_test.c references.
 - **Browse mode swallows `LoadDirectoryFilesEx` failures.** A
   permission-denied or stat-failed target directory shows an empty
   list with no explanation (`path_edit_refresh` in

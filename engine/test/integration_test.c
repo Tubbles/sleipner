@@ -444,8 +444,8 @@ static char *read_file(const char *path)
 
 void test_integration_real_gamedata_loads(void)
 {
-    char *content = read_file(GAMEDATA_PATH);
-    TEST_ASSERT_NOT_NULL_MESSAGE(content, "could not read " GAMEDATA_PATH);
+    char *content = read_file(GAMEDATA_FIXTURE_PATH);
+    TEST_ASSERT_NOT_NULL_MESSAGE(content, "could not read " GAMEDATA_FIXTURE_PATH);
 
     TestGame game;
     TEST_ASSERT_TRUE(test_game_setup(&game, content));
@@ -461,8 +461,8 @@ void test_integration_real_gamedata_loads(void)
 
 void test_integration_real_gamedata_all_levels_load(void)
 {
-    char *content = read_file(GAMEDATA_PATH);
-    TEST_ASSERT_NOT_NULL_MESSAGE(content, "could not read " GAMEDATA_PATH);
+    char *content = read_file(GAMEDATA_FIXTURE_PATH);
+    TEST_ASSERT_NOT_NULL_MESSAGE(content, "could not read " GAMEDATA_FIXTURE_PATH);
 
     /* Parse once to discover level names */
     char errbuf[200];

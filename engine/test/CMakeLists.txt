@@ -56,7 +56,7 @@ add_executable(engine_tests
     undo_test.c
 )
 target_compile_definitions(engine_tests PRIVATE _GNU_SOURCE
-    GAMEDATA_PATH="${CMAKE_SOURCE_DIR}/data/gamedata.toml")
+    GAMEDATA_FIXTURE_PATH="${CMAKE_SOURCE_DIR}/data/gamedata.toml")
 target_include_directories(engine_tests SYSTEM PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../vendor/fff)
 target_link_libraries(engine_tests PRIVATE engine unity m)
 add_test(NAME engine_tests COMMAND engine_tests)

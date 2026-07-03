@@ -115,7 +115,7 @@ static Texture2D *test_dummy_texture_lookup(const char *texture_name, void *user
 /* In-memory level loader for the test fixture. Re-loads the held TOML
  * string under the requested level_name. Mirrors production main.c's
  * production_level_loader except it sources the TOML from the
- * TestGame instead of GAMEDATA_PATH. */
+ * TestGame instead of GAMEDATA_FIXTURE_PATH. */
 static bool test_level_loader(Diag *diag, GameState *state, const char *level_name, void *user_data)
 {
     TestGame *game = (TestGame *)user_data;
