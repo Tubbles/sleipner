@@ -153,11 +153,12 @@ bool game_load_gamedata(Diag *diag, GameState *state, GamedataParams params)
             SCRATCH_SCOPE(&state->scratch_arena);
             Allocator scratch_alloc = allocator_arena(&state->scratch_arena);
             int spawn_count = state->gamedata.current_level.entities.count;
-            const AttrSet **spawn_defaults =
-                (const AttrSet **)arena_alloc(&state->scratch_arena, sizeof(const AttrSet *) * (size_t)spawn_count);
+            EntityView *spawn_views = arena_alloc(&state->scratch_arena, sizeof(EntityView) * (size_t)spawn_count);
             for (int index = 0; index < spawn_count; index++) {
-                spawn_defaults[index] =
-                    entity_resolve_defaults(state, state->gamedata.current_level.entities.data[index].id);
+                spawn_views[index] = (EntityView){
+                    .entity = &state->gamedata.current_level.entities.data[index],
+                    .defaults = entity_resolve_defaults(state, state->gamedata.current_level.entities.data[index].id),
+                };
             }
             vec_trigger_event spawn_events = vec_trigger_event_new(scratch_alloc);
             for (int index = 0; index < spawn_count; index++) {
@@ -165,10 +166,10 @@ bool game_load_gamedata(Diag *diag, GameState *state, GamedataParams params)
                                              (TriggerEvent){.type = TRIGGER_ON_SPAWN, .entity_index = index});
             }
             if (spawn_events.count > 0) {
-                rules_evaluate_batch(diag, &gamedata_alloc, state->gamedata.current_level.entities.data, spawn_count,
-                                     spawn_events.data, spawn_events.count, &state->gamedata.flags,
-                                     &state->gamedata.vars, &state->gamedata.rule_table, &state->gamedata.subroutines,
-                                     &state->gamedata.timers, spawn_defaults, &state->transition);
+                rules_evaluate_batch(diag, &gamedata_alloc, spawn_views, spawn_count, spawn_events.data,
+                                     spawn_events.count, &state->gamedata.flags, &state->gamedata.vars,
+                                     &state->gamedata.rule_table, &state->gamedata.subroutines, &state->gamedata.timers,
+                                     &state->transition);
             }
         }
         game_snap_camera(state);
@@ -542,17 +543,18 @@ void game_update(Diag *diag, GameState *state, InputState input, float delta_tim
 
         if (trigger_events.count > 0) {
             int update_count = state->gamedata.current_level.entities.count;
-            const AttrSet **update_defaults =
-                (const AttrSet **)arena_alloc(&state->scratch_arena, sizeof(const AttrSet *) * (size_t)update_count);
+            EntityView *update_views = arena_alloc(&state->scratch_arena, sizeof(EntityView) * (size_t)update_count);
             for (int index = 0; index < update_count; index++) {
-                update_defaults[index] =
-                    entity_resolve_defaults(state, state->gamedata.current_level.entities.data[index].id);
+                update_views[index] = (EntityView){
+                    .entity = &state->gamedata.current_level.entities.data[index],
+                    .defaults = entity_resolve_defaults(state, state->gamedata.current_level.entities.data[index].id),
+                };
             }
             Allocator rule_alloc = allocator_arena(&state->gamedata_arena);
-            rules_evaluate_batch(diag, &rule_alloc, state->gamedata.current_level.entities.data, update_count,
-                                 trigger_events.data, trigger_events.count, &state->gamedata.flags,
-                                 &state->gamedata.vars, &state->gamedata.rule_table, &state->gamedata.subroutines,
-                                 &state->gamedata.timers, update_defaults, &state->transition);
+            rules_evaluate_batch(diag, &rule_alloc, update_views, update_count, trigger_events.data,
+                                 trigger_events.count, &state->gamedata.flags, &state->gamedata.vars,
+                                 &state->gamedata.rule_table, &state->gamedata.subroutines, &state->gamedata.timers,
+                                 &state->transition);
         }
     }
 }

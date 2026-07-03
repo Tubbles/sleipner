@@ -28,7 +28,6 @@ FAKE_VALUE_FUNC(toml_table_t *, toml_table_at, const toml_array_t *, int);
 
 #include "test_heap_alloc.h"
 
-#include <stdlib.h>
 #include <string.h>
 
 static ErrorState test_err;
@@ -376,8 +375,8 @@ void test_condition_flag_true(void)
     TEST_ASSERT_TRUE(str_from_cstr(&condition.argument, "test_flag"));
 
     Entity entity = {0};
-    const AttrSet *entity_defs[] = {nullptr};
-    ConditionContext context = {.entity = &entity, .flags = &flags, .entity_defaults = entity_defs};
+    EntityView entity_views[] = {{.entity = &entity, .defaults = nullptr}};
+    ConditionContext context = {.entity = &entity, .flags = &flags, .views = entity_views};
     TEST_ASSERT_TRUE(conditions_evaluate(&condition, 1, context));
     str_free(&condition.argument);
     test_flag_set_free_local(&flags);
@@ -392,8 +391,8 @@ void test_condition_flag_false(void)
     TEST_ASSERT_TRUE(str_from_cstr(&condition.argument, "test_flag"));
 
     Entity entity = {0};
-    const AttrSet *entity_defs[] = {nullptr};
-    ConditionContext context = {.entity = &entity, .flags = &flags, .entity_defaults = entity_defs};
+    EntityView entity_views[] = {{.entity = &entity, .defaults = nullptr}};
+    ConditionContext context = {.entity = &entity, .flags = &flags, .views = entity_views};
     TEST_ASSERT_FALSE(conditions_evaluate(&condition, 1, context));
     str_free(&condition.argument);
     test_flag_set_free_local(&flags);
@@ -408,8 +407,8 @@ void test_condition_not_flag(void)
     TEST_ASSERT_TRUE(str_from_cstr(&condition.argument, "test_flag"));
 
     Entity entity = {0};
-    const AttrSet *entity_defs[] = {nullptr};
-    ConditionContext context = {.entity = &entity, .flags = &flags, .entity_defaults = entity_defs};
+    EntityView entity_views[] = {{.entity = &entity, .defaults = nullptr}};
+    ConditionContext context = {.entity = &entity, .flags = &flags, .views = entity_views};
     TEST_ASSERT_TRUE(conditions_evaluate(&condition, 1, context));
     str_free(&condition.argument);
     test_flag_set_free_local(&flags);
@@ -425,8 +424,8 @@ void test_condition_attr_truthy(void)
     TEST_ASSERT_TRUE(str_from_cstr(&condition.argument, "is_locked"));
 
     FlagSet flags = {0};
-    const AttrSet *entity_defs[] = {nullptr};
-    ConditionContext context = {.entity = &entity, .flags = &flags, .entity_defaults = entity_defs};
+    EntityView entity_views[] = {{.entity = &entity, .defaults = nullptr}};
+    ConditionContext context = {.entity = &entity, .flags = &flags, .views = entity_views};
     TEST_ASSERT_TRUE(conditions_evaluate(&condition, 1, context));
     str_free(&condition.argument);
     attr_set_free(&test_heap_alloc, &entity.attrs);
@@ -443,8 +442,8 @@ void test_condition_attr_falsy(void)
     TEST_ASSERT_TRUE(str_from_cstr(&condition.argument, "is_locked"));
 
     FlagSet flags = {0};
-    const AttrSet *entity_defs[] = {nullptr};
-    ConditionContext context = {.entity = &entity, .flags = &flags, .entity_defaults = entity_defs};
+    EntityView entity_views[] = {{.entity = &entity, .defaults = nullptr}};
+    ConditionContext context = {.entity = &entity, .flags = &flags, .views = entity_views};
     TEST_ASSERT_FALSE(conditions_evaluate(&condition, 1, context));
     str_free(&condition.argument);
     attr_set_free(&test_heap_alloc, &entity.attrs);
@@ -460,8 +459,8 @@ void test_condition_attr_missing(void)
     TEST_ASSERT_TRUE(str_from_cstr(&condition.argument, "nonexistent"));
 
     FlagSet flags = {0};
-    const AttrSet *entity_defs[] = {nullptr};
-    ConditionContext context = {.entity = &entity, .flags = &flags, .entity_defaults = entity_defs};
+    EntityView entity_views[] = {{.entity = &entity, .defaults = nullptr}};
+    ConditionContext context = {.entity = &entity, .flags = &flags, .views = entity_views};
     TEST_ASSERT_FALSE(conditions_evaluate(&condition, 1, context));
     str_free(&condition.argument);
     test_flag_set_free_local(&flags);
@@ -477,8 +476,8 @@ void test_condition_attr_less_than(void)
     TEST_ASSERT_TRUE(str_from_cstr(&condition.argument, "health"));
 
     FlagSet flags = {0};
-    const AttrSet *entity_defs[] = {nullptr};
-    ConditionContext context = {.entity = &entity, .flags = &flags, .entity_defaults = entity_defs};
+    EntityView entity_views[] = {{.entity = &entity, .defaults = nullptr}};
+    ConditionContext context = {.entity = &entity, .flags = &flags, .views = entity_views};
     TEST_ASSERT_TRUE(conditions_evaluate(&condition, 1, context));
     str_free(&condition.argument);
     attr_set_free(&test_heap_alloc, &entity.attrs);
@@ -495,8 +494,8 @@ void test_condition_attr_greater_than(void)
     TEST_ASSERT_TRUE(str_from_cstr(&condition.argument, "speed"));
 
     FlagSet flags = {0};
-    const AttrSet *entity_defs[] = {nullptr};
-    ConditionContext context = {.entity = &entity, .flags = &flags, .entity_defaults = entity_defs};
+    EntityView entity_views[] = {{.entity = &entity, .defaults = nullptr}};
+    ConditionContext context = {.entity = &entity, .flags = &flags, .views = entity_views};
     TEST_ASSERT_TRUE(conditions_evaluate(&condition, 1, context));
     str_free(&condition.argument);
     attr_set_free(&test_heap_alloc, &entity.attrs);
@@ -519,8 +518,8 @@ void test_condition_and_logic_all_pass(void)
     TEST_ASSERT_TRUE(str_from_cstr(&conditions[1].argument, "flag_b"));
 
     Entity entity = {0};
-    const AttrSet *entity_defs[] = {nullptr};
-    ConditionContext context = {.entity = &entity, .flags = &flags, .entity_defaults = entity_defs};
+    EntityView entity_views[] = {{.entity = &entity, .defaults = nullptr}};
+    ConditionContext context = {.entity = &entity, .flags = &flags, .views = entity_views};
     TEST_ASSERT_TRUE(conditions_evaluate(conditions, 2, context));
     str_free(&conditions[0].argument);
     str_free(&conditions[1].argument);
@@ -542,8 +541,8 @@ void test_condition_and_logic_one_fails(void)
     TEST_ASSERT_TRUE(str_from_cstr(&conditions[1].argument, "flag_b"));
 
     Entity entity = {0};
-    const AttrSet *entity_defs[] = {nullptr};
-    ConditionContext context = {.entity = &entity, .flags = &flags, .entity_defaults = entity_defs};
+    EntityView entity_views[] = {{.entity = &entity, .defaults = nullptr}};
+    ConditionContext context = {.entity = &entity, .flags = &flags, .views = entity_views};
     TEST_ASSERT_FALSE(conditions_evaluate(conditions, 2, context));
     str_free(&conditions[0].argument);
     str_free(&conditions[1].argument);
@@ -562,11 +561,12 @@ void test_action_set_flag_executes(void)
     action.argument = str_new(test_heap_alloc);
     TEST_ASSERT_TRUE(str_from_cstr(&action.argument, "chest_opened"));
 
+    EntityView entity_views[] = {{.entity = &entity, .defaults = nullptr}};
     ActionContext context = {
         .entity = &entity,
         .flags = &flags,
         .event_queue = &queue,
-        .entity_defaults = (const AttrSet *[]){nullptr},
+        .views = entity_views,
     };
     TEST_ASSERT_TRUE(action_node_execute(&test_diag, &test_heap_alloc, &action, context));
     TEST_ASSERT_TRUE(flag_get(&flags, "chest_opened"));
@@ -585,11 +585,12 @@ void test_action_clear_flag_executes(void)
     action.argument = str_new(test_heap_alloc);
     TEST_ASSERT_TRUE(str_from_cstr(&action.argument, "door_locked"));
 
+    EntityView entity_views[] = {{.entity = &entity, .defaults = nullptr}};
     ActionContext context = {
         .entity = &entity,
         .flags = &flags,
         .event_queue = &queue,
-        .entity_defaults = (const AttrSet *[]){nullptr},
+        .views = entity_views,
     };
     TEST_ASSERT_TRUE(action_node_execute(&test_diag, &test_heap_alloc, &action, context));
     TEST_ASSERT_FALSE(flag_get(&flags, "door_locked"));
@@ -610,13 +611,13 @@ void test_action_set_attr_bool(void)
     action.second_argument = str_new(test_heap_alloc);
     TEST_ASSERT_TRUE(str_from_cstr(&action.second_argument, "false"));
 
+    EntityView entity_views[] = {{.entity = &entity, .defaults = nullptr}};
     ActionContext context = {
         .entity = &entity,
-        .entities = &entity,
-        .entity_count = 1,
+        .views = entity_views,
+        .view_count = 1,
         .flags = &flags,
         .event_queue = &queue,
-        .entity_defaults = (const AttrSet *[]){nullptr},
     };
     TEST_ASSERT_TRUE(action_node_execute(&test_diag, &test_heap_alloc, &action, context));
 
@@ -642,13 +643,13 @@ void test_action_set_attr_int(void)
     action.second_argument = str_new(test_heap_alloc);
     TEST_ASSERT_TRUE(str_from_cstr(&action.second_argument, "42"));
 
+    EntityView entity_views[] = {{.entity = &entity, .defaults = nullptr}};
     ActionContext context = {
         .entity = &entity,
-        .entities = &entity,
-        .entity_count = 1,
+        .views = entity_views,
+        .view_count = 1,
         .flags = &flags,
         .event_queue = &queue,
-        .entity_defaults = (const AttrSet *[]){nullptr},
     };
     TEST_ASSERT_TRUE(action_node_execute(&test_diag, &test_heap_alloc, &action, context));
     TEST_ASSERT_EQUAL_INT(42, attr_get_int(&entity.attrs, "health", 0));
@@ -671,13 +672,13 @@ void test_action_add_attr(void)
     action.second_argument = str_new(test_heap_alloc);
     TEST_ASSERT_TRUE(str_from_cstr(&action.second_argument, "-3"));
 
+    EntityView entity_views[] = {{.entity = &entity, .defaults = nullptr}};
     ActionContext context = {
         .entity = &entity,
-        .entities = &entity,
-        .entity_count = 1,
+        .views = entity_views,
+        .view_count = 1,
         .flags = &flags,
         .event_queue = &queue,
-        .entity_defaults = (const AttrSet *[]){nullptr},
     };
     TEST_ASSERT_TRUE(action_node_execute(&test_diag, &test_heap_alloc, &action, context));
     TEST_ASSERT_EQUAL_INT(7, attr_get_int(&entity.attrs, "health", 0));
@@ -698,13 +699,13 @@ void test_action_toggle_attr(void)
     action.argument = str_new(test_heap_alloc);
     TEST_ASSERT_TRUE(str_from_cstr(&action.argument, "visible"));
 
+    EntityView entity_views[] = {{.entity = &entity, .defaults = nullptr}};
     ActionContext context = {
         .entity = &entity,
-        .entities = &entity,
-        .entity_count = 1,
+        .views = entity_views,
+        .view_count = 1,
         .flags = &flags,
         .event_queue = &queue,
-        .entity_defaults = (const AttrSet *[]){nullptr},
     };
     TEST_ASSERT_TRUE(action_node_execute(&test_diag, &test_heap_alloc, &action, context));
     TEST_ASSERT_FALSE(attr_get_bool(&entity.attrs, "visible", true));
@@ -721,11 +722,12 @@ void test_action_destroy(void)
 
     ActionNode action = {.type = ACTION_DESTROY};
 
+    EntityView entity_views[] = {{.entity = &entity, .defaults = nullptr}};
     ActionContext context = {
         .entity = &entity,
         .flags = &flags,
         .event_queue = &queue,
-        .entity_defaults = (const AttrSet *[]){nullptr},
+        .views = entity_views,
     };
     TEST_ASSERT_TRUE(action_node_execute(&test_diag, &test_heap_alloc, &action, context));
     TEST_ASSERT_FALSE(attr_get_bool(&entity.attrs, "active", true));
@@ -743,11 +745,12 @@ void test_action_fire_event_queues(void)
     action.argument = str_new(test_heap_alloc);
     TEST_ASSERT_TRUE(str_from_cstr(&action.argument, "boss_defeated"));
 
+    EntityView entity_views[] = {{.entity = &entity, .defaults = nullptr}};
     ActionContext context = {
         .entity = &entity,
         .flags = &flags,
         .event_queue = &queue,
-        .entity_defaults = (const AttrSet *[]){nullptr},
+        .views = entity_views,
     };
     TEST_ASSERT_TRUE(action_node_execute(&test_diag, &test_heap_alloc, &action, context));
     TEST_ASSERT_EQUAL_INT(1, queue.count);
@@ -772,11 +775,12 @@ void test_action_execution_order(void)
     actions[1].argument = str_new(test_heap_alloc);
     TEST_ASSERT_TRUE(str_from_cstr(&actions[1].argument, "second"));
 
+    EntityView entity_views[] = {{.entity = &entity, .defaults = nullptr}};
     ActionContext context = {
         .entity = &entity,
         .flags = &flags,
         .event_queue = &queue,
-        .entity_defaults = (const AttrSet *[]){nullptr},
+        .views = entity_views,
     };
     (void)action_node_execute(&test_diag, &test_heap_alloc, &actions[0], context);
     (void)action_node_execute(&test_diag, &test_heap_alloc, &actions[1], context);
@@ -826,10 +830,10 @@ void test_evaluate_interact_sets_flag(void)
     FlagSet flags = {0};
     AttrSet global_vars = {0};
     TriggerEvent event = {.type = TRIGGER_INTERACT, .entity_index = 0};
-    const AttrSet *defaults_array[] = {&blueprint.attrs};
+    EntityView views[] = {{.entity = &entity, .defaults = &blueprint.attrs}};
 
-    rules_evaluate_batch(&test_diag, &test_heap_alloc, &entity, 1, &event, 1, &flags, &global_vars, &rule_table,
-                         nullptr, nullptr, defaults_array, nullptr);
+    rules_evaluate_batch(&test_diag, &test_heap_alloc, views, 1, &event, 1, &flags, &global_vars, &rule_table, nullptr,
+                         nullptr, nullptr);
     TEST_ASSERT_TRUE(flag_get(&flags, "chest_opened"));
 
     arena_free(&arena);
@@ -880,10 +884,10 @@ void test_evaluate_condition_blocks_action(void)
     FlagSet flags = {0};
     AttrSet global_vars = {0};
     TriggerEvent event = {.type = TRIGGER_INTERACT, .entity_index = 0};
-    const AttrSet *defaults_array[] = {&blueprint.attrs};
+    EntityView views[] = {{.entity = &entity, .defaults = &blueprint.attrs}};
 
-    rules_evaluate_batch(&test_diag, &test_heap_alloc, &entity, 1, &event, 1, &flags, &global_vars, &rule_table,
-                         nullptr, nullptr, defaults_array, nullptr);
+    rules_evaluate_batch(&test_diag, &test_heap_alloc, views, 1, &event, 1, &flags, &global_vars, &rule_table, nullptr,
+                         nullptr, nullptr);
     TEST_ASSERT_FALSE(flag_get(&flags, "chest_opened"));
 
     arena_free(&arena);
@@ -948,10 +952,13 @@ void test_evaluate_fire_event_cascading(void)
     FlagSet flags = {0};
     AttrSet global_vars = {0};
     TriggerEvent event = {.type = TRIGGER_INTERACT, .entity_index = 0};
-    const AttrSet *defaults_array[] = {&bp_switch.attrs, &bp_door.attrs};
+    EntityView views[] = {
+        {.entity = &entities[0], .defaults = &bp_switch.attrs},
+        {.entity = &entities[1], .defaults = &bp_door.attrs},
+    };
 
-    rules_evaluate_batch(&test_diag, &test_heap_alloc, entities, 2, &event, 1, &flags, &global_vars, &rule_table,
-                         nullptr, nullptr, defaults_array, nullptr);
+    rules_evaluate_batch(&test_diag, &test_heap_alloc, views, 2, &event, 1, &flags, &global_vars, &rule_table, nullptr,
+                         nullptr, nullptr);
     TEST_ASSERT_TRUE(flag_get(&flags, "door_opened"));
 
     arena_free(&arena);
@@ -980,15 +987,15 @@ void test_var_set_local(void)
     action.second_argument = str_new(test_heap_alloc);
     TEST_ASSERT_TRUE(str_from_cstr(&action.second_argument, "42"));
 
+    EntityView entity_views[] = {{.entity = &entity, .defaults = nullptr}};
     ActionContext context = {
         .entity = &entity,
-        .entities = &entity,
-        .entity_count = 1,
+        .views = entity_views,
+        .view_count = 1,
         .flags = &flags,
         .event_queue = &queue,
         .local_vars = &local_vars,
         .global_vars = &global_vars,
-        .entity_defaults = (const AttrSet *[]){nullptr},
     };
     TEST_ASSERT_TRUE(action_node_execute(&test_diag, &test_heap_alloc, &action, context));
     TEST_ASSERT_EQUAL_INT(42, attr_get_int(&local_vars, "damage", 0));
@@ -1014,15 +1021,15 @@ void test_var_set_global(void)
     action.second_argument = str_new(test_heap_alloc);
     TEST_ASSERT_TRUE(str_from_cstr(&action.second_argument, "100"));
 
+    EntityView entity_views[] = {{.entity = &entity, .defaults = nullptr}};
     ActionContext context = {
         .entity = &entity,
-        .entities = &entity,
-        .entity_count = 1,
+        .views = entity_views,
+        .view_count = 1,
         .flags = &flags,
         .event_queue = &queue,
         .local_vars = &local_vars,
         .global_vars = &global_vars,
-        .entity_defaults = (const AttrSet *[]){nullptr},
     };
     TEST_ASSERT_TRUE(action_node_execute(&test_diag, &test_heap_alloc, &action, context));
     TEST_ASSERT_EQUAL_INT(100, attr_get_int(&global_vars, "score", 0));
@@ -1046,15 +1053,14 @@ void test_var_condition_truthy(void)
     cond.argument = str_new(test_heap_alloc);
     TEST_ASSERT_TRUE(str_from_cstr(&cond.argument, "active"));
 
-    const AttrSet *var_defs[] = {nullptr};
+    EntityView var_views[] = {{.entity = &entity, .defaults = nullptr}};
     ConditionContext context = {
         .entity = &entity,
-        .entities = &entity,
-        .entity_count = 1,
+        .views = var_views,
+        .view_count = 1,
         .flags = &flags,
         .local_vars = &local_vars,
         .global_vars = &global_vars,
-        .entity_defaults = var_defs,
     };
     TEST_ASSERT_TRUE(conditions_evaluate(&cond, 1, context));
     str_free(&cond.argument);
@@ -1074,15 +1080,14 @@ void test_var_condition_falsy_when_unset(void)
     cond.argument = str_new(test_heap_alloc);
     TEST_ASSERT_TRUE(str_from_cstr(&cond.argument, "missing"));
 
-    const AttrSet *var_defs2[] = {nullptr};
+    EntityView var_views2[] = {{.entity = &entity, .defaults = nullptr}};
     ConditionContext context = {
         .entity = &entity,
-        .entities = &entity,
-        .entity_count = 1,
+        .views = var_views2,
+        .view_count = 1,
         .flags = &flags,
         .local_vars = &local_vars,
         .global_vars = &global_vars,
-        .entity_defaults = var_defs2,
     };
     TEST_ASSERT_FALSE(conditions_evaluate(&cond, 1, context));
     str_free(&cond.argument);
@@ -1105,15 +1110,15 @@ void test_var_substitution_in_set_attr(void)
     action.second_argument = str_new(test_heap_alloc);
     TEST_ASSERT_TRUE(str_from_cstr(&action.second_argument, "$amount"));
 
+    EntityView entity_views[] = {{.entity = &entity, .defaults = nullptr}};
     ActionContext context = {
         .entity = &entity,
-        .entities = &entity,
-        .entity_count = 1,
+        .views = entity_views,
+        .view_count = 1,
         .flags = &flags,
         .event_queue = &queue,
         .local_vars = &local_vars,
         .global_vars = &global_vars,
-        .entity_defaults = (const AttrSet *[]){nullptr},
     };
     TEST_ASSERT_TRUE(action_node_execute(&test_diag, &test_heap_alloc, &action, context));
     TEST_ASSERT_EQUAL_INT(5, attr_get_int(&entity.attrs, "health", 0));
@@ -1140,10 +1145,11 @@ void test_local_var_scoped_per_rule(void)
     action.second_argument = str_new(test_heap_alloc);
     TEST_ASSERT_TRUE(str_from_cstr(&action.second_argument, "99"));
 
+    EntityView entity_views[] = {{.entity = &entity, .defaults = nullptr}};
     ActionContext context_a = {
         .entity = &entity,
-        .entities = &entity,
-        .entity_count = 1,
+        .views = entity_views,
+        .view_count = 1,
         .flags = &flags,
         .event_queue = &queue,
         .local_vars = &local_vars_a,

@@ -208,16 +208,23 @@ subroutines_parse(Diag *diag, Allocator *alloc, vec_subroutine *subroutines, tom
 /* --- Trigger matching --- */
 bool trigger_matches(const Trigger *trigger, const TriggerEvent *event);
 
+/* --- Entity view: one entity paired with its blueprint-resolved attribute
+ * defaults. Built once at the game.c batch boundary and passed through the
+ * rule VM in place of the old parallel entities[] + entity_defaults[] arrays. */
+typedef struct {
+    Entity *entity;
+    const AttrSet *defaults;
+} EntityView;
+
 /* --- Condition evaluation --- */
 typedef struct {
     const Entity *entity;
     int entity_index;
-    const Entity *entities;
-    int entity_count;
+    const EntityView *views;
+    int view_count;
     const FlagSet *flags;
     const AttrSet *local_vars;
     const AttrSet *global_vars;
-    const AttrSet *const *entity_defaults;
 } ConditionContext;
 
 bool conditions_evaluate(const Condition *conditions, int count, ConditionContext context);
@@ -236,18 +243,17 @@ typedef struct {
 typedef struct {
     Entity *entity;
     int entity_index;
-    Entity *entities;
-    int entity_count;
+    EntityView *views;
+    int view_count;
     FlagSet *flags;
     TriggerEventQueue *event_queue;
     AttrSet *local_vars;
     AttrSet *global_vars;
-    const LocalScope *scope;               /* entity binding chain — walked by resolve_target */
-    const vec_subroutine *subroutines;     /* read-only subroutine table */
-    vec_timer *timers;                     /* mutable timer list for create_timer/destroy_timer */
-    const AttrSet *const *entity_defaults; /* parallel to entities — blueprint defaults per entity */
-    TransitionRequest *transition;         /* written by transition action */
-    int call_depth;                        /* recursion guard for call: */
+    const LocalScope *scope;           /* entity binding chain — walked by resolve_target */
+    const vec_subroutine *subroutines; /* read-only subroutine table */
+    vec_timer *timers;                 /* mutable timer list for create_timer/destroy_timer */
+    TransitionRequest *transition;     /* written by transition action */
+    int call_depth;                    /* recursion guard for call: */
 } ActionContext;
 
 [[nodiscard]] bool action_node_execute(Diag *diag, Allocator *alloc, const ActionNode *node, ActionContext context);
@@ -255,8 +261,8 @@ typedef struct {
 /* --- Evaluation loop --- */
 void rules_evaluate_batch(Diag *diag,
                           Allocator *alloc,
-                          Entity *entities,
-                          int entity_count,
+                          EntityView *views,
+                          int view_count,
                           const TriggerEvent *events,
                           int event_count,
                           FlagSet *flags,
@@ -264,5 +270,4 @@ void rules_evaluate_batch(Diag *diag,
                           map_entity_ruleset *rule_table,
                           const vec_subroutine *subroutines,
                           vec_timer *timers,
-                          const AttrSet *const *entity_defaults,
                           TransitionRequest *transition);

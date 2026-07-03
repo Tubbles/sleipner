@@ -752,7 +752,7 @@ static bool evaluate_single_condition(const Condition *condition, ConditionConte
     case COND_NOT_FLAG:
         return !flag_get(context.flags, condition->argument.ptr);
     case COND_ATTR: {
-        const AttrSet *defaults = context.entity_defaults[context.entity_index];
+        const AttrSet *defaults = context.views[context.entity_index].defaults;
         const Attribute *attr = attr_get_scoped(&context.entity->attrs, defaults, condition->argument.ptr);
         if (!attr) {
             return false;
@@ -760,7 +760,7 @@ static bool evaluate_single_condition(const Condition *condition, ConditionConte
         return attr_is_truthy(attr);
     }
     case COND_NOT_ATTR: {
-        const AttrSet *defaults = context.entity_defaults[context.entity_index];
+        const AttrSet *defaults = context.views[context.entity_index].defaults;
         const Attribute *attr = attr_get_scoped(&context.entity->attrs, defaults, condition->argument.ptr);
         if (!attr) {
             return true;
@@ -768,7 +768,7 @@ static bool evaluate_single_condition(const Condition *condition, ConditionConte
         return !attr_is_truthy(attr);
     }
     case COND_ATTR_LT: {
-        const AttrSet *defaults = context.entity_defaults[context.entity_index];
+        const AttrSet *defaults = context.views[context.entity_index].defaults;
         const Attribute *attr = attr_get_scoped(&context.entity->attrs, defaults, condition->argument.ptr);
         if (!attr) {
             return false;
@@ -776,7 +776,7 @@ static bool evaluate_single_condition(const Condition *condition, ConditionConte
         return attr_to_float(attr) < condition->compare_value;
     }
     case COND_ATTR_GT: {
-        const AttrSet *defaults = context.entity_defaults[context.entity_index];
+        const AttrSet *defaults = context.views[context.entity_index].defaults;
         const Attribute *attr = attr_get_scoped(&context.entity->attrs, defaults, condition->argument.ptr);
         if (!attr) {
             return false;
@@ -784,7 +784,7 @@ static bool evaluate_single_condition(const Condition *condition, ConditionConte
         return attr_to_float(attr) > condition->compare_value;
     }
     case COND_ATTR_EQ: {
-        const AttrSet *defaults = context.entity_defaults[context.entity_index];
+        const AttrSet *defaults = context.views[context.entity_index].defaults;
         const Attribute *attr = attr_get_scoped(&context.entity->attrs, defaults, condition->argument.ptr);
         if (!attr) {
             return false;
@@ -825,34 +825,42 @@ bool conditions_evaluate(const Condition *conditions, int count, ConditionContex
 
 /* ---- Action execution ---- */
 
-static Entity *resolve_target(const char *target_spec, ActionContext context, char *attr_name_out, int attr_name_max)
+/* Returns a view index into context.views, or -1 if the target could not be resolved. */
+static int resolve_target(const char *target_spec, ActionContext context, char *attr_name_out, int attr_name_max)
 {
     Strv strv = strv_from_cstr(target_spec);
     Strv head = strv_split(&strv, '.');
     if (!strv.ptr) {
         strv_copy_to_cstr(head, attr_name_out, (size_t)attr_name_max);
-        return context.entity;
+        return context.entity_index;
     }
 
     char tag[MAX_ARG];
     strv_copy_to_cstr(head, tag, MAX_ARG);
     strv_copy_to_cstr(strv, attr_name_out, (size_t)attr_name_max);
 
-    Entity *tagged = entity_find_by_tag_mut(context.entity, tag, context.entities, context.entity_count);
-    if (tagged) {
-        return tagged;
+    if (context.view_count > 0) {
+        /* Invariant: game.c builds views[i].entity == &entities[i] over one contiguous
+         * entity subarray, so views[i].entity == views[0].entity + i. This lets us
+         * translate the Entity* returned by entity_find_by_tag_mut back into a view
+         * index by subtracting the base of that same contiguous array. */
+        Entity *base = context.views[0].entity;
+        Entity *tagged = entity_find_by_tag_mut(context.entity, tag, base, context.view_count);
+        if (tagged) {
+            return (int)(tagged - base);
+        }
     }
 
     /* Fallback: walk the LocalScope chain for entity index bindings */
     for (const LocalScope *scope = context.scope; scope; scope = scope->outer) {
         if (strv_eq_cstr(str_to_strv(scope->bind_name), tag)) {
             int idx = scope->entity_index;
-            if (idx >= 0 && idx < context.entity_count) {
-                return &context.entities[idx];
+            if (idx >= 0 && idx < context.view_count) {
+                return idx;
             }
         }
     }
-    return nullptr;
+    return -1;
 }
 
 static const Attribute *lookup_var(const char *varname, ActionContext context)
@@ -937,13 +945,13 @@ static void resolve_arg(char *out, int out_size, const char *arg, ActionContext 
 static bool execute_set_attr_action(Diag *diag, Allocator *alloc, const ActionNode *node, ActionContext context)
 {
     char attr_name[MAX_ARG];
-    Entity *target = resolve_target(node->argument.ptr, context, attr_name, MAX_ARG);
-    if (!target) {
+    int view_index = resolve_target(node->argument.ptr, context, attr_name, MAX_ARG);
+    if (view_index < 0) {
         debug_log(diag->debug, "set_attr: target not found: %s", node->argument.ptr);
         return true;
     }
-    int target_index = (int)(target - context.entities);
-    const AttrSet *target_defaults = context.entity_defaults[target_index];
+    Entity *target = context.views[view_index].entity;
+    const AttrSet *target_defaults = context.views[view_index].defaults;
     float old_health = strcmp(attr_name, "health") == 0
                            ? attr_get_scoped_float(&target->attrs, target_defaults, "health", 0.0F)
                            : 0.0F;
@@ -965,7 +973,7 @@ static bool execute_set_attr_action(Diag *diag, Allocator *alloc, const ActionNo
     }
     if (strcmp(attr_name, "health") == 0 && old_health > 0.0F &&
         attr_get_scoped_float(&target->attrs, target_defaults, "health", 0.0F) <= 0.0F) {
-        TriggerEvent defeat = {.type = TRIGGER_DEFEAT, .entity_index = target_index};
+        TriggerEvent defeat = {.type = TRIGGER_DEFEAT, .entity_index = view_index};
         (void)trigger_event_queue_push(context.event_queue, defeat);
     }
     return true;
@@ -974,13 +982,13 @@ static bool execute_set_attr_action(Diag *diag, Allocator *alloc, const ActionNo
 static bool execute_add_attr_action(Diag *diag, Allocator *alloc, const ActionNode *node, ActionContext context)
 {
     char attr_name[MAX_ARG];
-    Entity *target = resolve_target(node->argument.ptr, context, attr_name, MAX_ARG);
-    if (!target) {
+    int view_index = resolve_target(node->argument.ptr, context, attr_name, MAX_ARG);
+    if (view_index < 0) {
         debug_log(diag->debug, "add_attr: target not found: %s", node->argument.ptr);
         return true;
     }
-    int target_index = (int)(target - context.entities);
-    const AttrSet *target_defaults = context.entity_defaults[target_index];
+    Entity *target = context.views[view_index].entity;
+    const AttrSet *target_defaults = context.views[view_index].defaults;
     const Attribute *existing = attr_get_scoped(&target->attrs, target_defaults, attr_name);
     float old_health = strcmp(attr_name, "health") == 0
                            ? attr_get_scoped_float(&target->attrs, target_defaults, "health", 0.0F)
@@ -1000,7 +1008,7 @@ static bool execute_add_attr_action(Diag *diag, Allocator *alloc, const ActionNo
     }
     if (strcmp(attr_name, "health") == 0 && old_health > 0.0F &&
         attr_get_scoped_float(&target->attrs, target_defaults, "health", 0.0F) <= 0.0F) {
-        TriggerEvent defeat = {.type = TRIGGER_DEFEAT, .entity_index = target_index};
+        TriggerEvent defeat = {.type = TRIGGER_DEFEAT, .entity_index = view_index};
         (void)trigger_event_queue_push(context.event_queue, defeat);
     }
     return true;
@@ -1009,13 +1017,13 @@ static bool execute_add_attr_action(Diag *diag, Allocator *alloc, const ActionNo
 static bool execute_toggle_attr_action(Diag *diag, Allocator *alloc, const ActionNode *node, ActionContext context)
 {
     char attr_name[MAX_ARG];
-    Entity *target = resolve_target(node->argument.ptr, context, attr_name, MAX_ARG);
-    if (!target) {
+    int view_index = resolve_target(node->argument.ptr, context, attr_name, MAX_ARG);
+    if (view_index < 0) {
         debug_log(diag->debug, "toggle_attr: target not found: %s", node->argument.ptr);
         return true;
     }
-    int target_index = (int)(target - context.entities);
-    const AttrSet *target_defaults = context.entity_defaults[target_index];
+    Entity *target = context.views[view_index].entity;
+    const AttrSet *target_defaults = context.views[view_index].defaults;
     bool current_val = attr_get_scoped_bool(&target->attrs, target_defaults, attr_name, false);
     return attr_set_bool(alloc, &target->attrs, attr_name, !current_val);
 }
@@ -1074,12 +1082,11 @@ static bool expand_if_else_node(
     ConditionContext cond_ctx = {
         .entity = context.entity,
         .entity_index = context.entity_index,
-        .entities = context.entities,
-        .entity_count = context.entity_count,
+        .views = context.views,
+        .view_count = context.view_count,
         .flags = context.flags,
         .local_vars = context.local_vars,
         .global_vars = context.global_vars,
-        .entity_defaults = context.entity_defaults,
     };
     bool condition_met = conditions_evaluate(node->conditions.data, node->conditions.count, cond_ctx);
     const ActionNode *branch;
@@ -1233,20 +1240,19 @@ execute_action_nodes(Diag *diag, Allocator *alloc, const ActionNode *nodes, int 
 static bool execute_for_each_node(Diag *diag, Allocator *alloc, const ActionNode *node, ActionContext context)
 {
     bool has_bind = node->second_argument.len > 0;
-    for (int entity_index = 0; entity_index < context.entity_count; entity_index++) {
-        if (!attr_get_scoped_bool(&context.entities[entity_index].attrs, context.entity_defaults[entity_index],
+    for (int entity_index = 0; entity_index < context.view_count; entity_index++) {
+        if (!attr_get_scoped_bool(&context.views[entity_index].entity->attrs, context.views[entity_index].defaults,
                                   "active", true)) {
             continue;
         }
         ConditionContext cond_ctx = {
-            .entity = &context.entities[entity_index],
+            .entity = context.views[entity_index].entity,
             .entity_index = entity_index,
-            .entities = context.entities,
-            .entity_count = context.entity_count,
+            .views = context.views,
+            .view_count = context.view_count,
             .flags = context.flags,
             .local_vars = context.local_vars,
             .global_vars = context.global_vars,
-            .entity_defaults = context.entity_defaults,
         };
         if (!conditions_evaluate(node->conditions.data, node->conditions.count, cond_ctx)) {
             continue;
@@ -1266,7 +1272,7 @@ static bool execute_for_each_node(Diag *diag, Allocator *alloc, const ActionNode
         } else {
             /* Simple mode: self = iterated entity */
             ActionContext iter_ctx = context;
-            iter_ctx.entity = &context.entities[entity_index];
+            iter_ctx.entity = context.views[entity_index].entity;
             iter_ctx.entity_index = entity_index;
             if (!execute_action_nodes(diag, alloc, node->children, node->child_count, iter_ctx)) {
                 return false;
@@ -1363,8 +1369,8 @@ static void evaluate_entity_rules(Diag *diag,
                                   Allocator *alloc,
                                   Entity *entity,
                                   int entity_index,
-                                  Entity *entities,
-                                  int entity_count,
+                                  EntityView *views,
+                                  int view_count,
                                   FlagSet *flags,
                                   AttrSet *global_vars,
                                   const TriggerEventQueue *pending_events,
@@ -1372,7 +1378,6 @@ static void evaluate_entity_rules(Diag *diag,
                                   map_entity_ruleset *rule_table,
                                   const vec_subroutine *subroutines,
                                   vec_timer *timers,
-                                  const AttrSet *const *entity_defaults,
                                   TransitionRequest *transition)
 {
     const vec_rule *ruleset = map_entity_ruleset_get(rule_table, entity->id);
@@ -1388,25 +1393,23 @@ static void evaluate_entity_rules(Diag *diag,
         ConditionContext cond_ctx = {
             .entity = entity,
             .entity_index = entity_index,
-            .entities = entities,
-            .entity_count = entity_count,
+            .views = views,
+            .view_count = view_count,
             .flags = flags,
             .local_vars = &local_vars,
             .global_vars = global_vars,
-            .entity_defaults = entity_defaults,
         };
         ActionContext act_ctx = {
             .entity = entity,
             .entity_index = entity_index,
-            .entities = entities,
-            .entity_count = entity_count,
+            .views = views,
+            .view_count = view_count,
             .flags = flags,
             .event_queue = next_events,
             .local_vars = &local_vars,
             .global_vars = global_vars,
             .subroutines = subroutines,
             .timers = timers,
-            .entity_defaults = entity_defaults,
             .transition = transition,
         };
         debug_log(diag->debug, "Rule triggered for entity %d (type: %s), rule %d", entity_index,
@@ -1427,8 +1430,8 @@ static void evaluate_entity_rules(Diag *diag,
 
 void rules_evaluate_batch(Diag *diag,
                           Allocator *alloc,
-                          Entity *entities,
-                          int entity_count,
+                          EntityView *views,
+                          int view_count,
                           const TriggerEvent *events,
                           int event_count,
                           FlagSet *flags,
@@ -1436,7 +1439,6 @@ void rules_evaluate_batch(Diag *diag,
                           map_entity_ruleset *rule_table,
                           const vec_subroutine *subroutines,
                           vec_timer *timers,
-                          const AttrSet *const *entity_defaults,
                           TransitionRequest *transition)
 {
     TriggerEventQueue pending_events = {0};
@@ -1447,9 +1449,9 @@ void rules_evaluate_batch(Diag *diag,
     for (int cascade = 0; cascade < MAX_EVENT_CASCADES && pending_events.count > 0; cascade++) {
         TriggerEventQueue next_events = {0};
 
-        for (int entity_index = 0; entity_index < entity_count; entity_index++) {
-            Entity *entity = &entities[entity_index];
-            if (!attr_get_scoped_bool(&entity->attrs, entity_defaults[entity_index], "active", true)) {
+        for (int entity_index = 0; entity_index < view_count; entity_index++) {
+            Entity *entity = views[entity_index].entity;
+            if (!attr_get_scoped_bool(&entity->attrs, views[entity_index].defaults, "active", true)) {
                 /* Inactive entities skip rule evaluation unless they have a pending
                  * on_destroy event — those rules must still fire. */
                 bool has_on_destroy = false;
@@ -1464,9 +1466,8 @@ void rules_evaluate_batch(Diag *diag,
                     continue;
                 }
             }
-            evaluate_entity_rules(diag, alloc, entity, entity_index, entities, entity_count, flags, global_vars,
-                                  &pending_events, &next_events, rule_table, subroutines, timers, entity_defaults,
-                                  transition);
+            evaluate_entity_rules(diag, alloc, entity, entity_index, views, view_count, flags, global_vars,
+                                  &pending_events, &next_events, rule_table, subroutines, timers, transition);
         }
 
         pending_events = next_events;
