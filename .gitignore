@@ -1,10 +1,14 @@
 build/
 .tmp/
 tmp/
-assets/img/extracted/
 CMakeUserPresets.json
 android/.gradle/
 android/app/.cxx/
 android/app/build/
 data/keybindings.toml
 data/keybindings.toml.bak
+assets/img/
+__pycache__/
+.claude/
+.syncthing.*
+sleipner-android-arm64/
