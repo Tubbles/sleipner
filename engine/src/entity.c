@@ -55,6 +55,14 @@ CollisionShape entity_collision_region(const Entity *entity, const AttrSet *defa
     return (CollisionShape){.prims = {.data = prim_storage, .count = 1, .capacity = 1}};
 }
 
+CollisionShape entity_trigger_region(const Entity *entity, const AttrSet *defaults, CollisionPrimitive *prim_storage)
+{
+    if (entity->trigger_region.prims.count > 0) {
+        return entity->trigger_region;
+    }
+    return entity_collision_region(entity, defaults, prim_storage);
+}
+
 Rectangle entity_collision_rect(const Entity *entity, const AttrSet *defaults)
 {
     CollisionPrimitive prim_storage;

@@ -63,6 +63,14 @@ typedef struct {
  * so prim_storage must outlive any use of the shape. */
 CollisionShape entity_collision_region(const Entity *entity, const AttrSet *defaults, CollisionPrimitive *prim_storage);
 
+/* Build the trigger region for an entity: entity->trigger_region if an
+ * authored composite shape is present, otherwise the entity's collision
+ * region (entity_collision_region) — trigger zones default to the physical
+ * body until a dedicated trigger shape is authored. prim_storage is
+ * caller-owned scratch space for the collision_region fallback's single
+ * primitive; see entity_collision_region for lifetime rules. */
+CollisionShape entity_trigger_region(const Entity *entity, const AttrSet *defaults, CollisionPrimitive *prim_storage);
+
 /* Compute the collision rectangle for an entity, derived from
  * entity_collision_region. Uses scoped attr lookup so blueprint edits to
  * collision_offset/size are reflected immediately. */

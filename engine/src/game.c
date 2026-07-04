@@ -391,8 +391,12 @@ static void detect_enter_targets(const GameState *state,
             continue;
         }
         const AttrSet *player_defaults = entity_resolve_defaults(state, player->id);
-        bool currently_overlapping = CheckCollisionRecs(entity_collision_rect(player, player_defaults),
-                                                        entity_collision_rect(&entities[index], defaults));
+        CollisionPrimitive player_prim_storage;
+        CollisionPrimitive trigger_prim_storage;
+        CollisionShape player_shape = entity_collision_region(player, player_defaults, &player_prim_storage);
+        CollisionShape trigger_shape = entity_trigger_region(&entities[index], defaults, &trigger_prim_storage);
+        bool currently_overlapping =
+            composite_overlap(&player_shape, player->position, 0.0F, &trigger_shape, entities[index].position, 0.0F);
         bool was_overlapping = overlaps->data[index];
         overlaps->data[index] = currently_overlapping;
         if (currently_overlapping && !was_overlapping) {
@@ -420,8 +424,12 @@ detect_solid_collisions(const GameState *state, Level *level, vec_bool *prev_col
                 continue;
             }
             int pair_index = (entity_a * entity_count) + entity_b;
-            bool currently = CheckCollisionRecs(entity_collision_rect(&entities[entity_a], defaults_a),
-                                                entity_collision_rect(&entities[entity_b], defaults_b));
+            CollisionPrimitive prim_storage_a;
+            CollisionPrimitive prim_storage_b;
+            CollisionShape shape_a = entity_collision_region(&entities[entity_a], defaults_a, &prim_storage_a);
+            CollisionShape shape_b = entity_collision_region(&entities[entity_b], defaults_b, &prim_storage_b);
+            bool currently = composite_overlap(&shape_a, entities[entity_a].position, 0.0F, &shape_b,
+                                               entities[entity_b].position, 0.0F);
             bool was = prev_collisions->data[pair_index];
             prev_collisions->data[pair_index] = currently;
             if (currently && !was) {

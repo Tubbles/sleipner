@@ -4,6 +4,7 @@
 #include "arena.h"
 #include "attribute.h"
 #include "blueprint.h"
+#include "collision.h"
 #include "debug.h"
 #include "diag.h"
 #include "editor/editor.h"
@@ -220,11 +221,14 @@ void handle_transition(Diag *diag, GameState *state, FrameContext *ctx)
         for (int index = 0;
              index < state->gamedata.current_level.entities.count && index < state->gamedata.prev_player_overlaps.count;
              index++) {
-            const AttrSet *defaults =
-                entity_resolve_defaults(state, state->gamedata.current_level.entities.data[index].id);
-            state->gamedata.prev_player_overlaps.data[index] = CheckCollisionRecs(
-                entity_collision_rect(player, player_defaults),
-                entity_collision_rect(&state->gamedata.current_level.entities.data[index], defaults));
+            Entity *target = &state->gamedata.current_level.entities.data[index];
+            const AttrSet *defaults = entity_resolve_defaults(state, target->id);
+            CollisionPrimitive player_prim_storage;
+            CollisionPrimitive trigger_prim_storage;
+            CollisionShape player_shape = entity_collision_region(player, player_defaults, &player_prim_storage);
+            CollisionShape trigger_shape = entity_trigger_region(target, defaults, &trigger_prim_storage);
+            state->gamedata.prev_player_overlaps.data[index] =
+                composite_overlap(&player_shape, player->position, 0.0F, &trigger_shape, target->position, 0.0F);
         }
     }
     undo_history_new_entry(ctx->undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
