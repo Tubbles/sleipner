@@ -1,6 +1,7 @@
 #include "entity.h"
 #include "alloc.h"
 #include "attribute.h"
+#include "collision.h"
 #include "str.h"
 #include "strv.h"
 #include "vec.h"
@@ -27,17 +28,43 @@ bool entity_init(Entity *entity, EntitySpec spec, Vector2 position, Allocator *a
     return true;
 }
 
-Rectangle entity_collision_rect(const Entity *entity, const AttrSet *defaults)
+/* One-rect fallback shape for entities with no authored composite: a single
+ * COLLIDER_RECT primitive whose offset is the rect's center relative to
+ * entity->position (matching the "relative to entity center" convention in
+ * collision.h), reconstructed exactly from the collision_offset/size attrs. */
+static CollisionPrimitive entity_collision_rect_prim(const Entity *entity, const AttrSet *defaults)
 {
     float offset_x = attr_get_scoped_float(&entity->attrs, defaults, "collision_offset_x", 0.0F);
     float offset_y = attr_get_scoped_float(&entity->attrs, defaults, "collision_offset_y", 0.0F);
     float width = attr_get_scoped_float(&entity->attrs, defaults, "collision_w", 0.0F);
     float height = attr_get_scoped_float(&entity->attrs, defaults, "collision_h", 0.0F);
+    return (CollisionPrimitive){
+        .kind = COLLIDER_RECT,
+        .offset = {offset_x + (width / 2.0F), offset_y + (height / 2.0F)},
+        .angle_offset = 0.0F,
+        .rect = {.half_w = width / 2.0F, .half_h = height / 2.0F},
+    };
+}
+
+CollisionShape entity_collision_region(const Entity *entity, const AttrSet *defaults, CollisionPrimitive *prim_storage)
+{
+    if (entity->collision_region.prims.count > 0) {
+        return entity->collision_region;
+    }
+    *prim_storage = entity_collision_rect_prim(entity, defaults);
+    return (CollisionShape){.prims = {.data = prim_storage, .count = 1, .capacity = 1}};
+}
+
+Rectangle entity_collision_rect(const Entity *entity, const AttrSet *defaults)
+{
+    CollisionPrimitive prim_storage;
+    CollisionShape region = entity_collision_region(entity, defaults, &prim_storage);
+    const CollisionPrimitive *rect_prim = &region.prims.data[0];
     return (Rectangle){
-        entity->position.x + offset_x,
-        entity->position.y + offset_y,
-        width,
-        height,
+        entity->position.x + rect_prim->offset.x - rect_prim->rect.half_w,
+        entity->position.y + rect_prim->offset.y - rect_prim->rect.half_h,
+        rect_prim->rect.half_w * 2.0F,
+        rect_prim->rect.half_h * 2.0F,
     };
 }
 

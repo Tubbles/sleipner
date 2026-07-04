@@ -2,6 +2,7 @@
 
 #include "alloc.h"
 #include "attribute.h"
+#include "collision.h"
 #include "str.h"
 #include "vec.h" // IWYU pragma: export
 
@@ -22,6 +23,14 @@ typedef struct {
 
     AttrSet persisted_attrs;
     AttrSet attrs;
+
+    /* Collision/trigger shapes. Empty (prims.count == 0) means absent —
+     * pre-S4.5 there is no [[blueprint.collision]] TOML authoring, so both
+     * stay empty and entity_collision_region falls back to a one-rect shape
+     * built from the collision_offset/collision_w/collision_h attrs. */
+    CollisionShape collision_region;
+    CollisionShape trigger_region;
+
     Str blueprint_name;
     Str tag;
 
@@ -45,8 +54,18 @@ typedef struct {
  * Returns false on allocation failure. */
 [[nodiscard]] bool entity_init(Entity *entity, EntitySpec spec, Vector2 position, Allocator *alloc);
 
-/* Compute the collision rectangle for an entity. Uses scoped attr lookup so
- * blueprint edits to collision_offset/size are reflected immediately. */
+/* Build the collision region for an entity: entity->collision_region if an
+ * authored composite shape is present, otherwise a one-rect shape derived
+ * from the collision_offset_x/y and collision_w/h attrs (scoped lookup, so
+ * blueprint edits are reflected immediately). prim_storage is caller-owned
+ * scratch space for the fallback single primitive, avoiding a heap/arena
+ * allocation for this common case — the returned CollisionShape borrows it,
+ * so prim_storage must outlive any use of the shape. */
+CollisionShape entity_collision_region(const Entity *entity, const AttrSet *defaults, CollisionPrimitive *prim_storage);
+
+/* Compute the collision rectangle for an entity, derived from
+ * entity_collision_region. Uses scoped attr lookup so blueprint edits to
+ * collision_offset/size are reflected immediately. */
 Rectangle entity_collision_rect(const Entity *entity, const AttrSet *defaults);
 
 /* Find an entity by tag within the same composition tree as source.

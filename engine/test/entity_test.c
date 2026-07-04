@@ -341,6 +341,85 @@ void test_entity_is_active_both_active(void)
     free_entity_tree(entities);
 }
 
+/* Guards the region<->rect conversion math: entity_collision_region builds a
+ * one-rect CollisionShape from collision_offset/size attrs, and
+ * entity_collision_rect must reconstruct the exact same Rectangle the old
+ * attr-only formula ({pos+offset, w, h}) produced. */
+void test_entity_collision_region_reconstructs_rect(void)
+{
+    typedef struct {
+        float offset_x, offset_y, width, height;
+    } CollisionCombo;
+    CollisionCombo combos[] = {
+        {0.0F, 0.0F, 16.0F, 16.0F},
+        {8.0F, 32.0F, 16.0F, 12.0F},
+        {-4.0F, 6.0F, 20.0F, 10.0F},
+        {2.0F, 4.0F, 12.0F, 8.0F},
+    };
+
+    for (int index = 0; index < (int)(sizeof(combos) / sizeof(combos[0])); index++) {
+        CollisionCombo combo = combos[index];
+        Entity entity = {0};
+        entity.parent_index = -1;
+        entity.position = (Vector2){100.0F, 200.0F};
+        TEST_ASSERT_TRUE(attr_set_float(&test_heap_alloc, &entity.attrs, "collision_offset_x", combo.offset_x));
+        TEST_ASSERT_TRUE(attr_set_float(&test_heap_alloc, &entity.attrs, "collision_offset_y", combo.offset_y));
+        TEST_ASSERT_TRUE(attr_set_float(&test_heap_alloc, &entity.attrs, "collision_w", combo.width));
+        TEST_ASSERT_TRUE(attr_set_float(&test_heap_alloc, &entity.attrs, "collision_h", combo.height));
+
+        Rectangle expected = {
+            entity.position.x + combo.offset_x,
+            entity.position.y + combo.offset_y,
+            combo.width,
+            combo.height,
+        };
+
+        CollisionPrimitive prim_storage;
+        CollisionShape region = entity_collision_region(&entity, nullptr, &prim_storage);
+        TEST_ASSERT_EQUAL_INT(1, region.prims.count);
+        TEST_ASSERT_EQUAL_INT(COLLIDER_RECT, region.prims.data[0].kind);
+        TEST_ASSERT_FLOAT_WITHIN(0.001F, combo.offset_x + (combo.width / 2.0F), region.prims.data[0].offset.x);
+        TEST_ASSERT_FLOAT_WITHIN(0.001F, combo.offset_y + (combo.height / 2.0F), region.prims.data[0].offset.y);
+        TEST_ASSERT_FLOAT_WITHIN(0.001F, combo.width / 2.0F, region.prims.data[0].rect.half_w);
+        TEST_ASSERT_FLOAT_WITHIN(0.001F, combo.height / 2.0F, region.prims.data[0].rect.half_h);
+
+        Rectangle actual = entity_collision_rect(&entity, nullptr);
+        TEST_ASSERT_FLOAT_WITHIN(0.001F, expected.x, actual.x);
+        TEST_ASSERT_FLOAT_WITHIN(0.001F, expected.y, actual.y);
+        TEST_ASSERT_FLOAT_WITHIN(0.001F, expected.width, actual.width);
+        TEST_ASSERT_FLOAT_WITHIN(0.001F, expected.height, actual.height);
+
+        free_test_entity(&entity);
+    }
+}
+
+/* An authored composite in collision_region (future S4.5 TOML parsing) must
+ * win over the attr-derived one-rect fallback, even when collision_w/h attrs
+ * are also set (e.g. leftover from a blueprint that predates the composite). */
+void test_entity_collision_region_prefers_authored_composite(void)
+{
+    Entity entity = {0};
+    entity.parent_index = -1;
+    entity.position = (Vector2){0, 0};
+
+    CollisionPrimitive authored = {
+        .kind = COLLIDER_CIRCLE,
+        .offset = {5.0F, 5.0F},
+        .circle = {.radius = 3.0F},
+    };
+    entity.collision_region.prims = (vec_collision_prim){.data = &authored, .count = 1, .capacity = 1};
+
+    TEST_ASSERT_TRUE(attr_set_float(&test_heap_alloc, &entity.attrs, "collision_w", 99.0F));
+
+    CollisionPrimitive prim_storage;
+    CollisionShape region = entity_collision_region(&entity, nullptr, &prim_storage);
+    TEST_ASSERT_EQUAL_INT(1, region.prims.count);
+    TEST_ASSERT_EQUAL_INT(COLLIDER_CIRCLE, region.prims.data[0].kind);
+    TEST_ASSERT_FLOAT_WITHIN(0.001F, 3.0F, region.prims.data[0].circle.radius);
+
+    free_test_entity(&entity);
+}
+
 int main(void)
 {
     test_helpers_init();
@@ -363,5 +442,7 @@ int main(void)
     RUN_TEST(test_entity_is_visible_both_visible);
     RUN_TEST(test_entity_is_active_parent_inactive);
     RUN_TEST(test_entity_is_active_both_active);
+    RUN_TEST(test_entity_collision_region_reconstructs_rect);
+    RUN_TEST(test_entity_collision_region_prefers_authored_composite);
     return UNITY_END();
 }
