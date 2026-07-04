@@ -38,8 +38,12 @@
 
 Phase 6 of the keybinding audit (`work/keybinding-audit.md`) enumerated five
 editor modes that DESIGN.md specifies but the engine does not yet implement.
-The keybinding registry is now the place to plug each one in — each item
-below is a new set of submodes plus their handlers, pickers, and hint tables.
+Level mode (§30) is now done (S5.2a list + in-memory switch, S5.2b new-level
+creation + size/floor/background/tint/music detail rows) — see the Level
+mode music picker bullet below for the one gap S5.2b left open. The
+keybinding registry is now the place to plug each remaining mode in — each
+item below is a new set of submodes plus their handlers, pickers, and hint
+tables.
 
 - **Tile mode** (DESIGN.md §26) — `EDITOR_SUB_TILE_PAINT`,
   `EDITOR_SUB_TILE_PALETTE` (radial/scroll picker of tile kinds), ground /
@@ -54,12 +58,11 @@ below is a new set of submodes plus their handlers, pickers, and hint tables.
   `EDITOR_SUB_RULE_TRIGGER_PICK`, `EDITOR_SUB_RULE_COND_PICK`,
   `EDITOR_SUB_RULE_ACTION_PICK` (all radial). Reuses existing FUZZY_FINDER
   for flag / item refs.
-- **Level mode** (§30) — S5.2a landed `EDITOR_TOP_LEVEL`: a list of all
-  levels (current + other_levels) reachable from the Tools radial
-  ("Levels"), CONFIRM switches the active level in memory via
-  `level_activate` (`engine/src/game.c`). Remaining for S5.2b: new-level
-  creation, and detail-row editing (size, floor, background, tint, music —
-  a picker over embedded assets).
+- **Level mode music picker** — S5.2b's detail-row editor lets you type an
+  arbitrary string into `music` via the word builder (`editor/level.c`
+  `enter_level_detail_string_edit`); the master plan (S5.2, S6.13) always
+  intended a fuzzy-finder over an embedded music-name registry once that
+  registry exists. Revisit when S6.13 (audio polish) lands.
 
 ## Collision system follow-ups
 

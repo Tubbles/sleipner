@@ -1176,7 +1176,7 @@ The function-layer overhaul (2026-04) unblocked black-box bug-repro tests: every
 - [x] Blueprint `animation = {frames,size,speed,row}` plumbed through parse and emit into `anim_frames`/`anim_size`/`anim_speed`/`anim_row` blueprint attrs, ahead of the mode UI and the animation state machine (Phase 8)
 - [ ] Rule mode: visual trigger/condition/action editor, test by switching to play
 - [x] Level mode: view all levels, switch active level in memory (S5.2a)
-- [ ] Level mode: create levels, set size/music/spawn/transitions (S5.2b)
+- [x] Level mode: create levels (word builder name, 640x360 default) and edit the current level's size/floor/background/tint/music detail rows (S5.2b)
 - [x] Radial picker widget (generic N-item; Tab/Select opens tool picker)
 - [x] Scroll picker widget
 - [x] Word builder (seeded vocabulary + blueprint names; builds underscore-separated strings)

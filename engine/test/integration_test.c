@@ -1348,6 +1348,254 @@ void test_integration_editor_level_switch_round_trip(void)
     test_game_teardown(&game);
 }
 
+/* Find a [[level]] table by name in a re-parsed TOML root. Standalone
+ * helper (not level.c's file-local find_level_table) for the S5.2b
+ * round-trip tests below, which reparse the recording save fake's
+ * emitted buffer via the raw tomlc99 API. */
+static toml_table_t *test_find_level_table_by_name(toml_array_t *levels, const char *name)
+{
+    int count = toml_array_nelem(levels);
+    for (int index = 0; index < count; index++) {
+        toml_table_t *candidate = toml_table_at(levels, index);
+        toml_datum_t table_name = toml_string_in(candidate, "name");
+        if (!table_name.ok) {
+            continue;
+        }
+        bool match = strcmp(table_name.u.s, name) == 0;
+        free(table_name.u.s);
+        if (match) {
+            return candidate;
+        }
+    }
+    return nullptr;
+}
+
+/* S5.2b: "+ NEW LEVEL" creation. Drives the same Tools-radial-into-
+ * EDITOR_TOP_LEVEL dance as the switch test above, then walks the list
+ * cursor onto the "+ NEW LEVEL" sentinel (index 2 of [field(current),
+ * cave, "+ NEW LEVEL"]), opens the word builder via CONFIRM, and picks
+ * the first builtin vocabulary word ("chest", word_builder_scroll 1 —
+ * see word_builder_builtin in editor/widgets.c) as the new level's
+ * name: NAV_DOWN to scroll it into view, CONFIRM to append it, NAV_UP
+ * back to scroll 0 ("[ DONE ]"), CONFIRM to finalize. create_new_level
+ * (editor/level.c) then builds the level with the S5.2b defaults and
+ * activates it via level_activate, landing back in Scene mode.
+ *
+ * The test then wires the recording gamedata-save fake (not part of
+ * TestGame's default setup — see test_recording_gamedata_save's doc
+ * comment) and drives a real menu Save (F3 -> DOWN to SAVE -> CONFIRM),
+ * then reparses the emitted TOML to confirm the new level's name and
+ * default 640x360 size survived the round trip. */
+void test_integration_editor_level_create_round_trip(void)
+{
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_gamedata));
+    game.frame_ctx.save_fn = test_recording_gamedata_save;
+
+    InputState editor_toggle = {0};
+    input_state_press_key(&editor_toggle, KEY_F5);
+    test_advance_frame(&game, editor_toggle);
+    TEST_ASSERT_TRUE(game.state.editor_mode);
+
+    InputState open_tools = {0};
+    input_state_press_key(&open_tools, KEY_TAB);
+    test_advance_frame(&game, open_tools);
+
+    /* Aim the stick at the seventh sector ("Levels") and confirm — same
+     * angle as test_integration_editor_level_switch_round_trip above. */
+    InputState radial_confirm = {0};
+    input_state_set_gp_axis(&radial_confirm, GAMEPAD_AXIS_LEFT_X, -0.4338837F);
+    input_state_set_gp_axis(&radial_confirm, GAMEPAD_AXIS_LEFT_Y, -0.9009689F);
+    input_state_press_key(&radial_confirm, KEY_ENTER);
+    test_advance_frame(&game, radial_confirm);
+
+    InputState no_input = {0};
+    test_advance_frame(&game, no_input);
+    TEST_ASSERT_EQUAL_INT(EDITOR_TOP_LEVEL, game.editor_state.top_mode);
+
+    InputState down = {0};
+    input_state_press_key(&down, KEY_DOWN);
+    test_advance_frame(&game, down); /* scroll 1: "cave" */
+    test_advance_frame(&game, down); /* scroll 2: "+ NEW LEVEL" sentinel */
+    TEST_ASSERT_EQUAL_INT(2, game.editor_state.level_list_scroll);
+
+    InputState confirm = {0};
+    input_state_press_key(&confirm, KEY_ENTER);
+    test_advance_frame(&game, confirm);
+    TEST_ASSERT_EQUAL_INT(EDITOR_SUB_WORD_BUILDER, game.editor_state.sub_mode);
+    TEST_ASSERT_TRUE(game.editor_state.creating_level);
+
+    InputState wb_down = {0};
+    input_state_press_key(&wb_down, KEY_DOWN);
+    test_advance_frame(&game, wb_down); /* word_builder_scroll 1: "chest" */
+    test_advance_frame(&game, confirm); /* append "chest" to the buffer */
+
+    InputState wb_up = {0};
+    input_state_press_key(&wb_up, KEY_UP);
+    test_advance_frame(&game, wb_up);   /* word_builder_scroll 0: "[ DONE ]" */
+    test_advance_frame(&game, confirm); /* finalize: create_new_level(..., "chest") */
+
+    TEST_ASSERT_EQUAL_STRING("chest", game.state.gamedata.current_level.name.ptr);
+    TEST_ASSERT_EQUAL_INT(640, game.state.gamedata.current_level.width);
+    TEST_ASSERT_EQUAL_INT(360, game.state.gamedata.current_level.height);
+    TEST_ASSERT_EQUAL_INT(640, game.state.gamedata.current_level.floor_width);
+    TEST_ASSERT_EQUAL_INT(360, game.state.gamedata.current_level.floor_height);
+    TEST_ASSERT_EQUAL_INT(0, game.state.gamedata.current_level.entities.count);
+    TEST_ASSERT_EQUAL_STRING("grass.png", game.state.gamedata.current_level.background_tile.ptr);
+    TEST_ASSERT_EQUAL_INT(2, game.state.gamedata.other_levels.count); /* "field" + "cave" */
+    TEST_ASSERT_EQUAL_INT(EDITOR_TOP_SCENE, game.editor_state.top_mode);
+
+    /* Save through the real pause-menu path. */
+    InputState menu_open = {0};
+    input_state_press_key(&menu_open, KEY_F3);
+    test_advance_frame(&game, menu_open);
+    TEST_ASSERT_TRUE(game.menu.open);
+
+    InputState menu_down = {0};
+    input_state_press_key(&menu_down, KEY_DOWN);
+    test_advance_frame(&game, menu_down);
+    TEST_ASSERT_EQUAL_INT(MENU_ENTRY_SAVE, game.menu.selected);
+
+    test_advance_frame(&game, confirm);
+    TEST_ASSERT_EQUAL_INT(1, game.gamedata_save_count);
+
+    char errbuf[200];
+    char *parse_buf = strdup(game.saved_gamedata_buf);
+    toml_table_t *root = toml_parse(parse_buf, errbuf, (int)sizeof(errbuf));
+    free(parse_buf);
+    TEST_ASSERT_NOT_NULL_MESSAGE(root, errbuf);
+
+    toml_array_t *levels = toml_array_in(root, "level");
+    TEST_ASSERT_NOT_NULL(levels);
+    toml_table_t *chest_table = test_find_level_table_by_name(levels, "chest");
+    TEST_ASSERT_NOT_NULL_MESSAGE(chest_table, "new level 'chest' missing from saved TOML");
+
+    toml_array_t *size = toml_array_in(chest_table, "size");
+    TEST_ASSERT_NOT_NULL(size);
+    TEST_ASSERT_EQUAL_INT(640, (int)toml_int_at(size, 0).u.i);
+    TEST_ASSERT_EQUAL_INT(360, (int)toml_int_at(size, 1).u.i);
+
+    toml_free(root);
+    test_game_teardown(&game);
+}
+
+/* S5.2b: level-detail-row editing. Opens Level mode and CONFIRMs row 0
+ * (the current level, "field") to enter the detail view instead of the
+ * former switch-to-self no-op. Bumps width by +10 via ACTION_ATTR_INC_10
+ * (KEY_RIGHT_BRACKET) while the WIDTH row is focused — no separate
+ * "enter edit mode" step, the press applies and commits immediately
+ * (see apply_level_detail_delta, editor/level.c). Then navigates to the
+ * BACKGROUND_TILE row, CONFIRMs to open the word builder pre-filled with
+ * the parse-time default "grass.png", clears it (CANCEL pops the whole
+ * buffer since it has no underscore word boundary), and picks "chest"
+ * the same way the create-round-trip test does. Saves via the real menu
+ * path and reparses to confirm both edits survived. */
+void test_integration_editor_level_edit_detail_round_trip(void)
+{
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_gamedata));
+    game.frame_ctx.save_fn = test_recording_gamedata_save;
+    TEST_ASSERT_EQUAL_INT(320, game.state.gamedata.current_level.width);
+
+    InputState editor_toggle = {0};
+    input_state_press_key(&editor_toggle, KEY_F5);
+    test_advance_frame(&game, editor_toggle);
+
+    InputState open_tools = {0};
+    input_state_press_key(&open_tools, KEY_TAB);
+    test_advance_frame(&game, open_tools);
+
+    InputState radial_confirm = {0};
+    input_state_set_gp_axis(&radial_confirm, GAMEPAD_AXIS_LEFT_X, -0.4338837F);
+    input_state_set_gp_axis(&radial_confirm, GAMEPAD_AXIS_LEFT_Y, -0.9009689F);
+    input_state_press_key(&radial_confirm, KEY_ENTER);
+    test_advance_frame(&game, radial_confirm);
+
+    InputState no_input = {0};
+    test_advance_frame(&game, no_input);
+    TEST_ASSERT_EQUAL_INT(EDITOR_TOP_LEVEL, game.editor_state.top_mode);
+    TEST_ASSERT_EQUAL_INT(0, game.editor_state.level_list_scroll);
+
+    InputState confirm = {0};
+    input_state_press_key(&confirm, KEY_ENTER);
+    test_advance_frame(&game, confirm);
+    TEST_ASSERT_TRUE(game.editor_state.level_detail_open);
+    TEST_ASSERT_EQUAL_INT(0, game.editor_state.level_detail_row); /* WIDTH */
+
+    InputState inc_10 = {0};
+    input_state_press_key(&inc_10, KEY_RIGHT_BRACKET);
+    test_advance_frame(&game, inc_10);
+    TEST_ASSERT_EQUAL_INT(330, game.state.gamedata.current_level.width);
+
+    /* Navigate WIDTH -> HEIGHT -> FLOOR_WIDTH -> FLOOR_HEIGHT -> BACKGROUND_TILE. */
+    InputState down = {0};
+    input_state_press_key(&down, KEY_DOWN);
+    for (int step = 0; step < 4; step++) {
+        test_advance_frame(&game, down);
+    }
+    TEST_ASSERT_EQUAL_INT(4, game.editor_state.level_detail_row);
+
+    test_advance_frame(&game, confirm);
+    TEST_ASSERT_EQUAL_INT(EDITOR_SUB_WORD_BUILDER, game.editor_state.sub_mode);
+    TEST_ASSERT_EQUAL_INT(LEVEL_STRING_FIELD_BACKGROUND_TILE, game.editor_state.editing_level_string_field);
+    TEST_ASSERT_EQUAL_STRING("grass.png", game.editor_state.word_builder_buf);
+
+    InputState cancel = {0};
+    input_state_press_key(&cancel, KEY_ESCAPE);
+    test_advance_frame(&game, cancel); /* pop clears "grass.png" (no underscore) */
+    TEST_ASSERT_EQUAL_STRING("", game.editor_state.word_builder_buf);
+
+    InputState wb_down = {0};
+    input_state_press_key(&wb_down, KEY_DOWN);
+    test_advance_frame(&game, wb_down); /* word_builder_scroll 1: "chest" */
+    test_advance_frame(&game, confirm); /* append "chest" */
+
+    InputState wb_up = {0};
+    input_state_press_key(&wb_up, KEY_UP);
+    test_advance_frame(&game, wb_up);   /* word_builder_scroll 0: "[ DONE ]" */
+    test_advance_frame(&game, confirm); /* finalize: confirm_level_string_edit */
+
+    TEST_ASSERT_EQUAL_STRING("chest", game.state.gamedata.current_level.background_tile.ptr);
+    TEST_ASSERT_EQUAL_INT(LEVEL_STRING_FIELD_NONE, game.editor_state.editing_level_string_field);
+    TEST_ASSERT_TRUE(game.editor_state.level_detail_open); /* still in the detail view */
+
+    InputState menu_open = {0};
+    input_state_press_key(&menu_open, KEY_F3);
+    test_advance_frame(&game, menu_open);
+
+    InputState menu_down = {0};
+    input_state_press_key(&menu_down, KEY_DOWN);
+    test_advance_frame(&game, menu_down);
+    TEST_ASSERT_EQUAL_INT(MENU_ENTRY_SAVE, game.menu.selected);
+
+    test_advance_frame(&game, confirm);
+    TEST_ASSERT_EQUAL_INT(1, game.gamedata_save_count);
+
+    char errbuf[200];
+    char *parse_buf = strdup(game.saved_gamedata_buf);
+    toml_table_t *root = toml_parse(parse_buf, errbuf, (int)sizeof(errbuf));
+    free(parse_buf);
+    TEST_ASSERT_NOT_NULL_MESSAGE(root, errbuf);
+
+    toml_array_t *levels = toml_array_in(root, "level");
+    TEST_ASSERT_NOT_NULL(levels);
+    toml_table_t *field_table = test_find_level_table_by_name(levels, "field");
+    TEST_ASSERT_NOT_NULL_MESSAGE(field_table, "'field' missing from saved TOML");
+
+    toml_array_t *size = toml_array_in(field_table, "size");
+    TEST_ASSERT_NOT_NULL(size);
+    TEST_ASSERT_EQUAL_INT(330, (int)toml_int_at(size, 0).u.i);
+    TEST_ASSERT_EQUAL_INT(240, (int)toml_int_at(size, 1).u.i);
+
+    toml_datum_t background_tile = toml_string_in(field_table, "background_tile");
+    TEST_ASSERT_TRUE(background_tile.ok);
+    TEST_ASSERT_EQUAL_STRING("chest", background_tile.u.s);
+    free(background_tile.u.s);
+
+    toml_free(root);
+    test_game_teardown(&game);
+}
+
 /* Drive the pause menu through the real frame loop: F3 opens the
  * menu, KEY_DOWN walks the selection, KEY_ENTER confirms QUIT.
  * Observables are game.menu.open, game.menu.selected, and

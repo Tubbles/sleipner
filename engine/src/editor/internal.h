@@ -64,6 +64,7 @@ const EditorHintTable *blueprint_list_hints_table(void);
 const EditorHintTable *blueprint_detail_hints_table(void);
 const EditorHintTable *watch_list_hints_table(void);
 const EditorHintTable *level_list_hints_table(void);
+const EditorHintTable *level_detail_hints_table(void);
 
 /* --- Shared helpers: core.c --- */
 
@@ -141,3 +142,19 @@ void duplicate_blueprint(GameState *state, EditorState *editor_state, UndoHistor
 /* --- Cross-file calls: widgets.c (called from core.c) --- */
 
 void fuzzy_finder_build_items(GameState *state, EditorState *editor_state);
+
+/* --- Cross-file calls: level.c (called from widgets.c) --- */
+
+/* Validate `name` (non-empty, not already used by current_level or
+ * other_levels), build a Level with the S5.2b defaults (640x360, floor
+ * size matching, "grass.png" background, white tint, empty music,
+ * next_entity_id 0, empty entities vec), append it to other_levels, and
+ * activate it via level_activate so the new empty level becomes current.
+ * Invalid/duplicate names toast and leave gamedata untouched. */
+void create_new_level(
+    Diag *diag, GameState *state, EditorState *editor_state, UndoHistory *undo_history, const char *name);
+
+/* Write word_builder_buf into the current level's background_tile or
+ * music_name Str (whichever editing_level_string_field names), then push
+ * an undo entry. Caller resets editing_level_string_field afterward. */
+void confirm_level_string_edit(GameState *state, EditorState *editor_state, UndoHistory *undo_history);

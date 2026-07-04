@@ -71,6 +71,18 @@ typedef enum {
     EDITOR_TOP_LEVEL,     /* level list: view all levels, switch the active one in memory */
 } EditorTopMode;
 
+/* Identifies which Level string field the word builder is currently
+ * naming, when EditorState.editing_level_string_field != NONE. Read by
+ * both editor/level.c (opens the word builder) and editor/widgets.c
+ * (word builder CONFIRM dispatch, a different file). NONE must be the
+ * zero value so the struct-literal EditorState resets in main.c /
+ * test_helpers.c (which don't list this field) leave it cleared. */
+typedef enum {
+    LEVEL_STRING_FIELD_NONE,
+    LEVEL_STRING_FIELD_BACKGROUND_TILE,
+    LEVEL_STRING_FIELD_MUSIC,
+} LevelStringField;
+
 typedef enum {
     RADIAL_CTX_TOOLS,       /* Grab / Place / Handles / Delete / Blueprints / Watch list — 6 items */
     RADIAL_CTX_ATTR_TYPE,   /* Float / Int / Bool / String — 4 items */
@@ -165,6 +177,10 @@ typedef struct {
     int watch_list_scroll;                         /* focused index into the watch list picker (0 = first entry) */
     int level_list_scroll;             /* focused index into the level list: 0 = current_level, N = other_levels[N-1] */
     bool level_switch_confirm_pending; /* dirty-check gate: CONFIRM once more switches despite unsaved changes */
+    bool creating_level;               /* word builder is naming a new level */
+    bool level_detail_open;            /* true = showing the current level's metadata rows, false = the level list */
+    int level_detail_row;              /* focused row within the level detail view (see LevelDetailRow in level.c) */
+    LevelStringField editing_level_string_field; /* word builder is editing this Level string field, or NONE */
 } EditorState;
 
 typedef struct {
@@ -234,3 +250,4 @@ void draw_watch_list_panel(ScreenSize screen,
 void handle_level_browse_input(
     Diag *diag, GameState *state, EditorState *editor_state, UndoHistory *undo_history, const InputState *input);
 void draw_level_list_panel(ScreenSize screen, const GameState *state, const EditorState *editor_state);
+void draw_level_detail_panel(ScreenSize screen, const GameState *state, const EditorState *editor_state);

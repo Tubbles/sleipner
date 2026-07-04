@@ -16,6 +16,13 @@
 #include "settings.h"
 #include "undo.h"
 
+/* Buffer size for test_recording_gamedata_save's in-memory TOML emit.
+ * main.c's own MAX_GAMEDATA_SIZE isn't reachable here (main.c isn't
+ * linked into the test binary, see test_level_loader below); this is a
+ * separate constant sized the same way for test fixtures, which are
+ * far smaller than real gamedata.toml. */
+#define TEST_MAX_GAMEDATA_SIZE (256UL * 1024)
+
 /* Construct a heap-backed allocator (malloc/realloc/free). Test-only. */
 Allocator allocator_heap(void);
 
@@ -63,6 +70,13 @@ typedef struct {
      * that save_preferences_requested was raised and consumed. */
     int preferences_save_count;
     char saved_data_dir[512];
+    /* Populated by test_recording_gamedata_save (see below). Unlike the
+     * preferences fake, this is NOT wired into frame_ctx.save_fn by
+     * default — tests that need it set frame_ctx.save_fn explicitly, so
+     * other tests keep the null (silent no-op) SAVE path unaffected. */
+    int gamedata_save_count;
+    char saved_gamedata_buf[TEST_MAX_GAMEDATA_SIZE];
+    int saved_gamedata_length;
 } TestGame;
 
 /* Initialise a TestGame from a TOML string. Mirrors main.c's startup:
@@ -98,6 +112,16 @@ void test_game_teardown(TestGame *game);
  * dispatch_save_preferences. */
 void test_restore_fn(
     Diag *diag, GameState *state, EditorState *editor_state, WatchList *watches, UndoHistory *undo_history);
+
+/* MenuSaveFn fake for Level-mode round-trip tests: builds the same
+ * current_level + other_levels combined array main.c's save_gamedata
+ * builds, emits it via toml_emit_gamedata into game->saved_gamedata_buf
+ * (no filesystem access), and marks undo history saved on success. Not
+ * wired into test_game_setup_with_level's default frame_ctx (which
+ * keeps save_fn nullptr, matching all other tests) — tests that exercise
+ * the menu SAVE path against real gamedata content set
+ * game.frame_ctx.save_fn = test_recording_gamedata_save explicitly. */
+void test_recording_gamedata_save(Diag *diag, GameState *state, EditorState *editor_state, UndoHistory *undo_history);
 
 /* Drive one black-box frame at a 1/60s delta. Wires through
  * frame_update — same dispatch path production runs. */

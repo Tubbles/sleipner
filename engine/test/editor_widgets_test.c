@@ -55,6 +55,8 @@ FAKE_VALUE_FUNC(int, editor_resolve_selected_attr_index, const GameState *, cons
 
 /* Cross-file editor fakes: level.c */
 FAKE_VALUE_FUNC(int, level_find_entity_by_id, const Level *, int);
+FAKE_VOID_FUNC(create_new_level, Diag *, GameState *, EditorState *, UndoHistory *, const char *);
+FAKE_VOID_FUNC(confirm_level_string_edit, GameState *, EditorState *, UndoHistory *);
 
 /* Cross-file editor fakes: attr.c */
 FAKE_VOID_FUNC(confirm_child_tag_edit, Diag *, GameState *, EditorState *, UndoHistory *);

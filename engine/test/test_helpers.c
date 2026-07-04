@@ -14,6 +14,7 @@
 #include "rect.h"
 #include "str.h"
 #include "strv.h"
+#include "toml_emitter.h"
 #include "undo.h"
 
 #include <stdbool.h>
@@ -161,6 +162,43 @@ void test_restore_fn(
                                               .level_name = nullptr,
                                               .texture_lookup = test_dummy_texture_lookup});
     game_reset_progression(state);
+}
+
+/* Max levels the combined current+other array below can hold. Test
+ * fixtures never come close; mirrors the stack-array bound used for
+ * level_names in test_integration_real_gamedata_all_levels_load. */
+#define TEST_MAX_LEVELS 32
+
+void test_recording_gamedata_save(Diag *diag, GameState *state, EditorState *editor_state, UndoHistory *undo_history)
+{
+    TestGame *game = (TestGame *)state;
+    int total_levels = 1 + state->gamedata.other_levels.count;
+    if (total_levels > TEST_MAX_LEVELS) {
+        editor_state->toast_text = strv_from_cstr("Save failed");
+        editor_state->toast_timer = 2.0F;
+        return;
+    }
+    Level all_levels[TEST_MAX_LEVELS];
+    all_levels[0] = state->gamedata.current_level;
+    for (int index = 0; index < state->gamedata.other_levels.count; index++) {
+        all_levels[1 + index] = state->gamedata.other_levels.data[index];
+    }
+
+    int written =
+        toml_emit_gamedata(&state->error, game->saved_gamedata_buf, (int)sizeof(game->saved_gamedata_buf),
+                           &state->gamedata.blueprints, &state->gamedata.subroutines, all_levels, total_levels);
+    if (written < 0) {
+        debug_log(diag->debug, "test save error: %s", error_get(&state->error));
+        error_clear(&state->error);
+        editor_state->toast_text = strv_from_cstr("Save failed");
+        editor_state->toast_timer = 2.0F;
+        return;
+    }
+    game->saved_gamedata_length = written;
+    game->gamedata_save_count++;
+    undo_history_mark_saved(undo_history);
+    editor_state->toast_text = strv_from_cstr("Saved");
+    editor_state->toast_timer = 2.0F;
 }
 
 bool test_game_setup(TestGame *out, const char *toml_string)

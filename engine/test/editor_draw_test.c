@@ -87,6 +87,7 @@ FAKE_VALUE_FUNC(const EditorHintTable *, blueprint_list_hints_table);
 FAKE_VALUE_FUNC(const EditorHintTable *, blueprint_detail_hints_table);
 FAKE_VALUE_FUNC(const EditorHintTable *, watch_list_hints_table);
 FAKE_VALUE_FUNC(const EditorHintTable *, level_list_hints_table);
+FAKE_VALUE_FUNC(const EditorHintTable *, level_detail_hints_table);
 
 /* VEC_IMPL needed by input_func.c's ActionBinding/AxisBinding */
 VEC_IMPL(blueprint_child, BlueprintChild)

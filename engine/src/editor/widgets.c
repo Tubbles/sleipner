@@ -334,6 +334,15 @@ void handle_word_builder_input(
             duplicate_blueprint(state, editor_state, undo_history, editor_state->word_builder_buf);
             editor_state->duplicating_blueprint = false;
             editor_state->sub_mode = EDITOR_SUB_BROWSE;
+        } else if (editor_state->word_builder_scroll == 0 && editor_state->creating_level) {
+            create_new_level(diag, state, editor_state, undo_history, editor_state->word_builder_buf);
+            editor_state->creating_level = false;
+            editor_state->sub_mode = EDITOR_SUB_BROWSE;
+        } else if (editor_state->word_builder_scroll == 0 &&
+                   editor_state->editing_level_string_field != LEVEL_STRING_FIELD_NONE) {
+            confirm_level_string_edit(state, editor_state, undo_history);
+            editor_state->editing_level_string_field = LEVEL_STRING_FIELD_NONE;
+            editor_state->sub_mode = EDITOR_SUB_BROWSE;
         } else if (editor_state->word_builder_scroll == 0 && editor_state->editing_child_tag) {
             confirm_child_tag_edit(diag, state, editor_state, undo_history);
             editor_state->sub_mode = EDITOR_SUB_BROWSE;
@@ -372,6 +381,8 @@ void handle_word_builder_input(
             editor_state->editing_child_tag = false;
             editor_state->creating_blueprint = false;
             editor_state->duplicating_blueprint = false;
+            editor_state->creating_level = false;
+            editor_state->editing_level_string_field = LEVEL_STRING_FIELD_NONE;
             editor_state->sub_mode = EDITOR_SUB_BROWSE;
         }
     }

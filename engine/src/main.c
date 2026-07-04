@@ -899,6 +899,39 @@ static void capture_overlay_blur_if_needed(RenderParams params)
     }
 }
 
+/* Dispatch the right editor side panel for the current sub_mode/top_mode.
+ * Split out of render_frame so a new top_mode's list-vs-detail branch
+ * (e.g. EDITOR_TOP_LEVEL's level_detail_open check) doesn't push
+ * render_frame's own cognitive complexity over the readability-function-
+ * cognitive-complexity threshold. */
+static void draw_active_editor_panel(ScreenSize screen, GameState *state, RenderParams params)
+{
+    if (params.editor_state.sub_mode == EDITOR_SUB_PLACE) {
+        draw_place_panel(screen, state, &params.editor_state);
+    } else if (params.editor_state.sub_mode == EDITOR_SUB_WORD_BUILDER ||
+               params.editor_state.sub_mode == EDITOR_SUB_GAMEPAD_KB) {
+        draw_word_builder_panel(screen, state, &params.editor_state);
+    } else if (params.editor_state.sub_mode == EDITOR_SUB_FUZZY_FINDER) {
+        draw_fuzzy_finder_panel(screen, state, &params.editor_state);
+    } else if (params.editor_state.sub_mode == EDITOR_SUB_WATCH_LIST) {
+        draw_watch_list_panel(screen, state, &params.editor_state, params.watches);
+    } else if (params.editor_state.top_mode == EDITOR_TOP_BLUEPRINT) {
+        if (params.editor_state.selected_blueprint_index >= 0) {
+            draw_blueprint_detail_panel(screen, state, &params.editor_state);
+        } else {
+            draw_blueprint_list_panel(screen, state, &params.editor_state);
+        }
+    } else if (params.editor_state.top_mode == EDITOR_TOP_LEVEL) {
+        if (params.editor_state.level_detail_open) {
+            draw_level_detail_panel(screen, state, &params.editor_state);
+        } else {
+            draw_level_list_panel(screen, state, &params.editor_state);
+        }
+    } else {
+        draw_editor_panel(screen, state, &params.editor_state);
+    }
+}
+
 static void render_frame(GameState *state, RenderParams params)
 {
     BeginTextureMode(params.target);
@@ -956,26 +989,7 @@ static void render_frame(GameState *state, RenderParams params)
     }
     ScreenSize screen = {state->screen_width, state->screen_height};
     if (state->editor_mode) {
-        if (params.editor_state.sub_mode == EDITOR_SUB_PLACE) {
-            draw_place_panel(screen, state, &params.editor_state);
-        } else if (params.editor_state.sub_mode == EDITOR_SUB_WORD_BUILDER ||
-                   params.editor_state.sub_mode == EDITOR_SUB_GAMEPAD_KB) {
-            draw_word_builder_panel(screen, state, &params.editor_state);
-        } else if (params.editor_state.sub_mode == EDITOR_SUB_FUZZY_FINDER) {
-            draw_fuzzy_finder_panel(screen, state, &params.editor_state);
-        } else if (params.editor_state.sub_mode == EDITOR_SUB_WATCH_LIST) {
-            draw_watch_list_panel(screen, state, &params.editor_state, params.watches);
-        } else if (params.editor_state.top_mode == EDITOR_TOP_BLUEPRINT) {
-            if (params.editor_state.selected_blueprint_index >= 0) {
-                draw_blueprint_detail_panel(screen, state, &params.editor_state);
-            } else {
-                draw_blueprint_list_panel(screen, state, &params.editor_state);
-            }
-        } else if (params.editor_state.top_mode == EDITOR_TOP_LEVEL) {
-            draw_level_list_panel(screen, state, &params.editor_state);
-        } else {
-            draw_editor_panel(screen, state, &params.editor_state);
-        }
+        draw_active_editor_panel(screen, state, params);
     }
     draw_watch_overlay(screen, state, params.watches);
     draw_radial_picker(screen, &params.editor_state, state->assets.ui_font);
