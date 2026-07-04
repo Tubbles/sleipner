@@ -8,6 +8,7 @@
 #include "blueprint.h"
 #include "collision.h"
 #include "debug.h"
+#include "effect.h"
 #include "error.h"
 #include "entity.h"
 #include "input.h"
@@ -61,6 +62,7 @@ bool game_init(Diag *diag, GameState *state, RectU32 game_bounds)
         error_wrap(diag->error, "game_init");
         return false;
     }
+    effect_queue_init(&state->effects, allocator_arena(&state->progression_arena));
     /* Default input bindings and preferences live in the gamedata arena.
      * main.c overlays the TOML files on top once persistent assets are
      * loaded. Both are populated BEFORE the gamedata_base checkpoint is
@@ -230,7 +232,7 @@ bool game_load_gamedata(Diag *diag, GameState *state, GamedataParams params)
                 rules_evaluate_batch(diag, &gamedata_alloc, spawn_views, spawn_count, spawn_events.data,
                                      spawn_events.count, &state->progression.flags, &state->progression.vars,
                                      &progression_alloc, &state->gamedata.rule_table, &state->gamedata.subroutines,
-                                     &state->gamedata.timers, &scratch_alloc, &state->transition);
+                                     &state->gamedata.timers, &scratch_alloc, &state->transition, &state->effects);
             }
         }
         game_snap_camera(state);
@@ -630,7 +632,7 @@ void game_update(Diag *diag, GameState *state, InputState input, float delta_tim
             rules_evaluate_batch(diag, &rule_alloc, update_views, update_count, trigger_events.data,
                                  trigger_events.count, &state->progression.flags, &state->progression.vars,
                                  &progression_alloc, &state->gamedata.rule_table, &state->gamedata.subroutines,
-                                 &state->gamedata.timers, &scratch_alloc, &state->transition);
+                                 &state->gamedata.timers, &scratch_alloc, &state->transition, &state->effects);
         }
     }
 }
@@ -648,6 +650,7 @@ void game_reset_progression(GameState *state)
 {
     arena_reset(&state->progression_arena);
     state->progression = (ProgressionState){0};
+    effect_queue_init(&state->effects, allocator_arena(&state->progression_arena));
 }
 
 Texture2D *texture_registry_lookup(const char *filename, void *user_data)

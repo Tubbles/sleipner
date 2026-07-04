@@ -1216,6 +1216,7 @@ The function-layer overhaul (2026-04) unblocked black-box bug-repro tests: every
 
 ### Phase 8 — Gameplay Systems
 - [x] Proper PRNG (xoshiro256** seeded via splitmix64, replacing `rand()` in particle system) (S6.1, D21)
+- [x] EffectQueue scaffold: the channel stub rule actions use to reach the world, generalizing `TransitionRequest`. `EffectQueue` lives on `GameState` (not undo-snapshotted), backed by `progression_arena` (init at `game_init`, re-init at `game_reset_progression`), with typed vecs for sound/camera_pan/camera_shake/spawn/dialogue requests (`engine/src/effect.h`/`.c`). Pushed strings are non-owning `Strv` into gamedata-arena-or-longer memory, not owning copies, since effects can be pushed every frame. `ActionContext` and `rules_evaluate_batch` (`rule.h`/`rule.c`) now thread an `EffectQueue *` through, though no action writes to it yet. `frame.c` drains the queue right after `game_update` returns: for now this only logs each pending effect and clears the queue. Real side-effect handlers (sound, camera, spawn, dialogue) land in S6.4-S6.7. (S6.2, D22)
 - [x] Camera system (follow, bounds, transitions)
 - [ ] Combat (hitboxes, damage, knockback, i-frames)
 - [ ] Inventory & items

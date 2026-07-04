@@ -3,6 +3,7 @@
 #include "arena.h"
 #include "audio.h"
 #include "diag.h"
+#include "effect.h"
 #include "gamedata.h"
 #include "input.h"
 #include "input_func.h"
@@ -103,6 +104,13 @@ typedef struct {
     int screen_width;
     int screen_height;
     TransitionRequest transition;
+    /* Channel stub rule actions use to reach the world (sound, camera_pan,
+     * camera_shake, spawn, dialogue). Backed by progression_arena -- see
+     * effect.h for the full lifecycle and string-lifetime rules. Not part
+     * of GamedataState: not undo-snapshotted, and it must survive the
+     * arena_restore(gamedata_base) that a level transition or hot-reload
+     * runs against gamedata_arena. */
+    EffectQueue effects;
 } GameState;
 
 typedef struct {

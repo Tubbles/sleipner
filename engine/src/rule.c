@@ -6,6 +6,7 @@
 #include "attribute.h"
 #include "debug.h"
 #include "diag.h"
+#include "effect.h"
 #include "entity.h"
 #include "error.h"
 #include "map.h"
@@ -1498,7 +1499,8 @@ static void evaluate_entity_rules(Diag *diag,
                                   map_entity_ruleset *rule_table,
                                   const vec_subroutine *subroutines,
                                   vec_timer *timers,
-                                  TransitionRequest *transition)
+                                  TransitionRequest *transition,
+                                  EffectQueue *effects)
 {
     const vec_rule *ruleset = map_entity_ruleset_get(rule_table, entity->id);
     if (!ruleset) {
@@ -1532,6 +1534,7 @@ static void evaluate_entity_rules(Diag *diag,
             .subroutines = subroutines,
             .timers = timers,
             .transition = transition,
+            .effects = effects,
             .action_pool = &rule->action_tree.nodes,
         };
         debug_log(diag->debug, "Rule triggered for entity %d (type: %s), rule %d", entity_index,
@@ -1564,7 +1567,8 @@ void rules_evaluate_batch(Diag *diag,
                           const vec_subroutine *subroutines,
                           vec_timer *timers,
                           Allocator *scratch_alloc,
-                          TransitionRequest *transition)
+                          TransitionRequest *transition,
+                          EffectQueue *effects)
 {
     vec_trigger_event pending_events = vec_trigger_event_new(*scratch_alloc);
     for (int event_index = 0; event_index < event_count; event_index++) {
@@ -1593,7 +1597,7 @@ void rules_evaluate_batch(Diag *diag,
             }
             evaluate_entity_rules(diag, alloc, entity, entity_index, views, view_count, flags, global_vars,
                                   progression_alloc, &pending_events, &next_events, rule_table, subroutines, timers,
-                                  transition);
+                                  transition, effects);
         }
 
         pending_events = next_events;

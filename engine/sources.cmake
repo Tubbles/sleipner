@@ -34,6 +34,7 @@ set(ENGINE_SOURCE_FILES
     editor/rule.c
     editor/tile.c
     editor/widgets.c
+    effect.c
     entity.c
     error.c
     font_cache.c

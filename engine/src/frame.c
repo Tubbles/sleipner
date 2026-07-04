@@ -8,6 +8,7 @@
 #include "debug.h"
 #include "diag.h"
 #include "editor/editor.h"
+#include "effect.h"
 #include "entity.h"
 #include "error.h"
 #include "game.h"
@@ -213,6 +214,7 @@ void run_active_frame(Diag *diag,
         }
     }
     game_update(diag, state, input, delta_time);
+    effect_queue_drain(diag, &state->effects);
 }
 
 void handle_transition(Diag *diag, GameState *state, FrameContext *ctx)

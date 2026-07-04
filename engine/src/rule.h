@@ -2,6 +2,7 @@
 
 #include "alloc.h"
 #include "arena.h"
+#include "effect.h"
 #include "entity.h"
 #include "map.h" // IWYU pragma: export
 #include "str.h"
@@ -259,6 +260,7 @@ typedef struct {
     const vec_subroutine *subroutines;  /* read-only subroutine table */
     vec_timer *timers;                  /* mutable timer list for create_timer/destroy_timer */
     TransitionRequest *transition;      /* written by transition action */
+    EffectQueue *effects;               /* effect channel -- not yet written by any action (S6.2 scaffold) */
     int call_depth;                     /* recursion guard for call: */
     const vec_action_node *action_pool; /* pool the current tree's children/else_children indices resolve against */
 } ActionContext;
@@ -286,4 +288,5 @@ void rules_evaluate_batch(Diag *diag,
                           const vec_subroutine *subroutines,
                           vec_timer *timers,
                           Allocator *scratch_alloc,
-                          TransitionRequest *transition);
+                          TransitionRequest *transition,
+                          EffectQueue *effects);
