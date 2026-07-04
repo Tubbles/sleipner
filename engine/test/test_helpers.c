@@ -1,6 +1,7 @@
 #include "test_helpers.h"
 #include "alloc.h"
 #include "attribute.h"
+#include "collision.h"
 #include "diag.h"
 #include "editor/editor.h"
 #include "editor/internal.h"
@@ -81,6 +82,7 @@ void test_blueprint_free(Blueprint *blueprint)
         str_free(&blueprint->children.data[index].tag);
     }
     vec_blueprint_child_free(&blueprint->children);
+    vec_collision_prim_free(&blueprint->collision.prims);
     test_attr_set_free(&blueprint->attrs);
 }
 

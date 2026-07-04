@@ -100,6 +100,7 @@ void test_toml_emit_persisted_attrs(void);
 void test_toml_emit_no_persisted_attrs(void);
 void test_toml_emit_child_persisted_attrs_round_trip(void);
 void test_toml_emit_rules(void);
+void test_toml_emit_collision_composite_round_trip(void);
 void test_toml_emit_nested_control_flow_round_trip(void);
 void test_toml_emit_subroutines_round_trip(void);
 void test_toml_emit_bindings_round_trip_defaults(void);
@@ -113,6 +114,10 @@ void test_integration_sprite_offset_edit_emitted_to_toml(void);
 /* collision_offset_integration_test.c */
 void test_integration_collision_offset_edit_updates_entity_live(void);
 void test_integration_collision_offset_edit_emitted_to_toml(void);
+
+/* collision_composite_integration_test.c */
+void test_integration_composite_collision_entity_uses_authored_shape(void);
+void test_integration_composite_collision_narrower_than_one_rect_fallback(void);
 
 /* undo_test.c */
 void test_undo_new_entry_and_step_back(void);
@@ -252,6 +257,9 @@ int main(void)
     RUN_TEST(test_integration_collision_offset_edit_updates_entity_live);
     RUN_TEST(test_integration_collision_offset_edit_emitted_to_toml);
 
+    RUN_TEST(test_integration_composite_collision_entity_uses_authored_shape);
+    RUN_TEST(test_integration_composite_collision_narrower_than_one_rect_fallback);
+
     RUN_TEST(test_undo_new_entry_and_step_back);
     RUN_TEST(test_undo_step_forward);
     RUN_TEST(test_undo_truncate_on_new_edit);
@@ -279,6 +287,7 @@ int main(void)
     RUN_TEST(test_toml_emit_no_persisted_attrs);
     RUN_TEST(test_toml_emit_child_persisted_attrs_round_trip);
     RUN_TEST(test_toml_emit_rules);
+    RUN_TEST(test_toml_emit_collision_composite_round_trip);
     RUN_TEST(test_toml_emit_nested_control_flow_round_trip);
     RUN_TEST(test_toml_emit_subroutines_round_trip);
     RUN_TEST(test_toml_emit_bindings_round_trip_defaults);

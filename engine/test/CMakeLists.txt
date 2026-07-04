@@ -55,6 +55,7 @@ add_executable(engine_tests
     rule_integration_test.c
     sprite_offset_integration_test.c
     collision_offset_integration_test.c
+    collision_composite_integration_test.c
     undo_test.c
 )
 target_compile_definitions(engine_tests PRIVATE _GNU_SOURCE

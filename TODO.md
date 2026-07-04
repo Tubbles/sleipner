@@ -68,6 +68,16 @@ below is a new set of submodes plus their handlers, pickers, and hint tables.
   requires editing gamedata. Add a "Switch level" entry to the Tools radial
   that opens a scroll picker of level names.
 
+## Collision system follow-ups
+
+- **Editor cannot author or edit composite collision shapes.** S4.5 added
+  `[[blueprint.collision]]` TOML parsing/emission and deep-copy into
+  `entity->collision_region`, but the in-game editor's collision handles
+  (`draw_collision_handles`) still only drag primitive 0 of the one-rect
+  fallback. Authoring a multi-primitive composite (rect+circle+triangle) is
+  TOML-only today. A visual editor for this would need a primitive list UI
+  (add/remove/select kind) plus per-kind drag handles.
+
 ## Input system future work
 
 - **Plugin-declared actions.** When a plugin/engine system arrives,

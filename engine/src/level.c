@@ -4,6 +4,7 @@
 #include "diag.h"
 #include "attribute.h"
 #include "blueprint.h"
+#include "collision.h"
 #include "debug.h"
 #include "entity.h"
 #include "error.h"
@@ -89,6 +90,28 @@ static bool copy_attr_set(Allocator *alloc, AttrSet *dest, const AttrSet *src)
     return true;
 }
 
+/* Deep-copy blueprint->collision into entity->collision_region, so
+ * entity_collision_region returns the authored composite instead of falling
+ * back to the one-rect shape derived from collision_offset/collision_w/h.
+ * Deep copy (not aliasing the blueprint's vec) so a later editor edit to the
+ * blueprint's collision shape can't reach into (and reallocate/corrupt) an
+ * already-instantiated entity's region. A blueprint with no composite
+ * (prims.count == 0) leaves entity->collision_region empty, preserving the
+ * one-rect fallback. */
+static bool copy_blueprint_collision(Allocator *alloc, Entity *entity, const Blueprint *blueprint)
+{
+    if (blueprint->collision.prims.count == 0) {
+        return true;
+    }
+    entity->collision_region.prims.alloc = *alloc;
+    for (int index = 0; index < blueprint->collision.prims.count; index++) {
+        if (!vec_collision_prim_push(&entity->collision_region.prims, blueprint->collision.prims.data[index])) {
+            return false;
+        }
+    }
+    return true;
+}
+
 #define MAX_CHILD_DEPTH 4
 
 static int entity_depth(const Entity *entities, int entity_index)
@@ -151,6 +174,11 @@ static bool spawn_children_for(ErrorState *err,
             if (!str_from_strv(&child.tag, str_to_strv(child_def->tag))) {
                 return false;
             }
+        }
+        if (!copy_blueprint_collision(alloc, &child, child_blueprint)) {
+            error_set(err, "spawn_children_for: collision copy failed for blueprint '%s'",
+                      attr_get_string(&child_blueprint->attrs, "name"));
+            return false;
         }
         if (!vec_entity_push(&level->entities, child)) {
             error_set(err, "spawn_children_for: out of memory");
@@ -321,6 +349,10 @@ static void parse_entity(Diag *diag,
         debug_log(diag->debug, "ent[%d]: persisted->runtime attr copy failed", entity_index);
         return;
     }
+    if (!copy_blueprint_collision(alloc, &entity_temp, blueprint)) {
+        debug_log(diag->debug, "ent[%d]: collision copy failed", entity_index);
+        return;
+    }
     if (!vec_entity_push(&level->entities, entity_temp)) {
         debug_log(diag->debug, "ent[%d]: out of memory", entity_index);
         return;
@@ -393,6 +425,10 @@ bool level_spawn_single_child(Diag *diag,
         error_set(diag->error, "level_spawn_single_child: tag copy failed");
         return false;
     }
+    if (!copy_blueprint_collision(alloc, &child, child_blueprint)) {
+        error_set(diag->error, "level_spawn_single_child: collision copy failed");
+        return false;
+    }
     int child_entity_index = level->entities.count;
     if (!vec_entity_push(&level->entities, child)) {
         error_set(diag->error, "level_spawn_single_child: out of memory");
@@ -428,6 +464,10 @@ bool level_spawn_entity(Diag *diag,
         return false;
     }
     entity.id = level->next_entity_id++;
+    if (!copy_blueprint_collision(alloc, &entity, blueprint)) {
+        error_set(diag->error, "level_spawn_entity: collision copy failed");
+        return false;
+    }
     if (!vec_entity_push(&level->entities, entity)) {
         error_set(diag->error, "level_spawn_entity: out of memory");
         return false;
@@ -449,6 +489,7 @@ void level_free(Allocator *alloc, Level *level)
         str_free(&level->entities.data[index].tag);
         attr_set_free(alloc, &level->entities.data[index].persisted_attrs);
         attr_set_free(alloc, &level->entities.data[index].attrs);
+        vec_collision_prim_free(&level->entities.data[index].collision_region.prims);
     }
     vec_entity_free(&level->entities);
 }

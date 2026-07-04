@@ -2,6 +2,7 @@
 
 #include "attribute.h"
 #include "blueprint.h"
+#include "collision.h"
 #include "entity.h"
 #include "error.h"
 #include "input_func.h"
@@ -380,6 +381,58 @@ static int emit_rule(char *buffer, int capacity, int offset, const Rule *rule)
     return emit_append(buffer, capacity, offset, "\n");
 }
 
+/* ---- Collision shape emitter ---- */
+
+/* kind is listed before the buffer/capacity/offset trio (rather than after,
+ * like every other emit_* helper here) so it isn't adjacent to `offset` —
+ * ColliderKind is an int-convertible enum, and clang-tidy's
+ * bugprone-easily-swappable-parameters flags an (int, enum) pair that isn't
+ * otherwise used together in the function body. */
+static int emit_collision_kind(ColliderKind kind, char *buffer, int capacity, int offset)
+{
+    switch (kind) {
+    case COLLIDER_RECT:
+        return emit_append(buffer, capacity, offset, "kind = \"rect\"\n");
+    case COLLIDER_CIRCLE:
+        return emit_append(buffer, capacity, offset, "kind = \"circle\"\n");
+    case COLLIDER_TRIANGLE:
+        return emit_append(buffer, capacity, offset, "kind = \"triangle\"\n");
+    }
+    return -1;
+}
+
+static int emit_collision_geometry(char *buffer, int capacity, int offset, const CollisionPrimitive *prim)
+{
+    switch (prim->kind) {
+    case COLLIDER_RECT:
+        offset = emit_append(buffer, capacity, offset, "size = [%d, %d]\n", (int)(prim->rect.half_w * 2.0F),
+                             (int)(prim->rect.half_h * 2.0F));
+        if (prim->angle_offset != 0.0F) {
+            offset = emit_append(buffer, capacity, offset, "angle = %d\n", (int)prim->angle_offset);
+        }
+        return offset;
+    case COLLIDER_CIRCLE:
+        return emit_append(buffer, capacity, offset, "radius = %d\n", (int)prim->circle.radius);
+    case COLLIDER_TRIANGLE:
+        return emit_append(buffer, capacity, offset, "verts = [[%d, %d], [%d, %d], [%d, %d]]\n",
+                           (int)prim->triangle.verts[0].x, (int)prim->triangle.verts[0].y,
+                           (int)prim->triangle.verts[1].x, (int)prim->triangle.verts[1].y,
+                           (int)prim->triangle.verts[2].x, (int)prim->triangle.verts[2].y);
+    }
+    return -1;
+}
+
+static int emit_collision_prim(char *buffer, int capacity, int offset, const CollisionPrimitive *prim)
+{
+    offset = emit_append(buffer, capacity, offset, "[[blueprint.collision]]\n");
+    offset = emit_collision_kind(prim->kind, buffer, capacity, offset);
+    if (prim->offset.x != 0.0F || prim->offset.y != 0.0F) {
+        offset = emit_append(buffer, capacity, offset, "offset = [%d, %d]\n", (int)prim->offset.x, (int)prim->offset.y);
+    }
+    offset = emit_collision_geometry(buffer, capacity, offset, prim);
+    return emit_append(buffer, capacity, offset, "\n");
+}
+
 static int emit_blueprints(char *buffer, int capacity, int offset, const BlueprintTable *blueprints)
 {
     for (int index = 0; index < blueprints->entries.count; index++) {
@@ -421,6 +474,10 @@ static int emit_blueprints(char *buffer, int capacity, int offset, const Bluepri
                                      (int)child->offset.y);
             }
             offset = emit_append(buffer, capacity, offset, "\n");
+        }
+
+        for (int prim_index = 0; prim_index < blueprint->collision.prims.count; prim_index++) {
+            offset = emit_collision_prim(buffer, capacity, offset, &blueprint->collision.prims.data[prim_index]);
         }
 
         for (int rule_index = 0; rule_index < blueprint->rules.count; rule_index++) {

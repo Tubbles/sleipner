@@ -10,6 +10,7 @@ static Diag test_diag = {&test_err, &test_dbg};
 #include "toml_emitter.h"
 #include "test_helpers.h"
 #include "arena.h"
+#include "collision.h"
 #include "input_func.h"
 #include "rule.h"
 #include "toml.h"
@@ -787,6 +788,96 @@ void test_toml_emit_rules(void)
     TEST_ASSERT_EQUAL_INT(2, rule->action_tree.nodes.count);
     TEST_ASSERT_EQUAL_INT(ACTION_SET_FLAG, rule->action_tree.nodes.data[0].type);
     TEST_ASSERT_EQUAL_INT(ACTION_DESTROY, rule->action_tree.nodes.data[1].type);
+
+    arena_free(&arena);
+    arena_free(&arena2);
+}
+
+/* S4.5/D28: [[blueprint.collision]] authors a composite collision shape (a
+ * list of primitives) on a blueprint. Two primitives of different kinds
+ * (rect + circle) with non-zero offsets exercises both the per-kind field
+ * parsing and the offset default handling in one fixture. */
+static const char *collision_composite_fixture = "[[blueprint]]\n"
+                                                 "name = \"boulder\"\n"
+                                                 "texture = \"boulder.png\"\n"
+                                                 "src = [0, 0, 32, 32]\n"
+                                                 "collision_offset = [0, 0]\n"
+                                                 "collision_size = [32, 32]\n"
+                                                 "\n"
+                                                 "[[blueprint.collision]]\n"
+                                                 "kind = \"rect\"\n"
+                                                 "offset = [-8, 0]\n"
+                                                 "size = [16, 24]\n"
+                                                 "angle = 15\n"
+                                                 "\n"
+                                                 "[[blueprint.collision]]\n"
+                                                 "kind = \"circle\"\n"
+                                                 "offset = [8, -4]\n"
+                                                 "radius = 10\n"
+                                                 "\n"
+                                                 "[[level]]\n"
+                                                 "name = \"test\"\n"
+                                                 "size = [320, 240]\n";
+
+static void assert_collision_composite_structure(const Blueprint *blueprint)
+{
+    TEST_ASSERT_EQUAL_INT(2, blueprint->collision.prims.count);
+
+    const CollisionPrimitive *rect_prim = &blueprint->collision.prims.data[0];
+    TEST_ASSERT_EQUAL_INT(COLLIDER_RECT, rect_prim->kind);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, -8.0F, rect_prim->offset.x);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 0.0F, rect_prim->offset.y);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 8.0F, rect_prim->rect.half_w);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 12.0F, rect_prim->rect.half_h);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 15.0F, rect_prim->angle_offset);
+
+    const CollisionPrimitive *circle_prim = &blueprint->collision.prims.data[1];
+    TEST_ASSERT_EQUAL_INT(COLLIDER_CIRCLE, circle_prim->kind);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 8.0F, circle_prim->offset.x);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, -4.0F, circle_prim->offset.y);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 10.0F, circle_prim->circle.radius);
+}
+
+void test_toml_emit_collision_composite_round_trip(void)
+{
+    Arena arena;
+    TEST_ASSERT_TRUE(arena_init(&test_err, &arena));
+    BlueprintTable blueprints = {0};
+
+    /* Parse original and sanity-check the fixture actually parses two
+     * distinct primitive kinds with non-zero offsets. */
+    toml_table_t *root = parse_toml(collision_composite_fixture);
+    TEST_ASSERT_NOT_NULL(root);
+    blueprints_load(&test_diag, &blueprints, root, &arena);
+    toml_free(root);
+
+    TEST_ASSERT_EQUAL_INT(1, blueprints.entries.count);
+    assert_collision_composite_structure(&blueprints.entries.data[0]);
+
+    /* Emit, then re-parse the emitted TOML into a second tree. */
+    char output[4096];
+    Level empty_level = {0};
+    int written =
+        toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &empty_subroutines, &empty_level, 0);
+    TEST_ASSERT_TRUE(written > 0);
+
+    TEST_ASSERT_NOT_NULL(strstr(output, "[[blueprint.collision]]"));
+    TEST_ASSERT_NOT_NULL(strstr(output, "kind = \"rect\""));
+    TEST_ASSERT_NOT_NULL(strstr(output, "kind = \"circle\""));
+
+    Arena arena2;
+    TEST_ASSERT_TRUE(arena_init(&test_err, &arena2));
+    BlueprintTable blueprints2 = {0};
+
+    toml_table_t *root2 = parse_toml(output);
+    TEST_ASSERT_NOT_NULL(root2);
+    blueprints_load(&test_diag, &blueprints2, root2, &arena2);
+    toml_free(root2);
+
+    /* The round trip must preserve prim count, kinds, offsets, and
+     * sizes/radius for every primitive, not just the first. */
+    TEST_ASSERT_EQUAL_INT(1, blueprints2.entries.count);
+    assert_collision_composite_structure(&blueprints2.entries.data[0]);
 
     arena_free(&arena);
     arena_free(&arena2);

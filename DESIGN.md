@@ -1224,18 +1224,24 @@ The function-layer overhaul (2026-04) unblocked black-box bug-repro tests: every
 ### Phase 9 — Collision Engine Integration
 
 Collision primitives (circle, rect, triangle) and composable shapes are implemented in
-`collision.h`/`collision.c` with full pairwise resolvers and tests. The game loop still uses
-AABB rectangles everywhere. This phase wires the shape system into the game.
+`collision.h`/`collision.c` with full pairwise resolvers and tests. The game loop now resolves
+obstacles and detects triggers through the shape system; no `CheckCollisionRecs` / AABB path
+remains in `engine/src/`. Slopes and one-way ledges stay parked until a level needs them.
 
 - [x] Collision primitive types: circle, rectangle, triangle
 - [x] Composable collision volumes (list of primitives per entity, combined for resolution)
 - [x] Pairwise primitive resolvers (all 9 combinations) with unit tests
-- [ ] Wire `CollisionShape` into entity struct (replace `Rectangle collision`)
-- [ ] Replace player/obstacle AABB resolution in game.c with `resolve_composite`
-- [ ] Replace simple AABB overlap in `enter` trigger detection with shape-based overlap
+- [x] Wire `CollisionShape` into entity struct (collision_region/trigger_region, one-rect fallback)
+- [x] Replace player/obstacle AABB resolution in game.c with `resolve_composite`
+- [x] Replace simple AABB overlap in `enter`/`collide` trigger detection with shape-based overlap
 - [ ] Slope and angled surface support
 - [ ] One-way platforms (jump-down ledges)
-- [ ] Editor visualization: draw all primitives in debug mode
+- [x] Editor visualization: draw all primitives in debug mode (collision green, trigger yellow)
+- [x] `[[blueprint.collision]]` composite authoring: parse a primitive list
+  (rect/circle/triangle) into a blueprint `CollisionShape`, deep-copy into
+  each instantiated entity's `collision_region` so composite shapes drive
+  resolution and triggers, and emit + round-trip. Blueprints without it
+  keep the one-rect `collision_offset`/`collision_size` attr fallback.
 
 ## Resolved Decisions
 

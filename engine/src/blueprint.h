@@ -3,6 +3,7 @@
 #include "alloc.h"
 #include "arena.h"
 #include "attribute.h"
+#include "collision.h"
 #include "diag.h"
 #include "rule.h"
 #include "str.h"
@@ -24,6 +25,13 @@ typedef struct {
     AttrSet attrs;
     vec_blueprint_child children;
     vec_rule rules;
+
+    /* Authored composite collision shape from [[blueprint.collision]].
+     * Empty (prims.count == 0) means "no composite" — instantiated entities
+     * then fall back to the one-rect shape derived from the
+     * collision_offset/collision_w/collision_h attrs (see
+     * entity_collision_region). */
+    CollisionShape collision;
 } Blueprint;
 
 VEC_DECL(blueprint, Blueprint)

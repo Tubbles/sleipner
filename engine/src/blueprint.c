@@ -5,6 +5,7 @@
 #include "alloc.h"
 #include "arena.h"
 #include "attribute.h"
+#include "collision.h"
 #include "debug.h"
 #include "error.h"
 #include "rule.h"
@@ -45,9 +46,9 @@ static bool parse_float_array(toml_array_t *array, float *out, int expected_coun
 /* Keys with dedicated parsing — not treated as custom attributes */
 static bool is_known_key(const char *key)
 {
-    static const char *known[] = {"name",          "src",    "collision_offset", "collision_size",
-                                  "sprite_offset", "health", "animation",        "child",
-                                  "rule",          nullptr};
+    static const char *known[] = {
+        "name",  "src",  "collision_offset", "collision_size", "sprite_offset", "health", "animation",
+        "child", "rule", "collision",        nullptr};
     for (int index = 0; known[index]; index++) {
         if (strcmp(key, known[index]) == 0) {
             return true;
@@ -203,6 +204,155 @@ static bool parse_geometry(Allocator *alloc, Blueprint *blueprint, toml_table_t 
     return true;
 }
 
+/* Read an optional float field that may be authored as either a TOML float
+ * or int (e.g. `angle = 45` vs `angle = 45.0`); defaults to `default_value`. */
+static float parse_collision_scalar(toml_table_t *table, const char *key, float default_value)
+{
+    toml_datum_t value = toml_double_in(table, key);
+    if (value.ok) {
+        return (float)value.u.d;
+    }
+    toml_datum_t int_value = toml_int_in(table, key);
+    if (int_value.ok) {
+        return (float)int_value.u.i;
+    }
+    return default_value;
+}
+
+static bool parse_collision_kind(const char *kind_str, ColliderKind *out_kind)
+{
+    if (strcmp(kind_str, "rect") == 0) {
+        *out_kind = COLLIDER_RECT;
+        return true;
+    }
+    if (strcmp(kind_str, "circle") == 0) {
+        *out_kind = COLLIDER_CIRCLE;
+        return true;
+    }
+    if (strcmp(kind_str, "triangle") == 0) {
+        *out_kind = COLLIDER_TRIANGLE;
+        return true;
+    }
+    return false;
+}
+
+static bool parse_collision_rect(toml_table_t *entry, CollisionPrimitive *prim)
+{
+    float size_values[2] = {0};
+    if (!parse_float_array(toml_array_in(entry, "size"), size_values, 2)) {
+        return false;
+    }
+    prim->rect.half_w = size_values[0] / 2.0F;
+    prim->rect.half_h = size_values[1] / 2.0F;
+    prim->angle_offset = parse_collision_scalar(entry, "angle", 0.0F);
+    return true;
+}
+
+static bool parse_collision_circle(toml_table_t *entry, CollisionPrimitive *prim)
+{
+    toml_datum_t radius = toml_double_in(entry, "radius");
+    if (radius.ok) {
+        prim->circle.radius = (float)radius.u.d;
+        return true;
+    }
+    toml_datum_t radius_int = toml_int_in(entry, "radius");
+    if (!radius_int.ok) {
+        return false;
+    }
+    prim->circle.radius = (float)radius_int.u.i;
+    return true;
+}
+
+static bool parse_collision_triangle(toml_table_t *entry, CollisionPrimitive *prim)
+{
+    toml_array_t *verts = toml_array_in(entry, "verts");
+    if (!verts || toml_array_nelem(verts) != 3) {
+        return false;
+    }
+    for (int index = 0; index < 3; index++) {
+        float vert_values[2] = {0};
+        if (!parse_float_array(toml_array_at(verts, index), vert_values, 2)) {
+            return false;
+        }
+        prim->triangle.verts[index] = (Vector2){vert_values[0], vert_values[1]};
+    }
+    return true;
+}
+
+static bool parse_collision_geometry(toml_table_t *entry, CollisionPrimitive *prim)
+{
+    switch (prim->kind) {
+    case COLLIDER_RECT:
+        return parse_collision_rect(entry, prim);
+    case COLLIDER_CIRCLE:
+        return parse_collision_circle(entry, prim);
+    case COLLIDER_TRIANGLE:
+        return parse_collision_triangle(entry, prim);
+    }
+    return false;
+}
+
+/* Parse one [[blueprint.collision]] entry into `prim`. Returns false (kind
+ * missing/unknown, or the kind-specific geometry fields are absent/malformed)
+ * so the caller can skip just this primitive without failing the whole
+ * blueprint load. */
+static bool parse_single_collision_prim(DebugState *dbg, toml_table_t *entry, CollisionPrimitive *prim)
+{
+    memset(prim, 0, sizeof(*prim));
+
+    toml_datum_t kind_str = toml_string_in(entry, "kind");
+    if (!kind_str.ok) {
+        debug_log(dbg, "bp collision: missing 'kind'");
+        return false;
+    }
+    bool kind_ok = parse_collision_kind(kind_str.u.s, &prim->kind);
+    if (!kind_ok) {
+        debug_log(dbg, "bp collision: unknown kind '%s'", kind_str.u.s);
+    }
+    free(kind_str.u.s);
+    if (!kind_ok) {
+        return false;
+    }
+
+    float offset_values[2] = {0};
+    (void)parse_float_array(toml_array_in(entry, "offset"), offset_values, 2);
+    prim->offset = (Vector2){offset_values[0], offset_values[1]};
+
+    return parse_collision_geometry(entry, prim);
+}
+
+/* Parse the [[blueprint.collision]] array-of-tables into blueprint->collision.
+ * Absent array leaves the shape empty (no composite — one-rect attr
+ * fallback applies). Invalid entries are logged and skipped individually;
+ * only an allocation failure aborts the whole blueprint load. */
+static bool parse_collision_shape(DebugState *dbg, Allocator *alloc, Blueprint *blueprint, toml_table_t *entry)
+{
+    toml_array_t *collision_array = toml_array_in(entry, "collision");
+    if (!collision_array) {
+        return true;
+    }
+
+    int count = toml_array_nelem(collision_array);
+    blueprint->collision.prims.alloc = *alloc;
+
+    for (int index = 0; index < count; index++) {
+        toml_table_t *prim_entry = toml_table_at(collision_array, index);
+        if (!prim_entry) {
+            continue;
+        }
+        CollisionPrimitive prim;
+        if (!parse_single_collision_prim(dbg, prim_entry, &prim)) {
+            debug_log(dbg, "bp collision[%d]: skipped (invalid)", index);
+            continue;
+        }
+        if (!vec_collision_prim_push(&blueprint->collision.prims, prim)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 static bool parse_health(Allocator *alloc, Blueprint *blueprint, toml_table_t *entry)
 {
     toml_array_t *health = toml_array_in(entry, "health");
@@ -332,6 +482,9 @@ parse_single_blueprint(Diag *diag, Allocator *alloc, Blueprint *blueprint, toml_
     if (!parse_geometry(alloc, blueprint, entry)) {
         return false;
     }
+    if (!parse_collision_shape(diag->debug, alloc, blueprint, entry)) {
+        return false;
+    }
     if (!parse_health(alloc, blueprint, entry)) {
         return false;
     }
@@ -358,6 +511,7 @@ static void blueprint_cleanup(Allocator *alloc, Blueprint *blp)
         str_free(&blp->children.data[child_index].tag);
     }
     vec_blueprint_child_free(&blp->children);
+    vec_collision_prim_free(&blp->collision.prims);
     attr_set_free(alloc, &blp->attrs);
 }
 
