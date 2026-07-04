@@ -65,16 +65,27 @@ slices still open.
   existing atlas region names as candidates when picking that value, so
   there's no autocomplete/browse-by-name for it — purely additive UX, not a
   round-trip gap.
-- **Rule mode** (§29, §100-104) — S5.6a shipped the read-only foundation:
-  `EDITOR_SUB_RULE_LIST` (blueprint picker / that blueprint's rule list,
-  dual duty mirroring `EDITOR_SUB_ANIM_EDIT`) and `EDITOR_SUB_RULE_TREE`
-  (one rule flattened into a navigable indented tree over the action-node
-  pool — `rule_tree_flatten`/`rule_tree_row_count`, `editor/rule.c`). Still
-  open: leaf editing (S5.6b), structural editing — add/remove/reorder
-  nodes, author if/else/repeat/for_each (S5.6c), and subroutine
-  authoring/linking (S5.6d). Slices b/c will likely reuse the existing
-  FUZZY_FINDER for flag/item/attr name refs, the same way blueprint attrs
-  do today.
+- **Rule mode** (§29, §100-104) — S5.6a shipped the read-only foundation;
+  S5.6b shipped leaf editing: CONFIRM on a focused `EDITOR_SUB_RULE_TREE`
+  row opens the reused RADIAL/FUZZY_FINDER/WORD_BUILDER/ATTR_EDIT submodes
+  to change that row's type and parameters, staged in `EditorState.rule_edit_*`
+  and committed atomically (with undo) only once the whole gesture
+  finishes, so CANCEL at any point — including mid-chain — mutates
+  nothing (`begin_rule_edit_for_row`/`dispatch_rule_radial_confirm`/
+  `rule_edit_argument_step_complete`/`finalize_rule_edit`,
+  `editor/rule.c`). Still open: structural editing — add/remove/reorder
+  rules and action nodes, author if/else/repeat/for_each (S5.6c), and
+  subroutine authoring/linking (S5.6d). Two gaps S5.6b deliberately left
+  for those slices: (1) `RuleTreeRow` (`editor/internal.h`) still only
+  flattens rule-level conditions, not a control-flow node's own predicate
+  (`ActionNode.conditions`) — an if_else row's CONFIRM is a no-op, and
+  for_each's CONFIRM only edits its bind name, since there's no row yet to
+  edit either node type's predicate through; (2)
+  `create_timer`/`create_timer_periodic`'s duration and
+  `set_attr`/`add_attr`'s value are edited as free strings (word builder +
+  gamepad keyboard for digits) rather than through the numeric adjuster,
+  since the brief for S5.6b only called out repeat-count and condition
+  compare_value as adjuster fields.
 - **Animation mode's sparse-attr round trip** (§28, D20) —
   `emit_animation_if_present` (`engine/src/toml_emitter.c`) emits all four
   `animation = {...}` fields as soon as any one of

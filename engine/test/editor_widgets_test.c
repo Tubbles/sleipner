@@ -72,6 +72,14 @@ FAKE_VOID_FUNC(
 /* Cross-file editor fakes: atlas.c */
 FAKE_VALUE_FUNC(bool, start_new_atlas_region, GameState *, EditorState *, const char *);
 
+/* Cross-file editor fakes: rule.c (S5.6b leaf editing) */
+FAKE_VOID_FUNC(rule_edit_argument_step_complete, GameState *, EditorState *, UndoHistory *, const char *);
+FAKE_VOID_FUNC(commit_rule_for_each_bind, GameState *, EditorState *, UndoHistory *, const char *);
+FAKE_VALUE_FUNC(const char *, rule_edit_current_argument_text, GameState *, const EditorState *);
+FAKE_VALUE_FUNC(const char *, trigger_type_label, TriggerType);
+FAKE_VALUE_FUNC(const char *, rule_condition_radial_label, int);
+FAKE_VALUE_FUNC(Strv, action_type_label, ActionType);
+
 /* External module fakes */
 FAKE_VOID_FUNC(undo_history_new_entry, UndoHistory *, GamedataState *, Arena *, ArenaCheckpoint, Strv);
 

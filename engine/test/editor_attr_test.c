@@ -50,6 +50,9 @@ FAKE_VALUE_FUNC(int, level_find_entity_by_id, const Level *, int);
 FAKE_VOID_FUNC(propagate_child_tag, GameState *, const Blueprint *, int, const char *);
 FAKE_VOID_FUNC(propagate_child_offset, GameState *, const Blueprint *, int);
 
+/* Cross-file editor fakes: rule.c (S5.6b leaf editing) */
+FAKE_VOID_FUNC(handle_rule_numeric_edit_input, GameState *, EditorState *, UndoHistory *, const InputState *, float);
+
 /* External module fakes */
 FAKE_VOID_FUNC(undo_history_new_entry, UndoHistory *, GamedataState *, Arena *, ArenaCheckpoint, Strv);
 

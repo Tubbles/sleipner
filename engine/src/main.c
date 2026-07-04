@@ -944,6 +944,22 @@ static void capture_overlay_blur_if_needed(RenderParams params)
     }
 }
 
+/* Rule mode's panel spans three sub_mode values: EDITOR_SUB_RULE_LIST/
+ * _TREE plus EDITOR_SUB_ATTR_EDIT while EDITOR_TOP_RULE (S5.6b's
+ * standalone repeat-count/compare_value numeric edits borrow the shared
+ * adjuster submode from EDITOR_SUB_RULE_TREE -- see draw_rule_panel's own
+ * doc comment, editor/rule.c). Extracted out of the condition below to
+ * keep draw_active_editor_panel's cognitive complexity under the
+ * readability threshold, same rationale as that function's own doc
+ * comment. */
+static bool is_rule_mode_side_panel(const EditorState *editor_state)
+{
+    if (editor_state->sub_mode == EDITOR_SUB_RULE_LIST || editor_state->sub_mode == EDITOR_SUB_RULE_TREE) {
+        return true;
+    }
+    return editor_state->sub_mode == EDITOR_SUB_ATTR_EDIT && editor_state->top_mode == EDITOR_TOP_RULE;
+}
+
 /* Dispatch the right editor side panel for the current sub_mode/top_mode.
  * Split out of render_frame so a new top_mode's list-vs-detail branch
  * (e.g. EDITOR_TOP_LEVEL's level_detail_open check) doesn't push
@@ -969,8 +985,7 @@ static void draw_active_editor_panel(ScreenSize screen, GameState *state, Render
     } else if (params.editor_state.sub_mode == EDITOR_SUB_ANIM_EDIT ||
                params.editor_state.sub_mode == EDITOR_SUB_ANIM_FRAMES) {
         draw_anim_panel(screen, state, &params.editor_state);
-    } else if (params.editor_state.sub_mode == EDITOR_SUB_RULE_LIST ||
-               params.editor_state.sub_mode == EDITOR_SUB_RULE_TREE) {
+    } else if (is_rule_mode_side_panel(&params.editor_state)) {
         draw_rule_panel(screen, state, &params.editor_state);
     } else if (params.editor_state.top_mode == EDITOR_TOP_ATLAS) {
         if (params.editor_state.atlas_texture_index >= 0) {

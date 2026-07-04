@@ -46,6 +46,17 @@ static const char *radial_label(const EditorState *editor_state, int index)
         if (index >= 0 && index < 3) {
             return props[index];
         }
+    } else if (editor_state->radial_context == RADIAL_CTX_TRIGGER_TYPE) {
+        if (index >= 0 && index < RULE_TRIGGER_TYPE_COUNT) {
+            return trigger_type_label((TriggerType)index);
+        }
+    } else if (editor_state->radial_context == RADIAL_CTX_CONDITION_TYPE) {
+        return rule_condition_radial_label(index);
+    } else if (editor_state->radial_context == RADIAL_CTX_ACTION_TYPE) {
+        if (index >= 0 && index < RULE_ACTION_TYPE_COUNT) {
+            Strv label = action_type_label((ActionType)index);
+            return TextFormat("%.*s", (int)label.len, label.ptr);
+        }
     }
     return "";
 }
@@ -84,18 +95,30 @@ void draw_radial_picker(ScreenSize screen, const EditorState *editor_state, Font
     DrawCircle(center_x, center_y, RADIAL_INNER_RADIUS, debug_bg_color);
 }
 
+/* Closing transitions read editor_state->return_sub_mode rather than a
+ * hardcoded EDITOR_SUB_BROWSE literal, so Rule mode's leaf-editing radials
+ * (RADIAL_CTX_TRIGGER_TYPE/CONDITION_TYPE/ACTION_TYPE, S5.6b) return to
+ * EDITOR_SUB_RULE_TREE instead of BROWSE -- see return_sub_mode's doc
+ * comment (editor/editor.h). Every pre-existing radial context (TOOLS/
+ * ATTR_TYPE/CHILD_PROPS) never sets return_sub_mode, so it stays at its
+ * zero-value default (EDITOR_SUB_BROWSE) for them, unchanged from before.
+ * Reset back to the default immediately after reading so a later,
+ * unrelated picker session never inherits a stale target. */
 void handle_radial_input(EditorState *editor_state, const InputState *input, const BindingStore *bindings)
 {
     Vector2 stick = input_axis_pair(input, bindings, AXIS_PRIMARY_X, AXIS_PRIMARY_Y);
     editor_state->radial_selected = radial_sector_from_stick(stick, editor_state->radial_item_count);
     if (input_pressed(input, bindings, ACTION_CANCEL)) {
         editor_state->radial_confirmed = -1;
-        editor_state->sub_mode = EDITOR_SUB_BROWSE;
+        editor_state->rule_edit_field = RULE_EDIT_FIELD_NONE;
+        editor_state->sub_mode = editor_state->return_sub_mode;
+        editor_state->return_sub_mode = EDITOR_SUB_BROWSE;
         return;
     }
     if (input_pressed(input, bindings, ACTION_CONFIRM)) {
         editor_state->radial_confirmed = editor_state->radial_selected;
-        editor_state->sub_mode = EDITOR_SUB_BROWSE;
+        editor_state->sub_mode = editor_state->return_sub_mode;
+        editor_state->return_sub_mode = EDITOR_SUB_BROWSE;
     }
 }
 
@@ -364,6 +387,17 @@ void handle_word_builder_input(
             editor_state->adding_blueprint_attr = false;
             editor_state->adding_persisted_attr = false;
             editor_state->sub_mode = EDITOR_SUB_BROWSE;
+        } else if (editor_state->word_builder_scroll == 0 &&
+                   editor_state->rule_edit_field == RULE_EDIT_FIELD_FOR_EACH_BIND) {
+            /* Rule mode leaf editing (S5.6b): standalone for_each bind-name
+             * edit -- routed through a dedicated completion path
+             * (editor/rule.c) rather than another branch of this already
+             * long dispatch, per a single target tag (rule_edit_field). */
+            commit_rule_for_each_bind(state, editor_state, undo_history, editor_state->word_builder_buf);
+        } else if (editor_state->word_builder_scroll == 0 &&
+                   (editor_state->rule_edit_field == RULE_EDIT_FIELD_ARGUMENT ||
+                    editor_state->rule_edit_field == RULE_EDIT_FIELD_SECOND_ARGUMENT)) {
+            rule_edit_argument_step_complete(state, editor_state, undo_history, editor_state->word_builder_buf);
         } else if (editor_state->word_builder_scroll == 0) {
             word_builder_confirm(diag, state, editor_state);
             undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
@@ -384,6 +418,7 @@ void handle_word_builder_input(
             word_builder_pop(editor_state);
         } else {
             bool cancel_to_atlas_browse = editor_state->creating_atlas_region;
+            bool cancel_rule_edit = editor_state->rule_edit_field != RULE_EDIT_FIELD_NONE;
             editor_state->adding_attr = false;
             editor_state->adding_blueprint_attr = false;
             editor_state->adding_persisted_attr = false;
@@ -393,7 +428,15 @@ void handle_word_builder_input(
             editor_state->creating_level = false;
             editor_state->creating_atlas_region = false;
             editor_state->editing_level_string_field = LEVEL_STRING_FIELD_NONE;
-            editor_state->sub_mode = cancel_to_atlas_browse ? EDITOR_SUB_ATLAS_BROWSE : EDITOR_SUB_BROWSE;
+            editor_state->rule_edit_field = RULE_EDIT_FIELD_NONE;
+            if (cancel_to_atlas_browse) {
+                editor_state->sub_mode = EDITOR_SUB_ATLAS_BROWSE;
+            } else if (cancel_rule_edit) {
+                editor_state->sub_mode = editor_state->return_sub_mode;
+                editor_state->return_sub_mode = EDITOR_SUB_BROWSE;
+            } else {
+                editor_state->sub_mode = EDITOR_SUB_BROWSE;
+            }
         }
     }
 }
@@ -468,12 +511,55 @@ static void fuzzy_finder_collect_all_attr_names(const GamedataState *gamedata, c
     }
 }
 
+/* gamedata->subroutines is already a standalone named registry (like
+ * blueprints/levels), so this mirrors fuzzy_finder_collect_blueprint_names
+ * -- surfaced now because Rule mode's "call:" action argument (S5.6b)
+ * references a subroutine by name. */
+static void fuzzy_finder_collect_subroutine_names(const GamedataState *gamedata, const char **items, int *count)
+{
+    for (int index = 0; index < gamedata->subroutines.count; index++) {
+        fuzzy_finder_try_add(items, count, gamedata->subroutines.data[index].name.ptr);
+    }
+}
+
+/* Unlike blueprints/levels/subroutines, event names aren't a standalone
+ * gamedata registry -- any rule's trigger can be "event:NAME" and any
+ * action can "fire_event:NAME" the same name, so the only way to surface
+ * "existing" ones is scanning every blueprint's rules (S5.6b's
+ * TRIGGER_EVENT / ACTION_FIRE_EVENT argument steps use this list).
+ * action_tree.nodes is the tree's flat pool -- every node in it is
+ * reachable from roots/children/else_children by construction (see
+ * rule_tree_row_count's doc comment, editor/internal.h), so a plain loop
+ * over the pool finds every fire_event action without a tree walk. */
+static void fuzzy_finder_collect_event_names(const GamedataState *gamedata, const char **items, int *count)
+{
+    for (int bp_index = 0; bp_index < gamedata->blueprints.entries.count; bp_index++) {
+        const Blueprint *blueprint = &gamedata->blueprints.entries.data[bp_index];
+        for (int rule_index = 0; rule_index < blueprint->rules.count; rule_index++) {
+            const Rule *rule = &blueprint->rules.data[rule_index];
+            if (rule->trigger.type == TRIGGER_EVENT) {
+                fuzzy_finder_try_add(items, count, rule->trigger.argument.ptr);
+            }
+            for (int node_index = 0; node_index < rule->action_tree.nodes.count; node_index++) {
+                const ActionNode *node = &rule->action_tree.nodes.data[node_index];
+                if (node->type == ACTION_FIRE_EVENT) {
+                    fuzzy_finder_try_add(items, count, node->argument.ptr);
+                }
+            }
+        }
+    }
+}
+
 static int fuzzy_finder_max_item_count(const GamedataState *gamedata, const FlagSet *flags)
 {
     int max_count = gamedata->blueprints.entries.count + flags->names.count + 1 + gamedata->other_levels.count +
-                    gamedata->current_level.entities.count;
+                    gamedata->current_level.entities.count + gamedata->subroutines.count;
     for (int index = 0; index < gamedata->blueprints.entries.count; index++) {
-        max_count += gamedata->blueprints.entries.data[index].attrs.entries.count;
+        const Blueprint *blueprint = &gamedata->blueprints.entries.data[index];
+        max_count += blueprint->attrs.entries.count;
+        for (int rule_index = 0; rule_index < blueprint->rules.count; rule_index++) {
+            max_count += 1 + blueprint->rules.data[rule_index].action_tree.nodes.count;
+        }
     }
     for (int index = 0; index < gamedata->current_level.entities.count; index++) {
         max_count += gamedata->current_level.entities.data[index].attrs.entries.count;
@@ -497,6 +583,8 @@ void fuzzy_finder_build_items(GameState *state, EditorState *editor_state)
     fuzzy_finder_collect_level_names(&state->gamedata, items, &count);
     fuzzy_finder_collect_entity_tags(&state->gamedata, items, &count);
     fuzzy_finder_collect_all_attr_names(&state->gamedata, items, &count);
+    fuzzy_finder_collect_subroutine_names(&state->gamedata, items, &count);
+    fuzzy_finder_collect_event_names(&state->gamedata, items, &count);
 
     qsort((void *)items, (size_t)count, sizeof(const char *), compare_cstr_ptrs);
 
@@ -587,14 +675,21 @@ fuzzy_finder_navigate(EditorState *editor_state, const InputState *input, const 
 
 static void fuzzy_finder_enter_word_builder(GameState *state, EditorState *editor_state)
 {
-    int sel = level_find_entity_by_id(&state->gamedata.current_level, editor_state->selected_entity_id);
     const char *existing = "";
-    if (sel >= 0) {
-        Entity *entity = &state->gamedata.current_level.entities.data[sel];
-        int attr_idx = editor_resolve_selected_attr_index(state, entity, editor_state);
-        const Attribute *attr = (attr_idx >= 0) ? attr_at_display_index(state, entity, attr_idx) : nullptr;
-        if (attr && attr->type == ATTR_STRING && attr->value.str.ptr) {
-            existing = attr->value.str.ptr;
+    if (editor_state->rule_edit_field != RULE_EDIT_FIELD_NONE) {
+        /* Rule mode leaf editing (S5.6b): "[ NEW... ]" -> word builder,
+         * prefilled from the row's current (pre-edit) argument text --
+         * see rule_edit_current_argument_text's doc comment. */
+        existing = rule_edit_current_argument_text(state, editor_state);
+    } else {
+        int sel = level_find_entity_by_id(&state->gamedata.current_level, editor_state->selected_entity_id);
+        if (sel >= 0) {
+            Entity *entity = &state->gamedata.current_level.entities.data[sel];
+            int attr_idx = editor_resolve_selected_attr_index(state, entity, editor_state);
+            const Attribute *attr = (attr_idx >= 0) ? attr_at_display_index(state, entity, attr_idx) : nullptr;
+            if (attr && attr->type == ATTR_STRING && attr->value.str.ptr) {
+                existing = attr->value.str.ptr;
+            }
         }
     }
     int existing_len = (int)strlen(existing);
@@ -689,6 +784,14 @@ void handle_fuzzy_finder_input(Diag *diag,
             }
         } else if (editor_state->fuzzy_finder_scroll == 0) {
             fuzzy_finder_enter_word_builder(state, editor_state);
+        } else if (editor_state->rule_edit_field != RULE_EDIT_FIELD_NONE) {
+            /* Rule mode leaf editing (S5.6b): an existing name was picked
+             * (not "[ NEW... ]") -- route to the dedicated completion path
+             * (editor/rule.c) instead of the entity/blueprint attr commit
+             * below, which always sets EDITOR_SUB_BROWSE and doesn't know
+             * about a multi-step rule gesture. */
+            const char *chosen = fuzzy_finder_item(editor_state, editor_state->fuzzy_finder_scroll);
+            rule_edit_argument_step_complete(state, editor_state, undo_history, chosen);
         } else {
             fuzzy_finder_confirm(diag, state, editor_state);
             undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
@@ -701,7 +804,9 @@ void handle_fuzzy_finder_input(Diag *diag,
         editor_state->adding_child = false;
         editor_state->adding_blueprint_attr = false;
         editor_state->adding_persisted_attr = false;
-        editor_state->sub_mode = EDITOR_SUB_BROWSE;
+        editor_state->rule_edit_field = RULE_EDIT_FIELD_NONE;
+        editor_state->sub_mode = editor_state->return_sub_mode;
+        editor_state->return_sub_mode = EDITOR_SUB_BROWSE;
     }
 }
 

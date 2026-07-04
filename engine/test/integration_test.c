@@ -11,6 +11,7 @@
 #include "input_func.h"
 #include "level.h"
 #include "menu.h"
+#include "rule.h"
 #include "strv.h"
 #include "test_helpers.h"
 #include "undo.h"
@@ -2155,6 +2156,179 @@ void test_integration_editor_rule_tree_navigation(void)
     TEST_ASSERT_EQUAL_INT(EDITOR_TOP_SCENE, game.editor_state.top_mode);
     TEST_ASSERT_EQUAL_INT(EDITOR_SUB_BROWSE, game.editor_state.sub_mode);
 
+    test_game_teardown(&game);
+}
+
+/* Local helper: mirrors test_radial_select_item (test_helpers.c) but reads
+ * the item count from the currently-open radial's own
+ * editor_state.radial_item_count instead of the fixed
+ * EDITOR_TOOLS_ITEM_COUNT that helper targets -- Rule mode's leaf-editing
+ * radials (S5.6b) come in three different sizes (trigger/condition/action
+ * type counts), all opened via the same EDITOR_SUB_RADIAL submode. */
+static void test_select_rule_radial_item(TestGame *game, int item_index)
+{
+    float sector_deg = RADIAL_FULL_CIRCLE_DEG / (float)game->editor_state.radial_item_count;
+    float mid_deg = (((float)item_index + 0.5F) * sector_deg) - RADIAL_NORTH_OFFSET_DEG;
+    float mid_rad = mid_deg * RADIAL_DEG_TO_RAD;
+    InputState radial_confirm = {0};
+    input_state_set_gp_axis(&radial_confirm, GAMEPAD_AXIS_LEFT_X, cosf(mid_rad));
+    input_state_set_gp_axis(&radial_confirm, GAMEPAD_AXIS_LEFT_Y, sinf(mid_rad));
+    input_state_press_key(&radial_confirm, KEY_ENTER);
+    test_advance_frame(game, radial_confirm);
+}
+
+/* S5.6b: Rule mode leaf editing. Reuses fixture_rule_tree (S5.6a test
+ * above): blueprint "switch"'s only rule has a top-level `set_flag:used`
+ * action at flattened row 2 (trigger=row0, condition=row1, actions start
+ * at row2). Opens Rule mode and focuses row 2 the same way the navigation
+ * test does, CONFIRMs to open the ACTION_TYPE radial, picks ACTION_SET_FLAG
+ * (same type, index 0, since ActionType's non-control-flow values map
+ * directly onto the radial index -- see RULE_ACTION_TYPE_COUNT's doc
+ * comment, editor/internal.h) to reach the argument step, clears the
+ * prefilled "used" text via the word builder and types "chest" instead
+ * (same CANCEL-then-append idiom
+ * test_integration_editor_level_edit_detail_round_trip uses), then
+ * confirms to commit.
+ *
+ * Then re-opens the same row's edit, picks a DIFFERENT type
+ * (ACTION_CLEAR_FLAG) via the radial, and CANCELs from the follow-up fuzzy
+ * finder step instead of finishing it -- proving the staged type change is
+ * discarded and the node is left exactly as the first edit committed it.
+ * This is the load-bearing assertion for S5.6b's "CANCEL at any point in a
+ * multi-step gesture mutates nothing", since a bug that committed on
+ * radial-confirm instead of on the gesture's last step would leave the
+ * node's type changed here even though CANCEL was the last thing pressed.
+ *
+ * Finally saves through the real pause-menu path and reparses the emitted
+ * TOML to confirm "set_flag:chest" round-tripped as the blueprint's first
+ * action. */
+void test_integration_editor_rule_leaf_edit_round_trip(void)
+{
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_rule_tree));
+    game.frame_ctx.save_fn = test_recording_gamedata_save;
+
+    InputState editor_toggle = {0};
+    input_state_press_key(&editor_toggle, KEY_F5);
+    test_advance_frame(&game, editor_toggle);
+
+    InputState open_tools = {0};
+    input_state_press_key(&open_tools, KEY_TAB);
+    test_advance_frame(&game, open_tools);
+    test_radial_select_item(&game, EDITOR_TOOLS_RULE_INDEX);
+
+    InputState no_input = {0};
+    test_advance_frame(&game, no_input);
+    TEST_ASSERT_EQUAL_INT(EDITOR_TOP_RULE, game.editor_state.top_mode);
+
+    InputState confirm = {0};
+    input_state_press_key(&confirm, KEY_ENTER);
+    test_advance_frame(&game, confirm); /* pick "switch" */
+    test_advance_frame(&game, confirm); /* open its only rule */
+    TEST_ASSERT_EQUAL_INT(EDITOR_SUB_RULE_TREE, game.editor_state.sub_mode);
+
+    InputState nav_down = {0};
+    input_state_press_key(&nav_down, KEY_DOWN);
+    test_advance_frames(&game, nav_down, 2); /* row 2: set_flag:used */
+    TEST_ASSERT_EQUAL_INT(2, game.editor_state.rule_tree_row);
+
+    /* CONFIRM opens the ACTION_TYPE radial. */
+    test_advance_frame(&game, confirm);
+    TEST_ASSERT_EQUAL_INT(EDITOR_SUB_RADIAL, game.editor_state.sub_mode);
+    TEST_ASSERT_EQUAL_INT(RADIAL_CTX_ACTION_TYPE, game.editor_state.radial_context);
+    TEST_ASSERT_EQUAL_INT(RULE_EDIT_FIELD_TYPE, game.editor_state.rule_edit_field);
+
+    /* Pick ACTION_SET_FLAG (same type the row already has). */
+    test_select_rule_radial_item(&game, ACTION_SET_FLAG);
+    TEST_ASSERT_EQUAL_INT(EDITOR_SUB_RULE_TREE, game.editor_state.sub_mode);
+
+    /* RULE_TREE dispatches the pending radial confirm on the next frame:
+     * SET_FLAG takes an argument, so this opens the fuzzy finder. */
+    test_advance_frame(&game, no_input);
+    TEST_ASSERT_EQUAL_INT(EDITOR_SUB_FUZZY_FINDER, game.editor_state.sub_mode);
+    TEST_ASSERT_EQUAL_INT(RULE_EDIT_FIELD_ARGUMENT, game.editor_state.rule_edit_field);
+
+    /* Scroll 0 is "[ NEW... ]" -> word builder, prefilled with the row's
+     * current (still-uncommitted) argument "used". */
+    test_advance_frame(&game, confirm);
+    TEST_ASSERT_EQUAL_INT(EDITOR_SUB_WORD_BUILDER, game.editor_state.sub_mode);
+    TEST_ASSERT_EQUAL_STRING("used", game.editor_state.word_builder_buf);
+
+    InputState cancel = {0};
+    input_state_press_key(&cancel, KEY_ESCAPE);
+    test_advance_frame(&game, cancel); /* pop clears "used" (no underscore) */
+    TEST_ASSERT_EQUAL_STRING("", game.editor_state.word_builder_buf);
+
+    InputState wb_down = {0};
+    input_state_press_key(&wb_down, KEY_DOWN);
+    test_advance_frame(&game, wb_down); /* word_builder_scroll 1: "chest" */
+    test_advance_frame(&game, confirm); /* append "chest" */
+
+    InputState wb_up = {0};
+    input_state_press_key(&wb_up, KEY_UP);
+    test_advance_frame(&game, wb_up);   /* word_builder_scroll 0: "[ DONE ]" */
+    test_advance_frame(&game, confirm); /* finalize: commit to the rule */
+
+    TEST_ASSERT_EQUAL_INT(EDITOR_SUB_RULE_TREE, game.editor_state.sub_mode);
+    TEST_ASSERT_EQUAL_INT(RULE_EDIT_FIELD_NONE, game.editor_state.rule_edit_field);
+
+    Blueprint *switch_bp = &game.state.gamedata.blueprints.entries.data[0];
+    ActionNode *set_flag_node = &switch_bp->rules.data[0].action_tree.nodes.data[0];
+    TEST_ASSERT_EQUAL_INT(ACTION_SET_FLAG, set_flag_node->type);
+    TEST_ASSERT_EQUAL_STRING("chest", set_flag_node->argument.ptr);
+    TEST_ASSERT_TRUE(strv_eq_cstr(undo_history_description(&game.undo_history), "Edit rule action"));
+
+    /* Re-open the same row, pick a DIFFERENT type this time
+     * (ACTION_CLEAR_FLAG), then CANCEL from the follow-up fuzzy finder
+     * step -- the staged type change must never reach the real node. */
+    test_advance_frame(&game, confirm);
+    TEST_ASSERT_EQUAL_INT(EDITOR_SUB_RADIAL, game.editor_state.sub_mode);
+    test_select_rule_radial_item(&game, ACTION_CLEAR_FLAG);
+    test_advance_frame(&game, no_input);
+    TEST_ASSERT_EQUAL_INT(EDITOR_SUB_FUZZY_FINDER, game.editor_state.sub_mode);
+
+    test_advance_frame(&game, cancel);
+    TEST_ASSERT_EQUAL_INT(EDITOR_SUB_RULE_TREE, game.editor_state.sub_mode);
+    TEST_ASSERT_EQUAL_INT(RULE_EDIT_FIELD_NONE, game.editor_state.rule_edit_field);
+    TEST_ASSERT_EQUAL_INT(ACTION_SET_FLAG, set_flag_node->type);
+    TEST_ASSERT_EQUAL_STRING("chest", set_flag_node->argument.ptr);
+
+    /* Save through the real pause-menu path. */
+    InputState menu_open = {0};
+    input_state_press_key(&menu_open, KEY_F3);
+    test_advance_frame(&game, menu_open);
+
+    InputState menu_down = {0};
+    input_state_press_key(&menu_down, KEY_DOWN);
+    test_advance_frame(&game, menu_down);
+    TEST_ASSERT_EQUAL_INT(MENU_ENTRY_SAVE, game.menu.selected);
+
+    test_advance_frame(&game, confirm);
+    TEST_ASSERT_EQUAL_INT(1, game.gamedata_save_count);
+
+    char errbuf[200];
+    char *parse_buf = strdup(game.saved_gamedata_buf);
+    toml_table_t *root = toml_parse(parse_buf, errbuf, (int)sizeof(errbuf));
+    free(parse_buf);
+    TEST_ASSERT_NOT_NULL_MESSAGE(root, errbuf);
+
+    toml_array_t *blueprints = toml_array_in(root, "blueprint");
+    TEST_ASSERT_NOT_NULL(blueprints);
+    toml_table_t *switch_table = test_find_blueprint_table_by_name(blueprints, "switch");
+    TEST_ASSERT_NOT_NULL_MESSAGE(switch_table, "'switch' missing from saved TOML");
+
+    toml_array_t *rule_array = toml_array_in(switch_table, "rule");
+    TEST_ASSERT_NOT_NULL(rule_array);
+    toml_table_t *rule_table = toml_table_at(rule_array, 0);
+    TEST_ASSERT_NOT_NULL(rule_table);
+    toml_array_t *actions = toml_array_in(rule_table, "actions");
+    TEST_ASSERT_NOT_NULL(actions);
+    toml_datum_t first_action = toml_string_at(actions, 0);
+    TEST_ASSERT_TRUE(first_action.ok);
+    TEST_ASSERT_EQUAL_STRING("set_flag:chest", first_action.u.s);
+    free(first_action.u.s);
+
+    toml_free(root);
     test_game_teardown(&game);
 }
 

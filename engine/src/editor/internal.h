@@ -176,6 +176,24 @@ void dispatch_child_props(GameState *state, EditorState *editor_state, int confi
 
 void confirm_child_tag_edit(Diag *diag, GameState *state, EditorState *editor_state, UndoHistory *undo_history);
 
+/* --- Shared helpers: attr.c (called from rule.c) ---
+ *
+ * The +/-1 / +/-10 / +/-100 hold-and-accelerate value-adjuster shape is
+ * implemented three times in attr.c already (handle_attr_edit_input for
+ * Attribute int/float, handle_child_offset_edit for BlueprintChild
+ * offsets) — Rule mode's numeric leaf editing (repeat count, condition
+ * compare_value, S5.6b) is a fourth instance of the same shape, over
+ * different backing storage again. Rather than factor the whole loop out
+ * (the codebase doesn't already have that abstraction and the loop body
+ * is ~10 lines), only the three small, reusable, near-pure pieces are
+ * exported so editor/rule.c doesn't duplicate their logic: read the
+ * pressed-delta actions, read the held direction, and reset the hold
+ * timers. The accelerate-and-repeat loop itself is written again in
+ * rule.c, matching attr.c's own existing duplication style. */
+int read_value_delta(const InputState *input, const BindingStore *bindings);
+int read_held_dir(const InputState *input, const BindingStore *bindings);
+void reset_attr_hold(EditorState *editor_state);
+
 /* --- Cross-file calls: child.c --- */
 
 void remove_blueprint_child(GameState *state, EditorState *editor_state, UndoHistory *undo_history, int child_idx);
@@ -242,3 +260,85 @@ void enter_anim_mode(GameState *state, EditorState *editor_state);
  * EDITOR_SUB_RULE_LIST's dual duty (editor/rule.c) renders as the
  * blueprint list picker. Read-only (S5.6a): no undo integration. */
 void enter_rule_mode(GameState *state, EditorState *editor_state);
+
+/* --- Rule mode leaf editing (S5.6b, editor/rule.c) ---
+ *
+ * Radial item counts for RADIAL_CTX_TRIGGER_TYPE/CONDITION_TYPE/ACTION_TYPE
+ * (editor/editor.h) -- each radial index maps directly onto the
+ * corresponding rule.h enum's declaration order, so widgets.c's
+ * radial_label needs the count to bounds-check but no separate order
+ * table. ACTION_TYPE_COUNT covers exactly the non-control-flow prefix
+ * types (ActionType's first 22 declared values); ACTION_IF_ELSE/REPEAT/
+ * FOR_EACH are the last 3 and are never offered on this radial (see
+ * begin_rule_edit_for_row, editor/rule.c). */
+#define RULE_TRIGGER_TYPE_COUNT 10
+#define RULE_CONDITION_TYPE_COUNT 9
+#define RULE_ACTION_TYPE_COUNT 22
+
+/* Radial label for one RADIAL_CTX_CONDITION_TYPE sector: unlike
+ * trigger_type_label/action_type_label, condition_type_label (rule.h)
+ * collapses COND_ATTR_LT/GT/EQ down to the bare noun "attr", which would
+ * make three of the nine radial sectors show the same label -- this
+ * disambiguates them with the comparison operator, mirroring
+ * editor/rule.c's own condition_operator used for the tree row labels.
+ * Returns a raylib TextFormat ring-buffer string (safe for immediate
+ * per-frame draw use only, matching every other radial_label branch). */
+const char *rule_condition_radial_label(int index);
+
+/* Called from EDITOR_SUB_RULE_TREE's CONFIRM (handle_rule_tree_input) when
+ * nothing is currently staged: inspects the focused row (rule_tree_row)
+ * and opens whichever first step its edit gesture needs -- a TYPE radial
+ * for trigger/condition/simple-action rows, or a standalone
+ * numeric/word-builder step for a repeat/for_each control-flow row. No-op
+ * for if_else rows (nothing on the row itself is directly editable; its
+ * predicate isn't yet a navigable row -- see DESIGN.md's Rule mode
+ * roadmap) and for rows that don't resolve. */
+void begin_rule_edit_for_row(GameState *state, EditorState *editor_state);
+
+/* Dispatches a confirmed RADIAL_CTX_TRIGGER_TYPE/CONDITION_TYPE/ACTION_TYPE
+ * pick (editor_state->radial_confirmed, cleared by this call) to the
+ * matching staging step. Called from handle_rule_tree_input, which is only
+ * ever reached from EDITOR_TOP_RULE, so any pending radial_confirmed seen
+ * there is guaranteed to be one of these three rule contexts. */
+void dispatch_rule_radial_confirm(GameState *state, EditorState *editor_state, UndoHistory *undo_history);
+
+/* Current (pre-edit) text of the field rule_edit_field names for the
+ * focused row -- the primary argument, or the second_argument when
+ * rule_edit_field is RULE_EDIT_FIELD_SECOND_ARGUMENT. Used to prefill the
+ * word builder / fuzzy-finder-NEW path so editing feels like adjusting the
+ * existing value rather than starting blank. Returns "" if nothing
+ * resolves. Never empty-vs-nullptr ambiguous -- always a valid C string. */
+const char *rule_edit_current_argument_text(GameState *state, const EditorState *editor_state);
+
+/* Completes one RULE_EDIT_FIELD_ARGUMENT or RULE_EDIT_FIELD_SECOND_ARGUMENT
+ * step with the chosen text (from either the fuzzy finder's picked item or
+ * the word builder's finished buffer). If the gesture needs a further step
+ * (a two-arg action's second_argument, or a comparison condition's
+ * compare_value), stages the text and opens that next step; otherwise
+ * commits the whole staged gesture to the real rule data, pushes an undo
+ * entry, and returns to EDITOR_SUB_RULE_TREE. Always sets
+ * editor_state->sub_mode itself -- callers must not also assign it. */
+void rule_edit_argument_step_complete(GameState *state,
+                                      EditorState *editor_state,
+                                      UndoHistory *undo_history,
+                                      const char *text);
+
+/* Completes the standalone RULE_EDIT_FIELD_FOR_EACH_BIND step: writes
+ * `text` into the focused for_each node's second_argument (the loop's bind
+ * name) only -- type/argument/conditions are untouched, unlike the
+ * TYPE-radial-driven chain above. Pushes an undo entry. */
+void commit_rule_for_each_bind(GameState *state,
+                               EditorState *editor_state,
+                               UndoHistory *undo_history,
+                               const char *text);
+
+/* Drives the standalone RULE_EDIT_FIELD_REPEAT_COUNT / COMPARE_VALUE
+ * numeric sessions from EDITOR_SUB_ATTR_EDIT (called from attr.c's
+ * handle_attr_edit_input once it sees one of those two field tags). Mirrors
+ * attr.c's own handle_child_offset_edit shape (hold/accelerate via the
+ * exported read_value_delta/read_held_dir/reset_attr_hold, CONFIRM commits,
+ * CANCEL discards) but stages purely in editor_state->saved_attr_int and
+ * only writes the real condition/node field on CONFIRM, so CANCEL never
+ * mutates -- see RuleEditField's doc comment (editor/editor.h). */
+void handle_rule_numeric_edit_input(
+    GameState *state, EditorState *editor_state, UndoHistory *undo_history, const InputState *input, float delta_time);

@@ -11,7 +11,10 @@
 
 #define RADIX_DECIMAL 10
 
-static int read_value_delta(const InputState *input, const BindingStore *bindings)
+/* Exported (internal.h) for editor/rule.c's handle_rule_numeric_edit_input --
+ * see that header's doc comment for why the hold/accelerate loop itself is
+ * duplicated there rather than sharing more than these three pieces. */
+int read_value_delta(const InputState *input, const BindingStore *bindings)
 {
     int delta = 0;
     if (input_pressed(input, bindings, ACTION_ATTR_DEC_10)) {
@@ -29,7 +32,7 @@ static int read_value_delta(const InputState *input, const BindingStore *binding
     return delta;
 }
 
-static int read_held_dir(const InputState *input, const BindingStore *bindings)
+int read_held_dir(const InputState *input, const BindingStore *bindings)
 {
     if (input_held(input, bindings, ACTION_ATTR_DEC_1)) {
         return -1;
@@ -276,7 +279,7 @@ static void apply_attr_delta(GameState *state, EditorState *editor_state, int de
     }
 }
 
-static void reset_attr_hold(EditorState *editor_state)
+void reset_attr_hold(EditorState *editor_state)
 {
     editor_state->attr_hold_total = 0.0F;
     editor_state->attr_hold_subtick = 0.0F;
@@ -341,6 +344,17 @@ static void attr_edit_confirm(GameState *state, EditorState *editor_state, UndoH
 void handle_attr_edit_input(
     GameState *state, EditorState *editor_state, UndoHistory *undo_history, const InputState *input, float delta_time)
 {
+    /* Rule mode's standalone repeat-count / condition-compare_value
+     * numeric leaf edits (S5.6b) borrow this submode too -- routed to a
+     * dedicated editor/rule.c handler rather than growing this function's
+     * own branches, since neither field is an Attribute or a
+     * BlueprintChild offset (see handle_rule_numeric_edit_input's doc
+     * comment, editor/internal.h). */
+    if (editor_state->rule_edit_field == RULE_EDIT_FIELD_REPEAT_COUNT ||
+        editor_state->rule_edit_field == RULE_EDIT_FIELD_COMPARE_VALUE) {
+        handle_rule_numeric_edit_input(state, editor_state, undo_history, input, delta_time);
+        return;
+    }
     if (editor_state->editing_child_offset) {
         handle_child_offset_edit(state, editor_state, undo_history, input, delta_time);
         return;

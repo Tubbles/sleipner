@@ -101,6 +101,14 @@ typedef enum {
     RADIAL_CTX_TOOLS,
     RADIAL_CTX_ATTR_TYPE,   /* Float / Int / Bool / String — 4 items */
     RADIAL_CTX_CHILD_PROPS, /* Tag / Offset X / Offset Y — 3 items */
+    /* Rule mode leaf editing (S5.6b, editor/rule.c). Each maps its radial
+     * index directly onto the corresponding enum's declaration order in
+     * rule.h (TriggerType/ConditionType/ActionType), so no separate
+     * order table is needed — see RULE_TRIGGER_TYPE_COUNT /
+     * RULE_CONDITION_TYPE_COUNT / RULE_ACTION_TYPE_COUNT (editor/internal.h). */
+    RADIAL_CTX_TRIGGER_TYPE,   /* TriggerType — 10 items */
+    RADIAL_CTX_CONDITION_TYPE, /* ConditionType — 9 items */
+    RADIAL_CTX_ACTION_TYPE,    /* ActionType (non-control-flow prefix) — 22 items */
 } RadialContext;
 
 typedef enum {
@@ -178,6 +186,23 @@ typedef enum {
     EDITOR_ATTR_SEL_NAMED, /* selected_attr_name identifies a live attribute in selected_attr_section */
     EDITOR_ATTR_SEL_ADD,   /* selected the ADD sentinel row of selected_attr_section */
 } EditorAttrSelKind;
+
+/* Which step of a Rule mode leaf-edit gesture (S5.6b, editor/rule.c) is
+ * currently in flight. The whole gesture (type, then argument, then maybe
+ * a second argument or compare_value) is staged in EditorState.rule_edit_*
+ * below and only committed to the real rule/condition/node once the last
+ * needed step confirms — so CANCEL at any point leaves the original data
+ * untouched, even mid-chain. NONE must be the zero value so a reset
+ * EditorState has no rule edit pending. */
+typedef enum {
+    RULE_EDIT_FIELD_NONE,
+    RULE_EDIT_FIELD_TYPE,            /* trigger/condition/action TYPE radial is open */
+    RULE_EDIT_FIELD_ARGUMENT,        /* primary argument/target text entry is open */
+    RULE_EDIT_FIELD_SECOND_ARGUMENT, /* action's second_argument text entry, as the tail of a type+argument chain */
+    RULE_EDIT_FIELD_FOR_EACH_BIND,   /* standalone: only a for_each node's bind name changes, type/argument untouched */
+    RULE_EDIT_FIELD_COMPARE_VALUE,   /* condition's compare_value, as the tail of a type+argument chain */
+    RULE_EDIT_FIELD_REPEAT_COUNT,    /* standalone: only a repeat node's count changes */
+} RuleEditField;
 
 typedef struct {
     EditorTopMode top_mode;
@@ -287,6 +312,30 @@ typedef struct {
     int rule_blueprint_scroll;
     int rule_list_scroll;
     int rule_tree_row;
+    /* Generic return target for the shared transient-picker submodes
+     * (RADIAL/WORD_BUILDER/FUZZY_FINDER/ATTR_EDIT): the sub_mode to
+     * restore once the picker closes. Needed because those submodes are
+     * reused from top modes whose own "resting" state is not
+     * EDITOR_SUB_BROWSE (Rule mode's EDITOR_SUB_RULE_TREE, S5.6b).
+     * Defaults to EDITOR_SUB_BROWSE (the zero value), matching every
+     * pre-existing call site, which already assumed BROWSE implicitly and
+     * never sets this field. Rule mode's step-opening helpers
+     * (editor/rule.c) set it to EDITOR_SUB_RULE_TREE before opening a
+     * picker; every consumer resets it back to EDITOR_SUB_BROWSE right
+     * after reading it, so it never leaks into an unrelated later
+     * picker session. */
+    EditorSubMode return_sub_mode;
+    /* Rule mode leaf editing (S5.6b, editor/rule.c). rule_edit_field
+     * drives which shared submode's completion routes where; the pending_*
+     * fields stage the in-flight gesture's choices (see RuleEditField's
+     * doc comment above) until the gesture's last step commits them
+     * atomically. rule_edit_pending_type is an int rather than one of
+     * TriggerType/ConditionType/ActionType because its meaning depends on
+     * the focused row's kind (rule_tree_row), re-derived at commit time. */
+    RuleEditField rule_edit_field;
+    int rule_edit_pending_type;
+    char rule_edit_pending_argument[EDITOR_ATTR_NAME_MAX];
+    char rule_edit_pending_second_argument[EDITOR_ATTR_NAME_MAX];
 } EditorState;
 
 typedef struct {
@@ -382,7 +431,10 @@ void handle_anim_edit_input(GameState *state,
 void handle_anim_frames_input(GameState *state, EditorState *editor_state, const InputState *input);
 void draw_anim_panel(ScreenSize screen, const GameState *state, const EditorState *editor_state);
 void handle_rule_list_input(GameState *state, EditorState *editor_state, const InputState *input);
-void handle_rule_tree_input(GameState *state, EditorState *editor_state, const InputState *input);
+void handle_rule_tree_input(GameState *state,
+                            EditorState *editor_state,
+                            UndoHistory *undo_history,
+                            const InputState *input);
 /* Non-const state (unlike its sibling draw_*_panel functions): the tree view
  * flattens the rule's action tree into a scratch-arena buffer to render it
  * (see rule_tree_flatten, editor/rule.c), which needs a mutable Arena. The
