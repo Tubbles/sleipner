@@ -80,9 +80,10 @@ typedef struct {
     int index_in_section;
 } AttrRow;
 
-/* Row layout helpers. Top-level entities have three sections (persisted,
- * runtime, blueprint), child entities skip persisted. Each section ends in
- * its own ADD sentinel row. */
+/* Row layout helpers. Every entity, root or child, has three sections
+ * (persisted, runtime, blueprint). Child persisted attrs round-trip through
+ * [level.entity.children.<tag>] (S3.3a). Each section ends in its own ADD
+ * sentinel row. */
 int total_attr_count(const GameState *state, const Entity *entity);
 bool entity_has_persisted_section(const Entity *entity);
 AttrRow attr_row_at(const GameState *state, const Entity *entity, int attr_index);

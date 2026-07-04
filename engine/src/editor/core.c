@@ -24,10 +24,13 @@ Blueprint *find_blueprint_by_name(GameState *state, const char *name)
 
 bool entity_has_persisted_section(const Entity *entity)
 {
-    return entity->parent_index < 0;
+    (void)entity;
+    return true;
 }
 
-/* Row layout: each section is [attrs...][ADD sentinel]. Children skip persisted. */
+/* Row layout: each section is [attrs...][ADD sentinel]. Every entity (root or
+ * child) has a persisted section, since S3.3a gave child persisted attrs a
+ * TOML round-trip via [level.entity.children.<tag>]. */
 int total_attr_count(const GameState *state, const Entity *entity)
 {
     const AttrSet *defaults = entity_resolve_defaults(state, entity->id);

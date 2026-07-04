@@ -88,8 +88,9 @@ typedef enum {
 
 /* The editor attr panel for an entity is split into three sections:
  * persisted (saved to TOML), runtime (live read path, mutated by rules),
- * and blueprint (shared defaults from the blueprint table). Child entities
- * hide the persisted section — they have no TOML representation in v1.
+ * and blueprint (shared defaults from the blueprint table). Child persisted
+ * attrs round-trip through [level.entity.children.<tag>] (S3.3a), so child
+ * entities show the persisted section too.
  * Part of EditorState's stable attr-selection identity below, so it lives
  * in the public editor header rather than editor/internal.h. */
 typedef enum {

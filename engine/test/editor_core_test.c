@@ -198,18 +198,45 @@ void test_editor_total_attr_count_top_level_with_blueprint(void)
     vec_blueprint_free(&state.gamedata.blueprints.entries);
 }
 
-/* Child entity: skips persisted section → runtime(N)+ADD + blueprint(N)+ADD. */
-void test_editor_total_attr_count_child_skips_persisted(void)
+/* Child entity: has a persisted section same as root (S3.3a round-trips
+ * child persisted attrs through TOML), even with zero persisted attrs set:
+ * persisted(0)+ADD + runtime(N)+ADD + blueprint(N)+ADD. */
+void test_editor_total_attr_count_child_includes_persisted(void)
 {
     GameState state = {0};
     Entity entity = {.parent_index = 0};
     TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, &entity.attrs, "speed", 10));
     entity_resolve_defaults_fake.return_val = nullptr;
 
-    /* runtime(1)+1 + blueprint(0)+1 = 3 */
-    TEST_ASSERT_EQUAL_INT(3, total_attr_count(&state, &entity));
+    /* persisted(0)+1 + runtime(1)+1 + blueprint(0)+1 = 4 */
+    TEST_ASSERT_EQUAL_INT(4, total_attr_count(&state, &entity));
 
     test_attr_set_free_local(&entity.attrs);
+}
+
+/* Child entity with an actual persisted attr set: total_attr_count reflects
+ * it, and attr_row_at exposes it (+ its ADD row) under ATTR_SECTION_PERSISTED
+ * the same way it does for a root entity. */
+void test_editor_total_attr_count_child_with_persisted_attr(void)
+{
+    GameState state = {0};
+    Entity entity = {.parent_index = 3};
+    TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, &entity.persisted_attrs, "hp", 42));
+    entity_resolve_defaults_fake.return_val = nullptr;
+
+    /* persisted(1)+1 + runtime(0)+1 + blueprint(0)+1 = 4 */
+    TEST_ASSERT_EQUAL_INT(4, total_attr_count(&state, &entity));
+
+    AttrRow row = attr_row_at(&state, &entity, 0);
+    TEST_ASSERT_EQUAL_INT(ATTR_ROW_KIND_ATTR, row.kind);
+    TEST_ASSERT_EQUAL_INT(ATTR_SECTION_PERSISTED, row.section);
+    TEST_ASSERT_EQUAL_INT(0, row.index_in_section);
+
+    row = attr_row_at(&state, &entity, 1);
+    TEST_ASSERT_EQUAL_INT(ATTR_ROW_KIND_ADD, row.kind);
+    TEST_ASSERT_EQUAL_INT(ATTR_SECTION_PERSISTED, row.section);
+
+    test_attr_set_free_local(&entity.persisted_attrs);
 }
 
 /* ---- is_blueprint_attr -------------------------------------------------- */
@@ -382,8 +409,11 @@ void test_editor_attr_row_at_walks_sections(void)
     test_blueprint_table_free_local(&state.gamedata.blueprints);
 }
 
-/* Child entity: no persisted section, first row is runtime attr 0. */
-void test_editor_attr_row_at_child_starts_at_runtime(void)
+/* Child entity with no persisted attrs set: the persisted section still
+ * appears as its own ADD sentinel row before runtime, same as root.
+ * Layout: [0]=persisted ADD, [1]=runtime attr 0, [2]=runtime ADD,
+ * [3]=blueprint ADD. */
+void test_editor_attr_row_at_child_includes_persisted_add(void)
 {
     GameState state = {0};
     Entity entity = {.parent_index = 0};
@@ -391,15 +421,19 @@ void test_editor_attr_row_at_child_starts_at_runtime(void)
     entity_resolve_defaults_fake.return_val = nullptr;
 
     AttrRow row = attr_row_at(&state, &entity, 0);
+    TEST_ASSERT_EQUAL_INT(ATTR_ROW_KIND_ADD, row.kind);
+    TEST_ASSERT_EQUAL_INT(ATTR_SECTION_PERSISTED, row.section);
+
+    row = attr_row_at(&state, &entity, 1);
     TEST_ASSERT_EQUAL_INT(ATTR_ROW_KIND_ATTR, row.kind);
     TEST_ASSERT_EQUAL_INT(ATTR_SECTION_RUNTIME, row.section);
     TEST_ASSERT_EQUAL_INT(0, row.index_in_section);
 
-    row = attr_row_at(&state, &entity, 1);
+    row = attr_row_at(&state, &entity, 2);
     TEST_ASSERT_EQUAL_INT(ATTR_ROW_KIND_ADD, row.kind);
     TEST_ASSERT_EQUAL_INT(ATTR_SECTION_RUNTIME, row.section);
 
-    row = attr_row_at(&state, &entity, 2);
+    row = attr_row_at(&state, &entity, 3);
     TEST_ASSERT_EQUAL_INT(ATTR_ROW_KIND_ADD, row.kind);
     TEST_ASSERT_EQUAL_INT(ATTR_SECTION_BLUEPRINT, row.section);
 
@@ -777,14 +811,15 @@ int main(void)
     RUN_TEST(test_editor_find_blueprint_by_name_empty_table);
     RUN_TEST(test_editor_total_attr_count_top_level_no_blueprint);
     RUN_TEST(test_editor_total_attr_count_top_level_with_blueprint);
-    RUN_TEST(test_editor_total_attr_count_child_skips_persisted);
+    RUN_TEST(test_editor_total_attr_count_child_includes_persisted);
+    RUN_TEST(test_editor_total_attr_count_child_with_persisted_attr);
     RUN_TEST(test_editor_is_blueprint_attr_false_for_runtime);
     RUN_TEST(test_editor_is_blueprint_attr_true_for_blueprint_section);
     RUN_TEST(test_editor_attr_at_display_index_runtime);
     RUN_TEST(test_editor_attr_at_display_index_blueprint);
     RUN_TEST(test_editor_attr_at_display_index_out_of_range);
     RUN_TEST(test_editor_attr_row_at_walks_sections);
-    RUN_TEST(test_editor_attr_row_at_child_starts_at_runtime);
+    RUN_TEST(test_editor_attr_row_at_child_includes_persisted_add);
     RUN_TEST(test_editor_mark_deleted_root_marks_child);
     RUN_TEST(test_editor_mark_deleted_chain);
     RUN_TEST(test_editor_mark_deleted_sibling_untouched);
