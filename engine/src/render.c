@@ -1,4 +1,5 @@
 #include "render.h"
+#include "collision.h"
 #include "particle.h"
 #include "rect.h"
 #include "shape.h"
@@ -103,6 +104,45 @@ void render_shape(ShapeKind kind, Vector2 pos, float rotation, float scale, Colo
         break;
     default:
         break;
+    }
+}
+
+static void draw_rect_prim_outline(Vector2 center, const CollisionPrimitive *prim, Color color)
+{
+    Vector2 corners[4];
+    obb_corners(center, prim->angle_offset, prim->rect.half_w, prim->rect.half_h, corners);
+    for (int index = 0; index < 4; index++) {
+        DrawLineV(corners[index], corners[(index + 1) % 4], color);
+    }
+}
+
+static void draw_triangle_prim_outline(Vector2 base, const CollisionPrimitive *prim, Color color)
+{
+    Vector2 verts[3];
+    for (int index = 0; index < 3; index++) {
+        verts[index] = (Vector2){base.x + prim->triangle.verts[index].x, base.y + prim->triangle.verts[index].y};
+    }
+    DrawLineV(verts[0], verts[1], color);
+    DrawLineV(verts[1], verts[2], color);
+    DrawLineV(verts[2], verts[0], color);
+}
+
+void render_collision_shape_outline(CollisionShape shape, Vector2 entity_pos, Color color)
+{
+    for (int index = 0; index < shape.prims.count; index++) {
+        const CollisionPrimitive *prim = &shape.prims.data[index];
+        Vector2 center = {entity_pos.x + prim->offset.x, entity_pos.y + prim->offset.y};
+        switch (prim->kind) {
+        case COLLIDER_RECT:
+            draw_rect_prim_outline(center, prim, color);
+            break;
+        case COLLIDER_CIRCLE:
+            DrawCircleLinesV(center, prim->circle.radius, color);
+            break;
+        case COLLIDER_TRIANGLE:
+            draw_triangle_prim_outline(center, prim, color);
+            break;
+        }
     }
 }
 

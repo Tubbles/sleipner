@@ -52,6 +52,10 @@ FAKE_VALUE_FUNC(Vector2, blueprint_get_collision_offset, const Blueprint *);
 FAKE_VALUE_FUNC(Vector2, blueprint_get_collision_size, const Blueprint *);
 FAKE_VALUE_FUNC(const AttrSet *, entity_resolve_defaults, const GameState *, int);
 FAKE_VALUE_FUNC(const Blueprint *, blueprint_find, const BlueprintTable *, const char *);
+/* render.c: draw_collision_handles now visualizes every collision_region/
+ * trigger_region primitive (D28), but the render-only tests below never
+ * exercise it — this fake exists purely to satisfy the linker. */
+FAKE_VOID_FUNC(render_collision_shape_outline, CollisionShape, Vector2, Color);
 
 /* Cross-file editor fakes (functions from other editor split files) */
 FAKE_VALUE_FUNC(int, total_attr_count, const GameState *, const Entity *);

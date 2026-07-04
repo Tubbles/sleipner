@@ -40,6 +40,7 @@ const char *__lsan_default_suppressions(void)
 #include "audio.h"
 #include "blueprint.h"
 #include "blur.h"
+#include "collision.h"
 #include "debug.h"
 #include "depth_sort.h"
 #include "editor/editor.h"
@@ -243,25 +244,36 @@ static void draw_background_tiles(Texture2D texture, RectU32 bounds, Color tint)
     }
 }
 
+/* Per-entity collision_region (green) and trigger_region (yellow) outlines,
+ * drawn primitive-by-primitive instead of a single AABB — see D28. trigger_
+ * region draws only when an authored composite trigger shape is present
+ * (entity->trigger_region.prims.count > 0): the runtime fallback to the
+ * physical collision body (entity_trigger_region) is deliberately not drawn
+ * here, since it would duplicate the green outline on every entity. */
+static void draw_entity_collision_regions(const GameState *state, const Entity *entity)
+{
+    const AttrSet *defaults = entity_resolve_defaults(state, entity->id);
+    CollisionPrimitive prim_storage;
+    CollisionShape collision_shape = entity_collision_region(entity, defaults, &prim_storage);
+    render_collision_shape_outline(collision_shape, entity->position, GREEN);
+    if (entity->trigger_region.prims.count > 0) {
+        render_collision_shape_outline(entity->trigger_region, entity->position, YELLOW);
+    }
+}
+
 static void draw_debug_collision_boxes(const GameState *state, const Level *level, int player_index)
 {
-    /* Player collision box (green) + sprite bounds (yellow) */
+    for (int index = 0; index < level->entities.count; index++) {
+        draw_entity_collision_regions(state, &level->entities.data[index]);
+    }
+
+    /* Player sprite bounds (gray) — distinct from the trigger_region yellow */
     if (player_index >= 0 && player_index < level->entities.count) {
         const Entity *player = &level->entities.data[player_index];
         const AttrSet *defaults = entity_resolve_defaults(state, player->id);
-        DrawRectangleLinesEx(entity_collision_rect(player, defaults), 1, GREEN);
         Vector2 draw_pos = entity_draw_position(player, defaults);
         Rectangle sprite = {draw_pos.x, draw_pos.y, FRAME_SIZE, FRAME_SIZE};
-        DrawRectangleLinesEx(sprite, 1, YELLOW);
-    }
-
-    /* Entity collision boxes (red) */
-    for (int index = 0; index < level->entities.count; index++) {
-        if (index == player_index) {
-            continue;
-        }
-        const AttrSet *defaults = entity_resolve_defaults(state, level->entities.data[index].id);
-        DrawRectangleLinesEx(entity_collision_rect(&level->entities.data[index], defaults), 1, RED);
+        DrawRectangleLinesEx(sprite, 1, GRAY);
     }
 
     /* Position dots (white) for all entities */

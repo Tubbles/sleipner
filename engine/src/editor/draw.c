@@ -1,5 +1,10 @@
 #include "editor/internal.h"
 
+#include "collision.h"
+#include "entity.h"
+#include "raylib.h"
+#include "render.h"
+
 #include <stdio.h>
 #include <string.h>
 
@@ -464,6 +469,18 @@ void draw_collision_handles(const GameState *state, const EditorState *editor_st
     }
     const Entity *handle_entity = &state->gamedata.current_level.entities.data[sel];
     const AttrSet *handle_defaults = entity_resolve_defaults(state, handle_entity->id);
+
+    /* All primitives of both regions (D28), same green/yellow scheme as the
+     * debug overlay (draw_debug_collision_boxes in main.c). trigger_region
+     * only draws when an authored composite trigger shape is present — see
+     * that function's comment for why the runtime fallback isn't drawn. */
+    CollisionPrimitive prim_storage;
+    CollisionShape collision_shape = entity_collision_region(handle_entity, handle_defaults, &prim_storage);
+    render_collision_shape_outline(collision_shape, handle_entity->position, GREEN);
+    if (handle_entity->trigger_region.prims.count > 0) {
+        render_collision_shape_outline(handle_entity->trigger_region, handle_entity->position, YELLOW);
+    }
+
     Rectangle col = entity_collision_rect(handle_entity, handle_defaults);
     DrawRectangleLinesEx(col, 2.0F, handle_color);
     int half = EDITOR_HANDLE_SIZE / 2;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "raylib.h"
+#include "collision.h"
 #include "particle.h"
 #include "rect.h"
 #include "shape.h"
@@ -8,6 +9,13 @@
 void render_background(RectU32 bounds);
 void render_shape(ShapeKind kind, Vector2 pos, float rotation, float scale, Color color);
 void render_particles(const Particle *particles, int count);
+
+/* Draw an outline for every primitive in shape (RECT/CIRCLE/TRIANGLE), each
+ * positioned at entity_pos + primitive.offset (offsets are relative to the
+ * entity center per collision.h). Used by both the debug overlay and the
+ * editor to visualize collision_region/trigger_region primitives directly,
+ * instead of a single AABB. Purely a draw call — no game-state side effect. */
+void render_collision_shape_outline(CollisionShape shape, Vector2 entity_pos, Color color);
 
 /* Sub-pixel camera split used by the gameplay render's upscale blit.
  * integer_target is the pixel-perfect Camera2D.target for the low-res
