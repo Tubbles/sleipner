@@ -11,6 +11,7 @@ static Diag test_diag = {&test_err, &test_dbg};
 #include "test_helpers.h"
 #include "arena.h"
 #include "input_func.h"
+#include "rule.h"
 #include "toml.h"
 
 #include <stdio.h>
@@ -582,6 +583,93 @@ void test_toml_emit_rules(void)
     TEST_ASSERT_EQUAL_INT(2, rule->action_tree.nodes.count);
     TEST_ASSERT_EQUAL_INT(ACTION_SET_FLAG, rule->action_tree.nodes.data[0].type);
     TEST_ASSERT_EQUAL_INT(ACTION_DESTROY, rule->action_tree.nodes.data[1].type);
+
+    arena_free(&arena);
+    arena_free(&arena2);
+}
+
+/* Three levels of control-flow nesting: if -> then=[repeat] -> do=[for_each]
+ * -> do=["destroy"]. Regression fixture for F25 (nested control flow inside
+ * a control-flow child silently dropped by the one-level-deep emitter). */
+static const char *nested_control_flow_fixture =
+    "[[blueprint]]\n"
+    "name = \"spawner\"\n"
+    "texture = \"spawner.png\"\n"
+    "src = [0, 0, 16, 16]\n"
+    "collision_offset = [0, 0]\n"
+    "collision_size = [16, 16]\n"
+    "\n"
+    "[[blueprint.rule]]\n"
+    "trigger = \"interact\"\n"
+    "actions = [{ if = [\"flag:test_flag\"], then = [{ repeat = \"3\", do = [{ for_each = \"entities\", bind = "
+    "\"target\", do = [\"destroy\"] }] }] }]\n"
+    "\n"
+    "[[level]]\n"
+    "name = \"test\"\n"
+    "size = [320, 240]\n";
+
+/* Walks the known if -> repeat -> for_each -> destroy chain and asserts every
+ * level survived intact, including the deepest (4th) node. */
+static void assert_nested_control_flow_structure(const ActionTree *tree)
+{
+    TEST_ASSERT_EQUAL_INT(4, tree->nodes.count);
+    TEST_ASSERT_EQUAL_INT(1, tree->roots.count);
+
+    const ActionNode *if_node = &tree->nodes.data[tree->roots.data[0]];
+    TEST_ASSERT_EQUAL_INT(ACTION_IF_ELSE, if_node->type);
+    TEST_ASSERT_EQUAL_INT(1, if_node->conditions.count);
+    TEST_ASSERT_EQUAL_INT(1, if_node->children.count);
+
+    const ActionNode *repeat_node = &tree->nodes.data[if_node->children.data[0]];
+    TEST_ASSERT_EQUAL_INT(ACTION_REPEAT, repeat_node->type);
+    TEST_ASSERT_EQUAL_STRING("3", repeat_node->argument.ptr);
+    TEST_ASSERT_EQUAL_INT(1, repeat_node->children.count);
+
+    const ActionNode *for_each_node = &tree->nodes.data[repeat_node->children.data[0]];
+    TEST_ASSERT_EQUAL_INT(ACTION_FOR_EACH, for_each_node->type);
+    TEST_ASSERT_EQUAL_STRING("entities", for_each_node->argument.ptr);
+    TEST_ASSERT_EQUAL_STRING("target", for_each_node->second_argument.ptr);
+    TEST_ASSERT_EQUAL_INT(1, for_each_node->children.count);
+
+    const ActionNode *destroy_node = &tree->nodes.data[for_each_node->children.data[0]];
+    TEST_ASSERT_EQUAL_INT(ACTION_DESTROY, destroy_node->type);
+}
+
+void test_toml_emit_nested_control_flow_round_trip(void)
+{
+    Arena arena;
+    TEST_ASSERT_TRUE(arena_init(&test_err, &arena));
+    BlueprintTable blueprints = {0};
+
+    /* Parse original and sanity-check the fixture actually nests 3 levels deep. */
+    toml_table_t *root = parse_toml(nested_control_flow_fixture);
+    TEST_ASSERT_NOT_NULL(root);
+    blueprints_load(&test_diag, &blueprints, root, &arena);
+    toml_free(root);
+
+    TEST_ASSERT_EQUAL_INT(1, blueprints.entries.count);
+    TEST_ASSERT_EQUAL_INT(1, blueprints.entries.data[0].rules.count);
+    assert_nested_control_flow_structure(&blueprints.entries.data[0].rules.data[0].action_tree);
+
+    /* Emit, then re-parse the emitted TOML into a second tree. */
+    char output[4096];
+    Level empty_level = {0};
+    int written = toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &empty_level, 0);
+    TEST_ASSERT_TRUE(written > 0);
+
+    Arena arena2;
+    TEST_ASSERT_TRUE(arena_init(&test_err, &arena2));
+    BlueprintTable blueprints2 = {0};
+
+    toml_table_t *root2 = parse_toml(output);
+    TEST_ASSERT_NOT_NULL(root2);
+    blueprints_load(&test_diag, &blueprints2, root2, &arena2);
+    toml_free(root2);
+
+    /* The round trip must preserve the full 3-level nesting, not just the top level. */
+    TEST_ASSERT_EQUAL_INT(1, blueprints2.entries.count);
+    TEST_ASSERT_EQUAL_INT(1, blueprints2.entries.data[0].rules.count);
+    assert_nested_control_flow_structure(&blueprints2.entries.data[0].rules.data[0].action_tree);
 
     arena_free(&arena);
     arena_free(&arena2);

@@ -256,15 +256,18 @@ static int emit_simple_action_string(char *buffer, int capacity, int offset, con
     return -1; /* unknown or control-flow node */
 }
 
-/* Emit a single child ActionNode — simple actions only (no nested control flow at this depth).
- * Avoids mutual recursion between emit_action_node_inline and emit_action_nodes_inline_array. */
-static int emit_child_node_simple(char *buffer, int capacity, int offset, const ActionNode *node)
-{
-    return emit_simple_action_string(buffer, capacity, offset, node);
-}
+/* Forward declaration — emit_child_nodes_inline_array and emit_action_node_inline
+ * are mutually recursive so nested control-flow children serialise fully. */
+static int
+emit_action_node_inline(char *buffer, int capacity, int offset, const vec_action_node *pool, const ActionNode *node);
 
 /* `indices` are pool indices (ActionNode.children / else_children); resolve each
- * against `pool` before emitting. */
+ * against `pool` and recurse through emit_action_node_inline so a control-flow
+ * child (if/repeat/for_each nested inside another) emits as a nested inline
+ * table instead of being dropped. */
+// NOLINTBEGIN(misc-no-recursion) -- mutually recursive; bounded by control-flow
+// nesting depth in authored gamedata (small, finite), same rationale as the
+// executor's action_node_execute recursion (rule.c).
 static int emit_child_nodes_inline_array(
     char *buffer, int capacity, int offset, const vec_action_node *pool, const vec_int *indices)
 {
@@ -273,14 +276,14 @@ static int emit_child_nodes_inline_array(
         if (index > 0) {
             offset = emit_append(buffer, capacity, offset, ", ");
         }
-        offset = emit_child_node_simple(buffer, capacity, offset, &pool->data[indices->data[index]]);
+        offset = emit_action_node_inline(buffer, capacity, offset, pool, &pool->data[indices->data[index]]);
     }
     return emit_append(buffer, capacity, offset, "]");
 }
 
-/* Emit a top-level action node: simple actions as quoted strings, control flow as inline tables.
- * Control-flow children are serialised with emit_child_nodes_inline_array (one level deep only)
- * to avoid mutual recursion flagged by misc-no-recursion. */
+/* Emit an action node: simple actions as quoted strings, control flow as inline tables.
+ * Control-flow children are serialised recursively via emit_child_nodes_inline_array,
+ * so nesting depth is unlimited (bounded only by what the gamedata author writes). */
 static int
 emit_action_node_inline(char *buffer, int capacity, int offset, const vec_action_node *pool, const ActionNode *node)
 {
@@ -316,6 +319,7 @@ emit_action_node_inline(char *buffer, int capacity, int offset, const vec_action
         return emit_simple_action_string(buffer, capacity, offset, node);
     }
 }
+// NOLINTEND(misc-no-recursion)
 
 /* Emits the tree's top-level actions, resolving each root index against the flat node pool. */
 static int emit_action_nodes_inline_array(char *buffer, int capacity, int offset, const ActionTree *tree)
