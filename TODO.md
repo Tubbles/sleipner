@@ -27,9 +27,12 @@
   may have no blueprint), so a null handle would be a code smell. Prefer options
   1 or 4 here.
 - **AttrSet value type rethink** — consider what AttrValue should support beyond
-  float/int/bool/string: entity handles, blueprint handles? Current int↔float
-  coercion in `attr_get_scoped_*` silently papers over type mismatches — should
-  probably be strict, with the parser deciding canonical types.
+  float/int/bool/string: entity handles, blueprint handles? (D15:
+  `attr_get_scoped_int` is now strict, returning the fallback on a float-typed
+  attribute instead of truncating; `attr_get_scoped_float`'s int-to-float
+  promotion is intentional and documented in `attribute.c`. Deferred per D15:
+  per-key `debug_log` on mismatch, since the getter is a pure hot-path
+  function with no `DebugState` to thread through.)
 
 ## Editor: missing top-level modes
 

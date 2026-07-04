@@ -178,6 +178,7 @@ void test_attr_get_scoped_int(void)
 {
     AttrSet blueprint = {0};
     TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, &blueprint, "health", 100));
+    TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, &blueprint, "shield", 25));
     TEST_ASSERT_TRUE(attr_set_float(&test_heap_alloc, &blueprint, "level", 3.0F));
 
     AttrSet instance = {0};
@@ -186,11 +187,16 @@ void test_attr_get_scoped_int(void)
     /* Instance overrides */
     TEST_ASSERT_EQUAL_INT(50, attr_get_scoped_int(&instance, &blueprint, "health", 0));
 
-    /* Falls back to blueprint */
+    /* Instance misses, defaults hit (int-typed) */
+    TEST_ASSERT_EQUAL_INT(25, attr_get_scoped_int(&instance, &blueprint, "shield", 0));
+
+    /* Missing in both returns fallback */
     TEST_ASSERT_EQUAL_INT(100, attr_get_scoped_int(&instance, &blueprint, "mana", 100));
 
-    /* Float-to-int coercion from blueprint */
-    TEST_ASSERT_EQUAL_INT(3, attr_get_scoped_int(&instance, &blueprint, "level", 0));
+    /* Type mismatch: level is float-typed, so the int getter returns the
+     * fallback instead of truncating (D15). This assertion is the one that
+     * fails against the old (int)value.f truncation behavior. */
+    TEST_ASSERT_EQUAL_INT(7, attr_get_scoped_int(&instance, &blueprint, "level", 7));
 
     attr_set_free(&test_heap_alloc, &blueprint);
     attr_set_free(&test_heap_alloc, &instance);
@@ -201,6 +207,7 @@ void test_attr_get_scoped_bool(void)
     AttrSet blueprint = {0};
     TEST_ASSERT_TRUE(attr_set_bool(&test_heap_alloc, &blueprint, "visible", false));
     TEST_ASSERT_TRUE(attr_set_bool(&test_heap_alloc, &blueprint, "solid", true));
+    TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, &blueprint, "level", 3));
 
     AttrSet instance = {0};
     TEST_ASSERT_TRUE(attr_set_bool(&test_heap_alloc, &instance, "visible", true));
@@ -213,6 +220,10 @@ void test_attr_get_scoped_bool(void)
 
     /* Missing returns fallback */
     TEST_ASSERT_FALSE(attr_get_scoped_bool(&instance, &blueprint, "active", false));
+
+    /* Type mismatch: level is int-typed, so the bool getter returns the
+     * fallback rather than coercing a non-zero int to true. */
+    TEST_ASSERT_FALSE(attr_get_scoped_bool(&instance, &blueprint, "level", false));
 
     attr_set_free(&test_heap_alloc, &blueprint);
     attr_set_free(&test_heap_alloc, &instance);

@@ -182,6 +182,9 @@ float attr_get_scoped_float(const AttrSet *instance, const AttrSet *defaults, co
     if (entry->type == ATTR_FLOAT) {
         return entry->value.f;
     }
+    /* Int-to-float promotion is intentional: it is lossless-ish (safe for the
+     * attribute ranges this engine deals with) and callers commonly rely on
+     * reading an int-typed attr through the float getter. */
     if (entry->type == ATTR_INT) {
         return (float)entry->value.i;
     }
@@ -197,15 +200,18 @@ int attr_get_scoped_int(const AttrSet *instance, const AttrSet *defaults, const 
     if (entry->type == ATTR_INT) {
         return entry->value.i;
     }
-    if (entry->type == ATTR_FLOAT) {
-        return (int)entry->value.f;
-    }
+    /* Reading an int from a float-typed attribute is a type mismatch, not a
+     * safe coercion: the parser assigns canonical types from the TOML
+     * literal, so a float here means the author really wrote a float.
+     * Return the fallback instead of silently truncating. */
     return fallback;
 }
 
 bool attr_get_scoped_bool(const AttrSet *instance, const AttrSet *defaults, const char *name, bool fallback)
 {
     const Attribute *entry = attr_get_scoped(instance, defaults, name);
+    /* Already strict: any non-bool type (including numeric ones) falls
+     * through to the fallback rather than being coerced. */
     if (entry && entry->type == ATTR_BOOL) {
         return entry->value.b;
     }
