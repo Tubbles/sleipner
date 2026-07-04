@@ -239,7 +239,8 @@ bool test_game_setup_with_level(TestGame *out, const char *toml_string, const ch
                                       .radial_selected = -1,
                                       .selected_blueprint_index = -1,
                                       .blueprint_attr_index = -1,
-                                      .blueprint_tree_index = -1};
+                                      .blueprint_tree_index = -1,
+                                      .atlas_texture_index = -1};
     out->editor_camera = (Camera2D){.zoom = 1.0F};
     out->frame_ctx = (FrameContext){
         .editor_state = &out->editor_state,

@@ -174,6 +174,10 @@ void handle_editor_input(Diag *diag,
         handle_tile_paint_input(state, editor_state, undo_history, &input);
     } else if (editor_state->sub_mode == EDITOR_SUB_TILE_PALETTE) {
         handle_tile_palette_input(editor_state, &state->gamedata.tileset, &input, &state->bindings);
+    } else if (editor_state->sub_mode == EDITOR_SUB_ATLAS_BROWSE) {
+        handle_atlas_browse_input(state, camera, editor_state, &input);
+    } else if (editor_state->sub_mode == EDITOR_SUB_ATLAS_REGION_EDIT) {
+        handle_atlas_region_edit_input(state, editor_state, undo_history, input, delta_time);
     } else if (editor_state->top_mode == EDITOR_TOP_BLUEPRINT) {
         handle_blueprint_browse_input(state, editor_state, undo_history, &input);
     } else if (editor_state->top_mode == EDITOR_TOP_LEVEL) {

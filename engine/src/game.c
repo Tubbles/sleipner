@@ -29,6 +29,13 @@
 
 #define TOML_ERRBUF_SIZE 200
 
+/* Moved here from main.c (S5.4b) so headless tests can seed
+ * state->assets.textures directly: main.c isn't linked into the test
+ * binary, so a VEC_IMPL only there means no test TU can ever push a
+ * TextureEntry. game.c already owns texture_registry_lookup, which reads
+ * the same vec, so this is the natural home. */
+VEC_IMPL(texture_entry, TextureEntry)
+
 bool game_init(Diag *diag, GameState *state, RectU32 game_bounds)
 {
     /* Callers must zero-initialize state before calling game_init.

@@ -53,12 +53,18 @@ tables.
   still open — the file format already stores plain concrete tile ids, so
   autotiling would live entirely in the editor's placement logic with no
   further engine-side changes. Not attempted in S5.3b.
-- **Atlas mode** (§27, D37) — S5.4a shipped the engine-side named-atlas-region
-  system (`[[atlas.region]]` parse/emit, `atlas.h`/`atlas.c`, blueprint
-  `sprite = "name"` resolution). Still open: the editor mode itself
-  (S5.4b) — `EDITOR_SUB_ATLAS_BROWSE`, `EDITOR_SUB_ATLAS_REGION_EDIT`
-  (source-rect drag, like HANDLES but on the atlas image), and authoring
-  `sprite = "name"` on a blueprint from within the editor.
+- **Atlas mode fuzzy-finder integration** (§27, D37) — S5.4a shipped the
+  engine-side named-atlas-region system; S5.4b shipped the editor mode
+  (`EDITOR_SUB_ATLAS_BROWSE`, `EDITOR_SUB_ATLAS_REGION_EDIT`,
+  `editor/atlas.c`): browse textures from the runtime registry, list/create
+  named regions per texture, drag-set a region's `src` via the same
+  dual-stick math as HANDLES. Authoring `sprite = "name"` on a blueprint
+  already works today through the generic string-attribute system (ADD ->
+  word builder, no new code needed) but the fuzzy finder
+  (`fuzzy_finder_build_items`, `editor/widgets.c`) doesn't yet suggest
+  existing atlas region names as candidates when picking that value, so
+  there's no autocomplete/browse-by-name for it — purely additive UX, not a
+  round-trip gap.
 - **Animation mode** (§28) — `EDITOR_SUB_ANIM_FRAMES` (scrub),
   `EDITOR_SUB_ANIM_EDIT` (frame count / speed via the existing value
   adjuster).

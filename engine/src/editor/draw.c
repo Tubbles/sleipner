@@ -105,6 +105,10 @@ static const EditorHintTable *hints_table_for(bool editor_mode, const EditorStat
         return tile_paint_hints_table();
     case EDITOR_SUB_TILE_PALETTE:
         return tile_palette_hints_table();
+    case EDITOR_SUB_ATLAS_BROWSE:
+        return atlas_browse_hints_table();
+    case EDITOR_SUB_ATLAS_REGION_EDIT:
+        return atlas_region_edit_hints_table();
     case EDITOR_SUB_BROWSE:
         if (editor_state->top_mode == EDITOR_TOP_BLUEPRINT) {
             return editor_state->selected_blueprint_index >= 0 ? blueprint_detail_hints_table()

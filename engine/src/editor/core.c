@@ -606,6 +606,19 @@ static void enter_tile_mode(GameState *state, EditorState *editor_state)
     }
 }
 
+/* Entering Atlas mode from the Tools radial: mirrors enter_tile_mode's
+ * split-out-for-complexity rationale. atlas_texture_index = -1 lands on
+ * the texture-picker view (see editor/atlas.c). */
+static void enter_atlas_mode(EditorState *editor_state)
+{
+    editor_state->top_mode = EDITOR_TOP_ATLAS;
+    editor_state->sub_mode = EDITOR_SUB_ATLAS_BROWSE;
+    editor_state->atlas_texture_index = -1;
+    editor_state->atlas_texture_scroll = 0;
+    editor_state->atlas_region_scroll = 0;
+    editor_state->selected_entity_id = -1;
+}
+
 static void
 dispatch_radial_confirm(GameState *state, EditorState *editor_state, WatchList *watches, UndoHistory *undo_history)
 {
@@ -654,6 +667,8 @@ dispatch_radial_confirm(GameState *state, EditorState *editor_state, WatchList *
             editor_state->selected_entity_id = -1;
         } else if (confirmed == EDITOR_TOOLS_TILE_INDEX) { /* Tiles */
             enter_tile_mode(state, editor_state);
+        } else if (confirmed == EDITOR_TOOLS_ATLAS_INDEX) { /* Atlas */
+            enter_atlas_mode(editor_state);
         }
     } else if (editor_state->radial_context == RADIAL_CTX_ATTR_TYPE) {
         dispatch_attr_type_change(state, editor_state, confirmed, undo_history);

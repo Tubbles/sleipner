@@ -31,8 +31,8 @@ static int radial_sector_from_stick(Vector2 stick, int item_count)
 static const char *radial_label(const EditorState *editor_state, int index)
 {
     if (editor_state->radial_context == RADIAL_CTX_TOOLS) {
-        static const char *const tools[] = {"Grab",       "Place",      "Handles", "Delete",
-                                            "Blueprints", "Watch list", "Levels",  "Tiles"};
+        static const char *const tools[] = {"Grab",       "Place",  "Handles", "Delete", "Blueprints",
+                                            "Watch list", "Levels", "Tiles",   "Atlas"};
         if (index >= 0 && index < EDITOR_TOOLS_ITEM_COUNT) {
             return tools[index];
         }
@@ -347,6 +347,13 @@ void handle_word_builder_input(
         } else if (editor_state->word_builder_scroll == 0 && editor_state->editing_child_tag) {
             confirm_child_tag_edit(diag, state, editor_state, undo_history);
             editor_state->sub_mode = EDITOR_SUB_BROWSE;
+        } else if (editor_state->word_builder_scroll == 0 && editor_state->creating_atlas_region) {
+            if (start_new_atlas_region(state, editor_state, editor_state->word_builder_buf)) {
+                editor_state->sub_mode = EDITOR_SUB_ATLAS_REGION_EDIT;
+            } else {
+                editor_state->sub_mode = EDITOR_SUB_ATLAS_BROWSE;
+            }
+            editor_state->creating_atlas_region = false;
         } else if (editor_state->word_builder_scroll == 0 &&
                    (editor_state->adding_attr || editor_state->adding_blueprint_attr ||
                     editor_state->adding_persisted_attr)) {
@@ -376,6 +383,7 @@ void handle_word_builder_input(
         if (editor_state->word_builder_len > 0) {
             word_builder_pop(editor_state);
         } else {
+            bool cancel_to_atlas_browse = editor_state->creating_atlas_region;
             editor_state->adding_attr = false;
             editor_state->adding_blueprint_attr = false;
             editor_state->adding_persisted_attr = false;
@@ -383,8 +391,9 @@ void handle_word_builder_input(
             editor_state->creating_blueprint = false;
             editor_state->duplicating_blueprint = false;
             editor_state->creating_level = false;
+            editor_state->creating_atlas_region = false;
             editor_state->editing_level_string_field = LEVEL_STRING_FIELD_NONE;
-            editor_state->sub_mode = EDITOR_SUB_BROWSE;
+            editor_state->sub_mode = cancel_to_atlas_browse ? EDITOR_SUB_ATLAS_BROWSE : EDITOR_SUB_BROWSE;
         }
     }
 }

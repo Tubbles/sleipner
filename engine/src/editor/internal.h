@@ -67,6 +67,8 @@ const EditorHintTable *level_list_hints_table(void);
 const EditorHintTable *level_detail_hints_table(void);
 const EditorHintTable *tile_paint_hints_table(void);
 const EditorHintTable *tile_palette_hints_table(void);
+const EditorHintTable *atlas_browse_hints_table(void);
+const EditorHintTable *atlas_region_edit_hints_table(void);
 
 /* --- Shared helpers: core.c --- */
 
@@ -160,3 +162,11 @@ void create_new_level(
  * music_name Str (whichever editing_level_string_field names), then push
  * an undo entry. Caller resets editing_level_string_field afterward. */
 void confirm_level_string_edit(GameState *state, EditorState *editor_state, UndoHistory *undo_history);
+
+/* --- Cross-file calls: atlas.c (called from widgets.c) --- */
+
+/* Validate/stash a new atlas region's name (see atlas.c for the full
+ * contract) and stage its default src rect. Returns true and expects the
+ * caller to switch to EDITOR_SUB_ATLAS_REGION_EDIT; false means a toast
+ * was raised and the caller should return to EDITOR_SUB_ATLAS_BROWSE. */
+[[nodiscard]] bool start_new_atlas_region(GameState *state, EditorState *editor_state, const char *name);

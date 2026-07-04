@@ -23,6 +23,7 @@ set(ENGINE_SOURCE_FILES
     collision.c
     debug.c
     depth_sort.c
+    editor/atlas.c
     editor/attr.c
     editor/blueprint.c
     editor/child.c

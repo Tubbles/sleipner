@@ -69,6 +69,9 @@ FAKE_VOID_FUNC(duplicate_blueprint, GameState *, EditorState *, UndoHistory *, c
 FAKE_VOID_FUNC(
     add_blueprint_child, Diag *, GameState *, EditorState *, UndoHistory *, const char *, TextureLookupFn, void *);
 
+/* Cross-file editor fakes: atlas.c */
+FAKE_VALUE_FUNC(bool, start_new_atlas_region, GameState *, EditorState *, const char *);
+
 /* External module fakes */
 FAKE_VOID_FUNC(undo_history_new_entry, UndoHistory *, GamedataState *, Arena *, ArenaCheckpoint, Strv);
 

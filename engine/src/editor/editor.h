@@ -28,28 +28,31 @@ typedef struct {
 /* Fixed-size: 4 slots is a hard UI display limit — the watch overlay has room for
  * exactly EDITOR_WATCH_MAX entries; more would overflow the panel. */
 #define EDITOR_WATCH_MAX 4
-#define EDITOR_HANDLE_SIZE 4             /* corner handle square side, world pixels */
-#define EDITOR_HANDLE_SPEED 60.0F        /* px/s for collision offset/size editing */
-#define EDITOR_ATTR_LARGE_STEP 10        /* ±10 step for attribute value adjuster (bumpers/brackets) */
-#define EDITOR_ATTR_HUGE_STEP 100        /* ±100 step for value adjuster (L2/R2 / PgDn/PgUp) */
-#define EDITOR_TOOLS_ITEM_COUNT 8        /* items in the RADIAL_CTX_TOOLS picker */
-#define EDITOR_TOOLS_WATCH_LIST_INDEX 5  /* RADIAL_CTX_TOOLS slot for "Watch list" */
-#define EDITOR_TOOLS_LEVELS_INDEX 6      /* RADIAL_CTX_TOOLS slot for "Levels" */
-#define EDITOR_TOOLS_TILE_INDEX 7        /* RADIAL_CTX_TOOLS slot for "Tiles" */
-#define EDITOR_PLACE_PAGE_SIZE 5         /* blueprint page-jump size for L1/R1 in scroll picker */
-#define ATTR_REPEAT_DELAY 0.4F           /* seconds before auto-repeat starts on hold */
-#define ATTR_REPEAT_PERIOD 0.1F          /* initial repeat interval (10 Hz) */
-#define ATTR_REPEAT_MIN_PERIOD 0.025F    /* fastest interval after acceleration (40 Hz) */
-#define ATTR_REPEAT_ACCEL 4.0F           /* period halves every 1/ACCEL seconds of hold */
-#define RADIAL_INNER_RADIUS 50.0F        /* inner donut radius, screen px */
-#define RADIAL_OUTER_RADIUS 140.0F       /* outer donut radius, screen px */
-#define RADIAL_STICK_THRESHOLD 0.3F      /* min stick magnitude to register a sector */
-#define RADIAL_FONT_SIZE 32              /* label font size */
-#define RADIAL_BG_PADDING 4.0F           /* background circle padding beyond outer radius */
-#define RADIAL_FULL_CIRCLE_DEG 360.0F    /* degrees in a full circle */
-#define RADIAL_NORTH_OFFSET_DEG 90.0F    /* rotation offset so top is north (12 o'clock) */
-#define RADIAL_DEG_TO_RAD 0.01745329252F /* multiplier to convert degrees to radians */
-#define WORD_BUILDER_BUF_SIZE 256        /* max length of word builder output */
+#define EDITOR_HANDLE_SIZE 4                /* corner handle square side, world pixels */
+#define EDITOR_HANDLE_SPEED 60.0F           /* px/s for collision/atlas-region offset/size editing */
+#define EDITOR_ATLAS_ZOOM 4.0F              /* scale factor for the atlas texture view (texture px -> world px) */
+#define EDITOR_ATLAS_DEFAULT_REGION_SIZE 32 /* default new-region width/height, texture px, before clamping */
+#define EDITOR_ATTR_LARGE_STEP 10           /* ±10 step for attribute value adjuster (bumpers/brackets) */
+#define EDITOR_ATTR_HUGE_STEP 100           /* ±100 step for value adjuster (L2/R2 / PgDn/PgUp) */
+#define EDITOR_TOOLS_ITEM_COUNT 9           /* items in the RADIAL_CTX_TOOLS picker */
+#define EDITOR_TOOLS_WATCH_LIST_INDEX 5     /* RADIAL_CTX_TOOLS slot for "Watch list" */
+#define EDITOR_TOOLS_LEVELS_INDEX 6         /* RADIAL_CTX_TOOLS slot for "Levels" */
+#define EDITOR_TOOLS_TILE_INDEX 7           /* RADIAL_CTX_TOOLS slot for "Tiles" */
+#define EDITOR_TOOLS_ATLAS_INDEX 8          /* RADIAL_CTX_TOOLS slot for "Atlas" */
+#define EDITOR_PLACE_PAGE_SIZE 5            /* blueprint page-jump size for L1/R1 in scroll picker */
+#define ATTR_REPEAT_DELAY 0.4F              /* seconds before auto-repeat starts on hold */
+#define ATTR_REPEAT_PERIOD 0.1F             /* initial repeat interval (10 Hz) */
+#define ATTR_REPEAT_MIN_PERIOD 0.025F       /* fastest interval after acceleration (40 Hz) */
+#define ATTR_REPEAT_ACCEL 4.0F              /* period halves every 1/ACCEL seconds of hold */
+#define RADIAL_INNER_RADIUS 50.0F           /* inner donut radius, screen px */
+#define RADIAL_OUTER_RADIUS 140.0F          /* outer donut radius, screen px */
+#define RADIAL_STICK_THRESHOLD 0.3F         /* min stick magnitude to register a sector */
+#define RADIAL_FONT_SIZE 32                 /* label font size */
+#define RADIAL_BG_PADDING 4.0F              /* background circle padding beyond outer radius */
+#define RADIAL_FULL_CIRCLE_DEG 360.0F       /* degrees in a full circle */
+#define RADIAL_NORTH_OFFSET_DEG 90.0F       /* rotation offset so top is north (12 o'clock) */
+#define RADIAL_DEG_TO_RAD 0.01745329252F    /* multiplier to convert degrees to radians */
+#define WORD_BUILDER_BUF_SIZE 256           /* max length of word builder output */
 /* Attribute names created through the editor are typed via the word
  * builder, so WORD_BUILDER_BUF_SIZE is the only enforced bound on an
  * editor-authored attr name. Reuse it here so the stable-identity
@@ -72,6 +75,7 @@ typedef enum {
     EDITOR_TOP_BLUEPRINT, /* blueprint-focused editing */
     EDITOR_TOP_LEVEL,     /* level list: view all levels, switch the active one in memory */
     EDITOR_TOP_TILE,      /* tile grid: paint the current level's ground/overlay layers (S5.3b, D36) */
+    EDITOR_TOP_ATLAS,     /* atlas region browser: define named sprite regions on a texture (S5.4b, D37) */
 } EditorTopMode;
 
 /* Identifies which Level string field the word builder is currently
@@ -87,7 +91,7 @@ typedef enum {
 } LevelStringField;
 
 typedef enum {
-    RADIAL_CTX_TOOLS,       /* Grab / Place / Handles / Delete / Blueprints / Watch list / Levels / Tiles — 8 items */
+    RADIAL_CTX_TOOLS, /* Grab / Place / Handles / Delete / Blueprints / Watch list / Levels / Tiles / Atlas — 9 items */
     RADIAL_CTX_ATTR_TYPE,   /* Float / Int / Bool / String — 4 items */
     RADIAL_CTX_CHILD_PROPS, /* Tag / Offset X / Offset Y — 3 items */
 } RadialContext;
@@ -105,6 +109,14 @@ typedef enum {
     EDITOR_SUB_WATCH_LIST,   /* scroll picker over the watch list; CONFIRM removes the focused entry */
     EDITOR_SUB_TILE_PAINT,   /* cursor over the current level's tile grid; CONFIRM paints, EDITOR_DELETE erases */
     EDITOR_SUB_TILE_PALETTE, /* scroll picker over the gamedata tileset; CONFIRM selects the paint tile */
+    /* Texture picker (atlas_texture_index < 0) or region picker for the chosen
+     * texture (atlas_texture_index >= 0), including the "+ NEW REGION" row
+     * (S5.4b, D37). */
+    EDITOR_SUB_ATLAS_BROWSE,
+    /* HANDLES-style dual-stick drag on the zoomed texture view: sets the
+     * in-progress region's src rect (atlas_edit_src). CONFIRM commits to
+     * gamedata.atlas_regions, CANCEL discards. */
+    EDITOR_SUB_ATLAS_REGION_EDIT,
 } EditorSubMode;
 
 /* Which tile layer NAV/paint/erase currently act on in EDITOR_SUB_TILE_PAINT
@@ -200,6 +212,19 @@ typedef struct {
     int tile_cursor_row;         /* paint cursor row, [0, tiles_high) */
     TileLayer tile_active_layer; /* which layer NAV/paint/erase currently act on */
     int tile_palette_scroll;     /* focused tileset id - 1 in TILE_PALETTE (ids run 1..tileset.count-1) */
+    /* Atlas mode (S5.4b, D37). atlas_texture_index mirrors
+     * selected_blueprint_index's double duty: -1 = texture-picker view,
+     * >=0 = index into assets.textures, drilled into that texture's region
+     * list. atlas_texture_scroll is the texture-picker cursor, tracked
+     * independently so it survives drilling in and out (same relationship
+     * blueprint_list_scroll has to selected_blueprint_index). */
+    int atlas_texture_scroll;
+    int atlas_texture_index;
+    int atlas_region_scroll;    /* focused row in the region list; == region count is the "+ NEW REGION" sentinel */
+    int atlas_region_index;     /* index into gamedata.atlas_regions being edited in REGION_EDIT; -1 = new region */
+    bool creating_atlas_region; /* word builder is naming a new atlas region */
+    char atlas_region_pending_name[EDITOR_ATTR_NAME_MAX]; /* stashed name between word-builder DONE and commit */
+    Rectangle atlas_edit_src; /* staging src rect (texture px) being dragged in REGION_EDIT */
 } EditorState;
 
 typedef struct {
@@ -281,3 +306,10 @@ void handle_tile_palette_input(EditorState *editor_state,
 void draw_tile_paint_panel(ScreenSize screen, const GameState *state, const EditorState *editor_state);
 void draw_tile_palette_panel(ScreenSize screen, const GameState *state, const EditorState *editor_state);
 void draw_tile_paint_cursor(const EditorState *editor_state);
+void handle_atlas_browse_input(GameState *state, Camera2D *camera, EditorState *editor_state, const InputState *input);
+void handle_atlas_region_edit_input(
+    GameState *state, EditorState *editor_state, UndoHistory *undo_history, InputState input, float delta_time);
+void draw_atlas_texture_list_panel(ScreenSize screen, const GameState *state, const EditorState *editor_state);
+void draw_atlas_region_list_panel(ScreenSize screen, const GameState *state, const EditorState *editor_state);
+void draw_atlas_region_edit_panel(ScreenSize screen, const GameState *state, const EditorState *editor_state);
+void draw_atlas_texture_view(const GameState *state, const EditorState *editor_state);

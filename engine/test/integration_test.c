@@ -1,12 +1,16 @@
 #include "unity.h"
+#include "arena.h"
+#include "atlas.h"
 #include "attribute.h"
 #include "editor/editor.h"
 #include "entity.h"
+#include "error.h"
 #include "game.h"
 #include "input.h"
 #include "input_func.h"
 #include "level.h"
 #include "menu.h"
+#include "strv.h"
 #include "test_helpers.h"
 #include "undo.h"
 
@@ -1706,6 +1710,189 @@ void test_integration_editor_tile_paint_round_trip(void)
     TEST_ASSERT_EQUAL_INT(2, (int)toml_int_at(painted_row, 1).u.i);
 
     toml_free(root);
+    test_game_teardown(&game);
+}
+
+/* S5.4b/D37: Atlas mode's texture picker browses state->assets.textures --
+ * the runtime registry main.c populates from embedded PNGs at startup.
+ * main.c isn't linked into the test binary (see test_dummy_texture_lookup
+ * above), so the registry stays empty after test_game_setup. Seed one
+ * entry directly, the same shape main.c's texture_registry_add builds (a
+ * TextureEntry with a filename and a Texture2D), so the round-trip test
+ * below has a texture to pick. The Texture2D is never sampled (headless,
+ * no GL context) -- only its width/height feed the region-src clamp math,
+ * so a plausible size is set without ever calling LoadTexture. */
+static void test_seed_atlas_texture(GameState *state, const char *filename, int width, int height)
+{
+    state->assets.textures.alloc = allocator_arena(&state->gamedata_arena);
+    TextureEntry entry = {0};
+    (void)snprintf(entry.filename, sizeof(entry.filename), "%s", filename);
+    entry.texture = (Texture2D){.id = 1, .width = width, .height = height, .mipmaps = 1, .format = 1};
+    TEST_ASSERT_TRUE(vec_texture_entry_push(&state->assets.textures, entry));
+}
+
+/* S5.4b/D37: Atlas mode region create + drag-to-src + commit + undo +
+ * save/reparse round trip. Drives entirely through the real input layer:
+ * F5 into editor, TAB opens the Tools radial, test_radial_select_item aims
+ * the stick at the "Atlas" sector (EDITOR_TOOLS_ATLAS_INDEX) and confirms,
+ * one more frame lets BROWSE dispatch the pending radial choice into
+ * EDITOR_TOP_ATLAS / EDITOR_SUB_ATLAS_BROWSE with the texture picker showing
+ * (atlas_texture_index == -1). CONFIRM picks the one seeded texture; CONFIRM
+ * again on the (empty) region list lands on its "+ NEW REGION" sentinel and
+ * opens the word builder; picking the builtin word "chest" then "[ DONE ]"
+ * names the region and enters EDITOR_SUB_ATLAS_REGION_EDIT.
+ *
+ * The src rect is set via the same dual-stick drag EDITOR_SUB_HANDLES uses
+ * for collision boxes (left stick: offset, right stick: size, both real
+ * ACTION/AXIS bindings) -- first a modest move on each of the four
+ * components, then an extreme left-stick push to drive x into the 64x64
+ * texture's clamp (x clamps to 63, which forces width down to 1), proving
+ * the ">= 1 size, clamped to texture bounds" invariant. CONFIRM commits into
+ * gamedata.atlas_regions and pushes an undo entry.
+ *
+ * Saves through the real pause-menu path (wiring the recording
+ * gamedata-save fake) and reparses the emitted TOML via the production
+ * atlas_load/atlas_find_region to confirm the region survives as a
+ * [[atlas.region]] entry with the same name/texture/src. */
+void test_integration_editor_atlas_region_create_round_trip(void)
+{
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_gamedata));
+    game.frame_ctx.save_fn = test_recording_gamedata_save;
+    test_seed_atlas_texture(&game.state, "sprites.png", 64, 64);
+    TEST_ASSERT_EQUAL_INT(0, game.state.gamedata.atlas_regions.count);
+
+    InputState editor_toggle = {0};
+    input_state_press_key(&editor_toggle, KEY_F5);
+    test_advance_frame(&game, editor_toggle);
+    TEST_ASSERT_TRUE(game.state.editor_mode);
+
+    InputState open_tools = {0};
+    input_state_press_key(&open_tools, KEY_TAB);
+    test_advance_frame(&game, open_tools);
+    TEST_ASSERT_EQUAL_INT(EDITOR_SUB_RADIAL, game.editor_state.sub_mode);
+
+    /* Aim the stick at the "Atlas" sector and confirm in the same frame. */
+    test_radial_select_item(&game, EDITOR_TOOLS_ATLAS_INDEX);
+    TEST_ASSERT_EQUAL_INT(EDITOR_SUB_BROWSE, game.editor_state.sub_mode);
+
+    /* BROWSE dispatches the pending radial confirmation on the next frame. */
+    InputState no_input = {0};
+    test_advance_frame(&game, no_input);
+    TEST_ASSERT_EQUAL_INT(EDITOR_TOP_ATLAS, game.editor_state.top_mode);
+    TEST_ASSERT_EQUAL_INT(EDITOR_SUB_ATLAS_BROWSE, game.editor_state.sub_mode);
+    TEST_ASSERT_EQUAL_INT(-1, game.editor_state.atlas_texture_index);
+
+    /* Pick the one seeded texture (real Enter / ACTION_CONFIRM binding). */
+    InputState confirm = {0};
+    input_state_press_key(&confirm, KEY_ENTER);
+    test_advance_frame(&game, confirm);
+    TEST_ASSERT_EQUAL_INT(0, game.editor_state.atlas_texture_index);
+
+    /* Region list for "sprites.png" is empty -- scroll 0 is already the
+     * "+ NEW REGION" sentinel. Confirm opens the word builder. */
+    test_advance_frame(&game, confirm);
+    TEST_ASSERT_EQUAL_INT(EDITOR_SUB_WORD_BUILDER, game.editor_state.sub_mode);
+
+    /* Down to the builtin word "chest" (word_builder_builtin[0]), confirm to
+     * append it, back up to "[ DONE ]" (scroll 0), confirm to commit the name. */
+    InputState nav_down = {0};
+    input_state_press_key(&nav_down, KEY_DOWN);
+    test_advance_frame(&game, nav_down);
+    test_advance_frame(&game, confirm);
+    TEST_ASSERT_EQUAL_STRING("chest", game.editor_state.word_builder_buf);
+
+    InputState nav_up = {0};
+    input_state_press_key(&nav_up, KEY_UP);
+    test_advance_frame(&game, nav_up);
+    test_advance_frame(&game, confirm);
+    TEST_ASSERT_EQUAL_INT(EDITOR_SUB_ATLAS_REGION_EDIT, game.editor_state.sub_mode);
+    TEST_ASSERT_EQUAL_INT(-1, game.editor_state.atlas_region_index);
+    TEST_ASSERT_FLOAT_WITHIN(0.01F, 0.0F, game.editor_state.atlas_edit_src.x);
+    TEST_ASSERT_FLOAT_WITHIN(0.01F, 32.0F, game.editor_state.atlas_edit_src.width);
+
+    /* Drag the src rect: left stick moves the offset, right stick grows the
+     * size, one axis at a time (same HANDLES-style dual-stick math, reused
+     * verbatim -- see handle_atlas_region_edit_input). 5 frames at
+     * EDITOR_HANDLE_SPEED (60 px/s) and 1/60s per frame moves ~1px/frame. */
+    InputState left_x = {0};
+    input_state_set_gp_axis(&left_x, GAMEPAD_AXIS_LEFT_X, 1.0F);
+    test_advance_frames(&game, left_x, 5);
+    InputState left_y = {0};
+    input_state_set_gp_axis(&left_y, GAMEPAD_AXIS_LEFT_Y, 1.0F);
+    test_advance_frames(&game, left_y, 5);
+    InputState right_x = {0};
+    input_state_set_gp_axis(&right_x, GAMEPAD_AXIS_RIGHT_X, 1.0F);
+    test_advance_frames(&game, right_x, 5);
+    InputState right_y = {0};
+    input_state_set_gp_axis(&right_y, GAMEPAD_AXIS_RIGHT_Y, 1.0F);
+    test_advance_frames(&game, right_y, 5);
+
+    TEST_ASSERT_FLOAT_WITHIN(0.5F, 5.0F, game.editor_state.atlas_edit_src.x);
+    TEST_ASSERT_FLOAT_WITHIN(0.5F, 5.0F, game.editor_state.atlas_edit_src.y);
+    TEST_ASSERT_FLOAT_WITHIN(0.5F, 37.0F, game.editor_state.atlas_edit_src.width);
+    TEST_ASSERT_FLOAT_WITHIN(0.5F, 37.0F, game.editor_state.atlas_edit_src.height);
+
+    /* Push x hard against the texture's right edge: clamp holds x at
+     * texture_width - 1 (63) and shrinks width to fit (1px) -- the ">= 1
+     * size, clamped to texture bounds" invariant (S5.4b deliverable 1). */
+    test_advance_frames(&game, left_x, 200);
+    TEST_ASSERT_FLOAT_WITHIN(0.01F, 63.0F, game.editor_state.atlas_edit_src.x);
+    TEST_ASSERT_FLOAT_WITHIN(0.01F, 1.0F, game.editor_state.atlas_edit_src.width);
+
+    Rectangle expected_src = game.editor_state.atlas_edit_src;
+
+    /* Commit: CONFIRM creates the AtlasRegion and pushes undo. */
+    test_advance_frame(&game, confirm);
+    TEST_ASSERT_EQUAL_INT(EDITOR_SUB_ATLAS_BROWSE, game.editor_state.sub_mode);
+    TEST_ASSERT_EQUAL_INT(1, game.state.gamedata.atlas_regions.count);
+    const AtlasRegion *region = &game.state.gamedata.atlas_regions.data[0];
+    TEST_ASSERT_EQUAL_STRING("chest", region->name.ptr);
+    TEST_ASSERT_EQUAL_STRING("sprites.png", region->texture.ptr);
+    TEST_ASSERT_FLOAT_WITHIN(0.01F, expected_src.x, region->src.x);
+    TEST_ASSERT_FLOAT_WITHIN(0.01F, expected_src.y, region->src.y);
+    TEST_ASSERT_FLOAT_WITHIN(0.01F, expected_src.width, region->src.width);
+    TEST_ASSERT_FLOAT_WITHIN(0.01F, expected_src.height, region->src.height);
+    TEST_ASSERT_TRUE(strv_eq_cstr(undo_history_description(&game.undo_history), "Create atlas region"));
+
+    /* Save through the real pause-menu path (F3 -> DOWN to SAVE -> CONFIRM). */
+    InputState menu_open = {0};
+    input_state_press_key(&menu_open, KEY_F3);
+    test_advance_frame(&game, menu_open);
+
+    InputState menu_down = {0};
+    input_state_press_key(&menu_down, KEY_DOWN);
+    test_advance_frame(&game, menu_down);
+    TEST_ASSERT_EQUAL_INT(MENU_ENTRY_SAVE, game.menu.selected);
+
+    test_advance_frame(&game, confirm);
+    TEST_ASSERT_EQUAL_INT(1, game.gamedata_save_count);
+
+    /* Reparse via the production atlas_load/atlas_find_region and confirm
+     * the region survived as a [[atlas.region]] entry. Truncate the
+     * expected src the same way the TOML emitter does ((int) cast) so the
+     * comparison is exact regardless of the stick-drive's float noise. */
+    ErrorState reparse_err = {0};
+    Arena arena2;
+    TEST_ASSERT_TRUE(arena_init(&reparse_err, &arena2));
+    vec_atlas_region regions2 = {0};
+    char errbuf[200];
+    char *parse_buf = strdup(game.saved_gamedata_buf);
+    toml_table_t *root = toml_parse(parse_buf, errbuf, (int)sizeof(errbuf));
+    free(parse_buf);
+    TEST_ASSERT_NOT_NULL_MESSAGE(root, errbuf);
+    TEST_ASSERT_TRUE(atlas_load(&game.diag, &regions2, root, &arena2) >= 0);
+    toml_free(root);
+
+    const AtlasRegion *region2 = atlas_find_region(&regions2, "chest");
+    TEST_ASSERT_NOT_NULL(region2);
+    TEST_ASSERT_EQUAL_STRING("sprites.png", region2->texture.ptr);
+    TEST_ASSERT_EQUAL_INT((int)expected_src.x, (int)region2->src.x);
+    TEST_ASSERT_EQUAL_INT((int)expected_src.y, (int)region2->src.y);
+    TEST_ASSERT_EQUAL_INT((int)expected_src.width, (int)region2->src.width);
+    TEST_ASSERT_EQUAL_INT((int)expected_src.height, (int)region2->src.height);
+
+    arena_free(&arena2);
     test_game_teardown(&game);
 }
 
