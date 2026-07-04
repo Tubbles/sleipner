@@ -88,6 +88,10 @@ static bool is_internal_bp_attr(const char *name)
                                      "sprite_offset_y",
                                      "health",
                                      "max_health",
+                                     "anim_frames",
+                                     "anim_size",
+                                     "anim_speed",
+                                     "anim_row",
                                      nullptr};
     for (int index = 0; internal[index] != nullptr; index++) {
         if (strcmp(name, internal[index]) == 0) {
@@ -121,6 +125,28 @@ static int emit_health_if_present(char *buffer, int capacity, int offset, const 
     int current = (health->type == ATTR_INT) ? health->value.i : (int)health->value.f;
     int maximum = (max_health->type == ATTR_INT) ? max_health->value.i : (int)max_health->value.f;
     return emit_append(buffer, capacity, offset, "health = [%d, %d]\n", current, maximum);
+}
+
+static int attr_int_value(const Attribute *attr)
+{
+    if (!attr) {
+        return 0;
+    }
+    return (attr->type == ATTR_INT) ? attr->value.i : (int)attr->value.f;
+}
+
+static int emit_animation_if_present(char *buffer, int capacity, int offset, const AttrSet *attrs)
+{
+    const Attribute *frames = attr_get(attrs, "anim_frames");
+    const Attribute *size = attr_get(attrs, "anim_size");
+    const Attribute *speed = attr_get(attrs, "anim_speed");
+    const Attribute *row = attr_get(attrs, "anim_row");
+    if (!frames && !size && !speed && !row) {
+        return offset;
+    }
+
+    return emit_append(buffer, capacity, offset, "animation = { frames = %d, size = %d, speed = %d, row = %d }\n",
+                       attr_int_value(frames), attr_int_value(size), attr_int_value(speed), attr_int_value(row));
 }
 
 /* ---- Rule emitters ---- */
@@ -379,6 +405,7 @@ static int emit_blueprints(char *buffer, int capacity, int offset, const Bluepri
                                  (int)spr_offset.y);
         }
         offset = emit_health_if_present(buffer, capacity, offset, &blueprint->attrs);
+        offset = emit_animation_if_present(buffer, capacity, offset, &blueprint->attrs);
         offset = emit_custom_bp_attrs(buffer, capacity, offset, &blueprint->attrs);
         offset = emit_append(buffer, capacity, offset, "\n");
 

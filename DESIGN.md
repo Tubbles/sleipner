@@ -1173,6 +1173,7 @@ The function-layer overhaul (2026-04) unblocked black-box bug-repro tests: every
 - [ ] Tile mode: paint ground and overlay layers, tile palette
 - [ ] Atlas mode: view textures, define named source rects, preview sprites
 - [ ] Animation mode: define frame sequences, preview playback, link directional states
+- [x] Blueprint `animation = {frames,size,speed,row}` plumbed through parse and emit into `anim_frames`/`anim_size`/`anim_speed`/`anim_row` blueprint attrs, ahead of the mode UI and the animation state machine (Phase 8)
 - [ ] Rule mode: visual trigger/condition/action editor, test by switching to play
 - [ ] Level mode: create levels, set size/music/spawn/transitions
 - [x] Radial picker widget (generic N-item; Tab/Select opens tool picker)

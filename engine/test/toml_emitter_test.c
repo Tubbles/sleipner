@@ -416,6 +416,65 @@ void test_toml_emit_health(void)
     arena_free(&arena2);
 }
 
+static const char *animation_fixture = "[[blueprint]]\n"
+                                       "name = \"player\"\n"
+                                       "texture = \"player.png\"\n"
+                                       "src = [0, 0, 32, 32]\n"
+                                       "collision_offset = [0, 0]\n"
+                                       "collision_size = [16, 16]\n"
+                                       "animation = { frames = 6, size = 32, speed = 10, row = 2 }\n"
+                                       "\n"
+                                       "[[level]]\n"
+                                       "name = \"test\"\n"
+                                       "size = [320, 240]\n";
+
+void test_toml_emit_animation_round_trip(void)
+{
+    Arena arena;
+    TEST_ASSERT_TRUE(arena_init(&test_err, &arena));
+    BlueprintTable blueprints = {0};
+
+    toml_table_t *root = parse_toml(animation_fixture);
+    TEST_ASSERT_NOT_NULL(root);
+    blueprints_load(&test_diag, &blueprints, root, &arena);
+    toml_free(root);
+
+    TEST_ASSERT_EQUAL_INT(1, blueprints.entries.count);
+    const Blueprint *original = &blueprints.entries.data[0];
+    TEST_ASSERT_EQUAL_INT(6, attr_get_int(&original->attrs, "anim_frames", -1));
+    TEST_ASSERT_EQUAL_INT(32, attr_get_int(&original->attrs, "anim_size", -1));
+    TEST_ASSERT_EQUAL_INT(10, attr_get_int(&original->attrs, "anim_speed", -1));
+    TEST_ASSERT_EQUAL_INT(2, attr_get_int(&original->attrs, "anim_row", -1));
+
+    char output[4096];
+    Level empty_level = {0};
+    int written =
+        toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &empty_subroutines, &empty_level, 0);
+    TEST_ASSERT_TRUE(written > 0);
+
+    TEST_ASSERT_NOT_NULL(strstr(output, "animation = { frames = 6, size = 32, speed = 10, row = 2 }"));
+
+    /* Round-trip: re-parse and verify anim_* attrs survive */
+    Arena arena2;
+    TEST_ASSERT_TRUE(arena_init(&test_err, &arena2));
+    BlueprintTable blueprints2 = {0};
+
+    toml_table_t *root2 = parse_toml(output);
+    TEST_ASSERT_NOT_NULL(root2);
+    blueprints_load(&test_diag, &blueprints2, root2, &arena2);
+    toml_free(root2);
+
+    TEST_ASSERT_EQUAL_INT(1, blueprints2.entries.count);
+    const Blueprint *blueprint = &blueprints2.entries.data[0];
+    TEST_ASSERT_EQUAL_INT(6, attr_get_int(&blueprint->attrs, "anim_frames", -1));
+    TEST_ASSERT_EQUAL_INT(32, attr_get_int(&blueprint->attrs, "anim_size", -1));
+    TEST_ASSERT_EQUAL_INT(10, attr_get_int(&blueprint->attrs, "anim_speed", -1));
+    TEST_ASSERT_EQUAL_INT(2, attr_get_int(&blueprint->attrs, "anim_row", -1));
+
+    arena_free(&arena);
+    arena_free(&arena2);
+}
+
 static const char *persisted_attr_fixture = "[[blueprint]]\n"
                                             "name = \"chest\"\n"
                                             "texture = \"chest.png\"\n"

@@ -238,6 +238,35 @@ void test_blueprint_health_parsed(void)
     arena_free(&test_arena);
 }
 
+void test_blueprint_animation_parsed(void)
+{
+    Arena test_arena;
+    with_arena(&test_arena);
+    BlueprintTable table = {0};
+
+    toml_table_t *root = parse_toml("[[blueprint]]\n"
+                                    "name = \"player\"\n"
+                                    "texture = \"player.png\"\n"
+                                    "src = [0, 0, 32, 32]\n"
+                                    "collision_offset = [0, 0]\n"
+                                    "collision_size = [16, 16]\n"
+                                    "animation = { frames = 6, size = 32, speed = 10, row = 2 }\n");
+    TEST_ASSERT_NOT_NULL(root);
+
+    blueprints_load(&test_diag, &table, root, &test_arena);
+    const Blueprint *player = blueprint_find(&table, "player");
+    TEST_ASSERT_NOT_NULL(player);
+
+    TEST_ASSERT_EQUAL_INT(6, attr_get_int(&player->attrs, "anim_frames", -1));
+    TEST_ASSERT_EQUAL_INT(32, attr_get_int(&player->attrs, "anim_size", -1));
+    TEST_ASSERT_EQUAL_INT(10, attr_get_int(&player->attrs, "anim_speed", -1));
+    TEST_ASSERT_EQUAL_INT(2, attr_get_int(&player->attrs, "anim_row", -1));
+
+    toml_free(root);
+    (void)table;
+    arena_free(&test_arena);
+}
+
 void test_blueprint_extends(void)
 {
     Arena test_arena;

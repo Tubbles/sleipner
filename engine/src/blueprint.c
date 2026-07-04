@@ -219,6 +219,29 @@ static bool parse_health(Allocator *alloc, Blueprint *blueprint, toml_table_t *e
     return true;
 }
 
+static bool parse_animation(Allocator *alloc, Blueprint *blueprint, toml_table_t *entry)
+{
+    toml_table_t *animation = toml_table_in(entry, "animation");
+    if (!animation) {
+        return true;
+    }
+
+    toml_datum_t frames = toml_int_in(animation, "frames");
+    if (frames.ok && !attr_set_int(alloc, &blueprint->attrs, "anim_frames", (int)frames.u.i)) {
+        return false;
+    }
+    toml_datum_t size = toml_int_in(animation, "size");
+    if (size.ok && !attr_set_int(alloc, &blueprint->attrs, "anim_size", (int)size.u.i)) {
+        return false;
+    }
+    toml_datum_t speed = toml_int_in(animation, "speed");
+    if (speed.ok && !attr_set_int(alloc, &blueprint->attrs, "anim_speed", (int)speed.u.i)) {
+        return false;
+    }
+    toml_datum_t row = toml_int_in(animation, "row");
+    return !row.ok || attr_set_int(alloc, &blueprint->attrs, "anim_row", (int)row.u.i);
+}
+
 static bool parse_custom_attrs(Allocator *alloc, Blueprint *blueprint, toml_table_t *entry)
 {
     int key_count = toml_table_nkval(entry);
@@ -310,6 +333,9 @@ parse_single_blueprint(Diag *diag, Allocator *alloc, Blueprint *blueprint, toml_
         return false;
     }
     if (!parse_health(alloc, blueprint, entry)) {
+        return false;
+    }
+    if (!parse_animation(alloc, blueprint, entry)) {
         return false;
     }
     if (!parse_custom_attrs(alloc, blueprint, entry)) {
