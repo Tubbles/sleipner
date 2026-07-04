@@ -1131,6 +1131,75 @@ static bool execute_toggle_attr_action(Diag *diag, Allocator *alloc, const Actio
     return attr_set_bool(alloc, &target->attrs, attr_name, !current_val);
 }
 
+/* Copies a comma-split token (a slice into node->second_argument, not
+ * null-terminated on its own) into a scratch buffer and resolves any
+ * $variable reference in it, the same way resolve_arg resolves node->argument
+ * for other actions. */
+static void resolve_sprite_token(char *out, int out_size, Strv token, ActionContext context)
+{
+    char raw[MAX_ARG];
+    strv_copy_to_cstr(token, raw, MAX_ARG);
+    resolve_arg(out, out_size, raw, context);
+}
+
+/* Float-vs-int choice mirrors execute_set_attr_action's convention: a literal
+ * decimal point means float, otherwise int. Parameter order keeps `name` and
+ * `resolved` (both const char *) non-adjacent to sidestep
+ * bugprone-easily-swappable-parameters. */
+static bool attr_set_sprite_value(AttrSet *attrs, const char *name, Allocator *alloc, const char *resolved)
+{
+    float value = strtof(resolved, nullptr);
+    if (strchr(resolved, '.')) {
+        return attr_set_float(alloc, attrs, name, value);
+    }
+    return attr_set_int(alloc, attrs, name, (int)value);
+}
+
+/* change_sprite:x,y,w,h -- VM-direct attr write per D23: attr_set of
+ * src_x/src_y/src_w/src_h on the acting entity's own instance attrs. No
+ * texture-pointer swap, no EffectQueue -- get_source_rect (main.c) already
+ * derives the draw rect from these same scoped attrs, so no render change is
+ * needed here. Each of the four values is resolved individually (not the
+ * whole comma string at once) so a $variable substitution can't swallow a
+ * delimiter. */
+static bool execute_change_sprite_action(Diag *diag, Allocator *alloc, const ActionNode *node, ActionContext context)
+{
+    if (!node->argument.ptr || !node->second_argument.ptr) {
+        error_set(diag->error, "change_sprite: expected 'x,y,w,h'");
+        return false;
+    }
+    /* parse_action_two_args split "x,y,w,h" into argument="x" and
+     * second_argument="y,w,h" (one comma each); recover the remaining three
+     * tokens with two more splits. */
+    Strv rest = str_to_strv(node->second_argument);
+    Strv y_token = strv_split(&rest, ',');
+    if (!rest.ptr) {
+        error_set(diag->error, "change_sprite: expected 'y,w,h' in second argument, got '%s'",
+                  node->second_argument.ptr);
+        return false;
+    }
+    Strv w_token = strv_split(&rest, ',');
+    if (!rest.ptr) {
+        error_set(diag->error, "change_sprite: expected 'y,w,h' in second argument, got '%s'",
+                  node->second_argument.ptr);
+        return false;
+    }
+    Strv h_token = rest;
+
+    char x_buf[MAX_ARG];
+    char y_buf[MAX_ARG];
+    char w_buf[MAX_ARG];
+    char h_buf[MAX_ARG];
+    resolve_arg(x_buf, MAX_ARG, node->argument.ptr, context);
+    resolve_sprite_token(y_buf, MAX_ARG, y_token, context);
+    resolve_sprite_token(w_buf, MAX_ARG, w_token, context);
+    resolve_sprite_token(h_buf, MAX_ARG, h_token, context);
+
+    AttrSet *attrs = &context.entity->attrs;
+    return attr_set_sprite_value(attrs, "src_x", alloc, x_buf) && attr_set_sprite_value(attrs, "src_y", alloc, y_buf) &&
+           attr_set_sprite_value(attrs, "src_w", alloc, w_buf) && attr_set_sprite_value(attrs, "src_h", alloc, h_buf);
+}
+
 static bool execute_set_var_action(Diag *diag, Allocator *alloc, const ActionNode *node, ActionContext context)
 {
     char resolved_value[MAX_ARG];
@@ -1321,6 +1390,8 @@ static bool dispatch_simple_action(Diag *diag, Allocator *alloc, const ActionNod
         return execute_add_attr_action(diag, alloc, node, context);
     case ACTION_TOGGLE_ATTR:
         return execute_toggle_attr_action(diag, alloc, node, context);
+    case ACTION_CHANGE_SPRITE:
+        return execute_change_sprite_action(diag, alloc, node, context);
     case ACTION_SET_VAR:
         return execute_set_var_action(diag, alloc, node, context);
     case ACTION_DESTROY: {

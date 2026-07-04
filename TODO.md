@@ -134,6 +134,17 @@ predicate rows and MOVE reparenting).
   Duplicate rows in the same table were already stale before this slice.
   Revisit the whole table if it's ever promoted out of "Draft."
 
+## Rule VM follow-ups
+
+- **Numeric action arguments aren't validated for non-numeric garbage.**
+  `execute_change_sprite_action` (`rule.c`) only checks structurally that
+  `x,y,w,h` has all four comma-separated parts (mirroring
+  `execute_transition_action`'s comma check); like `set_attr`/`add_attr`, a
+  non-numeric token (e.g. `change_sprite:16,oops,48,64`) silently resolves
+  via `strtof` to `0` rather than erroring. Pre-existing behavior across the
+  whole action VM, not introduced here — worth a shared pass if stricter
+  numeric-arg validation is ever wanted.
+
 ## Collision system follow-ups
 
 - **Editor cannot author or edit composite collision shapes.** S4.5 added

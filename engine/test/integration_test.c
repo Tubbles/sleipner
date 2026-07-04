@@ -478,6 +478,72 @@ void test_integration_enter_trigger_fires_only_once(void)
     test_game_teardown(&game);
 }
 
+void test_integration_change_sprite_action_updates_source_rect(void)
+{
+    /* Zone blueprint starts at src = [0,0,16,16] and has enter ->
+     * change_sprite:16,32,48,64. Player/zone geometry copied from
+     * fixture_triggers so the walk-in-and-overlap timing matches
+     * test_integration_enter_trigger_fires_on_overlap. */
+    static const char *fixture_change_sprite = "[[blueprint]]\n"
+                                               "name = \"player\"\n"
+                                               "texture = \"player.png\"\n"
+                                               "src = [0, 0, 32, 32]\n"
+                                               "collision_offset = [0, 0]\n"
+                                               "collision_size = [16, 16]\n"
+                                               "behavior = \"player\"\n"
+                                               "speed = 80\n"
+                                               "\n"
+                                               "[[blueprint]]\n"
+                                               "name = \"zone\"\n"
+                                               "texture = \"rock.png\"\n"
+                                               "src = [0, 0, 16, 16]\n"
+                                               "collision_offset = [0, 0]\n"
+                                               "collision_size = [32, 32]\n"
+                                               "solid = false\n"
+                                               "\n"
+                                               "[[blueprint.rule]]\n"
+                                               "trigger = \"enter\"\n"
+                                               "actions = [\"change_sprite:16,32,48,64\"]\n"
+                                               "\n"
+                                               "[[level]]\n"
+                                               "name = \"test\"\n"
+                                               "size = [320, 240]\n"
+                                               "\n"
+                                               "[[level.entity]]\n"
+                                               "blueprint = \"player\"\n"
+                                               "pos = [100, 100]\n"
+                                               "\n"
+                                               "[[level.entity]]\n"
+                                               "blueprint = \"zone\"\n"
+                                               "pos = [200, 100]\n";
+
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_change_sprite));
+
+    /* Before the player ever reaches the zone, the source rect must still be
+     * the blueprint's declared src = [0,0,16,16]. */
+    const Entity *zone = test_find_entity_by_blueprint(&game.state, "zone");
+    TEST_ASSERT_NOT_NULL(zone);
+    const AttrSet *defaults_before = entity_resolve_defaults(&game.state, zone->id);
+    TEST_ASSERT_EQUAL_INT(0, (int)attr_get_scoped_float(&zone->attrs, defaults_before, "src_x", -1.0F));
+    TEST_ASSERT_EQUAL_INT(16, (int)attr_get_scoped_float(&zone->attrs, defaults_before, "src_w", -1.0F));
+
+    /* Walk into the zone (same geometry/timing as the enter-trigger test above) */
+    InputState input = {0};
+    input_state_set_gp_axis(&input, GAMEPAD_AXIS_LEFT_X, 1.0F);
+    test_advance_frames(&game, input, 80);
+
+    zone = test_find_entity_by_blueprint(&game.state, "zone");
+    TEST_ASSERT_NOT_NULL(zone);
+    const AttrSet *defaults = entity_resolve_defaults(&game.state, zone->id);
+    TEST_ASSERT_EQUAL_INT(16, (int)attr_get_scoped_float(&zone->attrs, defaults, "src_x", 0.0F));
+    TEST_ASSERT_EQUAL_INT(32, (int)attr_get_scoped_float(&zone->attrs, defaults, "src_y", 0.0F));
+    TEST_ASSERT_EQUAL_INT(48, (int)attr_get_scoped_float(&zone->attrs, defaults, "src_w", 0.0F));
+    TEST_ASSERT_EQUAL_INT(64, (int)attr_get_scoped_float(&zone->attrs, defaults, "src_h", 0.0F));
+
+    test_game_teardown(&game);
+}
+
 static char *read_file(const char *path)
 {
     FILE *file = fopen(path, "re");
