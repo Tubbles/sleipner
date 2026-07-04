@@ -7,6 +7,7 @@
 #include "level.h"
 #include "raylib.h"
 #include "rect.h"
+#include "tileset.h"
 #include "undo.h"
 
 typedef struct {
@@ -31,9 +32,10 @@ typedef struct {
 #define EDITOR_HANDLE_SPEED 60.0F        /* px/s for collision offset/size editing */
 #define EDITOR_ATTR_LARGE_STEP 10        /* ±10 step for attribute value adjuster (bumpers/brackets) */
 #define EDITOR_ATTR_HUGE_STEP 100        /* ±100 step for value adjuster (L2/R2 / PgDn/PgUp) */
-#define EDITOR_TOOLS_ITEM_COUNT 7        /* items in the RADIAL_CTX_TOOLS picker */
+#define EDITOR_TOOLS_ITEM_COUNT 8        /* items in the RADIAL_CTX_TOOLS picker */
 #define EDITOR_TOOLS_WATCH_LIST_INDEX 5  /* RADIAL_CTX_TOOLS slot for "Watch list" */
 #define EDITOR_TOOLS_LEVELS_INDEX 6      /* RADIAL_CTX_TOOLS slot for "Levels" */
+#define EDITOR_TOOLS_TILE_INDEX 7        /* RADIAL_CTX_TOOLS slot for "Tiles" */
 #define EDITOR_PLACE_PAGE_SIZE 5         /* blueprint page-jump size for L1/R1 in scroll picker */
 #define ATTR_REPEAT_DELAY 0.4F           /* seconds before auto-repeat starts on hold */
 #define ATTR_REPEAT_PERIOD 0.1F          /* initial repeat interval (10 Hz) */
@@ -69,6 +71,7 @@ typedef enum {
     EDITOR_TOP_SCENE,     /* default: entity-focused editing */
     EDITOR_TOP_BLUEPRINT, /* blueprint-focused editing */
     EDITOR_TOP_LEVEL,     /* level list: view all levels, switch the active one in memory */
+    EDITOR_TOP_TILE,      /* tile grid: paint the current level's ground/overlay layers (S5.3b, D36) */
 } EditorTopMode;
 
 /* Identifies which Level string field the word builder is currently
@@ -84,7 +87,7 @@ typedef enum {
 } LevelStringField;
 
 typedef enum {
-    RADIAL_CTX_TOOLS,       /* Grab / Place / Handles / Delete / Blueprints / Watch list — 6 items */
+    RADIAL_CTX_TOOLS,       /* Grab / Place / Handles / Delete / Blueprints / Watch list / Levels / Tiles — 8 items */
     RADIAL_CTX_ATTR_TYPE,   /* Float / Int / Bool / String — 4 items */
     RADIAL_CTX_CHILD_PROPS, /* Tag / Offset X / Offset Y — 3 items */
 } RadialContext;
@@ -100,7 +103,18 @@ typedef enum {
     EDITOR_SUB_FUZZY_FINDER, /* name picker for existing gamedata names */
     EDITOR_SUB_GAMEPAD_KB,   /* two-level radial character picker */
     EDITOR_SUB_WATCH_LIST,   /* scroll picker over the watch list; CONFIRM removes the focused entry */
+    EDITOR_SUB_TILE_PAINT,   /* cursor over the current level's tile grid; CONFIRM paints, EDITOR_DELETE erases */
+    EDITOR_SUB_TILE_PALETTE, /* scroll picker over the gamedata tileset; CONFIRM selects the paint tile */
 } EditorSubMode;
+
+/* Which tile layer NAV/paint/erase currently act on in EDITOR_SUB_TILE_PAINT
+ * (S5.3b, D36). GROUND must be the zero value so a zero-initialized/reset
+ * EditorState (all three reset call sites) defaults to painting the ground
+ * layer. ACTION_TAB_NEXT toggles between the two. */
+typedef enum {
+    TILE_LAYER_GROUND,
+    TILE_LAYER_OVERLAY,
+} TileLayer;
 
 /* The editor attr panel for an entity is split into three sections:
  * persisted (saved to TOML), runtime (live read path, mutated by rules),
@@ -181,6 +195,11 @@ typedef struct {
     bool level_detail_open;            /* true = showing the current level's metadata rows, false = the level list */
     int level_detail_row;              /* focused row within the level detail view (see LevelDetailRow in level.c) */
     LevelStringField editing_level_string_field; /* word builder is editing this Level string field, or NONE */
+    int selected_tile_id;        /* tile id painted by CONFIRM in TILE_PAINT; 0 = erase (D36 "empty" tile) */
+    int tile_cursor_col;         /* paint cursor column, [0, tiles_wide) */
+    int tile_cursor_row;         /* paint cursor row, [0, tiles_high) */
+    TileLayer tile_active_layer; /* which layer NAV/paint/erase currently act on */
+    int tile_palette_scroll;     /* focused tileset id - 1 in TILE_PALETTE (ids run 1..tileset.count-1) */
 } EditorState;
 
 typedef struct {
@@ -251,3 +270,14 @@ void handle_level_browse_input(
     Diag *diag, GameState *state, EditorState *editor_state, UndoHistory *undo_history, const InputState *input);
 void draw_level_list_panel(ScreenSize screen, const GameState *state, const EditorState *editor_state);
 void draw_level_detail_panel(ScreenSize screen, const GameState *state, const EditorState *editor_state);
+void handle_tile_paint_input(GameState *state,
+                             EditorState *editor_state,
+                             UndoHistory *undo_history,
+                             const InputState *input);
+void handle_tile_palette_input(EditorState *editor_state,
+                               const vec_tileset_entry *tileset,
+                               const InputState *input,
+                               const BindingStore *bindings);
+void draw_tile_paint_panel(ScreenSize screen, const GameState *state, const EditorState *editor_state);
+void draw_tile_palette_panel(ScreenSize screen, const GameState *state, const EditorState *editor_state);
+void draw_tile_paint_cursor(const EditorState *editor_state);

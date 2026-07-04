@@ -1171,7 +1171,7 @@ The function-layer overhaul (2026-04) unblocked black-box bug-repro tests: every
 - [x] Scene mode: place/move/delete entities, inspect properties
 - [x] Blueprint mode: create/edit/duplicate/delete blueprints, edit attributes, manage children
 - [x] Tile system engine side: Level ground/overlay tile layers, gamedata tileset (id -> texture+src), TOML row-array parse/emit, ground/overlay render with flat-fill fallback for tile-less levels (S5.3a)
-- [ ] Tile mode: paint ground and overlay layers, tile palette (S5.3b)
+- [x] Tile mode: paint ground and overlay layers, tile palette (S5.3b)
 - [ ] Atlas mode: view textures, define named source rects, preview sprites
 - [ ] Animation mode: define frame sequences, preview playback, link directional states
 - [x] Blueprint `animation = {frames,size,speed,row}` plumbed through parse and emit into `anim_frames`/`anim_size`/`anim_speed`/`anim_row` blueprint attrs, ahead of the mode UI and the animation state machine (Phase 8)

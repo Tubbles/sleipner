@@ -1140,19 +1140,13 @@ void test_integration_editor_selection_survives_undo_of_edit(void)
  * (deterministically "tall_tree" — the editor camera starts at (0,0) and the
  * tree at (50,50) is the closest root, same reasoning as the undo test
  * above), the real watch-toggle binding (Left Shift) adds it to the watch
- * list, TAB opens the Tools radial, a stick angle aimed at the sixth sector
- * plus CONFIRM commits "Watch list" from the radial, one more frame lets
- * BROWSE dispatch the pending radial choice and enter EDITOR_SUB_WATCH_LIST,
- * then a final CONFIRM removes the focused (only) entry. Removing the last
- * watch must also close the picker back to BROWSE.
- *
- * The stick angle: radial_sector_from_stick (editor/widgets.c) computes
- * index = floor(((atan2(y, x) + pi/2) mod 2pi) * item_count / 2pi). For
- * item_count = 7 (EDITOR_TOOLS_ITEM_COUNT after S5.2a added "Levels"),
- * sector 5 ("Watch list", second-to-last item) spans stick angles in
- * [167.1, 218.6) degrees; (-0.9749279, -0.2225209) sits at its midpoint
- * (~192.9 degrees). Updated from the S5.1 6-item angle when S5.2a's
- * "Levels" entry shifted every sector boundary. */
+ * list, TAB opens the Tools radial, test_radial_select_item aims the stick
+ * at the "Watch list" sector (EDITOR_TOOLS_WATCH_LIST_INDEX) and confirms,
+ * one more frame lets BROWSE dispatch the pending radial choice and enter
+ * EDITOR_SUB_WATCH_LIST, then a final CONFIRM removes the focused (only)
+ * entry. Removing the last watch must also close the picker back to
+ * BROWSE. See test_radial_select_item's doc comment (test_helpers.h) for
+ * why the stick angle is computed instead of hardcoded. */
 void test_integration_editor_watch_list_removes_focused_entry(void)
 {
     TestGame game;
@@ -1184,12 +1178,8 @@ void test_integration_editor_watch_list_removes_focused_entry(void)
     TEST_ASSERT_EQUAL_INT(EDITOR_SUB_RADIAL, game.editor_state.sub_mode);
     TEST_ASSERT_EQUAL_INT(EDITOR_TOOLS_ITEM_COUNT, game.editor_state.radial_item_count);
 
-    /* Aim the stick at the sixth sector and confirm in the same frame. */
-    InputState radial_confirm = {0};
-    input_state_set_gp_axis(&radial_confirm, GAMEPAD_AXIS_LEFT_X, -0.9749279F);
-    input_state_set_gp_axis(&radial_confirm, GAMEPAD_AXIS_LEFT_Y, -0.2225209F);
-    input_state_press_key(&radial_confirm, KEY_ENTER);
-    test_advance_frame(&game, radial_confirm);
+    /* Aim the stick at the "Watch list" sector and confirm in the same frame. */
+    test_radial_select_item(&game, EDITOR_TOOLS_WATCH_LIST_INDEX);
     TEST_ASSERT_EQUAL_INT(EDITOR_SUB_BROWSE, game.editor_state.sub_mode);
 
     /* BROWSE dispatches the pending radial confirmation on the next frame. */
@@ -1212,11 +1202,11 @@ void test_integration_editor_watch_list_removes_focused_entry(void)
 /* S5.2a: LEVEL top mode with in-memory switching. fixture_gamedata has two
  * levels: "field" (player, rock, tall_tree — 3 entities) and "cave"
  * (player, rock — 2 entities). Drives entirely through the real input
- * layer: F5 into editor, TAB opens the Tools radial (now 7 items after
- * S5.2a added "Levels"), a stick angle aimed at the seventh sector plus
- * CONFIRM commits it, one more frame lets BROWSE dispatch the pending
- * radial choice and enter EDITOR_TOP_LEVEL. NAV_DOWN moves onto "cave"
- * (the only other_levels entry).
+ * layer: F5 into editor, TAB opens the Tools radial,
+ * test_radial_select_item aims the stick at the "Levels" sector
+ * (EDITOR_TOOLS_LEVELS_INDEX) and confirms, one more frame lets BROWSE
+ * dispatch the pending radial choice and enter EDITOR_TOP_LEVEL. NAV_DOWN
+ * moves onto "cave" (the only other_levels entry).
  *
  * A freshly-loaded session is dirty by undo_history_is_dirty's own
  * definition (the "Initial" baseline entry is never undo_history_mark_saved,
@@ -1229,13 +1219,7 @@ void test_integration_editor_watch_list_removes_focused_entry(void)
  * asserting the round trip preserved both levels' entities (tall_tree
  * survives being swapped out and back in) and that a subsequent non-editor
  * frame update runs cleanly against the restored level (player resolves,
- * collision tracking arrays are sized correctly for field's 3 entities).
- *
- * The stick angle: radial_sector_from_stick (editor/widgets.c) computes
- * index = floor(((atan2(y, x) + pi/2) mod 2pi) * item_count / 2pi). For
- * item_count = 7 (EDITOR_TOOLS_ITEM_COUNT after S5.2a), sector 6
- * ("Levels", the last item) spans stick angles in [218.6, 270) degrees;
- * (-0.4338837, -0.9009689) sits at its midpoint (244.3 degrees). */
+ * collision tracking arrays are sized correctly for field's 3 entities). */
 void test_integration_editor_level_switch_round_trip(void)
 {
     TestGame game;
@@ -1256,12 +1240,8 @@ void test_integration_editor_level_switch_round_trip(void)
     TEST_ASSERT_EQUAL_INT(EDITOR_SUB_RADIAL, game.editor_state.sub_mode);
     TEST_ASSERT_EQUAL_INT(EDITOR_TOOLS_ITEM_COUNT, game.editor_state.radial_item_count);
 
-    /* Aim the stick at the seventh sector ("Levels") and confirm in the same frame. */
-    InputState radial_confirm = {0};
-    input_state_set_gp_axis(&radial_confirm, GAMEPAD_AXIS_LEFT_X, -0.4338837F);
-    input_state_set_gp_axis(&radial_confirm, GAMEPAD_AXIS_LEFT_Y, -0.9009689F);
-    input_state_press_key(&radial_confirm, KEY_ENTER);
-    test_advance_frame(&game, radial_confirm);
+    /* Aim the stick at the "Levels" sector and confirm in the same frame. */
+    test_radial_select_item(&game, EDITOR_TOOLS_LEVELS_INDEX);
     TEST_ASSERT_EQUAL_INT(EDITOR_SUB_BROWSE, game.editor_state.sub_mode);
 
     /* BROWSE dispatches the pending radial confirmation on the next frame. */
@@ -1302,11 +1282,7 @@ void test_integration_editor_level_switch_round_trip(void)
     input_state_press_key(&open_tools_2, KEY_TAB);
     test_advance_frame(&game, open_tools_2);
 
-    InputState radial_confirm_2 = {0};
-    input_state_set_gp_axis(&radial_confirm_2, GAMEPAD_AXIS_LEFT_X, -0.4338837F);
-    input_state_set_gp_axis(&radial_confirm_2, GAMEPAD_AXIS_LEFT_Y, -0.9009689F);
-    input_state_press_key(&radial_confirm_2, KEY_ENTER);
-    test_advance_frame(&game, radial_confirm_2);
+    test_radial_select_item(&game, EDITOR_TOOLS_LEVELS_INDEX);
     test_advance_frame(&game, no_input);
     TEST_ASSERT_EQUAL_INT(EDITOR_TOP_LEVEL, game.editor_state.top_mode);
 
@@ -1401,13 +1377,9 @@ void test_integration_editor_level_create_round_trip(void)
     input_state_press_key(&open_tools, KEY_TAB);
     test_advance_frame(&game, open_tools);
 
-    /* Aim the stick at the seventh sector ("Levels") and confirm — same
-     * angle as test_integration_editor_level_switch_round_trip above. */
-    InputState radial_confirm = {0};
-    input_state_set_gp_axis(&radial_confirm, GAMEPAD_AXIS_LEFT_X, -0.4338837F);
-    input_state_set_gp_axis(&radial_confirm, GAMEPAD_AXIS_LEFT_Y, -0.9009689F);
-    input_state_press_key(&radial_confirm, KEY_ENTER);
-    test_advance_frame(&game, radial_confirm);
+    /* Aim the stick at the "Levels" sector and confirm — same helper call
+     * as test_integration_editor_level_switch_round_trip above. */
+    test_radial_select_item(&game, EDITOR_TOOLS_LEVELS_INDEX);
 
     InputState no_input = {0};
     test_advance_frame(&game, no_input);
@@ -1505,11 +1477,7 @@ void test_integration_editor_level_edit_detail_round_trip(void)
     input_state_press_key(&open_tools, KEY_TAB);
     test_advance_frame(&game, open_tools);
 
-    InputState radial_confirm = {0};
-    input_state_set_gp_axis(&radial_confirm, GAMEPAD_AXIS_LEFT_X, -0.4338837F);
-    input_state_set_gp_axis(&radial_confirm, GAMEPAD_AXIS_LEFT_Y, -0.9009689F);
-    input_state_press_key(&radial_confirm, KEY_ENTER);
-    test_advance_frame(&game, radial_confirm);
+    test_radial_select_item(&game, EDITOR_TOOLS_LEVELS_INDEX);
 
     InputState no_input = {0};
     test_advance_frame(&game, no_input);
@@ -1591,6 +1559,151 @@ void test_integration_editor_level_edit_detail_round_trip(void)
     TEST_ASSERT_TRUE(background_tile.ok);
     TEST_ASSERT_EQUAL_STRING("chest", background_tile.u.s);
     free(background_tile.u.s);
+
+    toml_free(root);
+    test_game_teardown(&game);
+}
+
+/* S5.3b: fixture with a tileset for the Tile-mode paint round-trip test
+ * below. "field" is 32x32, a small 2x2 tile grid at TILE_SIZE=16 — big
+ * enough to move the cursor off (0,0) but small enough to keep the input
+ * sequence short. */
+static const char *fixture_gamedata_tileset = "[[blueprint]]\n"
+                                              "name = \"player\"\n"
+                                              "texture = \"player.png\"\n"
+                                              "src = [0, 0, 32, 32]\n"
+                                              "collision_offset = [-5, 6]\n"
+                                              "collision_size = [10, 10]\n"
+                                              "behavior = \"player\"\n"
+                                              "speed = 80\n"
+                                              "\n"
+                                              "[[tileset]]\n"
+                                              "id = 1\n"
+                                              "texture = \"grass.png\"\n"
+                                              "src = [0, 0, 16, 16]\n"
+                                              "\n"
+                                              "[[tileset]]\n"
+                                              "id = 2\n"
+                                              "texture = \"floor.png\"\n"
+                                              "src = [0, 0, 16, 16]\n"
+                                              "\n"
+                                              "[[level]]\n"
+                                              "name = \"field\"\n"
+                                              "size = [32, 32]\n"
+                                              "\n"
+                                              "[[level.entity]]\n"
+                                              "blueprint = \"player\"\n"
+                                              "pos = [16, 16]\n";
+
+/* S5.3b: TILE mode paint round trip. Drives entirely through the real
+ * input layer: F5 into editor, TAB opens the Tools radial,
+ * test_radial_select_item aims the stick at the "Tiles" sector
+ * (EDITOR_TOOLS_TILE_INDEX) and confirms, one more frame lets BROWSE
+ * dispatch the pending radial choice and enter EDITOR_TOP_TILE /
+ * EDITOR_SUB_TILE_PAINT with the cursor at (0, 0). Opens the palette (real
+ * P / ACTION_EDITOR_PLACE binding), NAV_DOWN focuses tile id 2
+ * ("floor.png", the second tileset entry) and CONFIRM adopts it as the
+ * paint tile. NAV_RIGHT + NAV_DOWN move the cursor to (1, 1); CONFIRM
+ * paints. Asserts the ground layer cell at (1, 1) holds tile id 2 while
+ * the untouched (0, 0) cell stays 0 (empty). Saves through the real
+ * pause-menu path (wiring the recording gamedata-save fake, same as the
+ * Level-mode round-trip tests above) and reparses the emitted TOML to
+ * confirm the painted cell survives as a [[tiles_ground]] row-array
+ * entry. */
+void test_integration_editor_tile_paint_round_trip(void)
+{
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_gamedata_tileset));
+    game.frame_ctx.save_fn = test_recording_gamedata_save;
+    TEST_ASSERT_EQUAL_INT(2, game.state.gamedata.current_level.tiles_wide);
+    TEST_ASSERT_EQUAL_INT(2, game.state.gamedata.current_level.tiles_high);
+
+    InputState editor_toggle = {0};
+    input_state_press_key(&editor_toggle, KEY_F5);
+    test_advance_frame(&game, editor_toggle);
+    TEST_ASSERT_TRUE(game.state.editor_mode);
+
+    InputState open_tools = {0};
+    input_state_press_key(&open_tools, KEY_TAB);
+    test_advance_frame(&game, open_tools);
+    TEST_ASSERT_EQUAL_INT(EDITOR_SUB_RADIAL, game.editor_state.sub_mode);
+
+    /* Aim the stick at the "Tiles" sector and confirm in the same frame. */
+    test_radial_select_item(&game, EDITOR_TOOLS_TILE_INDEX);
+    TEST_ASSERT_EQUAL_INT(EDITOR_SUB_BROWSE, game.editor_state.sub_mode);
+
+    /* BROWSE dispatches the pending radial confirmation on the next frame. */
+    InputState no_input = {0};
+    test_advance_frame(&game, no_input);
+    TEST_ASSERT_EQUAL_INT(EDITOR_TOP_TILE, game.editor_state.top_mode);
+    TEST_ASSERT_EQUAL_INT(EDITOR_SUB_TILE_PAINT, game.editor_state.sub_mode);
+    TEST_ASSERT_EQUAL_INT(0, game.editor_state.tile_cursor_col);
+    TEST_ASSERT_EQUAL_INT(0, game.editor_state.tile_cursor_row);
+
+    /* Open the palette (real P / EDITOR_PLACE binding), focus tile id 2. */
+    InputState open_palette = {0};
+    input_state_press_key(&open_palette, KEY_P);
+    test_advance_frame(&game, open_palette);
+    TEST_ASSERT_EQUAL_INT(EDITOR_SUB_TILE_PALETTE, game.editor_state.sub_mode);
+    TEST_ASSERT_EQUAL_INT(0, game.editor_state.tile_palette_scroll);
+
+    InputState palette_down = {0};
+    input_state_press_key(&palette_down, KEY_DOWN);
+    test_advance_frame(&game, palette_down);
+    TEST_ASSERT_EQUAL_INT(1, game.editor_state.tile_palette_scroll);
+
+    InputState confirm = {0};
+    input_state_press_key(&confirm, KEY_ENTER);
+    test_advance_frame(&game, confirm);
+    TEST_ASSERT_EQUAL_INT(EDITOR_SUB_TILE_PAINT, game.editor_state.sub_mode);
+    TEST_ASSERT_EQUAL_INT(2, game.editor_state.selected_tile_id);
+
+    /* Move the cursor to (1, 1) and paint. */
+    InputState nav_right = {0};
+    input_state_press_key(&nav_right, KEY_RIGHT);
+    test_advance_frame(&game, nav_right);
+    InputState nav_down = {0};
+    input_state_press_key(&nav_down, KEY_DOWN);
+    test_advance_frame(&game, nav_down);
+    TEST_ASSERT_EQUAL_INT(1, game.editor_state.tile_cursor_col);
+    TEST_ASSERT_EQUAL_INT(1, game.editor_state.tile_cursor_row);
+
+    test_advance_frame(&game, confirm);
+
+    const Level *level = &game.state.gamedata.current_level;
+    TEST_ASSERT_EQUAL_INT(4, level->tiles_ground.count);
+    TEST_ASSERT_EQUAL_INT(2, level->tiles_ground.data[level_tile_index(1, 1, level->tiles_wide)]);
+    TEST_ASSERT_EQUAL_INT(0, level->tiles_ground.data[level_tile_index(0, 0, level->tiles_wide)]);
+
+    /* Save through the real pause-menu path (F3 -> DOWN to SAVE -> CONFIRM). */
+    InputState menu_open = {0};
+    input_state_press_key(&menu_open, KEY_F3);
+    test_advance_frame(&game, menu_open);
+
+    InputState menu_down = {0};
+    input_state_press_key(&menu_down, KEY_DOWN);
+    test_advance_frame(&game, menu_down);
+    TEST_ASSERT_EQUAL_INT(MENU_ENTRY_SAVE, game.menu.selected);
+
+    test_advance_frame(&game, confirm);
+    TEST_ASSERT_EQUAL_INT(1, game.gamedata_save_count);
+
+    char errbuf[200];
+    char *parse_buf = strdup(game.saved_gamedata_buf);
+    toml_table_t *root = toml_parse(parse_buf, errbuf, (int)sizeof(errbuf));
+    free(parse_buf);
+    TEST_ASSERT_NOT_NULL_MESSAGE(root, errbuf);
+
+    toml_array_t *levels = toml_array_in(root, "level");
+    TEST_ASSERT_NOT_NULL(levels);
+    toml_table_t *field_table = test_find_level_table_by_name(levels, "field");
+    TEST_ASSERT_NOT_NULL_MESSAGE(field_table, "'field' missing from saved TOML");
+
+    toml_array_t *tiles_ground = toml_array_in(field_table, "tiles_ground");
+    TEST_ASSERT_NOT_NULL_MESSAGE(tiles_ground, "tiles_ground missing from saved TOML");
+    toml_array_t *painted_row = toml_array_at(tiles_ground, 1);
+    TEST_ASSERT_NOT_NULL(painted_row);
+    TEST_ASSERT_EQUAL_INT(2, (int)toml_int_at(painted_row, 1).u.i);
 
     toml_free(root);
     test_game_teardown(&game);

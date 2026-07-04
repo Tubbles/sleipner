@@ -108,6 +108,21 @@ solid = false
 trigger = "enter"
 actions = ["transition:overworld,78,135"]
 
+[[tileset]]
+id = 1
+texture = "grass.png"
+src = [0, 0, 16, 16]
+
+[[tileset]]
+id = 2
+texture = "floor.png"
+src = [0, 0, 16, 16]
+
+[[tileset]]
+id = 3
+texture = "tree.png"
+src = [0, 0, 16, 16]
+
 [[level]]
 name = "house_interior"
 size = [160, 128]

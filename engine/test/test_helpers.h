@@ -123,6 +123,26 @@ void test_restore_fn(
  * game.frame_ctx.save_fn = test_recording_gamedata_save explicitly. */
 void test_recording_gamedata_save(Diag *diag, GameState *state, EditorState *editor_state, UndoHistory *undo_history);
 
+/* Compute the left-stick (x, y) at the midpoint of RADIAL_CTX_TOOLS sector
+ * `item_index`, given the CURRENT EDITOR_TOOLS_ITEM_COUNT, build an
+ * InputState with that stick position plus a CONFIRM press, and advance one
+ * frame — replacing the "InputState radial_confirm = {0}; set_gp_axis x2;
+ * press CONFIRM; advance_frame" block every existing radial test used to
+ * hardcode. Mirrors draw_radial_picker's sector-midpoint math
+ * (editor/widgets.c: start = index * sector_deg - RADIAL_NORTH_OFFSET_DEG,
+ * mid = start + sector_deg / 2) rather than inverting
+ * radial_sector_from_stick, so a new Tools-radial entry that bumps
+ * EDITOR_TOOLS_ITEM_COUNT never again requires recomputing hardcoded
+ * stick coordinates by hand — callers select an item by its
+ * EDITOR_TOOLS_*_INDEX constant instead.
+ *
+ * Caller must already have the Tools radial open (EDITOR_SUB_RADIAL, e.g.
+ * via the real ACTION_EDITOR_OPEN_TOOLS binding) before calling, and must
+ * drive one more no-input frame afterward for BROWSE to dispatch the
+ * pending confirmation (see the existing radial tests in
+ * integration_test.c for the two-frame pattern). */
+void test_radial_select_item(TestGame *game, int item_index);
+
 /* Drive one black-box frame at a 1/60s delta. Wires through
  * frame_update — same dispatch path production runs. */
 void test_advance_frame(TestGame *game, InputState input);

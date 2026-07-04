@@ -45,15 +45,14 @@ keybinding registry is now the place to plug each remaining mode in — each
 item below is a new set of submodes plus their handlers, pickers, and hint
 tables.
 
-- **Tile mode** (DESIGN.md §26) — `EDITOR_SUB_TILE_PAINT`,
-  `EDITOR_SUB_TILE_PALETTE` (radial/scroll picker of tile kinds), ground /
-  overlay layer toggle. Engine-side prerequisite landed (S5.3a):
-  `Level.tiles_ground`/`tiles_overlay` (flat row-major `vec_int`,
-  `level.h`/`level.c`), `GamedataState.tileset` (id -> texture+src,
-  `tileset.h`/`tileset.c`), TOML parse/emit, and ground/overlay render in
-  `main.c` (`draw_tile_layer`, `draw_ground_or_fallback`). S5.3b builds the
-  paint UI against this data model — no engine work should be needed beyond
-  it.
+- **Tile mode autotiling** (DESIGN.md §26, D36) — S5.3b shipped manual
+  concrete-tile-id painting (`EDITOR_SUB_TILE_PAINT`/`_PALETTE`,
+  `editor/tile.c`): a cursor over the ground/overlay grid, CONFIRM paints
+  the palette-picked tile id, EDITOR_DELETE erases. D36's "Autotiling
+  (automatic edge/corner sprite selection) is an editor feature" line is
+  still open — the file format already stores plain concrete tile ids, so
+  autotiling would live entirely in the editor's placement logic with no
+  further engine-side changes. Not attempted in S5.3b.
 - **Atlas mode** (§27) — `EDITOR_SUB_ATLAS_BROWSE`,
   `EDITOR_SUB_ATLAS_REGION_EDIT` (source-rect drag, like HANDLES but on the
   atlas image).

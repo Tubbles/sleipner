@@ -65,6 +65,8 @@ const EditorHintTable *blueprint_detail_hints_table(void);
 const EditorHintTable *watch_list_hints_table(void);
 const EditorHintTable *level_list_hints_table(void);
 const EditorHintTable *level_detail_hints_table(void);
+const EditorHintTable *tile_paint_hints_table(void);
+const EditorHintTable *tile_palette_hints_table(void);
 
 /* --- Shared helpers: core.c --- */
 

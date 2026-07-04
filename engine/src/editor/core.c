@@ -587,6 +587,25 @@ static void remove_watch_at(WatchList *watches, int index)
     watches->count--;
 }
 
+/* Entering Tile mode from the Tools radial: clamp the paint cursor in case
+ * the last level it was set against had a larger tile grid than the
+ * current one (e.g. after switching levels via Level mode). Split out of
+ * dispatch_radial_confirm to keep that function's cognitive complexity
+ * under the readability-function-cognitive-complexity threshold. */
+static void enter_tile_mode(GameState *state, EditorState *editor_state)
+{
+    const Level *level = &state->gamedata.current_level;
+    editor_state->top_mode = EDITOR_TOP_TILE;
+    editor_state->sub_mode = EDITOR_SUB_TILE_PAINT;
+    editor_state->selected_entity_id = -1;
+    if (level->tiles_wide <= 0 || editor_state->tile_cursor_col >= level->tiles_wide) {
+        editor_state->tile_cursor_col = level->tiles_wide > 0 ? level->tiles_wide - 1 : 0;
+    }
+    if (level->tiles_high <= 0 || editor_state->tile_cursor_row >= level->tiles_high) {
+        editor_state->tile_cursor_row = level->tiles_high > 0 ? level->tiles_high - 1 : 0;
+    }
+}
+
 static void
 dispatch_radial_confirm(GameState *state, EditorState *editor_state, WatchList *watches, UndoHistory *undo_history)
 {
@@ -633,6 +652,8 @@ dispatch_radial_confirm(GameState *state, EditorState *editor_state, WatchList *
             editor_state->level_list_scroll = 0;
             editor_state->level_switch_confirm_pending = false;
             editor_state->selected_entity_id = -1;
+        } else if (confirmed == EDITOR_TOOLS_TILE_INDEX) { /* Tiles */
+            enter_tile_mode(state, editor_state);
         }
     } else if (editor_state->radial_context == RADIAL_CTX_ATTR_TYPE) {
         dispatch_attr_type_change(state, editor_state, confirmed, undo_history);

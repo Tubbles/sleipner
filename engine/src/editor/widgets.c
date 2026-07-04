@@ -31,7 +31,8 @@ static int radial_sector_from_stick(Vector2 stick, int item_count)
 static const char *radial_label(const EditorState *editor_state, int index)
 {
     if (editor_state->radial_context == RADIAL_CTX_TOOLS) {
-        static const char *const tools[] = {"Grab", "Place", "Handles", "Delete", "Blueprints", "Watch list", "Levels"};
+        static const char *const tools[] = {"Grab",       "Place",      "Handles", "Delete",
+                                            "Blueprints", "Watch list", "Levels",  "Tiles"};
         if (index >= 0 && index < EDITOR_TOOLS_ITEM_COUNT) {
             return tools[index];
         }

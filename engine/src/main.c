@@ -957,6 +957,10 @@ static void draw_active_editor_panel(ScreenSize screen, GameState *state, Render
         draw_fuzzy_finder_panel(screen, state, &params.editor_state);
     } else if (params.editor_state.sub_mode == EDITOR_SUB_WATCH_LIST) {
         draw_watch_list_panel(screen, state, &params.editor_state, params.watches);
+    } else if (params.editor_state.sub_mode == EDITOR_SUB_TILE_PAINT) {
+        draw_tile_paint_panel(screen, state, &params.editor_state);
+    } else if (params.editor_state.sub_mode == EDITOR_SUB_TILE_PALETTE) {
+        draw_tile_palette_panel(screen, state, &params.editor_state);
     } else if (params.editor_state.top_mode == EDITOR_TOP_BLUEPRINT) {
         if (params.editor_state.selected_blueprint_index >= 0) {
             draw_blueprint_detail_panel(screen, state, &params.editor_state);
@@ -1009,6 +1013,7 @@ static void render_frame(GameState *state, RenderParams params)
         draw_editor_highlights(state, &params.editor_state, hover_index);
         draw_collision_handles(state, &params.editor_state);
         draw_place_preview(state, &params.editor_state, params.editor_camera);
+        draw_tile_paint_cursor(&params.editor_state);
     }
     EndMode2D();
     if (state->editor_mode) {

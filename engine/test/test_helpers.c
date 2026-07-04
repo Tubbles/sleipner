@@ -17,6 +17,7 @@
 #include "toml_emitter.h"
 #include "undo.h"
 
+#include <math.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -272,6 +273,18 @@ bool test_trigger_hot_reload(TestGame *game)
                               (GamedataParams){.toml_string = game->toml_string,
                                                .level_name = nullptr,
                                                .texture_lookup = test_dummy_texture_lookup});
+}
+
+void test_radial_select_item(TestGame *game, int item_index)
+{
+    float sector_deg = RADIAL_FULL_CIRCLE_DEG / (float)EDITOR_TOOLS_ITEM_COUNT;
+    float mid_deg = (((float)item_index + 0.5F) * sector_deg) - RADIAL_NORTH_OFFSET_DEG;
+    float mid_rad = mid_deg * RADIAL_DEG_TO_RAD;
+    InputState radial_confirm = {0};
+    input_state_set_gp_axis(&radial_confirm, GAMEPAD_AXIS_LEFT_X, cosf(mid_rad));
+    input_state_set_gp_axis(&radial_confirm, GAMEPAD_AXIS_LEFT_Y, sinf(mid_rad));
+    input_state_press_key(&radial_confirm, KEY_ENTER);
+    test_advance_frame(game, radial_confirm);
 }
 
 void test_advance_frame(TestGame *game, InputState input)

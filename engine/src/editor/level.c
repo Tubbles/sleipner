@@ -99,6 +99,15 @@ void create_new_level(
     new_level.floor_height = LEVEL_DEFAULT_HEIGHT;
     new_level.next_entity_id = 0;
     new_level.entities = vec_entity_new(alloc);
+    /* Tile grid (D36): sized from the S5.2b defaults above, layers left
+     * empty so the ground layer falls back to the flat background_tile
+     * fill until the editor's Tile mode paints something. Without this,
+     * a freshly created level would carry a degenerate 0x0 grid and a
+     * zero-valued (unusable) vec_int allocator. */
+    new_level.tiles_wide = level_tiles_wide(LEVEL_DEFAULT_WIDTH);
+    new_level.tiles_high = level_tiles_high(LEVEL_DEFAULT_HEIGHT);
+    new_level.tiles_ground = vec_int_new(alloc);
+    new_level.tiles_overlay = vec_int_new(alloc);
 
     if (!vec_level_push(&state->gamedata.other_levels, new_level)) {
         toast_level_error(editor_state, "Out of memory");
