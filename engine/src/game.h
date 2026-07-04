@@ -8,6 +8,7 @@
 #include "input_func.h"
 #include "preferences.h"
 #include "progression.h"
+#include "random.h"
 #include "raylib.h"
 #include "rect.h"
 #include "strv.h"
@@ -88,6 +89,10 @@ typedef struct {
     ErrorState error;
     DebugState debug;
     AudioState audio;
+    /* Runtime session state, not gamedata: seeded once from wall-clock time
+     * in game_init and never undo-snapshotted or persisted (see random.h,
+     * D21). */
+    RandomState rng;
     AssetRegistry assets;
     BindingStore bindings;
     Preferences preferences;

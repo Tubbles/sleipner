@@ -1,6 +1,7 @@
 #pragma once
 
 #include "alloc.h"
+#include "random.h"
 #include "raylib.h"
 #include "vec.h"
 
@@ -19,6 +20,6 @@ typedef struct {
 } ParticlePool;
 
 void particles_init(ParticlePool *pool);
-void particles_spawn(ParticlePool *pool, Allocator *alloc, Vector2 pos, Color color, int count);
+void particles_spawn(ParticlePool *pool, Allocator *alloc, RandomState *rng, Vector2 pos, Color color, int count);
 void particles_update(ParticlePool *pool, float delta_time);
 void particles_free(ParticlePool *pool);

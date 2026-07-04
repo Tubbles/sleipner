@@ -1,10 +1,10 @@
 #include "particle.h"
 #include "alloc.h"
+#include "random.h"
 #include "raylib.h"
 #include "vec.h"
 
 #include <math.h>
-#include <stdlib.h>
 
 #define PARTICLE_SPEED_MIN 50.0F
 #define PARTICLE_SPEED_MAX 200.0F
@@ -21,23 +21,18 @@ void particles_init(ParticlePool *pool)
     *pool = (ParticlePool){0};
 }
 
-static float rand_float(float min, float max)
-{
-    return min + (((float)rand() / (float)RAND_MAX) * (max - min));
-}
-
-void particles_spawn(ParticlePool *pool, Allocator *alloc, Vector2 pos, Color color, int count)
+void particles_spawn(ParticlePool *pool, Allocator *alloc, RandomState *rng, Vector2 pos, Color color, int count)
 {
     pool->items.alloc = *alloc;
     for (int index = 0; index < count; index++) {
-        float angle = rand_float(0.0F, 2.0F * PI);
-        float speed = rand_float(PARTICLE_SPEED_MIN, PARTICLE_SPEED_MAX);
+        float angle = random_float_range(rng, 0.0F, 2.0F * PI);
+        float speed = random_float_range(rng, PARTICLE_SPEED_MIN, PARTICLE_SPEED_MAX);
         Particle particle = {
             .position = pos,
             .velocity = {cosf(angle) * speed, sinf(angle) * speed},
             .color = color,
-            .lifetime = rand_float(PARTICLE_LIFE_MIN, PARTICLE_LIFE_MAX),
-            .size = rand_float(PARTICLE_SIZE_MIN, PARTICLE_SIZE_MAX),
+            .lifetime = random_float_range(rng, PARTICLE_LIFE_MIN, PARTICLE_LIFE_MAX),
+            .size = random_float_range(rng, PARTICLE_SIZE_MIN, PARTICLE_SIZE_MAX),
         };
         (void)vec_particle_push(&pool->items, particle);
     }

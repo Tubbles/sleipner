@@ -1215,7 +1215,7 @@ The function-layer overhaul (2026-04) unblocked black-box bug-repro tests: every
 - [ ] Dev mode flag to load from filesystem instead of embedded
 
 ### Phase 8 — Gameplay Systems
-- [ ] Proper PRNG (xoshiro256 or similar, replacing `rand()` in particle system)
+- [x] Proper PRNG (xoshiro256** seeded via splitmix64, replacing `rand()` in particle system) (S6.1, D21)
 - [x] Camera system (follow, bounds, transitions)
 - [ ] Combat (hitboxes, damage, knockback, i-frames)
 - [ ] Inventory & items

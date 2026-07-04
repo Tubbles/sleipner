@@ -14,6 +14,7 @@
 #include "input_func.h"
 #include "level.h"
 #include "preferences.h"
+#include "random.h"
 #include "rect.h"
 #include "rule.h"
 #include "str.h"
@@ -26,6 +27,7 @@
 #include <math.h>
 #include <stdint.h>
 #include <string.h>
+#include <time.h>
 
 #define TOML_ERRBUF_SIZE 200
 
@@ -43,6 +45,7 @@ bool game_init(Diag *diag, GameState *state, RectU32 game_bounds)
     state->game_bounds = game_bounds;
     state->gamedata.player_index = -1;
     state->debug_enabled = true;
+    random_seed(&state->rng, (uint64_t)time(nullptr));
     if (!arena_init(diag->error, &state->gamedata_arena)) {
         error_wrap(diag->error, "game_init");
         return false;
