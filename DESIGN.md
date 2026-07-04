@@ -1311,12 +1311,13 @@ Pause menu's "Settings" entry opens a three-screen overlay
   rows. Confirm on an alternative enters Capture; `EDITOR_DELETE`
   removes one; Cancel returns to List.
 - **Capture screen** — high-water-mark chord capture for actions:
-  every frame, the set of held bindable atoms is merged into a peak
-  set; finalize when the held set becomes empty after at least one
-  atom was captured. Tolerates out-of-sync release order so
-  Ctrl+Shift+Z resolves correctly regardless of which key the user
-  lifts first. Axis capture has its own three-flow state machine:
-  stick deflection or trigger pull finalizes a single
+  each frame, atoms that transition from not-held to held (a
+  release-edge, tracked against the previous frame's held set) join
+  a peak set; finalize when the held set becomes empty after at
+  least one atom was captured. Tolerates out-of-sync release order
+  so Ctrl+Shift+Z resolves correctly regardless of which key the
+  user lifts first. Axis capture has its own three-flow state
+  machine: stick deflection or trigger pull finalizes a single
   `ATOM_GP_AXIS` / `ATOM_GP_TRIGGER`; a key press transitions to a
   "now press the positive direction" prompt that finalizes
   `ATOM_KB_AXIS{neg, pos}`.
@@ -1324,9 +1325,15 @@ Pause menu's "Settings" entry opens a three-screen overlay
 `KEY_ESCAPE` and `GAMEPAD_BUTTON_MIDDLE_RIGHT` (Start) are
 **reserved cancels**: read raw and never bindable from the UI, so
 binding `ACTION_CANCEL` elsewhere cannot trap the user inside the
-capture screen. The `capture_armed` flag waits for one no-input
-frame after entering capture, so the Confirm press that opened the
-screen does not accidentally appear in the captured chord.
+capture screen. Action-chord capture accumulates by release edge:
+`capture_prev_held` snapshots the atoms already held the moment
+capture opens, and each frame only atoms that transition from
+not-held to held join the chord, so the Confirm press that opened
+the screen is excluded without needing an arming frame - a later
+re-press of that same key during capture is a fresh edge and can
+still be bound. Axis capture is a separate, simpler path and keeps
+its own `capture_axis_armed` wait for one no-input frame before it
+starts looking for stick/trigger/key input.
 
 Persistence: every successful mutation sets
 `SettingsState.save_requested`; the frame dispatcher forwards that

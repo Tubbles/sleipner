@@ -73,7 +73,8 @@ void settings_open(SettingsState *settings)
     settings->detail_index = 0;
     settings->detail_scroll = 0;
     settings->capture_chord_count = 0;
-    settings->capture_armed = false;
+    settings->capture_prev_held_count = 0;
+    settings->capture_axis_armed = false;
     settings->save_requested = false;
     settings->toast_text = nullptr;
     settings->toast_timer = 0.0F;
@@ -188,15 +189,22 @@ static bool reserved_cancel_pressed(const InputState *input)
     return key_pressed_in_state(input, KEY_ESCAPE) || gp_btn_pressed_in_state(input, GAMEPAD_BUTTON_MIDDLE_RIGHT);
 }
 
-static bool atom_in_chord(const SettingsState *settings, const AtomicInput *atom)
+/* True if `atom` (by kind + code) is present in the first `count` entries
+ * of `set`. Shared membership test for the capture chord itself and for
+ * the previous-frame held-atom snapshot used by release-edge capture. */
+static bool atom_in_set(const AtomicInput *set, int count, const AtomicInput *atom)
 {
-    for (int index = 0; index < settings->capture_chord_count; index++) {
-        const AtomicInput *existing = &settings->capture_chord[index];
-        if (existing->kind == atom->kind && existing->int_a == atom->int_a) {
+    for (int index = 0; index < count; index++) {
+        if (set[index].kind == atom->kind && set[index].int_a == atom->int_a) {
             return true;
         }
     }
     return false;
+}
+
+static bool atom_in_chord(const SettingsState *settings, const AtomicInput *atom)
+{
+    return atom_in_set(settings->capture_chord, settings->capture_chord_count, atom);
 }
 
 static void chord_add(SettingsState *settings, AtomicInput atom)
@@ -213,7 +221,9 @@ static void chord_add(SettingsState *settings, AtomicInput atom)
 
 /* Count bindable keys / buttons currently held this frame. Reserved cancels
  * (Esc, Start) are excluded so the user holding Esc to abort doesn't keep
- * the held set non-empty. */
+ * the held set non-empty. AXIS-mode capture only (handle_capture_axis_first);
+ * ACTION-mode capture enumerates into an array instead, see
+ * enumerate_held_atoms below. */
 static int count_bindable_held_atoms(const InputState *input)
 {
     int count = 0;
@@ -244,11 +254,15 @@ static int count_bindable_held_atoms(const InputState *input)
     return count;
 }
 
-/* Walk all bindable keys/buttons; for each currently-held one, add to
- * the high-water mark. */
-static void accumulate_held_atoms(SettingsState *settings, const InputState *input)
+/* Walk all bindable keys/buttons currently held this frame, writing each
+ * into `out` (capped at `capacity` entries). Shared by the prev-held
+ * snapshot taken when ACTION-mode capture opens (enter_capture) and by
+ * the press-edge accumulation run each capture frame
+ * (handle_capture_action). Returns the number of atoms written. */
+static int enumerate_held_atoms(const InputState *input, AtomicInput *out, int capacity)
 {
-    for (int key = 1; key < INPUT_MAX_KEY_CODE; key++) {
+    int count = 0;
+    for (int key = 1; key < INPUT_MAX_KEY_CODE && count < capacity; key++) {
         if (key == KEY_ESCAPE) {
             continue;
         }
@@ -258,10 +272,10 @@ static void accumulate_held_atoms(SettingsState *settings, const InputState *inp
         if (!input_func_key_name(key)) {
             continue;
         }
-        AtomicInput atom = {.kind = ATOM_KEY, .int_a = key, .int_b = 0, .scale = 1.0F};
-        chord_add(settings, atom);
+        out[count] = (AtomicInput){.kind = ATOM_KEY, .int_a = key, .int_b = 0, .scale = 1.0F};
+        count++;
     }
-    for (int btn = 1; btn < INPUT_GP_BUTTON_COUNT; btn++) {
+    for (int btn = 1; btn < INPUT_GP_BUTTON_COUNT && count < capacity; btn++) {
         if (btn == GAMEPAD_BUTTON_MIDDLE_RIGHT) {
             continue;
         }
@@ -271,9 +285,10 @@ static void accumulate_held_atoms(SettingsState *settings, const InputState *inp
         if (!input_func_gp_button_name(btn)) {
             continue;
         }
-        AtomicInput atom = {.kind = ATOM_GP_BUTTON, .int_a = btn, .int_b = 0, .scale = 1.0F};
-        chord_add(settings, atom);
+        out[count] = (AtomicInput){.kind = ATOM_GP_BUTTON, .int_a = btn, .int_b = 0, .scale = 1.0F};
+        count++;
     }
+    return count;
 }
 
 static int find_pressed_named_key(const InputState *input)
@@ -993,11 +1008,11 @@ static void update_detail_scroll(SettingsState *settings)
     }
 }
 
-static void enter_capture(SettingsState *settings, int alt_index)
+static void enter_capture(SettingsState *settings, const InputState *input, int alt_index)
 {
     settings->capture_alt_index = alt_index;
     settings->capture_chord_count = 0;
-    settings->capture_armed = false;
+    settings->capture_axis_armed = false;
     settings->capture_kb_axis_neg_key = 0;
     settings->screen = SETTINGS_SCREEN_CAPTURE;
     if (settings->target_kind == SETTINGS_TARGET_ACTION) {
@@ -1005,6 +1020,12 @@ static void enter_capture(SettingsState *settings, int alt_index)
     } else {
         settings->capture_mode = SETTINGS_CAPTURE_AXIS_FIRST;
     }
+    /* Snapshot the atoms already held at the moment capture opens (e.g.
+     * the ACTION_CONFIRM key that triggered this call) so the release-edge
+     * accumulation in handle_capture_action treats them as already-old,
+     * not a fresh press. */
+    settings->capture_prev_held_count =
+        enumerate_held_atoms(input, settings->capture_prev_held, SETTINGS_CAPTURE_PREV_HELD_MAX);
 }
 
 static void delete_alternative(SettingsState *settings, BindingStore *store)
@@ -1063,9 +1084,9 @@ static void handle_detail_input(SettingsState *settings, const InputState *input
         return;
     }
     if (settings->detail_index < alt_count) {
-        enter_capture(settings, settings->detail_index);
+        enter_capture(settings, input, settings->detail_index);
     } else if (settings->detail_index == alt_count + DETAIL_ADD_ROW_OFFSET) {
-        enter_capture(settings, -1);
+        enter_capture(settings, input, -1);
     } else {
         reset_target_to_defaults(settings, store, alloc);
     }
@@ -1080,15 +1101,16 @@ handle_capture_action(SettingsState *settings, const InputState *input, BindingS
         settings->screen = SETTINGS_SCREEN_DETAIL;
         return;
     }
-    int held = count_bindable_held_atoms(input);
-    if (!settings->capture_armed) {
-        if (held == 0) {
-            settings->capture_armed = true;
+    AtomicInput held_atoms[SETTINGS_CAPTURE_PREV_HELD_MAX];
+    int held_count = enumerate_held_atoms(input, held_atoms, SETTINGS_CAPTURE_PREV_HELD_MAX);
+    for (int index = 0; index < held_count; index++) {
+        if (!atom_in_set(settings->capture_prev_held, settings->capture_prev_held_count, &held_atoms[index])) {
+            chord_add(settings, held_atoms[index]);
         }
-        return;
     }
-    accumulate_held_atoms(settings, input);
-    if (held == 0 && settings->capture_chord_count > 0) {
+    memcpy(settings->capture_prev_held, held_atoms, (size_t)held_count * sizeof(AtomicInput));
+    settings->capture_prev_held_count = held_count;
+    if (held_count == 0 && settings->capture_chord_count > 0) {
         PhysicalInput view = chord_as_physical(settings);
         apply_action_alternative(settings, store, alloc, &view);
         settings->capture_chord_count = 0;
@@ -1141,9 +1163,9 @@ handle_capture_axis_first(SettingsState *settings, const InputState *input, Bind
      * capture (e.g. Confirm = Enter) immediately resolves as a kb_axis
      * neg_key. */
     int held = count_bindable_held_atoms(input);
-    if (!settings->capture_armed) {
+    if (!settings->capture_axis_armed) {
         if (held == 0) {
-            settings->capture_armed = true;
+            settings->capture_axis_armed = true;
         }
         return;
     }

@@ -107,6 +107,13 @@ typedef enum {
 
 #define SETTINGS_MAX_CHORD_ATOMS 8
 
+/* Cap on the previous-frame held-atom snapshot used by release-edge chord
+ * capture (see capture_prev_held below). A bit above SETTINGS_MAX_CHORD_ATOMS:
+ * atoms can be transiently held during capture (e.g. a modifier the user
+ * lets go of before the chord that gets bound) even though the chord itself
+ * is capped. */
+#define SETTINGS_CAPTURE_PREV_HELD_MAX 16
+
 typedef struct {
     bool open;
     Font font;
@@ -138,10 +145,22 @@ typedef struct {
     int capture_alt_index;                               /* >= 0 = replace this alternative; < 0 = add new */
     AtomicInput capture_chord[SETTINGS_MAX_CHORD_ATOMS]; /* high-water mark peak set */
     int capture_chord_count;
-    /* False until one frame of no-input has been observed since capture
-     * began. Prevents the press that opened capture (e.g. ACTION_CONFIRM
-     * = ENTER) from immediately appearing in the chord. */
-    bool capture_armed;
+    /* Release-edge tracking for ACTION-mode capture: the bindable atoms
+     * held during the previous capture frame. An atom accumulates into
+     * capture_chord only the frame it transitions from not-held to held.
+     * Initialized (see enter_capture) to the atoms already held at the
+     * moment capture opens, so the press that opened capture is excluded
+     * without needing an arming flag - but a later re-press of that same
+     * atom during capture is a fresh edge and IS captured. */
+    AtomicInput capture_prev_held[SETTINGS_CAPTURE_PREV_HELD_MAX];
+    int capture_prev_held_count;
+    /* AXIS-mode capture only (handle_capture_axis_first): false until one
+     * frame of no-input has been observed since capture began. Prevents
+     * the press that opened capture from immediately resolving as an
+     * axis atom. Axis capture is a separate, unchanged path from the
+     * release-edge tracking above - it has no chord to accumulate, so the
+     * simpler arming-frame wait still fits it. */
+    bool capture_axis_armed;
     int capture_kb_axis_neg_key; /* used by AXIS_SECOND; carries first key forward */
 
     /* Out-of-band signal used by frame.c to invoke the host's save
