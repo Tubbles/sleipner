@@ -38,12 +38,11 @@
 
 Phase 6 of the keybinding audit (`work/keybinding-audit.md`) enumerated five
 editor modes that DESIGN.md specifies but the engine did not yet implement.
-Level mode (§30), Tile mode (§26), Atlas mode (§27), and Animation mode
-(§28) are now done — see the follow-up bullets below for the gaps each one
-left open (Level mode's music picker, Tile mode's autotiling, Atlas mode's
-fuzzy-finder integration). Rule mode (§29) has read-only browsing, leaf
-editing, and structural editing shipped (S5.6a-c) — see the follow-up
-bullet below for the subroutine slice and other gaps still open.
+Level mode (§30), Tile mode (§26), Atlas mode (§27), Animation mode (§28),
+and Rule mode (§29) are now done — see the follow-up bullets below for the
+gaps each one left open (Level mode's music picker, Tile mode's autotiling,
+Atlas mode's fuzzy-finder integration, Rule mode's if_else/for_each
+predicate rows and MOVE reparenting).
 
 - **Tile mode autotiling** (DESIGN.md §26, D36) — S5.3b shipped manual
   concrete-tile-id painting (`EDITOR_SUB_TILE_PAINT`/`_PALETTE`,
@@ -78,8 +77,17 @@ bullet below for the subroutine slice and other gaps still open.
   the orphaned subtree just stops being emitted; ACTION_EDITOR_MOVE_UP/DOWN
   (new chords, `[Ctrl/L1, Up/Down]`) reorder a node among its siblings
   (`insert_rule_action_node`/`delete_rule_action_node`/
-  `move_rule_action_node`, `editor/rule.c`). Still open: subroutine
-  authoring/linking (S5.6d). Gaps left for that slice and beyond: (1)
+  `move_rule_action_node`, `editor/rule.c`); S5.6d shipped subroutines: the
+  blueprint picker's trailing "Subroutines" row switches
+  `EDITOR_SUB_RULE_LIST` to a list over `gamedata.subroutines` (name + action
+  count, "+ NEW SUBROUTINE", `ACTION_EDITOR_DELETE`), and each subroutine's
+  action tree reuses the exact same `EDITOR_SUB_RULE_TREE` editor as a rule's
+  — `rule_tree_flatten`/`rule_tree_row_count` and every S5.6b/c leaf/
+  structural-edit function were generalized to a `RuleTreeTarget`/
+  `RuleTreeTargetConst` (trigger+conditions+ActionTree for a Rule, ActionTree
+  alone for a Subroutine) resolved by `rule_current_target`/
+  `rule_current_target_mut` (`editor/rule.c`, `editor/internal.h`). Rule mode
+  is now feature-complete per the S5.6 brief. Remaining gaps: (1)
   `RuleTreeRow` (`editor/internal.h`) still only flattens rule-level
   conditions, not a control-flow node's own predicate
   (`ActionNode.conditions`) — an if_else row's CONFIRM is a no-op, and

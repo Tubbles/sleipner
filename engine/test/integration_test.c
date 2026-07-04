@@ -2529,6 +2529,195 @@ void test_integration_editor_rule_structural_edit(void)
     test_game_teardown(&game);
 }
 
+/* S5.6d: Rule mode subroutine authoring -- the final Rule mode slice.
+ * Subroutines are gamedata-level (rule.h's vec_subroutine), not per-blueprint,
+ * so they get their own list reachable from the blueprint picker's trailing
+ * "Subroutines" row (handle_rule_blueprint_list_input, editor/rule.c) rather
+ * than nesting under any one blueprint. Reuses fixture_rule_tree purely for
+ * its one blueprint (so the blueprint list has a real row before the
+ * Subroutines sentinel); the fixture's existing rule/tree is untouched.
+ *
+ * Drives, in sequence, entirely through the real input layer:
+ *  1. Enter Rule mode (test_radial_select_item, Rules sector), landing on
+ *     the blueprint list (rule_blueprint_index == -1). NAV_DOWN once reaches
+ *     the trailing "Subroutines" row (index == blueprint count, here 1);
+ *     CONFIRM enters the (empty) subroutine list without touching
+ *     rule_blueprint_index -- proving CANCEL later returns to this same
+ *     blueprint-picker view rather than some other state.
+ *  2. The subroutine list has one row -- "+ NEW SUBROUTINE" -- since there
+ *     are no subroutines yet; CONFIRM opens the word builder. Same
+ *     append-then-DONE idiom as
+ *     test_integration_editor_rule_leaf_edit_round_trip: NAV_DOWN once
+ *     ("chest"), CONFIRM (append), NAV_UP (back to "[ DONE ]"), CONFIRM
+ *     (create_new_subroutine("chest")). This lands directly in
+ *     EDITOR_SUB_RULE_TREE for the fresh, empty subroutine.
+ *  3. The subroutine's action tree is empty (0 flattened rows, since a
+ *     Subroutine has no trigger/conditions -- see RuleTreeTarget,
+ *     editor/internal.h), so ACTION_EDITOR_PLACE (S5.6c's insert, reused
+ *     verbatim) appends straight into action_tree.roots -- proving
+ *     insert_rule_action_node's "no action row focused yet" fallback still
+ *     works when there is no trigger/condition row ahead of it either. Same
+ *     ACTION_TYPE radial + fuzzy finder + word builder chain as S5.6c's own
+ *     insert test gives the new node a real type/argument (set_flag:locked).
+ *  4. Save through the real pause-menu path and reparse: the emitted
+ *     [[subroutine]] block must carry name="chest" and
+ *     actions=["set_flag:locked"].
+ *  5. Back out to the subroutine list (still showing "chest", since CANCEL
+ *     from RULE_TREE only resets sub_mode, not rule_viewing_subroutines) and
+ *     ACTION_EDITOR_DELETE it; save+reparse again must show no
+ *     [[subroutine]] block at all (emit_subroutines emits nothing for an
+ *     empty vec_subroutine). */
+void test_integration_editor_subroutine_edit_round_trip(void)
+{
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_rule_tree));
+    game.frame_ctx.save_fn = test_recording_gamedata_save;
+
+    InputState editor_toggle = {0};
+    input_state_press_key(&editor_toggle, KEY_F5);
+    test_advance_frame(&game, editor_toggle);
+
+    InputState open_tools = {0};
+    input_state_press_key(&open_tools, KEY_TAB);
+    test_advance_frame(&game, open_tools);
+    test_radial_select_item(&game, EDITOR_TOOLS_RULE_INDEX);
+
+    InputState no_input = {0};
+    test_advance_frame(&game, no_input);
+    TEST_ASSERT_EQUAL_INT(EDITOR_TOP_RULE, game.editor_state.top_mode);
+    TEST_ASSERT_EQUAL_INT(-1, game.editor_state.rule_blueprint_index);
+
+    /* NAV_DOWN once: scroll 0 ("switch") -> scroll 1 (the trailing
+     * "Subroutines" row -- fixture_rule_tree has exactly one blueprint). */
+    InputState nav_down = {0};
+    input_state_press_key(&nav_down, KEY_DOWN);
+    test_advance_frame(&game, nav_down);
+    TEST_ASSERT_EQUAL_INT(1, game.editor_state.rule_blueprint_scroll);
+
+    InputState confirm = {0};
+    input_state_press_key(&confirm, KEY_ENTER);
+    test_advance_frame(&game, confirm);
+    TEST_ASSERT_TRUE(game.editor_state.rule_viewing_subroutines);
+    TEST_ASSERT_EQUAL_INT(-1, game.editor_state.rule_blueprint_index);
+    TEST_ASSERT_EQUAL_INT(0, game.editor_state.rule_subroutine_scroll);
+
+    /* Subroutine list is empty: scroll 0 is already "+ NEW SUBROUTINE". */
+    test_advance_frame(&game, confirm);
+    TEST_ASSERT_EQUAL_INT(EDITOR_SUB_WORD_BUILDER, game.editor_state.sub_mode);
+    TEST_ASSERT_EQUAL_STRING("", game.editor_state.word_builder_buf);
+
+    test_advance_frame(&game, nav_down); /* word_builder_scroll 1: "chest" */
+    test_advance_frame(&game, confirm);  /* append "chest" */
+
+    InputState wb_up = {0};
+    input_state_press_key(&wb_up, KEY_UP);
+    test_advance_frame(&game, wb_up);   /* word_builder_scroll 0: "[ DONE ]" */
+    test_advance_frame(&game, confirm); /* create_new_subroutine("chest") */
+
+    TEST_ASSERT_EQUAL_INT(EDITOR_SUB_RULE_TREE, game.editor_state.sub_mode);
+    TEST_ASSERT_EQUAL_INT(1, game.state.gamedata.subroutines.count);
+    TEST_ASSERT_EQUAL_STRING("chest", game.state.gamedata.subroutines.data[0].name.ptr);
+    TEST_ASSERT_EQUAL_INT(0, game.state.gamedata.subroutines.data[0].action_tree.roots.count);
+    TEST_ASSERT_TRUE(strv_eq_cstr(undo_history_description(&game.undo_history), "Create subroutine"));
+
+    /* --- INSERT into the fresh, empty subroutine tree (S5.6c's insert, reused) --- */
+    InputState place_input = {0};
+    input_state_press_key(&place_input, KEY_P);
+    test_advance_frame(&game, place_input);
+
+    Subroutine *subroutine = &game.state.gamedata.subroutines.data[0];
+    TEST_ASSERT_EQUAL_INT(1, subroutine->action_tree.nodes.count);
+    TEST_ASSERT_EQUAL_INT(1, subroutine->action_tree.roots.count);
+    TEST_ASSERT_EQUAL_INT(0, subroutine->action_tree.roots.data[0]);
+    TEST_ASSERT_EQUAL_INT(EDITOR_SUB_RADIAL, game.editor_state.sub_mode);
+    TEST_ASSERT_EQUAL_INT(RADIAL_CTX_ACTION_TYPE, game.editor_state.radial_context);
+
+    test_select_rule_radial_item(&game, ACTION_SET_FLAG);
+    test_advance_frame(&game, no_input); /* RULE_TREE dispatches the radial confirm -> fuzzy finder */
+    TEST_ASSERT_EQUAL_INT(EDITOR_SUB_FUZZY_FINDER, game.editor_state.sub_mode);
+
+    test_advance_frame(&game, confirm); /* scroll 0 "[ NEW... ]" -> word builder, prefilled empty */
+    TEST_ASSERT_EQUAL_INT(EDITOR_SUB_WORD_BUILDER, game.editor_state.sub_mode);
+    TEST_ASSERT_EQUAL_STRING("", game.editor_state.word_builder_buf);
+
+    test_advance_frames(&game, nav_down, 2); /* word_builder_scroll 2: "locked" */
+    test_advance_frame(&game, confirm);      /* append "locked" */
+
+    test_advance_frames(&game, wb_up, 2); /* word_builder_scroll 0: "[ DONE ]" */
+    test_advance_frame(&game, confirm);   /* finalize: commit type+argument */
+
+    TEST_ASSERT_EQUAL_INT(EDITOR_SUB_RULE_TREE, game.editor_state.sub_mode);
+    TEST_ASSERT_EQUAL_INT(RULE_EDIT_FIELD_NONE, game.editor_state.rule_edit_field);
+    TEST_ASSERT_EQUAL_INT(ACTION_SET_FLAG, subroutine->action_tree.nodes.data[0].type);
+    TEST_ASSERT_EQUAL_STRING("locked", subroutine->action_tree.nodes.data[0].argument.ptr);
+
+    /* --- Save through the real pause-menu path and reparse --- */
+    InputState menu_open = {0};
+    input_state_press_key(&menu_open, KEY_F3);
+    test_advance_frame(&game, menu_open);
+
+    InputState menu_down = {0};
+    input_state_press_key(&menu_down, KEY_DOWN);
+    test_advance_frame(&game, menu_down);
+    TEST_ASSERT_EQUAL_INT(MENU_ENTRY_SAVE, game.menu.selected);
+
+    test_advance_frame(&game, confirm);
+    TEST_ASSERT_EQUAL_INT(1, game.gamedata_save_count);
+
+    char errbuf[200];
+    char *parse_buf = strdup(game.saved_gamedata_buf);
+    toml_table_t *root = toml_parse(parse_buf, errbuf, (int)sizeof(errbuf));
+    free(parse_buf);
+    TEST_ASSERT_NOT_NULL_MESSAGE(root, errbuf);
+
+    toml_array_t *sub_array = toml_array_in(root, "subroutine");
+    TEST_ASSERT_NOT_NULL_MESSAGE(sub_array, "[[subroutine]] missing from saved TOML");
+    TEST_ASSERT_EQUAL_INT(1, toml_array_nelem(sub_array));
+    toml_table_t *sub_table = toml_table_at(sub_array, 0);
+    TEST_ASSERT_NOT_NULL(sub_table);
+    toml_datum_t sub_name = toml_string_in(sub_table, "name");
+    TEST_ASSERT_TRUE(sub_name.ok);
+    TEST_ASSERT_EQUAL_STRING("chest", sub_name.u.s);
+    free(sub_name.u.s);
+    toml_array_t *sub_actions = toml_array_in(sub_table, "actions");
+    TEST_ASSERT_NOT_NULL(sub_actions);
+    toml_datum_t sub_action0 = toml_string_at(sub_actions, 0);
+    TEST_ASSERT_TRUE(sub_action0.ok);
+    TEST_ASSERT_EQUAL_STRING("set_flag:locked", sub_action0.u.s);
+    free(sub_action0.u.s);
+    toml_free(root);
+
+    /* --- DELETE the subroutine and confirm it's gone after save+reparse --- */
+    InputState cancel = {0};
+    input_state_press_key(&cancel, KEY_ESCAPE);
+    test_advance_frame(&game, cancel); /* RULE_TREE -> RULE_LIST (still viewing subroutines) */
+    TEST_ASSERT_EQUAL_INT(EDITOR_SUB_RULE_LIST, game.editor_state.sub_mode);
+    TEST_ASSERT_TRUE(game.editor_state.rule_viewing_subroutines);
+    TEST_ASSERT_EQUAL_INT(0, game.editor_state.rule_subroutine_scroll);
+
+    InputState delete_input = {0};
+    input_state_press_key(&delete_input, KEY_DELETE);
+    test_advance_frame(&game, delete_input);
+    TEST_ASSERT_EQUAL_INT(0, game.state.gamedata.subroutines.count);
+    TEST_ASSERT_TRUE(strv_eq_cstr(undo_history_description(&game.undo_history), "Delete subroutine"));
+
+    test_advance_frame(&game, menu_open);
+    test_advance_frame(&game, menu_down);
+    TEST_ASSERT_EQUAL_INT(MENU_ENTRY_SAVE, game.menu.selected);
+    test_advance_frame(&game, confirm);
+    TEST_ASSERT_EQUAL_INT(2, game.gamedata_save_count);
+
+    char errbuf2[200];
+    char *parse_buf2 = strdup(game.saved_gamedata_buf);
+    toml_table_t *root2 = toml_parse(parse_buf2, errbuf2, (int)sizeof(errbuf2));
+    free(parse_buf2);
+    TEST_ASSERT_NOT_NULL_MESSAGE(root2, errbuf2);
+    TEST_ASSERT_NULL_MESSAGE(toml_array_in(root2, "subroutine"), "deleted subroutine still present after save+reparse");
+    toml_free(root2);
+
+    test_game_teardown(&game);
+}
+
 /* Drive the pause menu through the real frame loop: F3 opens the
  * menu, KEY_DOWN walks the selection, KEY_ENTER confirms QUIT.
  * Observables are game.menu.open, game.menu.selected, and

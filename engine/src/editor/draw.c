@@ -114,6 +114,9 @@ static const EditorHintTable *hints_table_for(bool editor_mode, const EditorStat
     case EDITOR_SUB_ANIM_FRAMES:
         return anim_frames_hints_table();
     case EDITOR_SUB_RULE_LIST:
+        if (editor_state->rule_viewing_subroutines) {
+            return rule_subroutine_list_hints_table();
+        }
         return editor_state->rule_blueprint_index >= 0 ? rule_list_hints_table() : rule_blueprint_list_hints_table();
     case EDITOR_SUB_RULE_TREE:
         return rule_tree_hints_table();

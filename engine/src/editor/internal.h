@@ -75,6 +75,7 @@ const EditorHintTable *anim_edit_hints_table(void);
 const EditorHintTable *anim_frames_hints_table(void);
 const EditorHintTable *rule_blueprint_list_hints_table(void);
 const EditorHintTable *rule_list_hints_table(void);
+const EditorHintTable *rule_subroutine_list_hints_table(void);
 const EditorHintTable *rule_tree_hints_table(void);
 
 /* --- Shared helpers: core.c --- */
@@ -110,12 +111,14 @@ int editor_resolve_selected_attr_index(const GameState *state, const Entity *ent
 
 /* --- Shared type: rule.c (rule tree row model, S5.6a) ---
  *
- * One flattened row of a Rule's read-only tree view (editor/rule.c). The
- * trigger and the rule's own conditions sit at depth 0, ahead of the action
- * tree; the action tree is then walked depth-first over its flat node pool
- * (ActionTree.nodes), each control-flow node's `children` before its
- * `else_children`, recursing into nested control flow. This is the row
- * model later Rule-mode slices (b/c/d) build leaf/structural editing on. */
+ * One flattened row of a Rule or Subroutine's tree view (editor/rule.c). A
+ * Rule's trigger and its own conditions sit at depth 0, ahead of the action
+ * tree; a Subroutine has neither (see RuleTreeTarget below), so its flatten
+ * starts directly at the action tree. The action tree is then walked
+ * depth-first over its flat node pool (ActionTree.nodes), each control-flow
+ * node's `children` before its `else_children`, recursing into nested
+ * control flow. This is the row model Rule-mode's leaf/structural editing
+ * (S5.6b/c) is built on, generalized in S5.6d to also cover subroutines. */
 typedef enum {
     RULE_TREE_ROW_TRIGGER,
     RULE_TREE_ROW_CONDITION,
@@ -124,8 +127,8 @@ typedef enum {
 
 typedef struct {
     RuleTreeRowKind kind;
-    /* CONDITION: index into rule->conditions. ACTION: index into
-     * rule->action_tree.nodes (the flat pool). TRIGGER: unused (-1). */
+    /* CONDITION: index into the target's conditions. ACTION: index into
+     * the target's action_tree.nodes (the flat pool). TRIGGER: unused (-1). */
     int node_index;
     int depth; /* indentation depth, 0 = top-level (trigger/conditions/root actions) */
     /* ACTION rows only: true if this node was reached via its immediate
@@ -138,19 +141,51 @@ typedef struct {
     bool is_else_start;
 } RuleTreeRow;
 
-/* Total flattened row count for `rule`: trigger (1) + rule-level conditions
- * + every node in the action tree's flat pool (S2.3) -- every pool node is
- * reachable from roots/children/else_children by construction, so no tree
- * walk is needed to compute this, just the three counts. Callers size a
- * caller-owned RuleTreeRow buffer with this before calling
- * rule_tree_flatten. */
-int rule_tree_row_count(const Rule *rule);
+/* --- Shared type: rule.c (tree target abstraction, S5.6d) ---
+ *
+ * S5.6a-c's tree flatten/label/structural-edit code all operated on a
+ * `Rule` directly (trigger + rule-level conditions + ActionTree). A
+ * Subroutine (rule.h) is just a name + ActionTree -- no trigger, no
+ * rule-level conditions -- so S5.6d generalizes rule_tree_row_count/
+ * rule_tree_flatten and every editing function in editor/rule.c to take a
+ * RuleTreeTarget/RuleTreeTargetConst instead of a bare Rule pointer: the
+ * three fields the tree code actually needs, with trigger/conditions
+ * nullptr for a subroutine target. rule_tree_flatten only ever emits a
+ * RULE_TREE_ROW_TRIGGER/CONDITION row when the corresponding pointer is
+ * non-null (editor/rule.c), so no downstream row-kind switch needs to
+ * null-check trigger/conditions itself -- the row kind guarantees it.
+ * action_tree is nullptr only for an unresolved target (invalid index),
+ * mirroring how a bare Rule pointer or Subroutine pointer used to be
+ * null-checked.
+ * Resolved fresh per call from EditorState's rule_viewing_subroutines
+ * discriminant (editor.h) by rule_current_target/rule_current_target_mut
+ * (editor/rule.c), mirroring the const/mut resolver split
+ * rule_selected_rule/rule_selected_rule_mut already used for Rules alone. */
+typedef struct {
+    const Trigger *trigger;          /* nullptr for a subroutine target */
+    const vec_condition *conditions; /* nullptr for a subroutine target */
+    const ActionTree *action_tree;   /* nullptr only when nothing resolves */
+} RuleTreeTargetConst;
 
-/* Fills `out` (caller-allocated, sized to at least rule_tree_row_count(rule))
+typedef struct {
+    Trigger *trigger;
+    vec_condition *conditions;
+    ActionTree *action_tree;
+} RuleTreeTarget;
+
+/* Total flattened row count for `target`: trigger (1, if present) + its
+ * conditions (if present) + every node in the action tree's flat pool
+ * (S2.3) -- every pool node is reachable from roots/children/else_children
+ * by construction, so no tree walk is needed to compute this, just the
+ * three counts. Callers size a caller-owned RuleTreeRow buffer with this
+ * before calling rule_tree_flatten. */
+int rule_tree_row_count(RuleTreeTargetConst target);
+
+/* Fills `out` (caller-allocated, sized to at least rule_tree_row_count(target))
  * with one row per trigger/condition/action-node, in display order. Pure
  * function: no allocation, no GameState dependency -- callers own where the
  * buffer lives (see draw_rule_tree_panel's scratch-arena buffer, editor/rule.c). */
-void rule_tree_flatten(const Rule *rule, RuleTreeRow *out);
+void rule_tree_flatten(RuleTreeTargetConst target, RuleTreeRow *out);
 
 Blueprint *find_blueprint_by_name(GameState *state, const char *name);
 Attribute *attr_at_display_index(GameState *state, Entity *entity, int attr_index);
@@ -258,7 +293,12 @@ void enter_anim_mode(GameState *state, EditorState *editor_state);
  * entity is currently selected, its blueprint is preselected (rule list
  * opens directly); otherwise rule_blueprint_index lands on -1, which
  * EDITOR_SUB_RULE_LIST's dual duty (editor/rule.c) renders as the
- * blueprint list picker. Read-only (S5.6a): no undo integration. */
+ * blueprint list picker. Also resets rule_viewing_subroutines/
+ * rule_subroutine_scroll (S5.6d) to the blueprint-picker view every time,
+ * so a stale "was viewing subroutines" flag from a previous Rule mode
+ * session never survives a trip back through Scene mode -- see "Reset
+ * state on initialization" in CLAUDE.md. Entering the mode itself still has
+ * no undo integration (S5.6a); mutations once inside do (S5.6b-d). */
 void enter_rule_mode(GameState *state, EditorState *editor_state);
 
 /* --- Rule mode leaf editing (S5.6b, editor/rule.c) ---
@@ -342,3 +382,20 @@ void commit_rule_for_each_bind(GameState *state,
  * mutates -- see RuleEditField's doc comment (editor/editor.h). */
 void handle_rule_numeric_edit_input(
     GameState *state, EditorState *editor_state, UndoHistory *undo_history, const InputState *input, float delta_time);
+
+/* --- Rule mode subroutines (S5.6d, editor/rule.c) ---
+ *
+ * Validate `name` (non-empty, not already used by an existing
+ * gamedata.subroutines entry), append an empty Subroutine (blank
+ * ActionTree, no trigger/conditions -- see RuleTreeTarget above) to
+ * gamedata.subroutines, and focus it (rule_subroutine_scroll,
+ * rule_tree_row reset to 0). Mirrors start_new_atlas_region's two-outcome
+ * contract: returns true and expects the caller to switch to
+ * EDITOR_SUB_RULE_TREE; false means a toast was raised and the caller
+ * should return to EDITOR_SUB_RULE_LIST (the subroutine list). Called from
+ * widgets.c's word-builder CONFIRM dispatch via the editor_state->
+ * creating_subroutine tag (editor/editor.h), the same "small dedicated
+ * completion path" shape as commit_rule_for_each_bind above rather than
+ * another branch of that dispatch's own inline logic. */
+[[nodiscard]] bool
+create_new_subroutine(GameState *state, EditorState *editor_state, UndoHistory *undo_history, const char *name);

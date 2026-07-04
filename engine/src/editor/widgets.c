@@ -377,6 +377,18 @@ void handle_word_builder_input(
                 editor_state->sub_mode = EDITOR_SUB_ATLAS_BROWSE;
             }
             editor_state->creating_atlas_region = false;
+        } else if (editor_state->word_builder_scroll == 0 && editor_state->creating_subroutine) {
+            /* Rule mode subroutines (S5.6d): mirrors creating_atlas_region's
+             * two-outcome shape just above -- create_new_subroutine returns
+             * whether the name was accepted, routing to the tree editor on
+             * success or back to the subroutine list (with a toast already
+             * raised) on failure. */
+            if (create_new_subroutine(state, editor_state, undo_history, editor_state->word_builder_buf)) {
+                editor_state->sub_mode = EDITOR_SUB_RULE_TREE;
+            } else {
+                editor_state->sub_mode = EDITOR_SUB_RULE_LIST;
+            }
+            editor_state->creating_subroutine = false;
         } else if (editor_state->word_builder_scroll == 0 &&
                    (editor_state->adding_attr || editor_state->adding_blueprint_attr ||
                     editor_state->adding_persisted_attr)) {
@@ -419,6 +431,7 @@ void handle_word_builder_input(
         } else {
             bool cancel_to_atlas_browse = editor_state->creating_atlas_region;
             bool cancel_rule_edit = editor_state->rule_edit_field != RULE_EDIT_FIELD_NONE;
+            bool cancel_to_rule_list = editor_state->creating_subroutine;
             editor_state->adding_attr = false;
             editor_state->adding_blueprint_attr = false;
             editor_state->adding_persisted_attr = false;
@@ -427,6 +440,7 @@ void handle_word_builder_input(
             editor_state->duplicating_blueprint = false;
             editor_state->creating_level = false;
             editor_state->creating_atlas_region = false;
+            editor_state->creating_subroutine = false;
             editor_state->editing_level_string_field = LEVEL_STRING_FIELD_NONE;
             editor_state->rule_edit_field = RULE_EDIT_FIELD_NONE;
             if (cancel_to_atlas_browse) {
@@ -434,6 +448,8 @@ void handle_word_builder_input(
             } else if (cancel_rule_edit) {
                 editor_state->sub_mode = editor_state->return_sub_mode;
                 editor_state->return_sub_mode = EDITOR_SUB_BROWSE;
+            } else if (cancel_to_rule_list) {
+                editor_state->sub_mode = EDITOR_SUB_RULE_LIST;
             } else {
                 editor_state->sub_mode = EDITOR_SUB_BROWSE;
             }

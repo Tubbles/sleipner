@@ -147,12 +147,21 @@ typedef enum {
     /* Blueprint list picker (rule_blueprint_index < 0) or the selected
      * blueprint's rule list (rule_blueprint_index >= 0), S5.6a -- same dual
      * duty as EDITOR_SUB_ANIM_EDIT/anim_blueprint_index above. CONFIRM on a
-     * focused rule row opens EDITOR_SUB_RULE_TREE for that rule. Read-only:
-     * no editing, no undo integration. */
+     * focused rule row opens EDITOR_SUB_RULE_TREE for that rule. Browsing is
+     * read-only; editing (S5.6b/c) happens once inside RULE_TREE.
+     * S5.6d adds a third view this same submode dual-duties into: the
+     * blueprint list's trailing "Subroutines" row switches to the
+     * subroutine list (rule_viewing_subroutines, editor.h), which lists
+     * gamedata.subroutines plus a "+ NEW SUBROUTINE" row and supports
+     * create/delete (undo-tracked) in addition to browsing. */
     EDITOR_SUB_RULE_LIST,
-    /* Read-only, navigable indented tree for one rule: trigger, conditions,
-     * then a depth-first walk of the action tree (editor/rule.c's
-     * rule_tree_flatten). rule_tree_row is the flattened-row cursor.
+    /* Navigable indented tree over one Rule's or one Subroutine's action
+     * tree (rule_viewing_subroutines, S5.6d, selects which): trigger and
+     * conditions first for a Rule (a Subroutine has neither -- see
+     * RuleTreeTarget, editor/internal.h), then a depth-first walk of the
+     * action tree (editor/rule.c's rule_tree_flatten). rule_tree_row is the
+     * flattened-row cursor. Leaf editing (S5.6b), structural editing
+     * (S5.6c), and undo integration are identical for either target.
      * CANCEL returns to EDITOR_SUB_RULE_LIST. */
     EDITOR_SUB_RULE_TREE,
 } EditorSubMode;
@@ -224,38 +233,47 @@ typedef struct {
     float saved_attr_float;                        /* original float value saved on entering ATTR_EDIT */
     int saved_attr_int;                            /* original int value saved on entering ATTR_EDIT */
     bool saved_attr_bool;                          /* original bool value saved on entering ATTR_EDIT */
-    float attr_hold_total;                         /* cumulative time held in current direction */
-    float attr_hold_subtick;                       /* time since last auto-repeat fire */
-    int attr_hold_dir;                             /* -1 / 0 / +1: direction currently held for auto-repeat */
-    int radial_selected;                           /* -1 = center/none; 0..N-1 = highlighted sector */
-    int radial_confirmed;                          /* -1 = no pending; >=0 = confirmed index (read+cleared in browse) */
-    int radial_item_count;                         /* N items in the current picker */
-    RadialContext radial_context;                  /* which context opened the picker */
-    int word_builder_scroll;                       /* scroll index in vocabulary list (0 = DONE) */
-    int word_builder_len;                          /* current built string length */
-    char word_builder_buf[WORD_BUILDER_BUF_SIZE];  /* current built string (null-terminated) */
-    float toast_timer;                             /* seconds remaining for toast display */
-    Strv toast_text;                               /* current toast message (non-owning, points into undo arena) */
-    int fuzzy_finder_scroll;                       /* selected index (0 = "[ NEW... ]") */
-    const char **fuzzy_finder_items;               /* sorted unique name pointers (gamedata_arena) */
-    int fuzzy_finder_item_count;                   /* number of names (excludes the NEW sentinel) */
-    KeyboardWidget word_builder_kb;                /* reused two-level radial keyboard for word builder typing */
-    bool adding_attr;                              /* true when fuzzy finder is open for adding a runtime attribute */
-    bool adding_persisted_attr;                    /* true when fuzzy finder is open for adding a persisted attribute */
-    int selected_tree_index;                       /* -1 = not in tree section; >=0 = parent/child/ADD CHILD */
-    bool editing_child_tag;                        /* word builder is editing a blueprint child tag */
-    bool editing_child_offset;                     /* attr_edit is editing a blueprint child offset */
-    int child_edit_axis;                           /* 0=x, 1=y — which offset axis */
-    int child_edit_index;                          /* which child in blueprint->children is being edited */
-    bool adding_child;                             /* true when fuzzy finder is open for adding a blueprint child */
-    int blueprint_list_scroll;                     /* scroll position in blueprint list view */
-    int selected_blueprint_index;                  /* -1 = list view; >=0 = detail view */
-    int blueprint_attr_index;                      /* -1 = none; index into blueprint attrs (detail view) */
-    int blueprint_tree_index;                      /* -1 = not in tree; >=0 = child/ADD CHILD row */
-    bool adding_blueprint_attr;                    /* fuzzy finder is adding a blueprint-level attr */
-    bool creating_blueprint;                       /* word builder is naming a new blueprint */
-    bool duplicating_blueprint;                    /* word builder is naming a duplicate blueprint */
-    int watch_list_scroll;                         /* focused index into the watch list picker (0 = first entry) */
+    /* Rule mode subroutines (S5.6d, see rule_subroutine_scroll's doc
+     * comment further down for the real documentation). Declared here,
+     * away from the other rule_* fields, purely to fill the alignment gap
+     * saved_attr_bool already leaves before the next 4-byte-aligned field
+     * -- placing them there instead would add fresh padding
+     * (clang-analyzer-optin.performance.Padding) rather than reuse an
+     * existing gap. */
+    bool rule_viewing_subroutines;                /* true: RULE_LIST/RULE_TREE act on gamedata.subroutines */
+    bool creating_subroutine;                     /* word builder is naming a new subroutine */
+    float attr_hold_total;                        /* cumulative time held in current direction */
+    float attr_hold_subtick;                      /* time since last auto-repeat fire */
+    int attr_hold_dir;                            /* -1 / 0 / +1: direction currently held for auto-repeat */
+    int radial_selected;                          /* -1 = center/none; 0..N-1 = highlighted sector */
+    int radial_confirmed;                         /* -1 = no pending; >=0 = confirmed index (read+cleared in browse) */
+    int radial_item_count;                        /* N items in the current picker */
+    RadialContext radial_context;                 /* which context opened the picker */
+    int word_builder_scroll;                      /* scroll index in vocabulary list (0 = DONE) */
+    int word_builder_len;                         /* current built string length */
+    char word_builder_buf[WORD_BUILDER_BUF_SIZE]; /* current built string (null-terminated) */
+    float toast_timer;                            /* seconds remaining for toast display */
+    Strv toast_text;                              /* current toast message (non-owning, points into undo arena) */
+    int fuzzy_finder_scroll;                      /* selected index (0 = "[ NEW... ]") */
+    const char **fuzzy_finder_items;              /* sorted unique name pointers (gamedata_arena) */
+    int fuzzy_finder_item_count;                  /* number of names (excludes the NEW sentinel) */
+    KeyboardWidget word_builder_kb;               /* reused two-level radial keyboard for word builder typing */
+    bool adding_attr;                             /* true when fuzzy finder is open for adding a runtime attribute */
+    bool adding_persisted_attr;                   /* true when fuzzy finder is open for adding a persisted attribute */
+    int selected_tree_index;                      /* -1 = not in tree section; >=0 = parent/child/ADD CHILD */
+    bool editing_child_tag;                       /* word builder is editing a blueprint child tag */
+    bool editing_child_offset;                    /* attr_edit is editing a blueprint child offset */
+    int child_edit_axis;                          /* 0=x, 1=y — which offset axis */
+    int child_edit_index;                         /* which child in blueprint->children is being edited */
+    bool adding_child;                            /* true when fuzzy finder is open for adding a blueprint child */
+    int blueprint_list_scroll;                    /* scroll position in blueprint list view */
+    int selected_blueprint_index;                 /* -1 = list view; >=0 = detail view */
+    int blueprint_attr_index;                     /* -1 = none; index into blueprint attrs (detail view) */
+    int blueprint_tree_index;                     /* -1 = not in tree; >=0 = child/ADD CHILD row */
+    bool adding_blueprint_attr;                   /* fuzzy finder is adding a blueprint-level attr */
+    bool creating_blueprint;                      /* word builder is naming a new blueprint */
+    bool duplicating_blueprint;                   /* word builder is naming a duplicate blueprint */
+    int watch_list_scroll;                        /* focused index into the watch list picker (0 = first entry) */
     int level_list_scroll;             /* focused index into the level list: 0 = current_level, N = other_levels[N-1] */
     bool level_switch_confirm_pending; /* dirty-check gate: CONFIRM once more switches despite unsaved changes */
     bool creating_level;               /* word builder is naming a new level */
@@ -312,6 +330,24 @@ typedef struct {
     int rule_blueprint_scroll;
     int rule_list_scroll;
     int rule_tree_row;
+    /* Subroutines (S5.6d). The blueprint list (rule_blueprint_index < 0)
+     * carries one extra row after the real blueprints -- "Subroutines" --
+     * selecting it sets rule_viewing_subroutines (declared up near
+     * saved_attr_bool, grouped with that lone bool purely to avoid
+     * alignment padding -- see the comment there) and does NOT touch
+     * rule_blueprint_index (stays -1), so CANCEL from the subroutine list
+     * naturally returns to the same blueprint-picker view. While true,
+     * EDITOR_SUB_RULE_LIST/_TREE act on gamedata.subroutines via
+     * rule_subroutine_scroll instead of the blueprint/rule fields above --
+     * see RuleTreeTarget's doc comment (editor/internal.h) for how the tree
+     * editor is generalized to share one code path between the two.
+     * rule_subroutine_scroll is the list cursor (range
+     * [0, gamedata.subroutines.count], the last slot being "+ NEW
+     * SUBROUTINE"); it doubles as "which subroutine is open" in
+     * EDITOR_SUB_RULE_TREE, mirroring rule_list_scroll's own dual duty
+     * above (no separate field needed, since a subroutine already open in
+     * the tree editor is never the list's NEW sentinel). */
+    int rule_subroutine_scroll;
     /* Generic return target for the shared transient-picker submodes
      * (RADIAL/WORD_BUILDER/FUZZY_FINDER/ATTR_EDIT): the sub_mode to
      * restore once the picker closes. Needed because those submodes are
@@ -430,7 +466,10 @@ void handle_anim_edit_input(GameState *state,
                             const InputState *input);
 void handle_anim_frames_input(GameState *state, EditorState *editor_state, const InputState *input);
 void draw_anim_panel(ScreenSize screen, const GameState *state, const EditorState *editor_state);
-void handle_rule_list_input(GameState *state, EditorState *editor_state, const InputState *input);
+void handle_rule_list_input(GameState *state,
+                            EditorState *editor_state,
+                            UndoHistory *undo_history,
+                            const InputState *input);
 void handle_rule_tree_input(GameState *state,
                             EditorState *editor_state,
                             UndoHistory *undo_history,

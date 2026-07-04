@@ -3,6 +3,7 @@
 #include "alloc.h"
 #include "arena.h"
 #include "rule.h"
+#include "str.h"
 #include "strv.h"
 
 #include <stdio.h>
@@ -35,7 +36,11 @@ static int rule_resolve_selected_entity_blueprint_index(const GameState *state, 
 }
 
 /* Entering Rule mode from the Tools radial (dispatch_radial_confirm,
- * editor/core.c). Read-only (S5.6a): no undo integration. */
+ * editor/core.c). Read-only (S5.6a): no undo integration. Resets
+ * rule_viewing_subroutines/rule_subroutine_scroll (S5.6d) every time, same
+ * as the blueprint-picker fields below -- otherwise a "was viewing
+ * subroutines" flag from a previous Rule mode visit would survive a trip
+ * back through Scene mode and land the user on the wrong list. */
 void enter_rule_mode(GameState *state, EditorState *editor_state)
 {
     editor_state->top_mode = EDITOR_TOP_RULE;
@@ -47,6 +52,8 @@ void enter_rule_mode(GameState *state, EditorState *editor_state)
     editor_state->rule_tree_row = 0;
     editor_state->rule_edit_field = RULE_EDIT_FIELD_NONE;
     editor_state->selected_entity_id = -1;
+    editor_state->rule_viewing_subroutines = false;
+    editor_state->rule_subroutine_scroll = 0;
 }
 
 static const Blueprint *rule_selected_blueprint(const GameState *state, const EditorState *editor_state)
@@ -95,6 +102,90 @@ static Rule *rule_selected_rule_mut(GameState *state, const EditorState *editor_
         return nullptr;
     }
     return &blueprint->rules.data[index];
+}
+
+/* --- Subroutine selection (S5.6d) ---
+ *
+ * Mirrors rule_selected_rule/rule_selected_rule_mut's shape exactly:
+ * rule_subroutine_scroll indexes gamedata.subroutines directly (no
+ * intermediate "which blueprint" step, since subroutines are gamedata-level
+ * rather than per-blueprint -- see rule.h's Subroutine/vec_subroutine). */
+static const Subroutine *rule_selected_subroutine(const GameState *state, const EditorState *editor_state)
+{
+    int index = editor_state->rule_subroutine_scroll;
+    if (index < 0 || index >= state->gamedata.subroutines.count) {
+        return nullptr;
+    }
+    return &state->gamedata.subroutines.data[index];
+}
+
+static Subroutine *rule_selected_subroutine_mut(GameState *state, const EditorState *editor_state)
+{
+    int index = editor_state->rule_subroutine_scroll;
+    if (index < 0 || index >= state->gamedata.subroutines.count) {
+        return nullptr;
+    }
+    return &state->gamedata.subroutines.data[index];
+}
+
+/* --- Tree target resolution (S5.6d) ---
+ *
+ * Resolves whichever ActionTree EDITOR_SUB_RULE_LIST/_TREE is currently
+ * focused on -- a Rule's (trigger + conditions + action_tree) or a
+ * Subroutine's (action_tree alone) -- based on
+ * editor_state->rule_viewing_subroutines (editor.h). See RuleTreeTarget/
+ * RuleTreeTargetConst's doc comment (editor/internal.h) for why the tree
+ * flatten/label/structural-edit code below takes this instead of a bare
+ * Rule pointer. Mutable counterpart is rule_current_target_mut, duplicated
+ * rather than const-cast for the same reason rule_selected_rule/_mut are
+ * (comment above) -- this one is also called from the const-correct draw
+ * functions further down. action_tree is nullptr when nothing resolves,
+ * the same "invalid" signal a null Rule pointer or Subroutine pointer used
+ * to be. */
+static RuleTreeTargetConst rule_current_target(const GameState *state, const EditorState *editor_state)
+{
+    if (editor_state->rule_viewing_subroutines) {
+        const Subroutine *subroutine = rule_selected_subroutine(state, editor_state);
+        if (!subroutine) {
+            return (RuleTreeTargetConst){0};
+        }
+        return (RuleTreeTargetConst){
+            .trigger = nullptr, .conditions = nullptr, .action_tree = &subroutine->action_tree};
+    }
+    const Rule *rule = rule_selected_rule(state, editor_state);
+    if (!rule) {
+        return (RuleTreeTargetConst){0};
+    }
+    return (RuleTreeTargetConst){
+        .trigger = &rule->trigger, .conditions = &rule->conditions, .action_tree = &rule->action_tree};
+}
+
+static RuleTreeTarget rule_current_target_mut(GameState *state, const EditorState *editor_state)
+{
+    if (editor_state->rule_viewing_subroutines) {
+        Subroutine *subroutine = rule_selected_subroutine_mut(state, editor_state);
+        if (!subroutine) {
+            return (RuleTreeTarget){0};
+        }
+        return (RuleTreeTarget){.trigger = nullptr, .conditions = nullptr, .action_tree = &subroutine->action_tree};
+    }
+    Rule *rule = rule_selected_rule_mut(state, editor_state);
+    if (!rule) {
+        return (RuleTreeTarget){0};
+    }
+    return (RuleTreeTarget){
+        .trigger = &rule->trigger, .conditions = &rule->conditions, .action_tree = &rule->action_tree};
+}
+
+/* Narrows a mutable RuleTreeTarget to its const view -- a plain field-wise
+ * copy (implicit T* -> const T* qualification conversion, not a cast), used
+ * whenever a mutation function already resolved the mutable target but
+ * needs to call a read-only helper (rule_focused_row, rule_tree_row_count,
+ * rule_row_index_for_node) that only ever reads. */
+static RuleTreeTargetConst rule_tree_target_as_const(RuleTreeTarget target)
+{
+    return (RuleTreeTargetConst){
+        .trigger = target.trigger, .conditions = target.conditions, .action_tree = target.action_tree};
 }
 
 /* --- Row model: rule_tree_row_count / rule_tree_flatten (see the RuleTreeRow
@@ -157,19 +248,26 @@ static int rule_tree_count_reachable(const vec_action_node *pool, const vec_int 
 }
 // NOLINTEND(misc-no-recursion)
 
-int rule_tree_row_count(const Rule *rule)
+int rule_tree_row_count(RuleTreeTargetConst target)
 {
-    return 1 + rule->conditions.count + rule_tree_count_reachable(&rule->action_tree.nodes, &rule->action_tree.roots);
+    int trigger_row = target.trigger ? 1 : 0;
+    int condition_rows = target.conditions ? target.conditions->count : 0;
+    return trigger_row + condition_rows +
+           rule_tree_count_reachable(&target.action_tree->nodes, &target.action_tree->roots);
 }
 
-void rule_tree_flatten(const Rule *rule, RuleTreeRow *out)
+void rule_tree_flatten(RuleTreeTargetConst target, RuleTreeRow *out)
 {
     int cursor = 0;
-    out[cursor++] = (RuleTreeRow){.kind = RULE_TREE_ROW_TRIGGER, .node_index = -1, .depth = 0};
-    for (int index = 0; index < rule->conditions.count; index++) {
-        out[cursor++] = (RuleTreeRow){.kind = RULE_TREE_ROW_CONDITION, .node_index = index, .depth = 0};
+    if (target.trigger) {
+        out[cursor++] = (RuleTreeRow){.kind = RULE_TREE_ROW_TRIGGER, .node_index = -1, .depth = 0};
     }
-    rule_tree_flatten_children(&rule->action_tree.nodes, &rule->action_tree.roots, 0, false, out, &cursor);
+    if (target.conditions) {
+        for (int index = 0; index < target.conditions->count; index++) {
+            out[cursor++] = (RuleTreeRow){.kind = RULE_TREE_ROW_CONDITION, .node_index = index, .depth = 0};
+        }
+    }
+    rule_tree_flatten_children(&target.action_tree->nodes, &target.action_tree->roots, 0, false, out, &cursor);
 }
 
 /* Re-derives editor_state->rule_tree_row as a RuleTreeRow, by re-flattening
@@ -181,17 +279,17 @@ void rule_tree_flatten(const Rule *rule, RuleTreeRow *out)
  * an entire edit gesture -- there is nothing to keep in sync. Returns a
  * zeroed RuleTreeRow (kind RULE_TREE_ROW_TRIGGER, node_index 0) if the row
  * doesn't resolve, matching row 0 defensively rather than an out-of-range
- * read; callers that need a real row should still guard on rule being
- * non-null. */
-static RuleTreeRow rule_focused_row(GameState *state, const EditorState *editor_state, const Rule *rule)
+ * read; callers that need a real row should still guard on target.action_tree
+ * being non-null. */
+static RuleTreeRow rule_focused_row(GameState *state, const EditorState *editor_state, RuleTreeTargetConst target)
 {
     SCRATCH_SCOPE(&state->scratch_arena);
-    int row_count = rule_tree_row_count(rule);
+    int row_count = rule_tree_row_count(target);
     RuleTreeRow *rows = arena_alloc(&state->scratch_arena, sizeof(RuleTreeRow) * (size_t)row_count);
     if (!rows) {
         return (RuleTreeRow){0};
     }
-    rule_tree_flatten(rule, rows);
+    rule_tree_flatten(target, rows);
     int index = editor_state->rule_tree_row;
     if (index < 0 || index >= row_count) {
         return (RuleTreeRow){0};
@@ -279,17 +377,21 @@ static void format_action_label(const ActionNode *node, char *out, int cap)
     }
 }
 
-static void rule_tree_row_label(const Rule *rule, RuleTreeRow row, char *out, int cap)
+/* target.trigger/conditions are guaranteed non-null whenever row.kind is
+ * TRIGGER/CONDITION respectively -- rule_tree_flatten only ever emits those
+ * row kinds when the corresponding pointer is non-null (see its doc
+ * comment above), so no null-check is needed here. */
+static void rule_tree_row_label(RuleTreeTargetConst target, RuleTreeRow row, char *out, int cap)
 {
     switch (row.kind) {
     case RULE_TREE_ROW_TRIGGER:
-        format_trigger_label(&rule->trigger, out, cap);
+        format_trigger_label(target.trigger, out, cap);
         return;
     case RULE_TREE_ROW_CONDITION:
-        format_condition_label(&rule->conditions.data[row.node_index], out, cap);
+        format_condition_label(&target.conditions->data[row.node_index], out, cap);
         return;
     case RULE_TREE_ROW_ACTION:
-        format_action_label(&rule->action_tree.nodes.data[row.node_index], out, cap);
+        format_action_label(&target.action_tree->nodes.data[row.node_index], out, cap);
         return;
     }
 }
@@ -431,26 +533,27 @@ static void prefill_word_builder(EditorState *editor_state, const char *text)
  * ARGUMENT or SECOND_ARGUMENT so it knows which field to read. */
 const char *rule_edit_current_argument_text(GameState *state, const EditorState *editor_state)
 {
-    const Rule *rule = rule_selected_rule(state, editor_state);
-    if (!rule) {
+    RuleTreeTargetConst target = rule_current_target(state, editor_state);
+    if (!target.action_tree) {
         return "";
     }
-    RuleTreeRow row = rule_focused_row(state, editor_state, rule);
+    RuleTreeRow row = rule_focused_row(state, editor_state, target);
     bool second = editor_state->rule_edit_field == RULE_EDIT_FIELD_SECOND_ARGUMENT;
     switch (row.kind) {
     case RULE_TREE_ROW_TRIGGER:
-        return rule->trigger.argument.ptr ? rule->trigger.argument.ptr : "";
+        return target.trigger->argument.ptr ? target.trigger->argument.ptr : "";
     case RULE_TREE_ROW_CONDITION:
-        if (row.node_index < 0 || row.node_index >= rule->conditions.count) {
+        if (row.node_index < 0 || row.node_index >= target.conditions->count) {
             return "";
         }
-        return rule->conditions.data[row.node_index].argument.ptr ? rule->conditions.data[row.node_index].argument.ptr
-                                                                  : "";
+        return target.conditions->data[row.node_index].argument.ptr
+                   ? target.conditions->data[row.node_index].argument.ptr
+                   : "";
     case RULE_TREE_ROW_ACTION: {
-        if (row.node_index < 0 || row.node_index >= rule->action_tree.nodes.count) {
+        if (row.node_index < 0 || row.node_index >= target.action_tree->nodes.count) {
             return "";
         }
-        const ActionNode *node = &rule->action_tree.nodes.data[row.node_index];
+        const ActionNode *node = &target.action_tree->nodes.data[row.node_index];
         const Str *field = second ? &node->second_argument : &node->argument;
         return field->ptr ? field->ptr : "";
     }
@@ -483,10 +586,10 @@ static void begin_argument_step(GameState *state, EditorState *editor_state, boo
  * an unchanged value. */
 static void begin_compare_value_edit(GameState *state, EditorState *editor_state, RuleTreeRow row)
 {
-    const Rule *rule = rule_selected_rule(state, editor_state);
+    RuleTreeTargetConst target = rule_current_target(state, editor_state);
     float existing = 0.0F;
-    if (rule && row.node_index >= 0 && row.node_index < rule->conditions.count) {
-        existing = rule->conditions.data[row.node_index].compare_value;
+    if (target.conditions && row.node_index >= 0 && row.node_index < target.conditions->count) {
+        existing = target.conditions->data[row.node_index].compare_value;
     }
     editor_state->saved_attr_float = existing;
     editor_state->rule_edit_field = RULE_EDIT_FIELD_COMPARE_VALUE;
@@ -526,11 +629,11 @@ static void open_rule_type_radial(EditorState *editor_state, RadialContext conte
 
 void begin_rule_edit_for_row(GameState *state, EditorState *editor_state)
 {
-    Rule *rule = rule_selected_rule_mut(state, editor_state);
-    if (!rule) {
+    RuleTreeTargetConst target = rule_current_target(state, editor_state);
+    if (!target.action_tree) {
         return;
     }
-    RuleTreeRow row = rule_focused_row(state, editor_state, rule);
+    RuleTreeRow row = rule_focused_row(state, editor_state, target);
     switch (row.kind) {
     case RULE_TREE_ROW_TRIGGER:
         open_rule_type_radial(editor_state, RADIAL_CTX_TRIGGER_TYPE, RULE_TRIGGER_TYPE_COUNT);
@@ -539,10 +642,10 @@ void begin_rule_edit_for_row(GameState *state, EditorState *editor_state)
         open_rule_type_radial(editor_state, RADIAL_CTX_CONDITION_TYPE, RULE_CONDITION_TYPE_COUNT);
         return;
     case RULE_TREE_ROW_ACTION: {
-        if (row.node_index < 0 || row.node_index >= rule->action_tree.nodes.count) {
+        if (row.node_index < 0 || row.node_index >= target.action_tree->nodes.count) {
             return;
         }
-        const ActionNode *node = &rule->action_tree.nodes.data[row.node_index];
+        const ActionNode *node = &target.action_tree->nodes.data[row.node_index];
         if (node->type == ACTION_IF_ELSE) {
             return; /* nothing directly editable on the row itself, see the scope note above */
         }
@@ -566,30 +669,30 @@ void begin_rule_edit_for_row(GameState *state, EditorState *editor_state)
 
 static void finalize_rule_edit(GameState *state, EditorState *editor_state, UndoHistory *undo_history)
 {
-    Rule *rule = rule_selected_rule_mut(state, editor_state);
-    if (!rule) {
+    RuleTreeTarget target = rule_current_target_mut(state, editor_state);
+    if (!target.action_tree) {
         editor_state->rule_edit_field = RULE_EDIT_FIELD_NONE;
         return;
     }
-    RuleTreeRow row = rule_focused_row(state, editor_state, rule);
+    RuleTreeRow row = rule_focused_row(state, editor_state, rule_tree_target_as_const(target));
     Allocator alloc = allocator_arena(&state->gamedata_arena);
     const char *description = "Edit rule";
     switch (row.kind) {
     case RULE_TREE_ROW_TRIGGER: {
         TriggerType new_type = (TriggerType)editor_state->rule_edit_pending_type;
-        rule->trigger.type = new_type;
-        rule->trigger.argument = str_new(alloc);
+        target.trigger->type = new_type;
+        target.trigger->argument = str_new(alloc);
         if (trigger_type_has_argument(new_type)) {
-            (void)str_append_cstr(&rule->trigger.argument, editor_state->rule_edit_pending_argument);
+            (void)str_append_cstr(&target.trigger->argument, editor_state->rule_edit_pending_argument);
         }
         description = "Edit rule trigger";
         break;
     }
     case RULE_TREE_ROW_CONDITION: {
-        if (row.node_index < 0 || row.node_index >= rule->conditions.count) {
+        if (row.node_index < 0 || row.node_index >= target.conditions->count) {
             break;
         }
-        Condition *condition = &rule->conditions.data[row.node_index];
+        Condition *condition = &target.conditions->data[row.node_index];
         ConditionType new_type = (ConditionType)editor_state->rule_edit_pending_type;
         condition->type = new_type;
         condition->argument = str_new(alloc);
@@ -601,10 +704,10 @@ static void finalize_rule_edit(GameState *state, EditorState *editor_state, Undo
         break;
     }
     case RULE_TREE_ROW_ACTION: {
-        if (row.node_index < 0 || row.node_index >= rule->action_tree.nodes.count) {
+        if (row.node_index < 0 || row.node_index >= target.action_tree->nodes.count) {
             break;
         }
-        ActionNode *node = &rule->action_tree.nodes.data[row.node_index];
+        ActionNode *node = &target.action_tree->nodes.data[row.node_index];
         ActionType new_type = (ActionType)editor_state->rule_edit_pending_type;
         node->type = new_type;
         node->argument = str_new(alloc);
@@ -631,12 +734,12 @@ void rule_edit_argument_step_complete(GameState *state,
                                       UndoHistory *undo_history,
                                       const char *text)
 {
-    Rule *rule = rule_selected_rule_mut(state, editor_state);
-    if (!rule) {
+    RuleTreeTarget target = rule_current_target_mut(state, editor_state);
+    if (!target.action_tree) {
         editor_state->rule_edit_field = RULE_EDIT_FIELD_NONE;
         return;
     }
-    RuleTreeRow row = rule_focused_row(state, editor_state, rule);
+    RuleTreeRow row = rule_focused_row(state, editor_state, rule_tree_target_as_const(target));
 
     if (editor_state->rule_edit_field == RULE_EDIT_FIELD_SECOND_ARGUMENT) {
         copy_into_pending(editor_state->rule_edit_pending_second_argument, text);
@@ -661,11 +764,12 @@ void rule_edit_argument_step_complete(GameState *state,
 
 void commit_rule_for_each_bind(GameState *state, EditorState *editor_state, UndoHistory *undo_history, const char *text)
 {
-    Rule *rule = rule_selected_rule_mut(state, editor_state);
-    if (rule) {
-        RuleTreeRow row = rule_focused_row(state, editor_state, rule);
-        if (row.kind == RULE_TREE_ROW_ACTION && row.node_index >= 0 && row.node_index < rule->action_tree.nodes.count) {
-            ActionNode *node = &rule->action_tree.nodes.data[row.node_index];
+    RuleTreeTarget target = rule_current_target_mut(state, editor_state);
+    if (target.action_tree) {
+        RuleTreeRow row = rule_focused_row(state, editor_state, rule_tree_target_as_const(target));
+        if (row.kind == RULE_TREE_ROW_ACTION && row.node_index >= 0 &&
+            row.node_index < target.action_tree->nodes.count) {
+            ActionNode *node = &target.action_tree->nodes.data[row.node_index];
             Allocator alloc = allocator_arena(&state->gamedata_arena);
             node->second_argument = str_new(alloc);
             (void)str_append_cstr(&node->second_argument, text);
@@ -680,11 +784,12 @@ void commit_rule_for_each_bind(GameState *state, EditorState *editor_state, Undo
 
 static void commit_rule_repeat_count(GameState *state, EditorState *editor_state, UndoHistory *undo_history)
 {
-    Rule *rule = rule_selected_rule_mut(state, editor_state);
-    if (rule) {
-        RuleTreeRow row = rule_focused_row(state, editor_state, rule);
-        if (row.kind == RULE_TREE_ROW_ACTION && row.node_index >= 0 && row.node_index < rule->action_tree.nodes.count) {
-            ActionNode *node = &rule->action_tree.nodes.data[row.node_index];
+    RuleTreeTarget target = rule_current_target_mut(state, editor_state);
+    if (target.action_tree) {
+        RuleTreeRow row = rule_focused_row(state, editor_state, rule_tree_target_as_const(target));
+        if (row.kind == RULE_TREE_ROW_ACTION && row.node_index >= 0 &&
+            row.node_index < target.action_tree->nodes.count) {
+            ActionNode *node = &target.action_tree->nodes.data[row.node_index];
             Allocator alloc = allocator_arena(&state->gamedata_arena);
             node->argument = str_new(alloc);
             (void)str_append_cstr(&node->argument, TextFormat("%d", editor_state->saved_attr_int));
@@ -784,8 +889,8 @@ void dispatch_rule_radial_confirm(GameState *state, EditorState *editor_state, U
 {
     int confirmed = editor_state->radial_confirmed;
     editor_state->radial_confirmed = -1;
-    Rule *rule = rule_selected_rule_mut(state, editor_state);
-    if (!rule || confirmed < 0) {
+    RuleTreeTarget target = rule_current_target_mut(state, editor_state);
+    if (!target.action_tree || confirmed < 0) {
         editor_state->rule_edit_field = RULE_EDIT_FIELD_NONE;
         return;
     }
@@ -945,15 +1050,15 @@ static void rule_tree_list_remove_at(vec_int *list, int position)
  * gesture just acted on, since its row index shifts whenever sibling order
  * or tree shape changes. Returns -1 if not found (defensive; shouldn't
  * happen for a node this function's callers just inserted or moved). */
-static int rule_row_index_for_node(GameState *state, const Rule *rule, int node_index)
+static int rule_row_index_for_node(GameState *state, RuleTreeTargetConst target, int node_index)
 {
     SCRATCH_SCOPE(&state->scratch_arena);
-    int row_count = rule_tree_row_count(rule);
+    int row_count = rule_tree_row_count(target);
     RuleTreeRow *rows = arena_alloc(&state->scratch_arena, sizeof(RuleTreeRow) * (size_t)row_count);
     if (!rows) {
         return -1;
     }
-    rule_tree_flatten(rule, rows);
+    rule_tree_flatten(target, rows);
     for (int index = 0; index < row_count; index++) {
         if (rows[index].kind == RULE_TREE_ROW_ACTION && rows[index].node_index == node_index) {
             return index;
@@ -997,22 +1102,22 @@ static int rule_row_index_for_node(GameState *state, const Rule *rule, int node_
  * insert's own undo entry captured. */
 static void insert_rule_action_node(GameState *state, EditorState *editor_state, UndoHistory *undo_history)
 {
-    Rule *rule = rule_selected_rule_mut(state, editor_state);
-    if (!rule) {
+    RuleTreeTarget tree_target = rule_current_target_mut(state, editor_state);
+    if (!tree_target.action_tree) {
         return;
     }
-    RuleTreeRow row = rule_focused_row(state, editor_state, rule);
+    RuleTreeRow row = rule_focused_row(state, editor_state, rule_tree_target_as_const(tree_target));
 
     RuleNodeSlot target = {
         .parent_node_index = -1,
         .in_else_branch = false,
-        .position = rule->action_tree.roots.count,
+        .position = tree_target.action_tree->roots.count,
     };
     if (row.kind == RULE_TREE_ROW_ACTION) {
-        if (row.node_index < 0 || row.node_index >= rule->action_tree.nodes.count) {
+        if (row.node_index < 0 || row.node_index >= tree_target.action_tree->nodes.count) {
             return;
         }
-        const ActionNode *focused = &rule->action_tree.nodes.data[row.node_index];
+        const ActionNode *focused = &tree_target.action_tree->nodes.data[row.node_index];
         if (focused->type == ACTION_IF_ELSE || focused->type == ACTION_REPEAT || focused->type == ACTION_FOR_EACH) {
             target = (RuleNodeSlot){
                 .parent_node_index = row.node_index,
@@ -1020,7 +1125,7 @@ static void insert_rule_action_node(GameState *state, EditorState *editor_state,
                 .position = focused->children.count,
             };
         } else {
-            if (!rule_find_node_slot(&rule->action_tree, row.node_index, &target)) {
+            if (!rule_find_node_slot(tree_target.action_tree, row.node_index, &target)) {
                 return;
             }
             target.position++; /* insert AFTER the focused sibling */
@@ -1033,19 +1138,19 @@ static void insert_rule_action_node(GameState *state, EditorState *editor_state,
     (void)str_from_cstr(&blank.argument, "");
     blank.second_argument = str_new(alloc);
     (void)str_from_cstr(&blank.second_argument, "");
-    if (!vec_action_node_push(&rule->action_tree.nodes, blank)) {
+    if (!vec_action_node_push(&tree_target.action_tree->nodes, blank)) {
         return;
     }
-    int new_node_index = rule->action_tree.nodes.count - 1;
+    int new_node_index = tree_target.action_tree->nodes.count - 1;
 
     /* Re-derive the target list only now, after the pool push above -- see
      * the section doc comment's pointer-stability rule. */
-    vec_int *target_list = rule_node_slot_list(&rule->action_tree, target);
+    vec_int *target_list = rule_node_slot_list(tree_target.action_tree, target);
     if (!rule_tree_list_insert_at(target_list, target.position, new_node_index)) {
         return;
     }
 
-    int new_row = rule_row_index_for_node(state, rule, new_node_index);
+    int new_row = rule_row_index_for_node(state, rule_tree_target_as_const(tree_target), new_node_index);
     if (new_row >= 0) {
         editor_state->rule_tree_row = new_row;
     }
@@ -1067,22 +1172,22 @@ static void insert_rule_action_node(GameState *state, EditorState *editor_state,
  * the shrink immediately, so the cursor is re-clamped right after. */
 static void delete_rule_action_node(GameState *state, EditorState *editor_state, UndoHistory *undo_history)
 {
-    Rule *rule = rule_selected_rule_mut(state, editor_state);
-    if (!rule) {
+    RuleTreeTarget tree_target = rule_current_target_mut(state, editor_state);
+    if (!tree_target.action_tree) {
         return;
     }
-    RuleTreeRow row = rule_focused_row(state, editor_state, rule);
+    RuleTreeRow row = rule_focused_row(state, editor_state, rule_tree_target_as_const(tree_target));
     if (row.kind != RULE_TREE_ROW_ACTION) {
         return;
     }
     RuleNodeSlot slot;
-    if (!rule_find_node_slot(&rule->action_tree, row.node_index, &slot)) {
+    if (!rule_find_node_slot(tree_target.action_tree, row.node_index, &slot)) {
         return;
     }
-    vec_int *list = rule_node_slot_list(&rule->action_tree, slot);
+    vec_int *list = rule_node_slot_list(tree_target.action_tree, slot);
     rule_tree_list_remove_at(list, slot.position);
 
-    int row_count = rule_tree_row_count(rule);
+    int row_count = rule_tree_row_count(rule_tree_target_as_const(tree_target));
     if (editor_state->rule_tree_row >= row_count) {
         editor_state->rule_tree_row = row_count - 1;
     }
@@ -1107,19 +1212,19 @@ static void delete_rule_action_node(GameState *state, EditorState *editor_state,
  * plus a fresh insert elsewhere covers moving a node between branches). */
 static void move_rule_action_node(GameState *state, EditorState *editor_state, UndoHistory *undo_history, int direction)
 {
-    Rule *rule = rule_selected_rule_mut(state, editor_state);
-    if (!rule) {
+    RuleTreeTarget tree_target = rule_current_target_mut(state, editor_state);
+    if (!tree_target.action_tree) {
         return;
     }
-    RuleTreeRow row = rule_focused_row(state, editor_state, rule);
+    RuleTreeRow row = rule_focused_row(state, editor_state, rule_tree_target_as_const(tree_target));
     if (row.kind != RULE_TREE_ROW_ACTION) {
         return;
     }
     RuleNodeSlot slot;
-    if (!rule_find_node_slot(&rule->action_tree, row.node_index, &slot)) {
+    if (!rule_find_node_slot(tree_target.action_tree, row.node_index, &slot)) {
         return;
     }
-    vec_int *list = rule_node_slot_list(&rule->action_tree, slot);
+    vec_int *list = rule_node_slot_list(tree_target.action_tree, slot);
     int swap_with = slot.position + direction;
     if (swap_with < 0 || swap_with >= list->count) {
         return;
@@ -1128,7 +1233,7 @@ static void move_rule_action_node(GameState *state, EditorState *editor_state, U
     list->data[slot.position] = list->data[swap_with];
     list->data[swap_with] = moved_node_index;
 
-    int new_row = rule_row_index_for_node(state, rule, moved_node_index);
+    int new_row = rule_row_index_for_node(state, rule_tree_target_as_const(tree_target), moved_node_index);
     if (new_row >= 0) {
         editor_state->rule_tree_row = new_row;
     }
@@ -1138,6 +1243,13 @@ static void move_rule_action_node(GameState *state, EditorState *editor_state, U
 
 /* --- RULE_LIST: blueprint picker (rule_blueprint_index < 0) --- */
 
+/* The blueprint list carries one extra row after the real blueprints --
+ * "Subroutines" (S5.6d) -- selecting it switches to the subroutine list
+ * below without touching rule_blueprint_index, so CANCEL from there lands
+ * back on this same view. Dropping the old "&& count > 0" CONFIRM guard is
+ * required, not just simplification: with zero blueprints, total is still
+ * 1 (the sentinel alone), and scroll is clamped to that single slot, so the
+ * sentinel must be reachable even then. */
 static void handle_rule_blueprint_list_input(GameState *state, EditorState *editor_state, const InputState *input)
 {
     if (input_pressed(input, &state->bindings, ACTION_CANCEL)) {
@@ -1146,13 +1258,19 @@ static void handle_rule_blueprint_list_input(GameState *state, EditorState *edit
         return;
     }
     int count = state->gamedata.blueprints.entries.count;
-    if (input_pressed(input, &state->bindings, ACTION_NAV_DOWN) && editor_state->rule_blueprint_scroll < count - 1) {
+    int total = count + 1; /* +1 for the "Subroutines" row */
+    if (input_pressed(input, &state->bindings, ACTION_NAV_DOWN) && editor_state->rule_blueprint_scroll < total - 1) {
         editor_state->rule_blueprint_scroll++;
     }
     if (input_pressed(input, &state->bindings, ACTION_NAV_UP) && editor_state->rule_blueprint_scroll > 0) {
         editor_state->rule_blueprint_scroll--;
     }
-    if (input_pressed(input, &state->bindings, ACTION_CONFIRM) && count > 0) {
+    if (input_pressed(input, &state->bindings, ACTION_CONFIRM)) {
+        if (editor_state->rule_blueprint_scroll == count) {
+            editor_state->rule_viewing_subroutines = true;
+            editor_state->rule_subroutine_scroll = 0;
+            return;
+        }
         editor_state->rule_blueprint_index = editor_state->rule_blueprint_scroll;
         editor_state->rule_list_scroll = 0;
     }
@@ -1180,9 +1298,128 @@ static void handle_rule_row_list_input(GameState *state, EditorState *editor_sta
     }
 }
 
-void handle_rule_list_input(GameState *state, EditorState *editor_state, const InputState *input)
+/* --- RULE_LIST: subroutine list (rule_viewing_subroutines) (S5.6d) --- */
+
+static void toast_rule_error(EditorState *editor_state, const char *message)
 {
-    if (editor_state->rule_blueprint_index < 0) {
+    editor_state->toast_text = strv_from_cstr(message);
+    editor_state->toast_timer = TOAST_DURATION;
+}
+
+static bool subroutine_name_in_use(const GameState *state, Strv name)
+{
+    for (int index = 0; index < state->gamedata.subroutines.count; index++) {
+        if (strv_eq(name, str_to_strv(state->gamedata.subroutines.data[index].name))) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/* Validate/append/focus a new subroutine -- see the doc comment on this
+ * function's declaration (editor/internal.h) for the two-outcome contract
+ * mirroring start_new_atlas_region. */
+bool create_new_subroutine(GameState *state, EditorState *editor_state, UndoHistory *undo_history, const char *name)
+{
+    if (!name || name[0] == '\0') {
+        toast_rule_error(editor_state, "Subroutine name required");
+        return false;
+    }
+    Strv name_view = strv_from_cstr(name);
+    if (subroutine_name_in_use(state, name_view)) {
+        toast_rule_error(editor_state, "Subroutine name already exists");
+        return false;
+    }
+
+    Allocator alloc = allocator_arena(&state->gamedata_arena);
+    Subroutine new_subroutine = {0};
+    new_subroutine.name = str_new(alloc);
+    if (!str_from_cstr(&new_subroutine.name, name)) {
+        toast_rule_error(editor_state, "Subroutine creation failed");
+        return false;
+    }
+    new_subroutine.action_tree.nodes = vec_action_node_new(alloc);
+    new_subroutine.action_tree.roots = vec_int_new(alloc);
+    if (!vec_subroutine_push(&state->gamedata.subroutines, new_subroutine)) {
+        toast_rule_error(editor_state, "Out of memory");
+        return false;
+    }
+
+    editor_state->rule_subroutine_scroll = state->gamedata.subroutines.count - 1;
+    editor_state->rule_tree_row = 0;
+    undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
+                           strv_from_cstr("Create subroutine"));
+    return true;
+}
+
+/* DELETE (ACTION_EDITOR_DELETE on a focused subroutine list row): removes it
+ * from gamedata.subroutines by swapping the last entry into its slot,
+ * mirroring blueprint.c's delete_blueprint -- subroutines are referenced by
+ * name (rule.c's `call:` action resolution), never by vec position, so
+ * reordering on delete is safe the same way it is for blueprints. */
+static void delete_subroutine(GameState *state, EditorState *editor_state, UndoHistory *undo_history)
+{
+    int index = editor_state->rule_subroutine_scroll;
+    int count = state->gamedata.subroutines.count;
+    if (index < 0 || index >= count) {
+        return;
+    }
+    int last = count - 1;
+    if (index < last) {
+        state->gamedata.subroutines.data[index] = state->gamedata.subroutines.data[last];
+    }
+    state->gamedata.subroutines.count--;
+
+    if (editor_state->rule_subroutine_scroll >= state->gamedata.subroutines.count) {
+        editor_state->rule_subroutine_scroll = state->gamedata.subroutines.count;
+    }
+    undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
+                           strv_from_cstr("Delete subroutine"));
+}
+
+static void handle_rule_subroutine_list_input(GameState *state,
+                                              EditorState *editor_state,
+                                              UndoHistory *undo_history,
+                                              const InputState *input)
+{
+    if (input_pressed(input, &state->bindings, ACTION_CANCEL)) {
+        editor_state->rule_viewing_subroutines = false;
+        return;
+    }
+    int count = state->gamedata.subroutines.count;
+    int total = count + 1; /* +1 for "+ NEW SUBROUTINE" */
+    if (input_pressed(input, &state->bindings, ACTION_NAV_DOWN) && editor_state->rule_subroutine_scroll < total - 1) {
+        editor_state->rule_subroutine_scroll++;
+    }
+    if (input_pressed(input, &state->bindings, ACTION_NAV_UP) && editor_state->rule_subroutine_scroll > 0) {
+        editor_state->rule_subroutine_scroll--;
+    }
+    if (input_pressed(input, &state->bindings, ACTION_CONFIRM)) {
+        if (editor_state->rule_subroutine_scroll == count) {
+            editor_state->creating_subroutine = true;
+            editor_state->word_builder_len = 0;
+            editor_state->word_builder_buf[0] = '\0';
+            editor_state->word_builder_scroll = 0;
+            editor_state->sub_mode = EDITOR_SUB_WORD_BUILDER;
+            return;
+        }
+        editor_state->rule_tree_row = 0;
+        editor_state->sub_mode = EDITOR_SUB_RULE_TREE;
+        return;
+    }
+    if (input_pressed(input, &state->bindings, ACTION_EDITOR_DELETE) && editor_state->rule_subroutine_scroll < count) {
+        delete_subroutine(state, editor_state, undo_history);
+    }
+}
+
+void handle_rule_list_input(GameState *state,
+                            EditorState *editor_state,
+                            UndoHistory *undo_history,
+                            const InputState *input)
+{
+    if (editor_state->rule_viewing_subroutines) {
+        handle_rule_subroutine_list_input(state, editor_state, undo_history, input);
+    } else if (editor_state->rule_blueprint_index < 0) {
         handle_rule_blueprint_list_input(state, editor_state, input);
     } else {
         handle_rule_row_list_input(state, editor_state, input);
@@ -1224,11 +1461,11 @@ void handle_rule_tree_input(GameState *state,
         move_rule_action_node(state, editor_state, undo_history, 1);
         return;
     }
-    const Rule *rule = rule_selected_rule(state, editor_state);
-    if (!rule) {
+    RuleTreeTargetConst tree_target = rule_current_target(state, editor_state);
+    if (!tree_target.action_tree) {
         return;
     }
-    int row_count = rule_tree_row_count(rule);
+    int row_count = rule_tree_row_count(tree_target);
     if (input_pressed(input, &state->bindings, ACTION_NAV_DOWN) && editor_state->rule_tree_row < row_count - 1) {
         editor_state->rule_tree_row++;
     }
@@ -1250,6 +1487,10 @@ void handle_rule_tree_input(GameState *state,
 
 /* --- Draw --- */
 
+/* Carries one extra row after the real blueprints -- "Subroutines" (S5.6d,
+ * see handle_rule_blueprint_list_input) -- so there's no separate
+ * "(no blueprints)" early-out any more: with zero blueprints, total is
+ * still 1 (the Subroutines row alone) and it must render/be selectable. */
 static void draw_rule_blueprint_list_panel(ScreenSize screen, const GameState *state, const EditorState *editor_state)
 {
     int count = state->gamedata.blueprints.entries.count;
@@ -1261,18 +1502,13 @@ static void draw_rule_blueprint_list_panel(ScreenSize screen, const GameState *s
                  debug_text_color);
     y_offset += EDITOR_PANEL_LINE_HEIGHT * 2;
 
-    if (count == 0) {
-        draw_ui_text(font, "(no blueprints)", panel_x + DEBUG_MARGIN, y_offset, EDITOR_PANEL_FONT_SIZE,
-                     debug_text_color);
-        return;
-    }
-
+    int total = count + 1;
     int visible = place_visible_count(screen.height);
     int scroll = editor_state->rule_blueprint_scroll - (visible / 2);
     if (scroll < 0) {
         scroll = 0;
     }
-    int max_scroll = count - visible;
+    int max_scroll = total - visible;
     if (max_scroll < 0) {
         max_scroll = 0;
     }
@@ -1280,15 +1516,20 @@ static void draw_rule_blueprint_list_panel(ScreenSize screen, const GameState *s
         scroll = max_scroll;
     }
     int end = scroll + visible;
-    if (end > count) {
-        end = count;
+    if (end > total) {
+        end = total;
     }
     for (int index = scroll; index < end; index++) {
         bool selected = (index == editor_state->rule_blueprint_scroll);
         Color color = selected ? WHITE : debug_text_color;
-        const char *name = attr_get_string(&state->gamedata.blueprints.entries.data[index].attrs, "name");
-        draw_ui_text(font, TextFormat("%s %s", selected ? ">" : " ", name ? name : "?"), panel_x + DEBUG_MARGIN,
-                     y_offset, EDITOR_PANEL_FONT_SIZE, color);
+        if (index == count) {
+            draw_ui_text(font, TextFormat("%s Subroutines", selected ? ">" : " "), panel_x + DEBUG_MARGIN, y_offset,
+                         EDITOR_PANEL_FONT_SIZE, color);
+        } else {
+            const char *name = attr_get_string(&state->gamedata.blueprints.entries.data[index].attrs, "name");
+            draw_ui_text(font, TextFormat("%s %s", selected ? ">" : " ", name ? name : "?"), panel_x + DEBUG_MARGIN,
+                         y_offset, EDITOR_PANEL_FONT_SIZE, color);
+        }
         y_offset += EDITOR_PANEL_LINE_HEIGHT;
     }
 }
@@ -1341,6 +1582,58 @@ static void draw_rule_list_panel(ScreenSize screen, const GameState *state, cons
     }
 }
 
+/* Subroutine list (S5.6d): mirrors draw_rule_list_panel's shape, over
+ * gamedata.subroutines instead of one blueprint's rules, plus a trailing
+ * "+ NEW SUBROUTINE" row (same convention as draw_blueprint_list_panel's
+ * "+ NEW BLUEPRINT" / draw_level_list_panel's "+ NEW LEVEL"). Shows each
+ * subroutine's name and its top-level action count (roots.count -- nested
+ * if/else/repeat/for_each bodies aren't flattened into this count, same
+ * "top-level" framing draw_blueprint_list_panel's own rule count uses). */
+static void draw_rule_subroutine_list_panel(ScreenSize screen, const GameState *state, const EditorState *editor_state)
+{
+    int panel_x = screen.width - EDITOR_PANEL_WIDTH;
+    DrawRectangle(panel_x, 0, EDITOR_PANEL_WIDTH, screen.height, debug_bg_color);
+    Font font = state->assets.ui_font;
+    int y_offset = 0;
+    draw_ui_text(font, "[ Subroutines ]", panel_x + DEBUG_MARGIN, y_offset, EDITOR_PANEL_FONT_SIZE, debug_text_color);
+    y_offset += EDITOR_PANEL_LINE_HEIGHT * 2;
+
+    int count = state->gamedata.subroutines.count;
+    int total = count + 1; /* +1 for "+ NEW SUBROUTINE" */
+    int visible = place_visible_count(screen.height);
+    int scroll = editor_state->rule_subroutine_scroll - (visible / 2);
+    if (scroll < 0) {
+        scroll = 0;
+    }
+    int max_scroll = total - visible;
+    if (max_scroll < 0) {
+        max_scroll = 0;
+    }
+    if (scroll > max_scroll) {
+        scroll = max_scroll;
+    }
+    int end = scroll + visible;
+    if (end > total) {
+        end = total;
+    }
+    for (int index = scroll; index < end; index++) {
+        bool selected = (index == editor_state->rule_subroutine_scroll);
+        Color color = selected ? WHITE : debug_text_color;
+        if (index == count) {
+            draw_ui_text(font, TextFormat("%s + NEW SUBROUTINE", selected ? ">" : " "), panel_x + DEBUG_MARGIN,
+                         y_offset, EDITOR_PANEL_FONT_SIZE, color);
+        } else {
+            const Subroutine *subroutine = &state->gamedata.subroutines.data[index];
+            int action_count = subroutine->action_tree.roots.count;
+            draw_ui_text(font,
+                         TextFormat("%s %s  (%d action%s)", selected ? ">" : " ", subroutine->name.ptr, action_count,
+                                    action_count == 1 ? "" : "s"),
+                         panel_x + DEBUG_MARGIN, y_offset, EDITOR_PANEL_FONT_SIZE, color);
+        }
+        y_offset += EDITOR_PANEL_LINE_HEIGHT;
+    }
+}
+
 /* Live preview for the focused row while a standalone numeric edit
  * (RULE_EDIT_FIELD_REPEAT_COUNT / COMPARE_VALUE, S5.6b) is in flight --
  * those stage in saved_attr_int/saved_attr_float rather than mutating the
@@ -1349,16 +1642,16 @@ static void draw_rule_list_panel(ScreenSize screen, const GameState *state, cons
  * pre-edit value for the whole session. Returns false (out untouched)
  * for every other row/state, so the caller falls back to the normal
  * label. */
-static bool
-format_rule_edit_preview_label(const Rule *rule, const EditorState *editor_state, RuleTreeRow row, char *out, int cap)
+static bool format_rule_edit_preview_label(
+    RuleTreeTargetConst target, const EditorState *editor_state, RuleTreeRow row, char *out, int cap)
 {
     if (editor_state->rule_edit_field == RULE_EDIT_FIELD_REPEAT_COUNT && row.kind == RULE_TREE_ROW_ACTION) {
         (void)snprintf(out, (size_t)cap, "repeat %d", editor_state->saved_attr_int);
         return true;
     }
     if (editor_state->rule_edit_field == RULE_EDIT_FIELD_COMPARE_VALUE && row.kind == RULE_TREE_ROW_CONDITION &&
-        row.node_index >= 0 && row.node_index < rule->conditions.count) {
-        const Condition *condition = &rule->conditions.data[row.node_index];
+        target.conditions && row.node_index >= 0 && row.node_index < target.conditions->count) {
+        const Condition *condition = &target.conditions->data[row.node_index];
         (void)snprintf(out, (size_t)cap, "%s: %s %s %g", condition_type_label(condition->type), condition->argument.ptr,
                        condition_operator(condition->type), (double)editor_state->saved_attr_float);
         return true;
@@ -1366,30 +1659,38 @@ format_rule_edit_preview_label(const Rule *rule, const EditorState *editor_state
     return false;
 }
 
-/* Non-const state (unlike its siblings above): flattens the rule's action
+/* Non-const state (unlike its siblings above): flattens the target's action
  * tree into a scratch-arena buffer to render it (rule_tree_flatten needs a
  * caller-owned buffer -- see the RuleTreeRow doc comment, editor/internal.h),
- * which needs a mutable Arena. */
+ * which needs a mutable Arena. Shows which subroutine is open in the title
+ * when rule_viewing_subroutines is set (S5.6d); otherwise "[ Rule ]" as
+ * before. */
 static void draw_rule_tree_panel(ScreenSize screen, GameState *state, const EditorState *editor_state)
 {
-    const Rule *rule = rule_selected_rule(state, editor_state);
-    if (!rule) {
+    RuleTreeTargetConst target = rule_current_target(state, editor_state);
+    if (!target.action_tree) {
         return;
     }
     int panel_x = screen.width - EDITOR_PANEL_WIDTH;
     DrawRectangle(panel_x, 0, EDITOR_PANEL_WIDTH, screen.height, debug_bg_color);
     Font font = state->assets.ui_font;
     int y_offset = 0;
-    draw_ui_text(font, "[ Rule ]", panel_x + DEBUG_MARGIN, y_offset, EDITOR_PANEL_FONT_SIZE, debug_text_color);
+    if (editor_state->rule_viewing_subroutines) {
+        const Subroutine *subroutine = rule_selected_subroutine(state, editor_state);
+        draw_ui_text(font, TextFormat("[ Subroutine: %s ]", subroutine ? subroutine->name.ptr : "?"),
+                     panel_x + DEBUG_MARGIN, y_offset, EDITOR_PANEL_FONT_SIZE, debug_text_color);
+    } else {
+        draw_ui_text(font, "[ Rule ]", panel_x + DEBUG_MARGIN, y_offset, EDITOR_PANEL_FONT_SIZE, debug_text_color);
+    }
     y_offset += EDITOR_PANEL_LINE_HEIGHT * 2;
 
     SCRATCH_SCOPE(&state->scratch_arena);
-    int row_count = rule_tree_row_count(rule);
+    int row_count = rule_tree_row_count(target);
     RuleTreeRow *rows = arena_alloc(&state->scratch_arena, sizeof(RuleTreeRow) * (size_t)row_count);
     if (!rows) {
         return;
     }
-    rule_tree_flatten(rule, rows);
+    rule_tree_flatten(target, rows);
 
     int visible = place_visible_count(screen.height);
     int scroll = editor_state->rule_tree_row - (visible / 2);
@@ -1418,8 +1719,8 @@ static void draw_rule_tree_panel(ScreenSize screen, GameState *state, const Edit
         bool selected = (index == editor_state->rule_tree_row);
         Color color = selected ? WHITE : debug_text_color;
         char label[96];
-        if (!selected || !format_rule_edit_preview_label(rule, editor_state, row, label, (int)sizeof(label))) {
-            rule_tree_row_label(rule, row, label, (int)sizeof(label));
+        if (!selected || !format_rule_edit_preview_label(target, editor_state, row, label, (int)sizeof(label))) {
+            rule_tree_row_label(target, row, label, (int)sizeof(label));
         }
         draw_ui_text(font, TextFormat("%s %s", selected ? ">" : " ", label), panel_x + DEBUG_MARGIN + indent, y_offset,
                      EDITOR_PANEL_FONT_SIZE, color);
@@ -1439,6 +1740,8 @@ void draw_rule_panel(ScreenSize screen, GameState *state, const EditorState *edi
 {
     if (editor_state->sub_mode == EDITOR_SUB_RULE_TREE || editor_state->sub_mode == EDITOR_SUB_ATTR_EDIT) {
         draw_rule_tree_panel(screen, state, editor_state);
+    } else if (editor_state->rule_viewing_subroutines) {
+        draw_rule_subroutine_list_panel(screen, state, editor_state);
     } else if (editor_state->rule_blueprint_index >= 0) {
         draw_rule_list_panel(screen, state, editor_state);
     } else {
@@ -1482,6 +1785,22 @@ static const EditorHintTable rule_list_table = {
 const EditorHintTable *rule_list_hints_table(void)
 {
     return &rule_list_table;
+}
+
+static const EditorActionHint rule_subroutine_list_hints[] = {
+    {ACTION_CANCEL, "Back to blueprints"}, {ACTION_NAV_UP, "Prev"},          {ACTION_NAV_DOWN, "Next"},
+    {ACTION_CONFIRM, "Open / New"},        {ACTION_EDITOR_DELETE, "Delete"},
+};
+
+static const EditorHintTable rule_subroutine_list_table = {
+    .hints = rule_subroutine_list_hints,
+    .count = (int)(sizeof(rule_subroutine_list_hints) / sizeof(rule_subroutine_list_hints[0])),
+    .mode_label = "Subroutine list",
+};
+
+const EditorHintTable *rule_subroutine_list_hints_table(void)
+{
+    return &rule_subroutine_list_table;
 }
 
 static const EditorActionHint rule_tree_hints[] = {
