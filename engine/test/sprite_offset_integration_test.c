@@ -163,9 +163,9 @@ void test_integration_sprite_offset_edit_emitted_to_toml(void)
     /* Emit TOML — sprite_offset = [5, 10] must appear in the tree
      * blueprint section. */
     char output[8192];
-    int written =
-        toml_emit_gamedata(&state.error, output, (int)sizeof(output), &state.gamedata.blueprints,
-                           &state.gamedata.subroutines, &state.gamedata.tileset, &state.gamedata.current_level, 1);
+    int written = toml_emit_gamedata(&state.error, output, (int)sizeof(output), &state.gamedata.blueprints,
+                                     &state.gamedata.subroutines, &state.gamedata.tileset,
+                                     &state.gamedata.atlas_regions, &state.gamedata.current_level, 1);
     TEST_ASSERT_TRUE(written > 0);
 
     /* The emitted TOML must contain the sprite_offset for the tree */

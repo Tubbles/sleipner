@@ -4,6 +4,7 @@
 
 #include "alloc.h"
 #include "arena.h"
+#include "atlas.h"
 #include "attribute.h"
 #include "collision.h"
 #include "debug.h"
@@ -615,6 +616,43 @@ int blueprints_load(Diag *diag, BlueprintTable *table, void *toml_root, Arena *a
     }
 
     return table->entries.count;
+}
+
+static void
+resolve_blueprint_sprite(DebugState *dbg, Allocator *alloc, Blueprint *blueprint, const vec_atlas_region *atlas_regions)
+{
+    const char *sprite_name = attr_get_string(&blueprint->attrs, "sprite");
+    if (!sprite_name) {
+        return;
+    }
+
+    const AtlasRegion *region = atlas_find_region(atlas_regions, sprite_name);
+    if (!region) {
+        debug_log(dbg, "bp '%s': sprite '%s' not found in atlas, keeping existing src/texture",
+                  attr_get_string(&blueprint->attrs, "name"), sprite_name);
+        return;
+    }
+
+    bool attrs_applied =
+        attr_set_float(alloc, &blueprint->attrs, "src_x", region->src.x) &&
+        attr_set_float(alloc, &blueprint->attrs, "src_y", region->src.y) &&
+        attr_set_float(alloc, &blueprint->attrs, "src_w", region->src.width) &&
+        attr_set_float(alloc, &blueprint->attrs, "src_h", region->src.height) &&
+        attr_set_string(alloc, &blueprint->attrs, (AttrStringPair){.name = "texture", .value = region->texture.ptr});
+    if (!attrs_applied) {
+        debug_log(dbg, "bp '%s': failed to apply sprite '%s' attrs", attr_get_string(&blueprint->attrs, "name"),
+                  sprite_name);
+    }
+}
+
+void blueprint_resolve_sprites(Diag *diag,
+                               Allocator *alloc,
+                               BlueprintTable *table,
+                               const vec_atlas_region *atlas_regions)
+{
+    for (int index = 0; index < table->entries.count; index++) {
+        resolve_blueprint_sprite(diag->debug, alloc, &table->entries.data[index], atlas_regions);
+    }
 }
 
 const Blueprint *blueprint_find(const BlueprintTable *table, const char *name)

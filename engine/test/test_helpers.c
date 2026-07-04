@@ -185,9 +185,10 @@ void test_recording_gamedata_save(Diag *diag, GameState *state, EditorState *edi
         all_levels[1 + index] = state->gamedata.other_levels.data[index];
     }
 
-    int written = toml_emit_gamedata(&state->error, game->saved_gamedata_buf, (int)sizeof(game->saved_gamedata_buf),
-                                     &state->gamedata.blueprints, &state->gamedata.subroutines,
-                                     &state->gamedata.tileset, all_levels, total_levels);
+    int written =
+        toml_emit_gamedata(&state->error, game->saved_gamedata_buf, (int)sizeof(game->saved_gamedata_buf),
+                           &state->gamedata.blueprints, &state->gamedata.subroutines, &state->gamedata.tileset,
+                           &state->gamedata.atlas_regions, all_levels, total_levels);
     if (written < 0) {
         debug_log(diag->debug, "test save error: %s", error_get(&state->error));
         error_clear(&state->error);

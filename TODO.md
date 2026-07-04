@@ -53,9 +53,12 @@ tables.
   still open — the file format already stores plain concrete tile ids, so
   autotiling would live entirely in the editor's placement logic with no
   further engine-side changes. Not attempted in S5.3b.
-- **Atlas mode** (§27) — `EDITOR_SUB_ATLAS_BROWSE`,
-  `EDITOR_SUB_ATLAS_REGION_EDIT` (source-rect drag, like HANDLES but on the
-  atlas image).
+- **Atlas mode** (§27, D37) — S5.4a shipped the engine-side named-atlas-region
+  system (`[[atlas.region]]` parse/emit, `atlas.h`/`atlas.c`, blueprint
+  `sprite = "name"` resolution). Still open: the editor mode itself
+  (S5.4b) — `EDITOR_SUB_ATLAS_BROWSE`, `EDITOR_SUB_ATLAS_REGION_EDIT`
+  (source-rect drag, like HANDLES but on the atlas image), and authoring
+  `sprite = "name"` on a blueprint from within the editor.
 - **Animation mode** (§28) — `EDITOR_SUB_ANIM_FRAMES` (scrub),
   `EDITOR_SUB_ANIM_EDIT` (frame count / speed via the existing value
   adjuster).

@@ -3,6 +3,7 @@
 
 #include "alloc.h"
 #include "arena.h"
+#include "atlas.h"
 #include "attribute.h"
 #include "blueprint.h"
 #include "collision.h"
@@ -168,7 +169,11 @@ bool game_load_gamedata(Diag *diag, GameState *state, GamedataParams params)
     state->gamedata.prev_player_overlaps = vec_bool_new(gamedata_alloc);
     state->gamedata.prev_solid_collisions = vec_bool_new(gamedata_alloc);
     state->gamedata.other_levels = vec_level_new(gamedata_alloc);
+    /* Atlas regions are parsed before blueprints so blueprint_resolve_sprites
+     * has a populated registry to resolve `sprite = "name"` refs against. */
+    atlas_load(diag, &state->gamedata.atlas_regions, root, &state->gamedata_arena);
     blueprints_load(diag, &state->gamedata.blueprints, root, &state->gamedata_arena);
+    blueprint_resolve_sprites(diag, &gamedata_alloc, &state->gamedata.blueprints, &state->gamedata.atlas_regions);
     tileset_load(diag, &state->gamedata.tileset, root, &state->gamedata_arena);
     bool subs_ok = subroutines_parse(diag, &gamedata_alloc, &state->gamedata.subroutines, root, &state->gamedata_arena);
     bool level_ok = false;

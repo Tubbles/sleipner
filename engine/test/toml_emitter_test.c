@@ -10,6 +10,7 @@ static Diag test_diag = {&test_err, &test_dbg};
 #include "toml_emitter.h"
 #include "test_helpers.h"
 #include "arena.h"
+#include "atlas.h"
 #include "collision.h"
 #include "input_func.h"
 #include "rule.h"
@@ -22,6 +23,7 @@ static Diag test_diag = {&test_err, &test_dbg};
 static Texture2D dummy_texture;
 static const vec_subroutine empty_subroutines = {0};
 static const vec_tileset_entry empty_tileset = {0};
+static const vec_atlas_region empty_atlas_regions = {0};
 
 static Texture2D *dummy_lookup(const char *texture_name, void *user_data)
 {
@@ -81,7 +83,7 @@ void test_toml_emit_blueprints(void)
     char output[4096];
     Level empty_level = {0};
     int written = toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &empty_subroutines,
-                                     &empty_tileset, &empty_level, 0);
+                                     &empty_tileset, &empty_atlas_regions, &empty_level, 0);
     TEST_ASSERT_TRUE(written > 0);
 
     /* Verify the output contains the blueprint data */
@@ -111,7 +113,7 @@ void test_toml_emit_level_with_entities(void)
 
     char output[4096];
     int written = toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &empty_subroutines,
-                                     &empty_tileset, &level, 1);
+                                     &empty_tileset, &empty_atlas_regions, &level, 1);
     TEST_ASSERT_TRUE(written > 0);
 
     TEST_ASSERT_NOT_NULL(strstr(output, "[[level]]"));
@@ -146,7 +148,7 @@ void test_toml_emit_round_trip(void)
     /* Emit */
     char output[8192];
     int written = toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &empty_subroutines,
-                                     &empty_tileset, &level, 1);
+                                     &empty_tileset, &empty_atlas_regions, &level, 1);
     TEST_ASSERT_TRUE(written > 0);
 
     /* Re-parse the emitted output */
@@ -205,7 +207,7 @@ void test_toml_emit_buffer_too_small(void)
 
     char tiny[10];
     int written = toml_emit_gamedata(&test_err, tiny, (int)sizeof(tiny), &blueprints, &empty_subroutines,
-                                     &empty_tileset, nullptr, 0);
+                                     &empty_tileset, &empty_atlas_regions, nullptr, 0);
     TEST_ASSERT_EQUAL_INT(-1, written);
     test_blueprint_table_free(&blueprints);
 }
@@ -251,7 +253,7 @@ void test_toml_emit_blueprint_children(void)
     char output[4096];
     Level empty_level = {0};
     int written = toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &empty_subroutines,
-                                     &empty_tileset, &empty_level, 0);
+                                     &empty_tileset, &empty_atlas_regions, &empty_level, 0);
     TEST_ASSERT_TRUE(written > 0);
 
     TEST_ASSERT_NOT_NULL(strstr(output, "[[blueprint.child]]"));
@@ -280,7 +282,7 @@ void test_toml_emit_skips_child_entities(void)
 
     char output[4096];
     int written = toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &empty_subroutines,
-                                     &empty_tileset, &level, 1);
+                                     &empty_tileset, &empty_atlas_regions, &level, 1);
     TEST_ASSERT_TRUE(written > 0);
 
     /* Only the parent wagon should appear as a level.entity */
@@ -310,7 +312,7 @@ void test_toml_emit_no_music(void)
     BlueprintTable empty = {0};
     char output[1024];
     int written = toml_emit_gamedata(&test_err, output, (int)sizeof(output), &empty, &empty_subroutines, &empty_tileset,
-                                     &level, 1);
+                                     &empty_atlas_regions, &level, 1);
     TEST_ASSERT_TRUE(written > 0);
 
     /* Should not contain music line */
@@ -346,7 +348,7 @@ void test_toml_emit_custom_attrs(void)
     char output[4096];
     Level empty_level = {0};
     int written = toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &empty_subroutines,
-                                     &empty_tileset, &empty_level, 0);
+                                     &empty_tileset, &empty_atlas_regions, &empty_level, 0);
     TEST_ASSERT_TRUE(written > 0);
 
     TEST_ASSERT_NOT_NULL(strstr(output, "behavior = \"static\""));
@@ -397,7 +399,7 @@ void test_toml_emit_health(void)
     char output[4096];
     Level empty_level = {0};
     int written = toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &empty_subroutines,
-                                     &empty_tileset, &empty_level, 0);
+                                     &empty_tileset, &empty_atlas_regions, &empty_level, 0);
     TEST_ASSERT_TRUE(written > 0);
 
     TEST_ASSERT_NOT_NULL(strstr(output, "health = [10, 50]"));
@@ -454,7 +456,7 @@ void test_toml_emit_animation_round_trip(void)
     char output[4096];
     Level empty_level = {0};
     int written = toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &empty_subroutines,
-                                     &empty_tileset, &empty_level, 0);
+                                     &empty_tileset, &empty_atlas_regions, &empty_level, 0);
     TEST_ASSERT_TRUE(written > 0);
 
     TEST_ASSERT_NOT_NULL(strstr(output, "animation = { frames = 6, size = 32, speed = 10, row = 2 }"));
@@ -524,7 +526,7 @@ void test_toml_emit_persisted_attrs(void)
     /* Emit and verify the persisted values appear on the [[level.entity]] line */
     char output[4096];
     int written = toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &empty_subroutines,
-                                     &empty_tileset, &level, 1);
+                                     &empty_tileset, &empty_atlas_regions, &level, 1);
     TEST_ASSERT_TRUE(written > 0);
 
     TEST_ASSERT_NOT_NULL(strstr(output, "blueprint = \"chest\""));
@@ -537,7 +539,7 @@ void test_toml_emit_persisted_attrs(void)
     TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, (AttrSet *)&entity->attrs, "coins", 999));
     char output2[4096];
     int written2 = toml_emit_gamedata(&test_err, output2, (int)sizeof(output2), &blueprints, &empty_subroutines,
-                                      &empty_tileset, &level, 1);
+                                      &empty_tileset, &empty_atlas_regions, &level, 1);
     TEST_ASSERT_TRUE(written2 > 0);
     TEST_ASSERT_NOT_NULL(strstr(output2, "coins = 25"));
     TEST_ASSERT_NULL(strstr(output2, "coins = 999"));
@@ -589,7 +591,7 @@ void test_toml_emit_no_persisted_attrs(void)
 
     char output[4096];
     int written = toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &empty_subroutines,
-                                     &empty_tileset, &level, 1);
+                                     &empty_tileset, &empty_atlas_regions, &level, 1);
     TEST_ASSERT_TRUE(written > 0);
 
     /* Fixture has no solid attr, so nothing should be emitted for it */
@@ -692,7 +694,7 @@ void test_toml_emit_child_persisted_attrs_round_trip(void)
     /* Emit and confirm the overrides made it into the TOML text. */
     char output[4096];
     int written = toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &empty_subroutines,
-                                     &empty_tileset, &level, 1);
+                                     &empty_tileset, &empty_atlas_regions, &level, 1);
     TEST_ASSERT_TRUE(written > 0);
 
     TEST_ASSERT_NOT_NULL(strstr(output, "[level.entity.children.door]"));
@@ -762,7 +764,7 @@ void test_toml_emit_rules(void)
     char output[8192];
     Level empty_level = {0};
     int written = toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &empty_subroutines,
-                                     &empty_tileset, &empty_level, 0);
+                                     &empty_tileset, &empty_atlas_regions, &empty_level, 0);
     TEST_ASSERT_TRUE(written > 0);
 
     TEST_ASSERT_NOT_NULL(strstr(output, "[[blueprint.rule]]"));
@@ -862,7 +864,7 @@ void test_toml_emit_collision_composite_round_trip(void)
     char output[4096];
     Level empty_level = {0};
     int written = toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &empty_subroutines,
-                                     &empty_tileset, &empty_level, 0);
+                                     &empty_tileset, &empty_atlas_regions, &empty_level, 0);
     TEST_ASSERT_TRUE(written > 0);
 
     TEST_ASSERT_NOT_NULL(strstr(output, "[[blueprint.collision]]"));
@@ -954,7 +956,7 @@ void test_toml_emit_nested_control_flow_round_trip(void)
     char output[4096];
     Level empty_level = {0};
     int written = toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &empty_subroutines,
-                                     &empty_tileset, &empty_level, 0);
+                                     &empty_tileset, &empty_atlas_regions, &empty_level, 0);
     TEST_ASSERT_TRUE(written > 0);
 
     Arena arena2;
@@ -1026,7 +1028,7 @@ void test_toml_emit_subroutines_round_trip(void)
 
     char output[4096];
     int written = toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &subroutines, &empty_tileset,
-                                     nullptr, 0);
+                                     &empty_atlas_regions, nullptr, 0);
     TEST_ASSERT_TRUE(written > 0);
 
     TEST_ASSERT_NOT_NULL(strstr(output, "[[subroutine]]"));
@@ -1107,7 +1109,7 @@ void test_toml_emit_tiles_round_trip(void)
     /* Emit and verify the tileset and both tile layers made it into the TOML text. */
     char output[8192];
     int written = toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &empty_subroutines, &tileset,
-                                     &level, 1);
+                                     &empty_atlas_regions, &level, 1);
     TEST_ASSERT_TRUE(written > 0);
 
     TEST_ASSERT_NOT_NULL(strstr(output, "[[tileset]]"));
@@ -1149,6 +1151,145 @@ void test_toml_emit_tiles_round_trip(void)
 
     test_level_free(&level);
     test_level_free(&level2);
+    arena_free(&arena);
+    arena_free(&arena2);
+}
+
+/* Bounded substring search — used to check whether one blueprint's emitted
+ * TOML section (a byte range, not a null-terminated string) contains a
+ * given marker. */
+static bool block_contains(const char *block, size_t block_len, const char *needle)
+{
+    size_t needle_len = strlen(needle);
+    if (needle_len == 0 || needle_len > block_len) {
+        return false;
+    }
+    for (size_t offset = 0; offset <= block_len - needle_len; offset++) {
+        if (memcmp(block + offset, needle, needle_len) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/* S5.4a/D37: a blueprint may set `sprite = "region_name"` as an alternative
+ * to a raw `src`. "player_sprite" has no src/texture of its own -- both are
+ * resolved from the "hero" atlas region. "tree_raw" has no sprite attr and
+ * must keep behaving exactly like a pre-D37 blueprint (regression guard). */
+static const char *atlas_sprite_fixture = "[[atlas.region]]\n"
+                                          "name = \"hero\"\n"
+                                          "texture = \"hero.png\"\n"
+                                          "src = [0, 0, 32, 32]\n"
+                                          "\n"
+                                          "[[blueprint]]\n"
+                                          "name = \"player_sprite\"\n"
+                                          "sprite = \"hero\"\n"
+                                          "collision_offset = [0, 0]\n"
+                                          "collision_size = [16, 16]\n"
+                                          "\n"
+                                          "[[blueprint]]\n"
+                                          "name = \"tree_raw\"\n"
+                                          "texture = \"tree.png\"\n"
+                                          "src = [0, 0, 64, 80]\n"
+                                          "collision_offset = [20, 60]\n"
+                                          "collision_size = [24, 16]\n";
+
+void test_toml_emit_atlas_sprite_round_trip(void)
+{
+    Arena arena;
+    TEST_ASSERT_TRUE(arena_init(&test_err, &arena));
+    vec_atlas_region atlas_regions = {0};
+    BlueprintTable blueprints = {0};
+    Level empty_level = {0};
+
+    /* Parse original */
+    toml_table_t *root = parse_toml(atlas_sprite_fixture);
+    TEST_ASSERT_NOT_NULL(root);
+    TEST_ASSERT_TRUE(atlas_load(&test_diag, &atlas_regions, root, &arena) >= 0);
+    blueprints_load(&test_diag, &blueprints, root, &arena);
+    Allocator alloc = allocator_arena(&arena);
+    blueprint_resolve_sprites(&test_diag, &alloc, &blueprints, &atlas_regions);
+    toml_free(root);
+
+    TEST_ASSERT_EQUAL_INT(1, atlas_regions.count);
+    TEST_ASSERT_EQUAL_STRING("hero", atlas_regions.data[0].name.ptr);
+    TEST_ASSERT_EQUAL_STRING("hero.png", atlas_regions.data[0].texture.ptr);
+
+    /* The sprite reference must resolve to the region's src/texture. */
+    const Blueprint *sprite_bp = blueprint_find(&blueprints, "player_sprite");
+    TEST_ASSERT_NOT_NULL(sprite_bp);
+    TEST_ASSERT_EQUAL_STRING("hero.png", attr_get_string(&sprite_bp->attrs, "texture"));
+    Rectangle sprite_src = blueprint_get_source(sprite_bp);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 0.0F, sprite_src.x);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 0.0F, sprite_src.y);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 32.0F, sprite_src.width);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 32.0F, sprite_src.height);
+
+    /* A blueprint with a raw src and no sprite is unaffected. */
+    const Blueprint *raw_bp = blueprint_find(&blueprints, "tree_raw");
+    TEST_ASSERT_NOT_NULL(raw_bp);
+    TEST_ASSERT_NULL(attr_get_string(&raw_bp->attrs, "sprite"));
+    TEST_ASSERT_EQUAL_STRING("tree.png", attr_get_string(&raw_bp->attrs, "texture"));
+
+    /* Emit */
+    char output[8192];
+    int written = toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &empty_subroutines,
+                                     &empty_tileset, &atlas_regions, &empty_level, 0);
+    TEST_ASSERT_TRUE(written > 0);
+
+    TEST_ASSERT_NOT_NULL(strstr(output, "[[atlas.region]]"));
+    TEST_ASSERT_NOT_NULL(strstr(output, "name = \"hero\""));
+    TEST_ASSERT_NOT_NULL(strstr(output, "sprite = \"hero\""));
+    /* tree_raw's raw src/texture must still be emitted verbatim. */
+    TEST_ASSERT_NOT_NULL(strstr(output, "src = [0, 0, 64, 80]"));
+    TEST_ASSERT_NOT_NULL(strstr(output, "texture = \"tree.png\""));
+
+    /* The sprite-referencing blueprint's own section must NOT re-emit the
+     * resolved src/texture as raw values -- only the "sprite" reference. */
+    char *player_start = strstr(output, "[[blueprint]]\nname = \"player_sprite\"");
+    TEST_ASSERT_NOT_NULL(player_start);
+    char *tree_start = strstr(output, "[[blueprint]]\nname = \"tree_raw\"");
+    TEST_ASSERT_NOT_NULL(tree_start);
+    TEST_ASSERT_TRUE(player_start < tree_start);
+    size_t player_block_len = (size_t)(tree_start - player_start);
+    TEST_ASSERT_FALSE(block_contains(player_start, player_block_len, "texture = "));
+    TEST_ASSERT_FALSE(block_contains(player_start, player_block_len, "src = "));
+    TEST_ASSERT_TRUE(block_contains(player_start, player_block_len, "sprite = \"hero\""));
+
+    /* Re-parse the emitted output and confirm the region, the sprite
+     * reference, and the raw-src blueprint all survive. */
+    Arena arena2;
+    TEST_ASSERT_TRUE(arena_init(&test_err, &arena2));
+    vec_atlas_region atlas_regions2 = {0};
+    BlueprintTable blueprints2 = {0};
+
+    toml_table_t *root2 = parse_toml(output);
+    TEST_ASSERT_NOT_NULL(root2);
+    TEST_ASSERT_TRUE(atlas_load(&test_diag, &atlas_regions2, root2, &arena2) >= 0);
+    blueprints_load(&test_diag, &blueprints2, root2, &arena2);
+    Allocator alloc2 = allocator_arena(&arena2);
+    blueprint_resolve_sprites(&test_diag, &alloc2, &blueprints2, &atlas_regions2);
+    toml_free(root2);
+
+    TEST_ASSERT_EQUAL_INT(1, atlas_regions2.count);
+    TEST_ASSERT_EQUAL_STRING("hero", atlas_regions2.data[0].name.ptr);
+    TEST_ASSERT_EQUAL_STRING("hero.png", atlas_regions2.data[0].texture.ptr);
+
+    const Blueprint *sprite_bp2 = blueprint_find(&blueprints2, "player_sprite");
+    TEST_ASSERT_NOT_NULL(sprite_bp2);
+    TEST_ASSERT_EQUAL_STRING("hero", attr_get_string(&sprite_bp2->attrs, "sprite"));
+    TEST_ASSERT_EQUAL_STRING("hero.png", attr_get_string(&sprite_bp2->attrs, "texture"));
+    Rectangle sprite_src2 = blueprint_get_source(sprite_bp2);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, sprite_src.x, sprite_src2.x);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, sprite_src.width, sprite_src2.width);
+
+    const Blueprint *raw_bp2 = blueprint_find(&blueprints2, "tree_raw");
+    TEST_ASSERT_NOT_NULL(raw_bp2);
+    TEST_ASSERT_EQUAL_STRING("tree.png", attr_get_string(&raw_bp2->attrs, "texture"));
+    Rectangle raw_src2 = blueprint_get_source(raw_bp2);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 64.0F, raw_src2.width);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 80.0F, raw_src2.height);
+
     arena_free(&arena);
     arena_free(&arena2);
 }

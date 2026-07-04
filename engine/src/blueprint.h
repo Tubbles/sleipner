@@ -2,6 +2,7 @@
 
 #include "alloc.h"
 #include "arena.h"
+#include "atlas.h"
 #include "attribute.h"
 #include "collision.h"
 #include "diag.h"
@@ -51,6 +52,18 @@ Vector2 blueprint_get_sprite_offset(const Blueprint *blp);
  * Arena is used for variable-length data (rule arrays).
  * Returns the number of blueprints loaded, or -1 on error. */
 int blueprints_load(Diag *diag, BlueprintTable *table, void *toml_root, Arena *arena);
+
+/* Resolve every blueprint's optional `sprite = "region_name"` attr against
+ * atlas_regions (already parsed via atlas_load — call this AFTER
+ * blueprints_load, since it mutates already-parsed blueprints in place).
+ * A match overwrites the blueprint's src_x/src_y/src_w/src_h and texture
+ * attrs with the region's src/texture — sprite wins over any raw src/texture
+ * the blueprint also declares. An unresolved name is logged via `diag` and
+ * the blueprint's own src/texture (or defaults) are left untouched. */
+void blueprint_resolve_sprites(Diag *diag,
+                               Allocator *alloc,
+                               BlueprintTable *table,
+                               const vec_atlas_region *atlas_regions);
 
 /* Free all blueprints and their children/attrs from a table, and the table's vec. */
 void blueprint_table_free(Allocator *alloc, BlueprintTable *table);

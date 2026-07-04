@@ -15,6 +15,7 @@ endif()
 
 set(ENGINE_SOURCE_FILES
     ${ARENA_SOURCE}
+    atlas.c
     attribute.c
     audio.c
     blueprint.c

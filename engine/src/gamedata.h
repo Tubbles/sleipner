@@ -1,5 +1,6 @@
 #pragma once
 
+#include "atlas.h"
 #include "blueprint.h"
 #include "level.h"
 #include "raylib.h"
@@ -20,6 +21,9 @@ typedef struct {
     /* Tile id -> texture+src map shared by every level's tiles_ground/
      * tiles_overlay layers (D36). Indexed by tile id — see tileset.h. */
     vec_tileset_entry tileset;
+    /* Named texture regions referenced by blueprint `sprite = "name"` (D37).
+     * Lookup is by name via atlas_find_region — see atlas.h. */
+    vec_atlas_region atlas_regions;
     Level current_level;
     vec_level other_levels;
     Vector2 camera_target;

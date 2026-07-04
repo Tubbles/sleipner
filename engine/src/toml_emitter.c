@@ -1,5 +1,6 @@
 #include "toml_emitter.h"
 
+#include "atlas.h"
 #include "attribute.h"
 #include "blueprint.h"
 #include "collision.h"
@@ -445,8 +446,14 @@ static int emit_blueprints(char *buffer, int capacity, int offset, const Bluepri
 
         offset = emit_append(buffer, capacity, offset, "[[blueprint]]\n");
         offset = emit_append(buffer, capacity, offset, "name = \"%s\"\n", attr_get_string(&blueprint->attrs, "name"));
+        /* A blueprint with a `sprite` attr resolved its src/texture from an
+         * atlas region (see blueprint_resolve_sprites) — re-emit the
+         * reference (via emit_custom_bp_attrs below) instead of the derived
+         * rect, so the file round-trips as a reference rather than baking
+         * in the resolved values. */
+        const char *sprite_name = attr_get_string(&blueprint->attrs, "sprite");
         const char *texture_name = attr_get_string(&blueprint->attrs, "texture");
-        if (texture_name) {
+        if (!sprite_name && texture_name) {
             offset = emit_append(buffer, capacity, offset, "texture = \"%s\"\n", texture_name);
             offset = emit_append(buffer, capacity, offset, "src = [%d, %d, %d, %d]\n", (int)source.x, (int)source.y,
                                  (int)source.width, (int)source.height);
@@ -652,12 +659,29 @@ static int emit_tileset(char *buffer, int capacity, int offset, const vec_tilese
     return offset;
 }
 
+/* Named regions carry no positional meaning (unlike tileset, which is
+ * id-indexed with placeholder gaps) — every entry is emitted. */
+static int emit_atlas(char *buffer, int capacity, int offset, const vec_atlas_region *atlas_regions)
+{
+    for (int index = 0; index < atlas_regions->count; index++) {
+        const AtlasRegion *region = &atlas_regions->data[index];
+        offset = emit_append(buffer, capacity, offset, "[[atlas.region]]\n");
+        offset = emit_append(buffer, capacity, offset, "name = \"%s\"\n", region->name.ptr);
+        offset = emit_append(buffer, capacity, offset, "texture = \"%s\"\n", region->texture.ptr);
+        offset = emit_append(buffer, capacity, offset, "src = [%d, %d, %d, %d]\n", (int)region->src.x,
+                             (int)region->src.y, (int)region->src.width, (int)region->src.height);
+        offset = emit_append(buffer, capacity, offset, "\n");
+    }
+    return offset;
+}
+
 int toml_emit_gamedata(ErrorState *err,
                        char *buffer,
                        int capacity,
                        const BlueprintTable *blueprints,
                        const vec_subroutine *subroutines,
                        const vec_tileset_entry *tileset,
+                       const vec_atlas_region *atlas_regions,
                        const Level *levels,
                        int level_count)
 {
@@ -666,6 +690,7 @@ int toml_emit_gamedata(ErrorState *err,
     offset = emit_blueprints(buffer, capacity, offset, blueprints);
     offset = emit_subroutines(buffer, capacity, offset, subroutines);
     offset = emit_tileset(buffer, capacity, offset, tileset);
+    offset = emit_atlas(buffer, capacity, offset, atlas_regions);
     offset = emit_levels(buffer, capacity, offset, levels, level_count);
 
     if (offset < 0) {
