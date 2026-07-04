@@ -5,6 +5,7 @@
 #include "arena.h"
 #include "attribute.h"
 #include "blueprint.h"
+#include "collision.h"
 #include "debug.h"
 #include "error.h"
 #include "entity.h"
@@ -265,45 +266,20 @@ static void resolve_player_obstacles(GameState *state, int player_index)
     Level *level = &state->gamedata.current_level;
     Entity *player = &level->entities.data[player_index];
     const AttrSet *player_defaults = entity_resolve_defaults(state, player->id);
+    CollisionPrimitive player_prim_storage;
+    CollisionShape player_shape = entity_collision_region(player, player_defaults, &player_prim_storage);
     for (int index = 0; index < level->entities.count; index++) {
-        const AttrSet *defaults = entity_resolve_defaults(state, level->entities.data[index].id);
-        if (index == player_index ||
-            !attr_get_scoped_bool(&level->entities.data[index].attrs, defaults, "solid", false)) {
+        Entity *obstacle = &level->entities.data[index];
+        const AttrSet *defaults = entity_resolve_defaults(state, obstacle->id);
+        if (index == player_index || !attr_get_scoped_bool(&obstacle->attrs, defaults, "solid", false)) {
             continue;
         }
-        Rectangle hitbox = entity_collision_rect(player, player_defaults);
-        Rectangle obstacle = entity_collision_rect(&level->entities.data[index], defaults);
-        if (!CheckCollisionRecs(hitbox, obstacle)) {
-            continue;
-        }
-        float push_left = (hitbox.x + hitbox.width) - obstacle.x;
-        float push_right = (obstacle.x + obstacle.width) - hitbox.x;
-        float push_up = (hitbox.y + hitbox.height) - obstacle.y;
-        float push_down = (obstacle.y + obstacle.height) - hitbox.y;
-
-        float min_push = push_left;
-        int direction = 0;
-        if (push_right < min_push) {
-            min_push = push_right;
-            direction = 1;
-        }
-        if (push_up < min_push) {
-            min_push = push_up;
-            direction = 2;
-        }
-        if (push_down < min_push) {
-            direction = 3;
-        }
-
-        if (direction == 0) {
-            player->position.x -= push_left;
-        } else if (direction == 1) {
-            player->position.x += push_right;
-        } else if (direction == 2) {
-            player->position.y -= push_up;
-        } else {
-            player->position.y += push_down;
-        }
+        CollisionPrimitive obstacle_prim_storage;
+        CollisionShape obstacle_shape = entity_collision_region(obstacle, defaults, &obstacle_prim_storage);
+        Vector2 push =
+            resolve_composite(&player_shape, player->position, 0.0F, &obstacle_shape, obstacle->position, 0.0F);
+        player->position.x += push.x;
+        player->position.y += push.y;
     }
 }
 
