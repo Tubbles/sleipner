@@ -1134,6 +1134,78 @@ void test_integration_editor_selection_survives_undo_of_edit(void)
     test_game_teardown(&game);
 }
 
+/* S5.1: WATCH-LIST picker submode. Drives entirely through the real input
+ * layer: F5 into editor, CONFIRM selects the nearest root entity
+ * (deterministically "tall_tree" — the editor camera starts at (0,0) and the
+ * tree at (50,50) is the closest root, same reasoning as the undo test
+ * above), the real watch-toggle binding (Left Shift) adds it to the watch
+ * list, TAB opens the Tools radial, a stick angle aimed at the sixth sector
+ * plus CONFIRM commits "Watch list" from the radial, one more frame lets
+ * BROWSE dispatch the pending radial choice and enter EDITOR_SUB_WATCH_LIST,
+ * then a final CONFIRM removes the focused (only) entry. Removing the last
+ * watch must also close the picker back to BROWSE.
+ *
+ * The stick angle: radial_sector_from_stick (editor/widgets.c) computes
+ * index = floor(((atan2(y, x) + pi/2) mod 2pi) * item_count / 2pi). For
+ * item_count = 6 (EDITOR_TOOLS_ITEM_COUNT after S5.1), sector 5 ("Watch
+ * list", the last item) spans stick angles in [210, 270) degrees; 240
+ * degrees (stick pointing up-left) is its midpoint. */
+void test_integration_editor_watch_list_removes_focused_entry(void)
+{
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_gamedata));
+
+    InputState editor_toggle = {0};
+    input_state_press_key(&editor_toggle, KEY_F5);
+    test_advance_frame(&game, editor_toggle);
+    TEST_ASSERT_TRUE(game.state.editor_mode);
+
+    InputState select_input = {0};
+    input_state_press_key(&select_input, KEY_ENTER);
+    test_advance_frame(&game, select_input);
+    Entity *tall_tree = test_find_entity_by_blueprint(&game.state, "tall_tree");
+    TEST_ASSERT_NOT_NULL(tall_tree);
+    TEST_ASSERT_EQUAL_INT(tall_tree->id, game.editor_state.selected_entity_id);
+
+    /* Real watch-toggle binding (Left Shift) adds the selected entity. */
+    InputState watch_input = {0};
+    input_state_press_key(&watch_input, KEY_LEFT_SHIFT);
+    test_advance_frame(&game, watch_input);
+    TEST_ASSERT_EQUAL_INT(1, game.watches.count);
+    TEST_ASSERT_EQUAL_INT(tall_tree->id, game.watches.watch_ids[0]);
+
+    /* Open the Tools radial (real TAB binding). */
+    InputState open_tools = {0};
+    input_state_press_key(&open_tools, KEY_TAB);
+    test_advance_frame(&game, open_tools);
+    TEST_ASSERT_EQUAL_INT(EDITOR_SUB_RADIAL, game.editor_state.sub_mode);
+    TEST_ASSERT_EQUAL_INT(EDITOR_TOOLS_ITEM_COUNT, game.editor_state.radial_item_count);
+
+    /* Aim the stick at the sixth sector and confirm in the same frame. */
+    InputState radial_confirm = {0};
+    input_state_set_gp_axis(&radial_confirm, GAMEPAD_AXIS_LEFT_X, -0.5F);
+    input_state_set_gp_axis(&radial_confirm, GAMEPAD_AXIS_LEFT_Y, -0.8660254F);
+    input_state_press_key(&radial_confirm, KEY_ENTER);
+    test_advance_frame(&game, radial_confirm);
+    TEST_ASSERT_EQUAL_INT(EDITOR_SUB_BROWSE, game.editor_state.sub_mode);
+
+    /* BROWSE dispatches the pending radial confirmation on the next frame. */
+    InputState no_input = {0};
+    test_advance_frame(&game, no_input);
+    TEST_ASSERT_EQUAL_INT(EDITOR_SUB_WATCH_LIST, game.editor_state.sub_mode);
+    TEST_ASSERT_EQUAL_INT(1, game.watches.count);
+
+    /* CONFIRM removes the only (focused) entry, which empties the list and
+     * closes the picker back to BROWSE. */
+    InputState remove_input = {0};
+    input_state_press_key(&remove_input, KEY_ENTER);
+    test_advance_frame(&game, remove_input);
+    TEST_ASSERT_EQUAL_INT(0, game.watches.count);
+    TEST_ASSERT_EQUAL_INT(EDITOR_SUB_BROWSE, game.editor_state.sub_mode);
+
+    test_game_teardown(&game);
+}
+
 /* Drive the pause menu through the real frame loop: F3 opens the
  * menu, KEY_DOWN walks the selection, KEY_ENTER confirms QUIT.
  * Observables are game.menu.open, game.menu.selected, and

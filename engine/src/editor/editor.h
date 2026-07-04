@@ -31,7 +31,8 @@ typedef struct {
 #define EDITOR_HANDLE_SPEED 60.0F        /* px/s for collision offset/size editing */
 #define EDITOR_ATTR_LARGE_STEP 10        /* ±10 step for attribute value adjuster (bumpers/brackets) */
 #define EDITOR_ATTR_HUGE_STEP 100        /* ±100 step for value adjuster (L2/R2 / PgDn/PgUp) */
-#define EDITOR_TOOLS_ITEM_COUNT 5        /* items in the RADIAL_CTX_TOOLS picker */
+#define EDITOR_TOOLS_ITEM_COUNT 6        /* items in the RADIAL_CTX_TOOLS picker */
+#define EDITOR_TOOLS_WATCH_LIST_INDEX 5  /* RADIAL_CTX_TOOLS slot for "Watch list" */
 #define EDITOR_PLACE_PAGE_SIZE 5         /* blueprint page-jump size for L1/R1 in scroll picker */
 #define ATTR_REPEAT_DELAY 0.4F           /* seconds before auto-repeat starts on hold */
 #define ATTR_REPEAT_PERIOD 0.1F          /* initial repeat interval (10 Hz) */
@@ -69,7 +70,7 @@ typedef enum {
 } EditorTopMode;
 
 typedef enum {
-    RADIAL_CTX_TOOLS,       /* Grab / Place / Handles / Delete / Blueprints — 5 items */
+    RADIAL_CTX_TOOLS,       /* Grab / Place / Handles / Delete / Blueprints / Watch list — 6 items */
     RADIAL_CTX_ATTR_TYPE,   /* Float / Int / Bool / String — 4 items */
     RADIAL_CTX_CHILD_PROPS, /* Tag / Offset X / Offset Y — 3 items */
 } RadialContext;
@@ -84,6 +85,7 @@ typedef enum {
     EDITOR_SUB_WORD_BUILDER, /* string attribute editing via vocabulary picker */
     EDITOR_SUB_FUZZY_FINDER, /* name picker for existing gamedata names */
     EDITOR_SUB_GAMEPAD_KB,   /* two-level radial character picker */
+    EDITOR_SUB_WATCH_LIST,   /* scroll picker over the watch list; CONFIRM removes the focused entry */
 } EditorSubMode;
 
 /* The editor attr panel for an entity is split into three sections:
@@ -158,6 +160,7 @@ typedef struct {
     bool adding_blueprint_attr;                    /* fuzzy finder is adding a blueprint-level attr */
     bool creating_blueprint;                       /* word builder is naming a new blueprint */
     bool duplicating_blueprint;                    /* word builder is naming a duplicate blueprint */
+    int watch_list_scroll;                         /* focused index into the watch list picker (0 = first entry) */
 } EditorState;
 
 typedef struct {
@@ -216,3 +219,11 @@ void handle_blueprint_browse_input(GameState *state,
                                    const InputState *input);
 void draw_blueprint_list_panel(ScreenSize screen, const GameState *state, const EditorState *editor_state);
 void draw_blueprint_detail_panel(ScreenSize screen, const GameState *state, const EditorState *editor_state);
+void handle_watch_list_input(EditorState *editor_state,
+                             WatchList *watches,
+                             const InputState *input,
+                             const BindingStore *bindings);
+void draw_watch_list_panel(ScreenSize screen,
+                           const GameState *state,
+                           const EditorState *editor_state,
+                           const WatchList *watches);

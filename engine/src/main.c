@@ -963,6 +963,8 @@ static void render_frame(GameState *state, RenderParams params)
             draw_word_builder_panel(screen, state, &params.editor_state);
         } else if (params.editor_state.sub_mode == EDITOR_SUB_FUZZY_FINDER) {
             draw_fuzzy_finder_panel(screen, state, &params.editor_state);
+        } else if (params.editor_state.sub_mode == EDITOR_SUB_WATCH_LIST) {
+            draw_watch_list_panel(screen, state, &params.editor_state, params.watches);
         } else if (params.editor_state.top_mode == EDITOR_TOP_BLUEPRINT) {
             if (params.editor_state.selected_blueprint_index >= 0) {
                 draw_blueprint_detail_panel(screen, state, &params.editor_state);

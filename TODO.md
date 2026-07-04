@@ -60,10 +60,6 @@ below is a new set of submodes plus their handlers, pickers, and hint tables.
 
 ## Editor: missing pickers inside existing modes
 
-- **Watch-list picker** — `Shift / L2` in BROWSE toggles watch on the focused
-  entity but there is no UI to view / clear the full watch set. Add
-  `EDITOR_SUB_WATCH_LIST` (scroll picker; A removes, B closes). New Tools
-  radial entry.
 - **Level switcher from editor** — swapping levels in the editor currently
   requires editing gamedata. Add a "Switch level" entry to the Tools radial
   that opens a scroll picker of level names.

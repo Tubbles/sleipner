@@ -99,6 +99,8 @@ static const EditorHintTable *hints_table_for(bool editor_mode, const EditorStat
         return gamepad_kb_hints_table();
     case EDITOR_SUB_FUZZY_FINDER:
         return fuzzy_finder_hints_table();
+    case EDITOR_SUB_WATCH_LIST:
+        return watch_list_hints_table();
     case EDITOR_SUB_BROWSE:
         if (editor_state->top_mode == EDITOR_TOP_BLUEPRINT) {
             return editor_state->selected_blueprint_index >= 0 ? blueprint_detail_hints_table()
@@ -454,6 +456,37 @@ void draw_watch_overlay(ScreenSize screen, const GameState *state, const WatchLi
             draw_ui_text(state->assets.ui_font, TextFormat("  hp: %d/%d", hp_attr->value.i, hp_max_attr->value.i),
                          panel_x + DEBUG_MARGIN, y_offset, EDITOR_PANEL_FONT_SIZE, debug_text_color);
         }
+        y_offset += EDITOR_PANEL_LINE_HEIGHT;
+    }
+}
+
+void draw_watch_list_panel(ScreenSize screen,
+                           const GameState *state,
+                           const EditorState *editor_state,
+                           const WatchList *watches)
+{
+    if (editor_state->sub_mode != EDITOR_SUB_WATCH_LIST) {
+        return;
+    }
+    int panel_x = screen.width - EDITOR_PANEL_WIDTH;
+    DrawRectangle(panel_x, 0, EDITOR_PANEL_WIDTH, screen.height, debug_bg_color);
+    int y_offset = 0;
+    Font font = state->assets.ui_font;
+    draw_ui_text(font, TextFormat("[ Watch List ] (%d)", watches->count), panel_x + DEBUG_MARGIN, y_offset,
+                 EDITOR_PANEL_FONT_SIZE, debug_text_color);
+    y_offset += EDITOR_PANEL_LINE_HEIGHT * 2;
+
+    for (int index = 0; index < watches->count; index++) {
+        bool selected = (index == editor_state->watch_list_scroll);
+        Color color = selected ? WHITE : debug_text_color;
+        int entity_index = level_find_entity_by_id(&state->gamedata.current_level, watches->watch_ids[index]);
+        const char *label = "(gone)";
+        if (entity_index >= 0) {
+            const Entity *entity = &state->gamedata.current_level.entities.data[entity_index];
+            label = TextFormat("[%s]  id:%d", entity->blueprint_name.ptr, entity->id);
+        }
+        draw_ui_text(font, TextFormat("%s %s", selected ? ">" : " ", label), panel_x + DEBUG_MARGIN, y_offset,
+                     EDITOR_PANEL_FONT_SIZE, color);
         y_offset += EDITOR_PANEL_LINE_HEIGHT;
     }
 }

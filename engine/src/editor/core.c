@@ -575,6 +575,18 @@ static void toggle_watch(EditorState *editor_state, WatchList *watches)
     }
 }
 
+/* Removal for the WATCH_LIST picker: shift the tail down over the removed
+ * slot, preserving the order of the remaining entries. Distinct from
+ * toggle_watch's swap-with-last above, which is fine with reordering since
+ * it only ever removes the entry the user is currently looking at. */
+static void remove_watch_at(WatchList *watches, int index)
+{
+    for (int cursor = index; cursor < watches->count - 1; cursor++) {
+        watches->watch_ids[cursor] = watches->watch_ids[cursor + 1];
+    }
+    watches->count--;
+}
+
 static void
 dispatch_radial_confirm(GameState *state, EditorState *editor_state, WatchList *watches, UndoHistory *undo_history)
 {
@@ -613,6 +625,9 @@ dispatch_radial_confirm(GameState *state, EditorState *editor_state, WatchList *
             editor_state->blueprint_attr_index = -1;
             editor_state->blueprint_tree_index = -1;
             editor_state->selected_entity_id = -1;
+        } else if (confirmed == EDITOR_TOOLS_WATCH_LIST_INDEX && watches->count > 0) { /* Watch list */
+            editor_state->watch_list_scroll = 0;
+            editor_state->sub_mode = EDITOR_SUB_WATCH_LIST;
         }
     } else if (editor_state->radial_context == RADIAL_CTX_ATTR_TYPE) {
         dispatch_attr_type_change(state, editor_state, confirmed, undo_history);
@@ -819,6 +834,38 @@ void handle_handle_input(
     (void)attr_set_float(&alloc, &entity->attrs, "collision_h", editor_state->saved_col_size.y);
 }
 
+/* WATCH_LIST picker: NAV_UP/DOWN clamp the focused row (matches the fuzzy
+ * finder / word builder pickers, which clamp rather than wrap). CONFIRM
+ * removes the focused entry; emptying the list closes back to BROWSE. */
+void handle_watch_list_input(EditorState *editor_state,
+                             WatchList *watches,
+                             const InputState *input,
+                             const BindingStore *bindings)
+{
+    if (input_pressed(input, bindings, ACTION_CANCEL)) {
+        editor_state->sub_mode = EDITOR_SUB_BROWSE;
+        return;
+    }
+    if (input_pressed(input, bindings, ACTION_NAV_UP)) {
+        if (editor_state->watch_list_scroll > 0) {
+            editor_state->watch_list_scroll--;
+        }
+    }
+    if (input_pressed(input, bindings, ACTION_NAV_DOWN)) {
+        if (editor_state->watch_list_scroll < watches->count - 1) {
+            editor_state->watch_list_scroll++;
+        }
+    }
+    if (input_pressed(input, bindings, ACTION_CONFIRM)) {
+        remove_watch_at(watches, editor_state->watch_list_scroll);
+        if (watches->count == 0) {
+            editor_state->sub_mode = EDITOR_SUB_BROWSE;
+        } else if (editor_state->watch_list_scroll >= watches->count) {
+            editor_state->watch_list_scroll = watches->count - 1;
+        }
+    }
+}
+
 /* --- Hint tables --- */
 
 static const EditorActionHint browse_hints[] = {
@@ -865,6 +912,19 @@ static const EditorHintTable handles_table = {
     .mode_label = "Handles  (L-stick: offset, R-stick: size)",
 };
 
+static const EditorActionHint watch_list_hints[] = {
+    {ACTION_NAV_UP, "Move"},
+    {ACTION_NAV_DOWN, "Move"},
+    {ACTION_CONFIRM, "Remove"},
+    {ACTION_CANCEL, "Close"},
+};
+
+static const EditorHintTable watch_list_table = {
+    .hints = watch_list_hints,
+    .count = (int)(sizeof(watch_list_hints) / sizeof(watch_list_hints[0])),
+    .mode_label = "Watch list",
+};
+
 const EditorHintTable *browse_hints_table(void)
 {
     return &browse_table;
@@ -878,4 +938,9 @@ const EditorHintTable *drag_hints_table(void)
 const EditorHintTable *handles_hints_table(void)
 {
     return &handles_table;
+}
+
+const EditorHintTable *watch_list_hints_table(void)
+{
+    return &watch_list_table;
 }

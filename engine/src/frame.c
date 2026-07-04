@@ -168,6 +168,8 @@ void handle_editor_input(Diag *diag,
         handle_fuzzy_finder_input(diag, state, editor_state, undo_history, texture_registry_lookup, state, &input);
     } else if (editor_state->sub_mode == EDITOR_SUB_GAMEPAD_KB) {
         handle_gamepad_kb_input(editor_state, &input, &state->bindings);
+    } else if (editor_state->sub_mode == EDITOR_SUB_WATCH_LIST) {
+        handle_watch_list_input(editor_state, watches, &input, &state->bindings);
     } else if (editor_state->top_mode == EDITOR_TOP_BLUEPRINT) {
         handle_blueprint_browse_input(state, editor_state, undo_history, &input);
     } else {
