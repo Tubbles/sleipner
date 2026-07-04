@@ -3106,3 +3106,204 @@ void test_integration_settings_path_edit_commit_normalizes_separators(void)
 
     test_game_teardown(&game);
 }
+
+/* S5.7/D38: the Tools radial's stick-angle input has no good keyboard
+ * equivalent (TODO.md: "the radial menu is hard to use using a keyboard"),
+ * so handle_radial_input (editor/widgets.c) now also reads
+ * ACTION_NAV_LEFT/RIGHT (arrow keys / d-pad) to rotate the highlighted
+ * wedge and digit keys 1-9 (read as raw keys via input_key_pressed, not
+ * routed through the BindingStore) to jump straight to and confirm a wedge
+ * by position. Drives entirely through the real input layer: F5 into
+ * editor, TAB opens the Tools radial, NAV_RIGHT/LEFT rotate radial_selected
+ * with wraparound from "nothing highlighted", then KEY_SEVEN (digit 7,
+ * zero-based index 6 == EDITOR_TOOLS_LEVELS_INDEX) direct-selects and
+ * confirms "Levels" in the same frame -- the same sector
+ * test_radial_select_item's stick-angle math reaches in
+ * test_integration_editor_level_switch_round_trip, proving the digit path
+ * lands on the identical dispatch through a different input method. */
+void test_integration_editor_radial_keyboard_nav(void)
+{
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_gamedata));
+
+    InputState editor_toggle = {0};
+    input_state_press_key(&editor_toggle, KEY_F5);
+    test_advance_frame(&game, editor_toggle);
+    TEST_ASSERT_TRUE(game.state.editor_mode);
+
+    InputState open_tools = {0};
+    input_state_press_key(&open_tools, KEY_TAB);
+    test_advance_frame(&game, open_tools);
+    TEST_ASSERT_EQUAL_INT(EDITOR_SUB_RADIAL, game.editor_state.sub_mode);
+    TEST_ASSERT_EQUAL_INT(-1, game.editor_state.radial_selected);
+
+    /* NAV_RIGHT from "nothing highlighted" lands on wedge 0; a second press
+     * advances to wedge 1; NAV_LEFT then steps back to wedge 0. */
+    InputState nav_right = {0};
+    input_state_press_key(&nav_right, KEY_RIGHT);
+    test_advance_frame(&game, nav_right);
+    TEST_ASSERT_EQUAL_INT(0, game.editor_state.radial_selected);
+    test_advance_frame(&game, nav_right);
+    TEST_ASSERT_EQUAL_INT(1, game.editor_state.radial_selected);
+    InputState nav_left = {0};
+    input_state_press_key(&nav_left, KEY_LEFT);
+    test_advance_frame(&game, nav_left);
+    TEST_ASSERT_EQUAL_INT(0, game.editor_state.radial_selected);
+
+    /* Digit '7' direct-selects and confirms "Levels" in the same frame. */
+    InputState digit_seven = {0};
+    input_state_press_key(&digit_seven, KEY_SEVEN);
+    test_advance_frame(&game, digit_seven);
+    TEST_ASSERT_EQUAL_INT(EDITOR_TOOLS_LEVELS_INDEX, game.editor_state.radial_selected);
+    TEST_ASSERT_EQUAL_INT(EDITOR_SUB_BROWSE, game.editor_state.sub_mode);
+
+    /* BROWSE dispatches the pending radial confirmation on the next frame. */
+    InputState no_input = {0};
+    test_advance_frame(&game, no_input);
+    TEST_ASSERT_EQUAL_INT(EDITOR_TOP_LEVEL, (int)game.editor_state.top_mode);
+
+    test_game_teardown(&game);
+}
+
+/* D38 "Handles gets surfaced in the Tools radial label": the tools[] label
+ * table (editor/widgets.c's radial_label) and dispatch_radial_confirm
+ * (editor/core.c) already carried a "Handles" entry at index 2 from when
+ * Handles mode was first added -- this test is the regression guard that
+ * was missing for it. Confirming that wedge with an entity selected enters
+ * EDITOR_SUB_HANDLES for the selected entity. Mirrors
+ * test_integration_editor_watch_list_removes_focused_entry's shape: F5 into
+ * editor, CONFIRM selects the nearest root entity (tall_tree), TAB opens
+ * the Tools radial, test_radial_select_item aims at index 2 and confirms. */
+void test_integration_editor_radial_handles_entry(void)
+{
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_gamedata));
+
+    InputState editor_toggle = {0};
+    input_state_press_key(&editor_toggle, KEY_F5);
+    test_advance_frame(&game, editor_toggle);
+    TEST_ASSERT_TRUE(game.state.editor_mode);
+
+    InputState select_input = {0};
+    input_state_press_key(&select_input, KEY_ENTER);
+    test_advance_frame(&game, select_input);
+    Entity *tall_tree = test_find_entity_by_blueprint(&game.state, "tall_tree");
+    TEST_ASSERT_NOT_NULL(tall_tree);
+    TEST_ASSERT_EQUAL_INT(tall_tree->id, game.editor_state.selected_entity_id);
+
+    InputState open_tools = {0};
+    input_state_press_key(&open_tools, KEY_TAB);
+    test_advance_frame(&game, open_tools);
+    TEST_ASSERT_EQUAL_INT(EDITOR_SUB_RADIAL, game.editor_state.sub_mode);
+
+    test_radial_select_item(&game, 2);
+    TEST_ASSERT_EQUAL_INT(EDITOR_SUB_BROWSE, game.editor_state.sub_mode);
+
+    /* BROWSE dispatches the pending radial confirmation on the next frame. */
+    InputState no_input = {0};
+    test_advance_frame(&game, no_input);
+    TEST_ASSERT_EQUAL_INT(EDITOR_SUB_HANDLES, game.editor_state.sub_mode);
+
+    test_game_teardown(&game);
+}
+
+/* Companion case for the Handles wedge above: confirming it with no entity
+ * selected must not silently do nothing (the pre-existing "Grab"/"Place"
+ * wedges do, on the same confirmed<0-guard shape) -- it now raises a toast
+ * telling the user to select an entity first and stays in BROWSE. */
+void test_integration_editor_radial_handles_requires_selection(void)
+{
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_gamedata));
+
+    InputState editor_toggle = {0};
+    input_state_press_key(&editor_toggle, KEY_F5);
+    test_advance_frame(&game, editor_toggle);
+    TEST_ASSERT_TRUE(game.state.editor_mode);
+    TEST_ASSERT_EQUAL_INT(-1, game.editor_state.selected_entity_id);
+
+    InputState open_tools = {0};
+    input_state_press_key(&open_tools, KEY_TAB);
+    test_advance_frame(&game, open_tools);
+    TEST_ASSERT_EQUAL_INT(EDITOR_SUB_RADIAL, game.editor_state.sub_mode);
+
+    test_radial_select_item(&game, 2);
+
+    InputState no_input = {0};
+    test_advance_frame(&game, no_input);
+    TEST_ASSERT_EQUAL_INT(EDITOR_SUB_BROWSE, game.editor_state.sub_mode);
+    TEST_ASSERT_TRUE(game.editor_state.toast_timer > 0.0F);
+    TEST_ASSERT_TRUE(strv_eq_cstr(game.editor_state.toast_text, "Select an entity first"));
+
+    test_game_teardown(&game);
+}
+
+/* D38 "Path picker has no manual edit field on top": NAV_UP from the top
+ * row (0, the synthesized "<USE THIS DIRECTORY>" row) now focuses the
+ * buffer-display line drawn above the browse list -- a sentinel
+ * browse_index of -1 (PATH_EDIT_ROW_BUFFER, engine/src/settings.c; a
+ * private constant, so this test uses the literal like the existing
+ * drive-select test above uses literal 1 for PATH_EDIT_ROW_SELECT_DRIVE).
+ * CONFIRM there enters KEYBOARD mode positioned on the existing buf/len
+ * (keyboard_widget_reset does not clear them), the same state
+ * ACTION_WB_KEYBOARD_MODE already reached from anywhere in BROWSE -- this
+ * just gives it a focusable, discoverable entry point. Mirrors
+ * test_integration_settings_path_edit_commit's navigation prologue. */
+void test_integration_settings_path_edit_buffer_row_enters_keyboard_mode(void)
+{
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_gamedata));
+
+    InputState menu_open = {0};
+    input_state_press_key(&menu_open, KEY_F3);
+    test_advance_frame(&game, menu_open);
+    for (int step = 0; step < 3; step++) {
+        InputState down = {0};
+        input_state_press_key(&down, KEY_DOWN);
+        test_advance_frame(&game, down);
+    }
+    InputState confirm = {0};
+    input_state_press_key(&confirm, KEY_ENTER);
+    test_advance_frame(&game, confirm);
+
+    InputState tab_next = {0};
+    input_state_press_key(&tab_next, KEY_TAB);
+    test_advance_frame(&game, tab_next);
+
+    InputState confirm_path = {0};
+    input_state_press_key(&confirm_path, KEY_ENTER);
+    test_advance_frame(&game, confirm_path);
+    TEST_ASSERT_EQUAL_INT(SETTINGS_SCREEN_PATH_EDIT, (int)game.settings.screen);
+    TEST_ASSERT_EQUAL_INT(0, game.settings.path_edit.browse_index);
+
+    char seeded_buf[PATH_EDIT_BUF_SIZE];
+    (void)snprintf(seeded_buf, sizeof(seeded_buf), "%s", game.settings.path_edit.buf);
+    int seeded_len = game.settings.path_edit.len;
+    TEST_ASSERT_TRUE(seeded_len > 0);
+
+    /* NAV_UP from the top row focuses the buffer-display line. */
+    InputState nav_up = {0};
+    input_state_press_key(&nav_up, KEY_UP);
+    test_advance_frame(&game, nav_up);
+    TEST_ASSERT_EQUAL_INT(-1, game.settings.path_edit.browse_index);
+
+    /* NAV_DOWN returns focus to the list without entering KEYBOARD mode. */
+    InputState nav_down = {0};
+    input_state_press_key(&nav_down, KEY_DOWN);
+    test_advance_frame(&game, nav_down);
+    TEST_ASSERT_EQUAL_INT(0, game.settings.path_edit.browse_index);
+    TEST_ASSERT_EQUAL_INT(PATH_EDIT_BROWSE, (int)game.settings.path_edit.mode);
+
+    /* Back up to the buffer row and CONFIRM: enters KEYBOARD mode
+     * positioned on the existing buffer, not a cleared one. */
+    test_advance_frame(&game, nav_up);
+    TEST_ASSERT_EQUAL_INT(-1, game.settings.path_edit.browse_index);
+    InputState enter_edit = {0};
+    input_state_press_key(&enter_edit, KEY_ENTER);
+    test_advance_frame(&game, enter_edit);
+    TEST_ASSERT_EQUAL_INT(PATH_EDIT_KEYBOARD, (int)game.settings.path_edit.mode);
+    TEST_ASSERT_EQUAL_INT(seeded_len, game.settings.path_edit.len);
+    TEST_ASSERT_EQUAL_STRING(seeded_buf, game.settings.path_edit.buf);
+
+    test_game_teardown(&game);
+}

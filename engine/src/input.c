@@ -141,6 +141,14 @@ void input_state_clear_edges(InputState *state)
     state->gp_button_pressed = 0;
 }
 
+bool input_key_pressed(const InputState *state, int key)
+{
+    if (!key_in_range(key)) {
+        return false;
+    }
+    return (state->key_pressed[key / INPUT_BITS_PER_WORD] & (1ULL << (key % INPUT_BITS_PER_WORD))) != 0;
+}
+
 Vector2 input_apply_deadzone(Vector2 stick, float deadzone)
 {
     float magnitude = sqrtf((stick.x * stick.x) + (stick.y * stick.y));

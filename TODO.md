@@ -147,7 +147,6 @@ predicate rows and MOVE reparenting).
 - for some reason, when running against the walls significantly warps the
   sprite. could be related to float position not scaling up correctly or other
   scaling issue.
-- the radial menu is hard to use using a keyboard, not all directions are easily representable
 
 ## Pause menu follow-ups
 
@@ -239,10 +238,3 @@ d890de8 through 3641352).
   `path_edit_populate_drives` (POSIX branch in
   `engine/src/settings.c`) so the row also serves as a "jump to
   common Android root" shortcut, gated on `__ANDROID__`.
-- **Path picker has no manual edit field on top.** The user can
-  switch into KEYBOARD mode to type a path, but cannot directly
-  edit the buffer line shown above the browse list — they have to
-  delete to empty and rebuild via the radial. A simple in-place
-  text-edit cursor on that line (or a "press CONFIRM on the buf
-  display row to enter edit") would shave clicks off, especially
-  on desktop where a real keyboard is hooked up.

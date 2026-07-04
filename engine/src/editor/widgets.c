@@ -95,6 +95,41 @@ void draw_radial_picker(ScreenSize screen, const EditorState *editor_state, Font
     DrawCircle(center_x, center_y, RADIAL_INNER_RADIUS, debug_bg_color);
 }
 
+/* Keyboard rotation for the radial (arrow keys / d-pad, alongside the
+ * stick-angle path above): current < 0 (nothing highlighted yet) starts at
+ * the first/last wedge depending on direction; otherwise steps by delta
+ * modulo item_count, wrapping in both directions. */
+static int radial_rotate_index(int current, int item_count, int delta)
+{
+    if (item_count <= 0) {
+        return -1;
+    }
+    if (current < 0) {
+        return (delta > 0) ? 0 : item_count - 1;
+    }
+    return (((current + delta) % item_count) + item_count) % item_count;
+}
+
+/* Digit 1-9 direct-select for the radial: returns the zero-based item index
+ * for whichever of KEY_ONE..KEY_NINE was pressed this frame, or -1 if none
+ * was. Digits are read as raw keys (input_key_pressed) rather than routed
+ * through the BindingStore -- binding nine separate InputActions purely to
+ * pick a radial wedge by number would be a lot of enum/table surface for a
+ * keyboard-only convenience that has no gamepad equivalent (the digit and
+ * the stick-angle paths are alternatives, not a chord), so this matches how
+ * tests already drive raw keys (input_state_press_key) instead. */
+#define RADIAL_DIGIT_KEY_COUNT 9 /* KEY_ONE..KEY_NINE */
+
+static int radial_digit_index(const InputState *input)
+{
+    for (int digit = 0; digit < RADIAL_DIGIT_KEY_COUNT; digit++) {
+        if (input_key_pressed(input, KEY_ONE + digit)) {
+            return digit;
+        }
+    }
+    return -1;
+}
+
 /* Closing transitions read editor_state->return_sub_mode rather than a
  * hardcoded EDITOR_SUB_BROWSE literal, so Rule mode's leaf-editing radials
  * (RADIAL_CTX_TRIGGER_TYPE/CONDITION_TYPE/ACTION_TYPE, S5.6b) return to
@@ -103,11 +138,52 @@ void draw_radial_picker(ScreenSize screen, const EditorState *editor_state, Font
  * ATTR_TYPE/CHILD_PROPS) never sets return_sub_mode, so it stays at its
  * zero-value default (EDITOR_SUB_BROWSE) for them, unchanged from before.
  * Reset back to the default immediately after reading so a later,
- * unrelated picker session never inherits a stale target. */
+ * unrelated picker session never inherits a stale target.
+ *
+ * Keyboard nav (S5.7/D38): the stick only overwrites radial_selected when it
+ * actually registers a sector (magnitude past the deadzone) rather than
+ * unconditionally every frame, so a centered/absent stick does not stomp a
+ * selection made via NAV_LEFT/RIGHT or a digit press one frame and cleared
+ * the next. The one observable behavior change from before is that letting
+ * a gamepad stick drift back to center no longer un-highlights the wedge;
+ * CONFIRM still only ever acts on whatever is currently highlighted, on
+ * either input method.
+ *
+ * NAV_LEFT/RIGHT take priority over the stick read, and skip it entirely
+ * when either fired: on keyboard, KEY_LEFT/KEY_RIGHT are ALSO bound as a
+ * digital-to-analog pair for AXIS_PRIMARY_X (input_func.c's
+ * default_axis_primary_x, for player/camera movement elsewhere), so an
+ * arrow-key press reads as a nonzero stick in the very same frame. Without
+ * this, that phantom stick reading would jump radial_selected to whatever
+ * wedge sits at compass-east/west BEFORE the rotate step below also ran,
+ * compounding into the wrong wedge. A real analog stick tilt (no d-pad/
+ * arrow press) does not raise ACTION_NAV_LEFT/RIGHT, so it still falls
+ * through to the unchanged geometric path. */
 void handle_radial_input(EditorState *editor_state, const InputState *input, const BindingStore *bindings)
 {
-    Vector2 stick = input_axis_pair(input, bindings, AXIS_PRIMARY_X, AXIS_PRIMARY_Y);
-    editor_state->radial_selected = radial_sector_from_stick(stick, editor_state->radial_item_count);
+    int digit_index = radial_digit_index(input);
+    if (digit_index >= 0 && digit_index < editor_state->radial_item_count) {
+        editor_state->radial_selected = digit_index;
+        editor_state->radial_confirmed = digit_index;
+        editor_state->sub_mode = editor_state->return_sub_mode;
+        editor_state->return_sub_mode = EDITOR_SUB_BROWSE;
+        return;
+    }
+    bool rotate_left = input_pressed(input, bindings, ACTION_NAV_LEFT);
+    bool rotate_right = input_pressed(input, bindings, ACTION_NAV_RIGHT);
+    if (rotate_left) {
+        editor_state->radial_selected =
+            radial_rotate_index(editor_state->radial_selected, editor_state->radial_item_count, -1);
+    } else if (rotate_right) {
+        editor_state->radial_selected =
+            radial_rotate_index(editor_state->radial_selected, editor_state->radial_item_count, 1);
+    } else {
+        Vector2 stick = input_axis_pair(input, bindings, AXIS_PRIMARY_X, AXIS_PRIMARY_Y);
+        int stick_sector = radial_sector_from_stick(stick, editor_state->radial_item_count);
+        if (stick_sector >= 0) {
+            editor_state->radial_selected = stick_sector;
+        }
+    }
     if (input_pressed(input, bindings, ACTION_CANCEL)) {
         editor_state->radial_confirmed = -1;
         editor_state->rule_edit_field = RULE_EDIT_FIELD_NONE;
@@ -857,6 +933,8 @@ void handle_gamepad_kb_input(EditorState *editor_state, const InputState *input,
 static const EditorActionHint radial_hints[] = {
     {ACTION_CONFIRM, "Confirm"},
     {ACTION_CANCEL, "Cancel"},
+    {ACTION_NAV_LEFT, "Rotate"},
+    {ACTION_NAV_RIGHT, "Rotate"},
 };
 
 static const EditorHintTable radial_table = {

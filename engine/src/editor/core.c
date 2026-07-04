@@ -646,6 +646,9 @@ dispatch_radial_confirm(GameState *state, EditorState *editor_state, WatchList *
                 attr_get_scoped_float(&handle_entity->attrs, handle_defaults, "collision_h", 0.0F),
             };
             editor_state->sub_mode = EDITOR_SUB_HANDLES;
+        } else if (confirmed == 2) { /* Handles, nothing selected */
+            editor_state->toast_text = strv_from_cstr("Select an entity first");
+            editor_state->toast_timer = TOAST_DURATION;
         } else if (confirmed == 3) { /* Delete */
             delete_selected_entity(state, editor_state, watches);
             undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,

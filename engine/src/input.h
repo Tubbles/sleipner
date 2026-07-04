@@ -43,6 +43,13 @@ void input_state_release_gp_button(InputState *state, int button);
 void input_state_set_gp_axis(InputState *state, int axis, float value);
 void input_state_clear_edges(InputState *state); /* clear *_pressed bits, retain *_down */
 
+/* Raw key edge query, bypassing the BindingStore. For input that is not
+ * worth promoting to a bound InputAction (e.g. the editor radial's digit
+ * 1-9 direct-select, editor/widgets.c) but must still honor the same
+ * InputState snapshot production and tests already drive (input_capture /
+ * input_state_press_key), rather than reading raylib globals directly. */
+[[nodiscard]] bool input_key_pressed(const InputState *state, int key);
+
 /* Load the SDL gamecontrollerdb mapping table into raylib for analog
  * gamepad detection. Called once at startup. Distinct from the input
  * function layer; this is raylib device-mapping config, not key bindings. */

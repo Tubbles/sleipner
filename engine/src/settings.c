@@ -592,6 +592,16 @@ typedef enum {
 #define PATH_EDIT_ROW_USE_THIS 0
 #define PATH_EDIT_ROW_SELECT_DRIVE 1
 
+/* Sentinel browse_index value (outside the row-index space above) meaning
+ * "focused on the buffer-display line drawn above the scrollable list", not
+ * one of its rows. Reached via NAV_UP from row 0, left via NAV_DOWN or by
+ * entering KEYBOARD mode. CONFIRM here enters KEYBOARD mode positioned on
+ * the existing buf/len (keyboard_widget_reset does not clear them), the
+ * same state ACTION_WB_KEYBOARD_MODE already reaches from anywhere in
+ * BROWSE -- this just gives it a focusable, navigable entry point (D38,
+ * "Path picker has no manual edit field on top"). */
+#define PATH_EDIT_ROW_BUFFER (-1)
+
 static int path_edit_dotdot_row_index(const PathEditState *path_edit)
 {
     return path_edit->at_root ? -1 : 2;
@@ -748,11 +758,22 @@ static void path_edit_navigate_index(PathEditState *path_edit, const InputState 
     if (total_rows <= 0) {
         total_rows = 1;
     }
-    if (input_pressed(input, store, ACTION_NAV_UP) && path_edit->browse_index > 0) {
-        path_edit->browse_index--;
+    if (input_pressed(input, store, ACTION_NAV_UP)) {
+        if (path_edit->browse_index > 0) {
+            path_edit->browse_index--;
+        } else if (path_edit->browse_index == 0) {
+            path_edit->browse_index = PATH_EDIT_ROW_BUFFER;
+        }
     }
-    if (input_pressed(input, store, ACTION_NAV_DOWN) && path_edit->browse_index < total_rows - 1) {
-        path_edit->browse_index++;
+    if (input_pressed(input, store, ACTION_NAV_DOWN)) {
+        if (path_edit->browse_index == PATH_EDIT_ROW_BUFFER) {
+            path_edit->browse_index = 0;
+        } else if (path_edit->browse_index < total_rows - 1) {
+            path_edit->browse_index++;
+        }
+    }
+    if (path_edit->browse_index == PATH_EDIT_ROW_BUFFER) {
+        return; /* focused above the scrollable list; PAGE_UP/DOWN and scroll do not apply */
     }
     if (input_pressed(input, store, ACTION_PAGE_UP)) {
         path_edit->browse_index -= PATH_EDIT_VISIBLE_ROWS;
@@ -824,6 +845,17 @@ static bool path_edit_pop_to_parent(PathEditState *path_edit)
     return true;
 }
 
+/* Shared by the ACTION_WB_KEYBOARD_MODE toggle and CONFIRM on the buffer row
+ * (PATH_EDIT_ROW_BUFFER): both drop into KEYBOARD mode positioned on the
+ * existing buf/len -- keyboard_widget_reset only resets the widget's own
+ * group/selected cursor, it does not clear the caller-owned buffer it is
+ * pointed at. */
+static void path_edit_enter_keyboard_mode(PathEditState *path_edit)
+{
+    path_edit->mode = PATH_EDIT_KEYBOARD;
+    keyboard_widget_reset(&path_edit->kb, path_edit->buf, &path_edit->len, PATH_EDIT_BUF_SIZE);
+}
+
 static void handle_path_edit_browse(SettingsState *settings,
                                     Preferences *preferences,
                                     const InputState *input,
@@ -833,11 +865,14 @@ static void handle_path_edit_browse(SettingsState *settings,
     path_edit_navigate_index(path_edit, input, store);
 
     if (input_pressed(input, store, ACTION_WB_KEYBOARD_MODE)) {
-        path_edit->mode = PATH_EDIT_KEYBOARD;
-        keyboard_widget_reset(&path_edit->kb, path_edit->buf, &path_edit->len, PATH_EDIT_BUF_SIZE);
+        path_edit_enter_keyboard_mode(path_edit);
         return;
     }
     if (input_pressed(input, store, ACTION_CONFIRM)) {
+        if (path_edit->browse_index == PATH_EDIT_ROW_BUFFER) {
+            path_edit_enter_keyboard_mode(path_edit);
+            return;
+        }
         (void)path_edit_dispatch_confirm(settings, preferences);
         return;
     }
@@ -1659,7 +1694,17 @@ render_path_edit_browse(const SettingsState *settings, const BindingStore *store
         {ACTION_WB_KEYBOARD_MODE, "keyboard"},
         {ACTION_COUNT, nullptr},
     };
-    render_path_edit_hints(settings, store, pairs, screen);
+    /* Focused on the buffer row (PATH_EDIT_ROW_BUFFER): CONFIRM there means
+     * something different from the list rows above, so the hint bar swaps
+     * to match rather than showing the misleading "select / enter". */
+    static const HintPair buffer_row_pairs[] = {
+        {ACTION_CONFIRM, "edit path"},
+        {ACTION_NAV_DOWN, "back to list"},
+        {ACTION_CANCEL, "up / exit"},
+        {ACTION_COUNT, nullptr},
+    };
+    bool buffer_row_focused = path_edit->browse_index == PATH_EDIT_ROW_BUFFER;
+    render_path_edit_hints(settings, store, buffer_row_focused ? buffer_row_pairs : pairs, screen);
 }
 
 static void
@@ -1700,8 +1745,17 @@ static void render_path_edit_screen(
     draw_text(settings, "Edit data directory:", LIST_LEFT_PAD, LIST_TITLE_PAD, color_for_row(false, false));
     char buffer_line[ROW_BUF_CAP];
     (void)snprintf(buffer_line, sizeof(buffer_line), "> %s", settings->path_edit.buf);
-    draw_text(settings, buffer_line, LIST_LEFT_PAD, LIST_TITLE_PAD + LIST_LINE_HEIGHT,
-              (Color){SETTINGS_TEXT_HIGHLIGHT_R, SETTINGS_TEXT_HIGHLIGHT_G, SETTINGS_TEXT_HIGHLIGHT_B, 255});
+    int buffer_row_y = LIST_TITLE_PAD + LIST_LINE_HEIGHT;
+    Color buffer_color = (Color){SETTINGS_TEXT_HIGHLIGHT_R, SETTINGS_TEXT_HIGHLIGHT_G, SETTINGS_TEXT_HIGHLIGHT_B, 255};
+    draw_text(settings, buffer_line, LIST_LEFT_PAD, buffer_row_y, buffer_color);
+    /* Focus underline mirrors render_tab_header's selected-tab underline:
+     * the buffer line already renders at the brightest text color
+     * unconditionally (to keep the current path readable), so focus needs
+     * its own visual cue rather than a color change. */
+    if (settings->path_edit.mode == PATH_EDIT_BROWSE && settings->path_edit.browse_index == PATH_EDIT_ROW_BUFFER) {
+        Vector2 measured = MeasureTextEx(settings->font, buffer_line, (float)SETTINGS_FONT_SIZE, LIST_LETTER_SPACING);
+        DrawRectangle(LIST_LEFT_PAD, buffer_row_y + (int)measured.y + 2, (int)measured.x, 2, buffer_color);
+    }
 
     int body_y = LIST_TITLE_PAD + (LIST_LINE_HEIGHT * 3);
     switch (settings->path_edit.mode) {

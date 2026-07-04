@@ -79,6 +79,9 @@ void test_integration_editor_attr_edit_hold_repeats_after_delay(void);
 void test_integration_editor_selection_survives_deleting_different_entity(void);
 void test_integration_editor_selection_survives_undo_of_edit(void);
 void test_integration_editor_watch_list_removes_focused_entry(void);
+void test_integration_editor_radial_keyboard_nav(void);
+void test_integration_editor_radial_handles_entry(void);
+void test_integration_editor_radial_handles_requires_selection(void);
 void test_integration_editor_level_switch_round_trip(void);
 void test_integration_editor_level_create_round_trip(void);
 void test_integration_editor_level_edit_detail_round_trip(void);
@@ -97,6 +100,7 @@ void test_integration_settings_path_edit_commit(void);
 void test_integration_settings_path_edit_parent_lists_contents(void);
 void test_integration_settings_path_edit_drive_select_round_trip(void);
 void test_integration_settings_path_edit_commit_normalizes_separators(void);
+void test_integration_settings_path_edit_buffer_row_enters_keyboard_mode(void);
 
 /* toml_emitter_test.c */
 void test_toml_emit_blueprints(void);
@@ -224,6 +228,9 @@ int main(void)
     RUN_TEST(test_integration_editor_selection_survives_deleting_different_entity);
     RUN_TEST(test_integration_editor_selection_survives_undo_of_edit);
     RUN_TEST(test_integration_editor_watch_list_removes_focused_entry);
+    RUN_TEST(test_integration_editor_radial_keyboard_nav);
+    RUN_TEST(test_integration_editor_radial_handles_entry);
+    RUN_TEST(test_integration_editor_radial_handles_requires_selection);
     RUN_TEST(test_integration_editor_level_switch_round_trip);
     RUN_TEST(test_integration_editor_level_create_round_trip);
     RUN_TEST(test_integration_editor_level_edit_detail_round_trip);
@@ -242,6 +249,7 @@ int main(void)
     RUN_TEST(test_integration_settings_path_edit_parent_lists_contents);
     RUN_TEST(test_integration_settings_path_edit_drive_select_round_trip);
     RUN_TEST(test_integration_settings_path_edit_commit_normalizes_separators);
+    RUN_TEST(test_integration_settings_path_edit_buffer_row_enters_keyboard_mode);
 
     RUN_TEST(test_level_load_first);
     RUN_TEST(test_level_load_by_name);
