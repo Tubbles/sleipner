@@ -54,15 +54,12 @@ below is a new set of submodes plus their handlers, pickers, and hint tables.
   `EDITOR_SUB_RULE_TRIGGER_PICK`, `EDITOR_SUB_RULE_COND_PICK`,
   `EDITOR_SUB_RULE_ACTION_PICK` (all radial). Reuses existing FUZZY_FINDER
   for flag / item refs.
-- **Level mode** (§30) — `EDITOR_SUB_LEVEL_LIST`,
-  `EDITOR_SUB_LEVEL_TRANSITIONS` (edit transitions + spawn points), music
-  picker (fuzzy finder over embedded assets).
-
-## Editor: missing pickers inside existing modes
-
-- **Level switcher from editor** — swapping levels in the editor currently
-  requires editing gamedata. Add a "Switch level" entry to the Tools radial
-  that opens a scroll picker of level names.
+- **Level mode** (§30) — S5.2a landed `EDITOR_TOP_LEVEL`: a list of all
+  levels (current + other_levels) reachable from the Tools radial
+  ("Levels"), CONFIRM switches the active level in memory via
+  `level_activate` (`engine/src/game.c`). Remaining for S5.2b: new-level
+  creation, and detail-row editing (size, floor, background, tint, music —
+  a picker over embedded assets).
 
 ## Collision system follow-ups
 

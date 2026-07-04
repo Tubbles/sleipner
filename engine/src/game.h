@@ -10,6 +10,7 @@
 #include "progression.h"
 #include "raylib.h"
 #include "rect.h"
+#include "strv.h"
 
 #include <stdbool.h>
 
@@ -122,6 +123,22 @@ void game_reset_progression(GameState *state);
 
 /* Snap camera to the clamped player position (no lerp). Call after level load or transition. */
 void game_snap_camera(GameState *state);
+
+/* Switch the active level in memory: swaps state->gamedata.current_level
+ * with the matching entry in state->gamedata.other_levels and rebuilds the
+ * per-level runtime state (rule_table, entity_blueprints, player_index,
+ * prev_player_overlaps, prev_solid_collisions) for the newly current level.
+ * No disk I/O, no re-parse. No-op (returns true) if target_name already
+ * names current_level. Returns false if target_name matches neither
+ * current_level nor any other_levels entry — the caller should show a
+ * toast rather than treat this as a hard error.
+ *
+ * Does NOT touch undo history. Callers must reset it themselves after a
+ * successful switch (clear + push a fresh baseline entry), the same way
+ * handle_transition and reset_editor_after_reload do after
+ * game_load_gamedata — old undo snapshots reference the previous level's
+ * arena bytes and must not be replayed against the new one. */
+[[nodiscard]] bool level_activate(Diag *diag, GameState *state, Strv target_name);
 
 /* Resolve an entity's blueprint defaults via the entity→blueprint map.
  * Returns nullptr if entity has no blueprint mapping or blueprint not found. */

@@ -172,6 +172,8 @@ void handle_editor_input(Diag *diag,
         handle_watch_list_input(editor_state, watches, &input, &state->bindings);
     } else if (editor_state->top_mode == EDITOR_TOP_BLUEPRINT) {
         handle_blueprint_browse_input(state, editor_state, undo_history, &input);
+    } else if (editor_state->top_mode == EDITOR_TOP_LEVEL) {
+        handle_level_browse_input(diag, state, editor_state, undo_history, &input);
     } else {
         handle_browse_input(state, camera, editor_state, watches, undo_history, input, delta_time);
     }

@@ -63,6 +63,7 @@ const EditorHintTable *gamepad_kb_hints_table(void);
 const EditorHintTable *blueprint_list_hints_table(void);
 const EditorHintTable *blueprint_detail_hints_table(void);
 const EditorHintTable *watch_list_hints_table(void);
+const EditorHintTable *level_list_hints_table(void);
 
 /* --- Shared helpers: core.c --- */
 

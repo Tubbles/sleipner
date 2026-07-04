@@ -8,6 +8,7 @@
 #include "level.h"
 #include "menu.h"
 #include "test_helpers.h"
+#include "undo.h"
 
 #include "raylib.h"
 #include "toml.h"
@@ -1147,9 +1148,11 @@ void test_integration_editor_selection_survives_undo_of_edit(void)
  *
  * The stick angle: radial_sector_from_stick (editor/widgets.c) computes
  * index = floor(((atan2(y, x) + pi/2) mod 2pi) * item_count / 2pi). For
- * item_count = 6 (EDITOR_TOOLS_ITEM_COUNT after S5.1), sector 5 ("Watch
- * list", the last item) spans stick angles in [210, 270) degrees; 240
- * degrees (stick pointing up-left) is its midpoint. */
+ * item_count = 7 (EDITOR_TOOLS_ITEM_COUNT after S5.2a added "Levels"),
+ * sector 5 ("Watch list", second-to-last item) spans stick angles in
+ * [167.1, 218.6) degrees; (-0.9749279, -0.2225209) sits at its midpoint
+ * (~192.9 degrees). Updated from the S5.1 6-item angle when S5.2a's
+ * "Levels" entry shifted every sector boundary. */
 void test_integration_editor_watch_list_removes_focused_entry(void)
 {
     TestGame game;
@@ -1183,8 +1186,8 @@ void test_integration_editor_watch_list_removes_focused_entry(void)
 
     /* Aim the stick at the sixth sector and confirm in the same frame. */
     InputState radial_confirm = {0};
-    input_state_set_gp_axis(&radial_confirm, GAMEPAD_AXIS_LEFT_X, -0.5F);
-    input_state_set_gp_axis(&radial_confirm, GAMEPAD_AXIS_LEFT_Y, -0.8660254F);
+    input_state_set_gp_axis(&radial_confirm, GAMEPAD_AXIS_LEFT_X, -0.9749279F);
+    input_state_set_gp_axis(&radial_confirm, GAMEPAD_AXIS_LEFT_Y, -0.2225209F);
     input_state_press_key(&radial_confirm, KEY_ENTER);
     test_advance_frame(&game, radial_confirm);
     TEST_ASSERT_EQUAL_INT(EDITOR_SUB_BROWSE, game.editor_state.sub_mode);
@@ -1202,6 +1205,145 @@ void test_integration_editor_watch_list_removes_focused_entry(void)
     test_advance_frame(&game, remove_input);
     TEST_ASSERT_EQUAL_INT(0, game.watches.count);
     TEST_ASSERT_EQUAL_INT(EDITOR_SUB_BROWSE, game.editor_state.sub_mode);
+
+    test_game_teardown(&game);
+}
+
+/* S5.2a: LEVEL top mode with in-memory switching. fixture_gamedata has two
+ * levels: "field" (player, rock, tall_tree — 3 entities) and "cave"
+ * (player, rock — 2 entities). Drives entirely through the real input
+ * layer: F5 into editor, TAB opens the Tools radial (now 7 items after
+ * S5.2a added "Levels"), a stick angle aimed at the seventh sector plus
+ * CONFIRM commits it, one more frame lets BROWSE dispatch the pending
+ * radial choice and enter EDITOR_TOP_LEVEL. NAV_DOWN moves onto "cave"
+ * (the only other_levels entry).
+ *
+ * A freshly-loaded session is dirty by undo_history_is_dirty's own
+ * definition (the "Initial" baseline entry is never undo_history_mark_saved,
+ * same as production's real startup path in main.c) — so the first CONFIRM
+ * only arms the dirty-check toast and must NOT switch yet; a second CONFIRM
+ * commits it. This exercises the dirty-check explicitly rather than
+ * incidentally routing around it. Switching lands back in Scene mode so the
+ * user sees the newly-active level. The test then repeats the same
+ * Tools-radial-plus-double-CONFIRM dance to switch back to "field",
+ * asserting the round trip preserved both levels' entities (tall_tree
+ * survives being swapped out and back in) and that a subsequent non-editor
+ * frame update runs cleanly against the restored level (player resolves,
+ * collision tracking arrays are sized correctly for field's 3 entities).
+ *
+ * The stick angle: radial_sector_from_stick (editor/widgets.c) computes
+ * index = floor(((atan2(y, x) + pi/2) mod 2pi) * item_count / 2pi). For
+ * item_count = 7 (EDITOR_TOOLS_ITEM_COUNT after S5.2a), sector 6
+ * ("Levels", the last item) spans stick angles in [218.6, 270) degrees;
+ * (-0.4338837, -0.9009689) sits at its midpoint (244.3 degrees). */
+void test_integration_editor_level_switch_round_trip(void)
+{
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_gamedata));
+    TEST_ASSERT_EQUAL_STRING("field", game.state.gamedata.current_level.name.ptr);
+    TEST_ASSERT_EQUAL_INT(3, game.state.gamedata.current_level.entities.count);
+    TEST_ASSERT_TRUE(undo_history_is_dirty(&game.undo_history));
+
+    InputState editor_toggle = {0};
+    input_state_press_key(&editor_toggle, KEY_F5);
+    test_advance_frame(&game, editor_toggle);
+    TEST_ASSERT_TRUE(game.state.editor_mode);
+
+    /* Open the Tools radial (real TAB binding). */
+    InputState open_tools = {0};
+    input_state_press_key(&open_tools, KEY_TAB);
+    test_advance_frame(&game, open_tools);
+    TEST_ASSERT_EQUAL_INT(EDITOR_SUB_RADIAL, game.editor_state.sub_mode);
+    TEST_ASSERT_EQUAL_INT(EDITOR_TOOLS_ITEM_COUNT, game.editor_state.radial_item_count);
+
+    /* Aim the stick at the seventh sector ("Levels") and confirm in the same frame. */
+    InputState radial_confirm = {0};
+    input_state_set_gp_axis(&radial_confirm, GAMEPAD_AXIS_LEFT_X, -0.4338837F);
+    input_state_set_gp_axis(&radial_confirm, GAMEPAD_AXIS_LEFT_Y, -0.9009689F);
+    input_state_press_key(&radial_confirm, KEY_ENTER);
+    test_advance_frame(&game, radial_confirm);
+    TEST_ASSERT_EQUAL_INT(EDITOR_SUB_BROWSE, game.editor_state.sub_mode);
+
+    /* BROWSE dispatches the pending radial confirmation on the next frame. */
+    InputState no_input = {0};
+    test_advance_frame(&game, no_input);
+    TEST_ASSERT_EQUAL_INT(EDITOR_TOP_LEVEL, game.editor_state.top_mode);
+    TEST_ASSERT_EQUAL_INT(0, game.editor_state.level_list_scroll);
+
+    /* Move the cursor onto "cave" (the only other_levels entry). */
+    InputState nav_down = {0};
+    input_state_press_key(&nav_down, KEY_DOWN);
+    test_advance_frame(&game, nav_down);
+    TEST_ASSERT_EQUAL_INT(1, game.editor_state.level_list_scroll);
+
+    /* First CONFIRM: dirty-check arms the pending flag, no switch yet. */
+    InputState confirm_switch = {0};
+    input_state_press_key(&confirm_switch, KEY_ENTER);
+    test_advance_frame(&game, confirm_switch);
+    TEST_ASSERT_EQUAL_STRING("field", game.state.gamedata.current_level.name.ptr);
+    TEST_ASSERT_TRUE(game.editor_state.level_switch_confirm_pending);
+    TEST_ASSERT_EQUAL_INT(EDITOR_TOP_LEVEL, game.editor_state.top_mode);
+
+    /* Second CONFIRM: commits the switch. */
+    test_advance_frame(&game, confirm_switch);
+
+    TEST_ASSERT_EQUAL_STRING("cave", game.state.gamedata.current_level.name.ptr);
+    TEST_ASSERT_EQUAL_INT(2, game.state.gamedata.current_level.entities.count);
+    TEST_ASSERT_NOT_NULL(test_find_entity_by_blueprint(&game.state, "rock"));
+    TEST_ASSERT_NULL(test_find_entity_by_blueprint(&game.state, "tall_tree"));
+    TEST_ASSERT_EQUAL_INT(EDITOR_TOP_SCENE, game.editor_state.top_mode);
+    TEST_ASSERT_FALSE(game.editor_state.level_switch_confirm_pending);
+
+    /* Switch back to "field" via the same Tools-radial dance. The undo
+     * reset after the first switch left history dirty again (a fresh
+     * "Switch level" baseline, never marked saved), so this is once again
+     * a double-CONFIRM. */
+    InputState open_tools_2 = {0};
+    input_state_press_key(&open_tools_2, KEY_TAB);
+    test_advance_frame(&game, open_tools_2);
+
+    InputState radial_confirm_2 = {0};
+    input_state_set_gp_axis(&radial_confirm_2, GAMEPAD_AXIS_LEFT_X, -0.4338837F);
+    input_state_set_gp_axis(&radial_confirm_2, GAMEPAD_AXIS_LEFT_Y, -0.9009689F);
+    input_state_press_key(&radial_confirm_2, KEY_ENTER);
+    test_advance_frame(&game, radial_confirm_2);
+    test_advance_frame(&game, no_input);
+    TEST_ASSERT_EQUAL_INT(EDITOR_TOP_LEVEL, game.editor_state.top_mode);
+
+    /* The cursor resets to 0 ("cave", now current) each time Level mode
+     * opens; NAV_DOWN moves to slot 1 ("field", the only other_levels
+     * entry now that "cave" is active). */
+    test_advance_frame(&game, nav_down);
+    TEST_ASSERT_EQUAL_INT(1, game.editor_state.level_list_scroll);
+
+    test_advance_frame(&game, confirm_switch); /* first CONFIRM: arm pending */
+    TEST_ASSERT_EQUAL_STRING("cave", game.state.gamedata.current_level.name.ptr);
+    test_advance_frame(&game, confirm_switch); /* second CONFIRM: commit */
+
+    TEST_ASSERT_EQUAL_STRING("field", game.state.gamedata.current_level.name.ptr);
+    TEST_ASSERT_EQUAL_INT(3, game.state.gamedata.current_level.entities.count);
+    TEST_ASSERT_NOT_NULL(test_find_entity_by_blueprint(&game.state, "tall_tree"));
+    TEST_ASSERT_EQUAL_INT(EDITOR_TOP_SCENE, game.editor_state.top_mode);
+
+    /* player_index / collision tracking must be valid after the round
+     * trip: leave editor mode and run a real frame — game_update must not
+     * crash and the player must still resolve and move. */
+    InputState editor_off = {0};
+    input_state_press_key(&editor_off, KEY_F5);
+    test_advance_frame(&game, editor_off);
+    TEST_ASSERT_FALSE(game.state.editor_mode);
+
+    Entity *player = game_get_player(&game.state);
+    TEST_ASSERT_NOT_NULL(player);
+    float start_x = player->position.x;
+
+    InputState move_right = {0};
+    input_state_set_gp_axis(&move_right, GAMEPAD_AXIS_LEFT_X, 1.0F);
+    test_advance_frames(&game, move_right, 30);
+
+    player = game_get_player(&game.state);
+    TEST_ASSERT_NOT_NULL(player);
+    TEST_ASSERT_TRUE(player->position.x > start_x);
 
     test_game_teardown(&game);
 }

@@ -31,8 +31,9 @@ typedef struct {
 #define EDITOR_HANDLE_SPEED 60.0F        /* px/s for collision offset/size editing */
 #define EDITOR_ATTR_LARGE_STEP 10        /* ±10 step for attribute value adjuster (bumpers/brackets) */
 #define EDITOR_ATTR_HUGE_STEP 100        /* ±100 step for value adjuster (L2/R2 / PgDn/PgUp) */
-#define EDITOR_TOOLS_ITEM_COUNT 6        /* items in the RADIAL_CTX_TOOLS picker */
+#define EDITOR_TOOLS_ITEM_COUNT 7        /* items in the RADIAL_CTX_TOOLS picker */
 #define EDITOR_TOOLS_WATCH_LIST_INDEX 5  /* RADIAL_CTX_TOOLS slot for "Watch list" */
+#define EDITOR_TOOLS_LEVELS_INDEX 6      /* RADIAL_CTX_TOOLS slot for "Levels" */
 #define EDITOR_PLACE_PAGE_SIZE 5         /* blueprint page-jump size for L1/R1 in scroll picker */
 #define ATTR_REPEAT_DELAY 0.4F           /* seconds before auto-repeat starts on hold */
 #define ATTR_REPEAT_PERIOD 0.1F          /* initial repeat interval (10 Hz) */
@@ -67,6 +68,7 @@ extern const Color debug_log_color;
 typedef enum {
     EDITOR_TOP_SCENE,     /* default: entity-focused editing */
     EDITOR_TOP_BLUEPRINT, /* blueprint-focused editing */
+    EDITOR_TOP_LEVEL,     /* level list: view all levels, switch the active one in memory */
 } EditorTopMode;
 
 typedef enum {
@@ -161,6 +163,8 @@ typedef struct {
     bool creating_blueprint;                       /* word builder is naming a new blueprint */
     bool duplicating_blueprint;                    /* word builder is naming a duplicate blueprint */
     int watch_list_scroll;                         /* focused index into the watch list picker (0 = first entry) */
+    int level_list_scroll;             /* focused index into the level list: 0 = current_level, N = other_levels[N-1] */
+    bool level_switch_confirm_pending; /* dirty-check gate: CONFIRM once more switches despite unsaved changes */
 } EditorState;
 
 typedef struct {
@@ -227,3 +231,6 @@ void draw_watch_list_panel(ScreenSize screen,
                            const GameState *state,
                            const EditorState *editor_state,
                            const WatchList *watches);
+void handle_level_browse_input(
+    Diag *diag, GameState *state, EditorState *editor_state, UndoHistory *undo_history, const InputState *input);
+void draw_level_list_panel(ScreenSize screen, const GameState *state, const EditorState *editor_state);

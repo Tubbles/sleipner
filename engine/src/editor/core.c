@@ -628,6 +628,11 @@ dispatch_radial_confirm(GameState *state, EditorState *editor_state, WatchList *
         } else if (confirmed == EDITOR_TOOLS_WATCH_LIST_INDEX && watches->count > 0) { /* Watch list */
             editor_state->watch_list_scroll = 0;
             editor_state->sub_mode = EDITOR_SUB_WATCH_LIST;
+        } else if (confirmed == EDITOR_TOOLS_LEVELS_INDEX) { /* Levels */
+            editor_state->top_mode = EDITOR_TOP_LEVEL;
+            editor_state->level_list_scroll = 0;
+            editor_state->level_switch_confirm_pending = false;
+            editor_state->selected_entity_id = -1;
         }
     } else if (editor_state->radial_context == RADIAL_CTX_ATTR_TYPE) {
         dispatch_attr_type_change(state, editor_state, confirmed, undo_history);

@@ -27,6 +27,7 @@ set(ENGINE_SOURCE_FILES
     editor/child.c
     editor/core.c
     editor/draw.c
+    editor/level.c
     editor/widgets.c
     entity.c
     error.c

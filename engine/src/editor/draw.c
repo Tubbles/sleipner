@@ -106,6 +106,9 @@ static const EditorHintTable *hints_table_for(bool editor_mode, const EditorStat
             return editor_state->selected_blueprint_index >= 0 ? blueprint_detail_hints_table()
                                                                : blueprint_list_hints_table();
         }
+        if (editor_state->top_mode == EDITOR_TOP_LEVEL) {
+            return level_list_hints_table();
+        }
         return browse_hints_table();
     }
     return browse_hints_table();

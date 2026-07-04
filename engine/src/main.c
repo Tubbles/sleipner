@@ -971,6 +971,8 @@ static void render_frame(GameState *state, RenderParams params)
             } else {
                 draw_blueprint_list_panel(screen, state, &params.editor_state);
             }
+        } else if (params.editor_state.top_mode == EDITOR_TOP_LEVEL) {
+            draw_level_list_panel(screen, state, &params.editor_state);
         } else {
             draw_editor_panel(screen, state, &params.editor_state);
         }

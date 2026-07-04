@@ -16,6 +16,7 @@
 #include "rect.h"
 #include "rule.h"
 #include "str.h"
+#include "strv.h"
 
 #include "raylib.h"
 #include "toml.h"
@@ -86,6 +87,50 @@ static int find_player_entity(const GameState *state)
     return -1;
 }
 
+/* Rebuild the runtime-derived state tied to whichever Level is current:
+ * rule_table (entity id -> ruleset from its blueprint), entity_blueprints
+ * (entity id -> blueprint name), player_index, and the prev_player_overlaps
+ * / prev_solid_collisions trigger-edge trackers sized to the current entity
+ * count. Called by game_load_gamedata after a fresh parse, and by
+ * level_activate after swapping in a different Level as current_level —
+ * both cases rebuild from scratch rather than reuse the previous maps/vecs
+ * because entity ids are only unique within a single Level's own
+ * next_entity_id sequence, so carrying over another level's entries would
+ * silently misresolve rather than error. */
+[[nodiscard]] static bool setup_current_level_runtime(Diag *diag, GameState *state)
+{
+    (void)diag;
+    Allocator gamedata_alloc = allocator_arena(&state->gamedata_arena);
+    state->gamedata.rule_table = map_entity_ruleset_new(gamedata_alloc);
+    state->gamedata.entity_blueprints = map_int_str_new(gamedata_alloc);
+    state->gamedata.prev_player_overlaps = vec_bool_new(gamedata_alloc);
+    state->gamedata.prev_solid_collisions = vec_bool_new(gamedata_alloc);
+
+    for (int index = 0; index < state->gamedata.current_level.entities.count; index++) {
+        const Entity *entity = &state->gamedata.current_level.entities.data[index];
+        Str bp_name = str_new(gamedata_alloc);
+        (void)str_from_strv(&bp_name, str_to_strv(entity->blueprint_name));
+        (void)map_int_str_set(&state->gamedata.entity_blueprints, entity->id, bp_name);
+        const Blueprint *blueprint = blueprint_find(&state->gamedata.blueprints, entity->blueprint_name.ptr);
+        if (blueprint && blueprint->rules.count > 0) {
+            (void)map_entity_ruleset_set(&state->gamedata.rule_table, entity->id, blueprint->rules);
+        }
+    }
+    state->gamedata.player_index = find_player_entity(state);
+
+    /* Initialize overlap tracking: one false entry per entity */
+    for (int index = 0; index < state->gamedata.current_level.entities.count; index++) {
+        (void)vec_bool_push(&state->gamedata.prev_player_overlaps, false);
+    }
+
+    /* Initialize solid-pair collision tracking: entity_count² entries */
+    int entity_count = state->gamedata.current_level.entities.count;
+    for (int pair_index = 0; pair_index < entity_count * entity_count; pair_index++) {
+        (void)vec_bool_push(&state->gamedata.prev_solid_collisions, false);
+    }
+    return true;
+}
+
 bool game_load_gamedata(Diag *diag, GameState *state, GamedataParams params)
 {
     size_t length = strlen(params.toml_string);
@@ -99,6 +144,10 @@ bool game_load_gamedata(Diag *diag, GameState *state, GamedataParams params)
     char errbuf[TOML_ERRBUF_SIZE];
     toml_table_t *root = toml_parse(buffer, errbuf, (int)sizeof(errbuf));
     arena_restore(&state->gamedata_arena, state->gamedata_base);
+    /* Reset these here, ahead of the root check, so a hard parse failure
+     * still leaves valid empty maps rather than stale ones from a
+     * previous load. setup_current_level_runtime recreates them again
+     * (harmless, bounded) once a level actually loads successfully below. */
     Allocator gamedata_alloc_early = allocator_arena(&state->gamedata_arena);
     state->gamedata.rule_table = map_entity_ruleset_new(gamedata_alloc_early);
     state->gamedata.entity_blueprints = map_int_str_new(gamedata_alloc_early);
@@ -111,6 +160,10 @@ bool game_load_gamedata(Diag *diag, GameState *state, GamedataParams params)
     Allocator gamedata_alloc = allocator_arena(&state->gamedata_arena);
     state->gamedata.subroutines = vec_subroutine_new(gamedata_alloc);
     state->gamedata.timers = vec_timer_new(gamedata_alloc);
+    /* Same reasoning as rule_table/entity_blueprints above: reset ahead of
+     * the subs_ok/level_ok checks so a parse-succeeds-but-load-fails path
+     * still leaves valid empty vecs. setup_current_level_runtime recreates
+     * them again once a level actually loads successfully. */
     state->gamedata.prev_player_overlaps = vec_bool_new(gamedata_alloc);
     state->gamedata.prev_solid_collisions = vec_bool_new(gamedata_alloc);
     state->gamedata.other_levels = vec_level_new(gamedata_alloc);
@@ -132,27 +185,10 @@ bool game_load_gamedata(Diag *diag, GameState *state, GamedataParams params)
     state->gamedata_loaded = level_ok;
 
     if (level_ok) {
-        for (int index = 0; index < state->gamedata.current_level.entities.count; index++) {
-            const Entity *entity = &state->gamedata.current_level.entities.data[index];
-            Str bp_name = str_new(gamedata_alloc);
-            (void)str_from_strv(&bp_name, str_to_strv(entity->blueprint_name));
-            (void)map_int_str_set(&state->gamedata.entity_blueprints, entity->id, bp_name);
-            const Blueprint *blueprint = blueprint_find(&state->gamedata.blueprints, entity->blueprint_name.ptr);
-            if (blueprint && blueprint->rules.count > 0) {
-                (void)map_entity_ruleset_set(&state->gamedata.rule_table, entity->id, blueprint->rules);
-            }
-        }
-        state->gamedata.player_index = find_player_entity(state);
-
-        /* Initialize overlap tracking: one false entry per entity */
-        for (int index = 0; index < state->gamedata.current_level.entities.count; index++) {
-            (void)vec_bool_push(&state->gamedata.prev_player_overlaps, false);
-        }
-
-        /* Initialize solid-pair collision tracking: entity_count² entries */
-        int entity_count = state->gamedata.current_level.entities.count;
-        for (int pair_index = 0; pair_index < entity_count * entity_count; pair_index++) {
-            (void)vec_bool_push(&state->gamedata.prev_solid_collisions, false);
+        if (!setup_current_level_runtime(diag, state)) {
+            state->gamedata_loaded = false;
+            error_wrap(diag->error, "game_load_gamedata");
+            return false;
         }
 
         /* Fire on_spawn for every entity now that the rule table is ready */
@@ -186,6 +222,37 @@ bool game_load_gamedata(Diag *diag, GameState *state, GamedataParams params)
     }
 
     return level_ok;
+}
+
+static int find_other_level_index(const GameState *state, Strv target_name)
+{
+    for (int index = 0; index < state->gamedata.other_levels.count; index++) {
+        if (strv_eq(str_to_strv(state->gamedata.other_levels.data[index].name), target_name)) {
+            return index;
+        }
+    }
+    return -1;
+}
+
+bool level_activate(Diag *diag, GameState *state, Strv target_name)
+{
+    if (strv_eq(str_to_strv(state->gamedata.current_level.name), target_name)) {
+        return true;
+    }
+    int other_index = find_other_level_index(state, target_name);
+    if (other_index < 0) {
+        return false;
+    }
+
+    /* Shallow struct swap: both Levels (and their entity vecs) already
+     * live in gamedata_arena, so exchanging the two struct values trades
+     * ownership without touching the underlying bytes — both levels'
+     * entities survive the round trip. */
+    Level swap_temp = state->gamedata.current_level;
+    state->gamedata.current_level = state->gamedata.other_levels.data[other_index];
+    state->gamedata.other_levels.data[other_index] = swap_temp;
+
+    return setup_current_level_runtime(diag, state);
 }
 
 Entity *game_get_player(GameState *state)
