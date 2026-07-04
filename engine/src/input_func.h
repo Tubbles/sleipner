@@ -50,6 +50,13 @@ typedef enum {
     ACTION_EDITOR_WATCH,
     ACTION_EDITOR_UNDO,
     ACTION_EDITOR_REDO,
+    /* Reorder the focused row among its siblings (Rule mode structural
+     * editing, S5.6c). Chord bindings so they don't collide with a bare
+     * NAV_UP/NAV_DOWN press -- see input_func.c's default_editor_move_up/
+     * down for the exact atoms and editor/rule.c's handle_rule_tree_input
+     * for the "check chords before nav" ordering this requires. */
+    ACTION_EDITOR_MOVE_UP,
+    ACTION_EDITOR_MOVE_DOWN,
 
     /* Attribute editing */
     ACTION_ATTR_INC_1,

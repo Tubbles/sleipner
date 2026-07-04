@@ -574,6 +574,19 @@ static const DefaultAtom default_editor_redo[] = {
     GB(GAMEPAD_BUTTON_LEFT_TRIGGER_1), GB(GAMEPAD_BUTTON_LEFT_FACE_RIGHT), ATOM_END,
     ALTS_END,
 };
+/* Rule mode sibling reorder (S5.6c): same [modifier, D-pad] chord shape as
+ * undo/redo above, just Up/Down instead of Left/Right -- both directions
+ * were still free. */
+static const DefaultAtom default_editor_move_up[] = {
+    K(KEY_LEFT_CONTROL), K(KEY_UP), ATOM_END,
+    GB(GAMEPAD_BUTTON_LEFT_TRIGGER_1), GB(GAMEPAD_BUTTON_LEFT_FACE_UP), ATOM_END,
+    ALTS_END,
+};
+static const DefaultAtom default_editor_move_down[] = {
+    K(KEY_LEFT_CONTROL), K(KEY_DOWN), ATOM_END,
+    GB(GAMEPAD_BUTTON_LEFT_TRIGGER_1), GB(GAMEPAD_BUTTON_LEFT_FACE_DOWN), ATOM_END,
+    ALTS_END,
+};
 
 static const DefaultAtom default_attr_dec_1[]   = { K(KEY_LEFT),  ATOM_END, GB(GAMEPAD_BUTTON_LEFT_FACE_LEFT),   ATOM_END, ALTS_END };
 static const DefaultAtom default_attr_inc_1[]   = { K(KEY_RIGHT), ATOM_END, GB(GAMEPAD_BUTTON_LEFT_FACE_RIGHT),  ATOM_END, ALTS_END };
@@ -655,6 +668,8 @@ static const DefaultAtom *const default_action_atoms[ACTION_COUNT] = {
     [ACTION_EDITOR_WATCH] = default_editor_watch,
     [ACTION_EDITOR_UNDO] = default_editor_undo,
     [ACTION_EDITOR_REDO] = default_editor_redo,
+    [ACTION_EDITOR_MOVE_UP] = default_editor_move_up,
+    [ACTION_EDITOR_MOVE_DOWN] = default_editor_move_down,
     [ACTION_ATTR_INC_1] = default_attr_inc_1,
     [ACTION_ATTR_DEC_1] = default_attr_dec_1,
     [ACTION_ATTR_INC_10] = default_attr_inc_10,
@@ -915,6 +930,8 @@ static const char *const action_toml_names[ACTION_COUNT] = {
     [ACTION_EDITOR_WATCH] = "EDITOR_WATCH",
     [ACTION_EDITOR_UNDO] = "EDITOR_UNDO",
     [ACTION_EDITOR_REDO] = "EDITOR_REDO",
+    [ACTION_EDITOR_MOVE_UP] = "EDITOR_MOVE_UP",
+    [ACTION_EDITOR_MOVE_DOWN] = "EDITOR_MOVE_DOWN",
     [ACTION_ATTR_INC_1] = "ATTR_INC_1",
     [ACTION_ATTR_DEC_1] = "ATTR_DEC_1",
     [ACTION_ATTR_INC_10] = "ATTR_INC_10",

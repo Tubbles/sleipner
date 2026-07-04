@@ -41,9 +41,9 @@ editor modes that DESIGN.md specifies but the engine did not yet implement.
 Level mode (§30), Tile mode (§26), Atlas mode (§27), and Animation mode
 (§28) are now done — see the follow-up bullets below for the gaps each one
 left open (Level mode's music picker, Tile mode's autotiling, Atlas mode's
-fuzzy-finder integration). Rule mode (§29) has its read-only foundation
-shipped (S5.6a) — see the follow-up bullet below for the editing/subroutine
-slices still open.
+fuzzy-finder integration). Rule mode (§29) has read-only browsing, leaf
+editing, and structural editing shipped (S5.6a-c) — see the follow-up
+bullet below for the subroutine slice and other gaps still open.
 
 - **Tile mode autotiling** (DESIGN.md §26, D36) — S5.3b shipped manual
   concrete-tile-id painting (`EDITOR_SUB_TILE_PAINT`/`_PALETTE`,
@@ -66,18 +66,22 @@ slices still open.
   there's no autocomplete/browse-by-name for it — purely additive UX, not a
   round-trip gap.
 - **Rule mode** (§29, §100-104) — S5.6a shipped the read-only foundation;
-  S5.6b shipped leaf editing: CONFIRM on a focused `EDITOR_SUB_RULE_TREE`
-  row opens the reused RADIAL/FUZZY_FINDER/WORD_BUILDER/ATTR_EDIT submodes
-  to change that row's type and parameters, staged in `EditorState.rule_edit_*`
-  and committed atomically (with undo) only once the whole gesture
-  finishes, so CANCEL at any point — including mid-chain — mutates
-  nothing (`begin_rule_edit_for_row`/`dispatch_rule_radial_confirm`/
-  `rule_edit_argument_step_complete`/`finalize_rule_edit`,
-  `editor/rule.c`). Still open: structural editing — add/remove/reorder
-  rules and action nodes, author if/else/repeat/for_each (S5.6c), and
-  subroutine authoring/linking (S5.6d). Two gaps S5.6b deliberately left
-  for those slices: (1) `RuleTreeRow` (`editor/internal.h`) still only
-  flattens rule-level conditions, not a control-flow node's own predicate
+  S5.6b shipped leaf editing (`begin_rule_edit_for_row`/
+  `dispatch_rule_radial_confirm`/`rule_edit_argument_step_complete`/
+  `finalize_rule_edit`, `editor/rule.c`); S5.6c shipped structural editing:
+  ACTION_EDITOR_PLACE inserts a new action node (appended into a
+  control-flow node's own children when that's what's focused, otherwise
+  spliced in right after the focused sibling) and immediately reuses
+  S5.6b's ACTION_TYPE radial so the new node gets a real type/argument;
+  ACTION_EDITOR_DELETE drops the focused node's index from its containing
+  list (roots/children/else_children) without compacting the flat pool —
+  the orphaned subtree just stops being emitted; ACTION_EDITOR_MOVE_UP/DOWN
+  (new chords, `[Ctrl/L1, Up/Down]`) reorder a node among its siblings
+  (`insert_rule_action_node`/`delete_rule_action_node`/
+  `move_rule_action_node`, `editor/rule.c`). Still open: subroutine
+  authoring/linking (S5.6d). Gaps left for that slice and beyond: (1)
+  `RuleTreeRow` (`editor/internal.h`) still only flattens rule-level
+  conditions, not a control-flow node's own predicate
   (`ActionNode.conditions`) — an if_else row's CONFIRM is a no-op, and
   for_each's CONFIRM only edits its bind name, since there's no row yet to
   edit either node type's predicate through; (2)
@@ -85,7 +89,12 @@ slices still open.
   `set_attr`/`add_attr`'s value are edited as free strings (word builder +
   gamepad keyboard for digits) rather than through the numeric adjuster,
   since the brief for S5.6b only called out repeat-count and condition
-  compare_value as adjuster fields.
+  compare_value as adjuster fields; (3) S5.6c's MOVE only reorders a node
+  among its existing siblings — promoting a node out of an if_else's
+  then/else list into its parent's list (or the reverse) once the cursor
+  runs off the end of its current siblings needs a design call (which
+  branch is on the receiving/donating end isn't determined by "direction"
+  alone) that the S5.6c brief left for a future slice to resolve.
 - **Animation mode's sparse-attr round trip** (§28, D20) —
   `emit_animation_if_present` (`engine/src/toml_emitter.c`) emits all four
   `animation = {...}` fields as soon as any one of

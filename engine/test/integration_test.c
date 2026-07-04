@@ -2332,6 +2332,203 @@ void test_integration_editor_rule_leaf_edit_round_trip(void)
     test_game_teardown(&game);
 }
 
+/* S5.6c: Rule mode structural editing (insert/delete/reorder action nodes).
+ * Reuses fixture_rule_tree's "switch" blueprint and its S5.6a-documented
+ * pool layout: roots=[0,1], node0=set_flag:used, node1=if_else
+ * (children=[2,3]=[destroy, set_flag:opened], else_children=[4]=
+ * [set_flag:blocked]).
+ *
+ * Drives all three ops through the real input layer, in sequence, on the
+ * same tree, then confirms all three landed via a single save+reparse:
+ *
+ *  1. INSERT: focus row 2 (set_flag:used) and press ACTION_EDITOR_PLACE
+ *     (P key). A 6th pool node is spliced into roots right after node 0,
+ *     the cursor follows it to its new row, and the ACTION_TYPE radial
+ *     opens immediately (S5.6b's picker, reused) -- picking ACTION_SET_FLAG
+ *     and typing "chest" via the fuzzy-finder/word-builder chain (same
+ *     idiom as test_integration_editor_rule_leaf_edit_round_trip) gives the
+ *     new node a real type/argument.
+ *  2. DELETE: focus the "destroy" row (nested inside the if_else's "then"
+ *     branch) and press ACTION_EDITOR_DELETE. Its index is dropped from
+ *     node1.children -- nodes.count does NOT shrink (no compaction; see
+ *     CLAUDE.md's action-tree delete model), proving the node merely
+ *     becomes unreachable rather than freed.
+ *  3. MOVE: focus the new "chest" node and press ACTION_EDITOR_MOVE_DOWN
+ *     (Ctrl+Down chord) to swap it past the if_else in the root list.
+ *
+ * The final save+reparse confirms all three: "destroy" is gone from the
+ * emitted "then" array, "chest" appears as a top-level action, and it sits
+ * AFTER the if/else table (the move). */
+void test_integration_editor_rule_structural_edit(void)
+{
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_rule_tree));
+    game.frame_ctx.save_fn = test_recording_gamedata_save;
+
+    InputState editor_toggle = {0};
+    input_state_press_key(&editor_toggle, KEY_F5);
+    test_advance_frame(&game, editor_toggle);
+
+    InputState open_tools = {0};
+    input_state_press_key(&open_tools, KEY_TAB);
+    test_advance_frame(&game, open_tools);
+    test_radial_select_item(&game, EDITOR_TOOLS_RULE_INDEX);
+
+    InputState no_input = {0};
+    test_advance_frame(&game, no_input);
+    TEST_ASSERT_EQUAL_INT(EDITOR_TOP_RULE, game.editor_state.top_mode);
+
+    InputState confirm = {0};
+    input_state_press_key(&confirm, KEY_ENTER);
+    test_advance_frame(&game, confirm); /* pick "switch" */
+    test_advance_frame(&game, confirm); /* open its only rule */
+    TEST_ASSERT_EQUAL_INT(EDITOR_SUB_RULE_TREE, game.editor_state.sub_mode);
+
+    Blueprint *switch_bp = &game.state.gamedata.blueprints.entries.data[0];
+    Rule *rule = &switch_bp->rules.data[0];
+    TEST_ASSERT_EQUAL_INT(5, rule->action_tree.nodes.count);
+    TEST_ASSERT_EQUAL_INT(2, rule->action_tree.roots.count);
+
+    /* --- INSERT: focus row 2 (set_flag:used) --- */
+    InputState nav_down = {0};
+    input_state_press_key(&nav_down, KEY_DOWN);
+    test_advance_frames(&game, nav_down, 2);
+    TEST_ASSERT_EQUAL_INT(2, game.editor_state.rule_tree_row);
+
+    InputState place_input = {0};
+    input_state_press_key(&place_input, KEY_P);
+    test_advance_frame(&game, place_input);
+
+    /* A new pool node (index 5) is spliced into roots right after node 0:
+     * roots become [0, 5, 1]. */
+    TEST_ASSERT_EQUAL_INT(6, rule->action_tree.nodes.count);
+    TEST_ASSERT_EQUAL_INT(3, rule->action_tree.roots.count);
+    TEST_ASSERT_EQUAL_INT(0, rule->action_tree.roots.data[0]);
+    TEST_ASSERT_EQUAL_INT(5, rule->action_tree.roots.data[1]);
+    TEST_ASSERT_EQUAL_INT(1, rule->action_tree.roots.data[2]);
+    TEST_ASSERT_EQUAL_INT(3, game.editor_state.rule_tree_row); /* cursor follows the new row */
+    TEST_ASSERT_TRUE(strv_eq_cstr(undo_history_description(&game.undo_history), "Insert rule action"));
+
+    /* The insert immediately opens the ACTION_TYPE radial (S5.6b's picker,
+     * reused) so the new node gets a real type/argument. */
+    TEST_ASSERT_EQUAL_INT(EDITOR_SUB_RADIAL, game.editor_state.sub_mode);
+    TEST_ASSERT_EQUAL_INT(RADIAL_CTX_ACTION_TYPE, game.editor_state.radial_context);
+    TEST_ASSERT_EQUAL_INT(RULE_EDIT_FIELD_TYPE, game.editor_state.rule_edit_field);
+
+    test_select_rule_radial_item(&game, ACTION_SET_FLAG);
+    test_advance_frame(&game, no_input); /* RULE_TREE dispatches the radial confirm -> fuzzy finder */
+    TEST_ASSERT_EQUAL_INT(EDITOR_SUB_FUZZY_FINDER, game.editor_state.sub_mode);
+
+    test_advance_frame(&game, confirm); /* scroll 0 "[ NEW... ]" -> word builder, prefilled empty */
+    TEST_ASSERT_EQUAL_INT(EDITOR_SUB_WORD_BUILDER, game.editor_state.sub_mode);
+    TEST_ASSERT_EQUAL_STRING("", game.editor_state.word_builder_buf);
+
+    InputState wb_down = {0};
+    input_state_press_key(&wb_down, KEY_DOWN);
+    test_advance_frame(&game, wb_down); /* word_builder_scroll 1: "chest" */
+    test_advance_frame(&game, confirm); /* append "chest" */
+
+    InputState wb_up = {0};
+    input_state_press_key(&wb_up, KEY_UP);
+    test_advance_frame(&game, wb_up);   /* word_builder_scroll 0: "[ DONE ]" */
+    test_advance_frame(&game, confirm); /* finalize: commit type+argument */
+
+    TEST_ASSERT_EQUAL_INT(EDITOR_SUB_RULE_TREE, game.editor_state.sub_mode);
+    TEST_ASSERT_EQUAL_INT(RULE_EDIT_FIELD_NONE, game.editor_state.rule_edit_field);
+    TEST_ASSERT_EQUAL_INT(ACTION_SET_FLAG, rule->action_tree.nodes.data[5].type);
+    TEST_ASSERT_EQUAL_STRING("chest", rule->action_tree.nodes.data[5].argument.ptr);
+    TEST_ASSERT_TRUE(strv_eq_cstr(undo_history_description(&game.undo_history), "Edit rule action"));
+
+    /* --- DELETE: focus "destroy" (row 5: trigger, condition, node0, node5,
+     * if_else, THEN destroy) and remove it --- */
+    test_advance_frames(&game, nav_down, 2);
+    TEST_ASSERT_EQUAL_INT(5, game.editor_state.rule_tree_row);
+
+    InputState delete_input = {0};
+    input_state_press_key(&delete_input, KEY_DELETE);
+    test_advance_frame(&game, delete_input);
+
+    /* No compaction: the pool still holds 6 nodes (the removed "destroy" is
+     * simply no longer reachable), only node1's children list shrank. */
+    TEST_ASSERT_EQUAL_INT(6, rule->action_tree.nodes.count);
+    TEST_ASSERT_EQUAL_INT(1, rule->action_tree.nodes.data[1].children.count);
+    TEST_ASSERT_EQUAL_INT(3, rule->action_tree.nodes.data[1].children.data[0]);
+    TEST_ASSERT_TRUE(strv_eq_cstr(undo_history_description(&game.undo_history), "Delete rule action"));
+
+    /* --- MOVE: focus the "chest" node (node 5) and move it down past the
+     * if_else --- */
+    InputState nav_up = {0};
+    input_state_press_key(&nav_up, KEY_UP);
+    test_advance_frames(&game, nav_up, 2);
+    TEST_ASSERT_EQUAL_INT(3, game.editor_state.rule_tree_row);
+
+    InputState move_down_input = {0};
+    input_state_hold_key(&move_down_input, KEY_LEFT_CONTROL);
+    input_state_press_key(&move_down_input, KEY_DOWN);
+    test_advance_frame(&game, move_down_input);
+
+    TEST_ASSERT_EQUAL_INT(0, rule->action_tree.roots.data[0]);
+    TEST_ASSERT_EQUAL_INT(1, rule->action_tree.roots.data[1]);
+    TEST_ASSERT_EQUAL_INT(5, rule->action_tree.roots.data[2]);
+    TEST_ASSERT_EQUAL_INT(6, game.editor_state.rule_tree_row); /* cursor follows node 5 to its new row */
+    TEST_ASSERT_TRUE(strv_eq_cstr(undo_history_description(&game.undo_history), "Move rule action"));
+
+    /* --- Save through the real pause-menu path and reparse --- */
+    InputState menu_open = {0};
+    input_state_press_key(&menu_open, KEY_F3);
+    test_advance_frame(&game, menu_open);
+
+    InputState menu_down = {0};
+    input_state_press_key(&menu_down, KEY_DOWN);
+    test_advance_frame(&game, menu_down);
+    TEST_ASSERT_EQUAL_INT(MENU_ENTRY_SAVE, game.menu.selected);
+
+    test_advance_frame(&game, confirm);
+    TEST_ASSERT_EQUAL_INT(1, game.gamedata_save_count);
+
+    char errbuf[200];
+    char *parse_buf = strdup(game.saved_gamedata_buf);
+    toml_table_t *root = toml_parse(parse_buf, errbuf, (int)sizeof(errbuf));
+    free(parse_buf);
+    TEST_ASSERT_NOT_NULL_MESSAGE(root, errbuf);
+
+    toml_array_t *blueprints = toml_array_in(root, "blueprint");
+    TEST_ASSERT_NOT_NULL(blueprints);
+    toml_table_t *switch_table = test_find_blueprint_table_by_name(blueprints, "switch");
+    TEST_ASSERT_NOT_NULL_MESSAGE(switch_table, "'switch' missing from saved TOML");
+
+    toml_array_t *rule_array = toml_array_in(switch_table, "rule");
+    TEST_ASSERT_NOT_NULL(rule_array);
+    toml_table_t *rule_table = toml_table_at(rule_array, 0);
+    TEST_ASSERT_NOT_NULL(rule_table);
+    toml_array_t *actions = toml_array_in(rule_table, "actions");
+    TEST_ASSERT_NOT_NULL(actions);
+    TEST_ASSERT_EQUAL_INT(3, toml_array_nelem(actions));
+
+    toml_datum_t action0 = toml_string_at(actions, 0);
+    TEST_ASSERT_TRUE(action0.ok);
+    TEST_ASSERT_EQUAL_STRING("set_flag:used", action0.u.s);
+    free(action0.u.s);
+
+    toml_table_t *if_table = toml_table_at(actions, 1);
+    TEST_ASSERT_NOT_NULL_MESSAGE(if_table, "if/else missing at actions[1] -- move landed in the wrong slot");
+    toml_array_t *then_array = toml_array_in(if_table, "then");
+    TEST_ASSERT_NOT_NULL(then_array);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(1, toml_array_nelem(then_array), "deleted 'destroy' still present in 'then'");
+    toml_datum_t then0 = toml_string_at(then_array, 0);
+    TEST_ASSERT_TRUE(then0.ok);
+    TEST_ASSERT_EQUAL_STRING("set_flag:opened", then0.u.s);
+    free(then0.u.s);
+
+    toml_datum_t action2 = toml_string_at(actions, 2);
+    TEST_ASSERT_TRUE_MESSAGE(action2.ok, "moved 'chest' action not found at actions[2]");
+    TEST_ASSERT_EQUAL_STRING("set_flag:chest", action2.u.s);
+    free(action2.u.s);
+
+    toml_free(root);
+    test_game_teardown(&game);
+}
+
 /* Drive the pause menu through the real frame loop: F3 opens the
  * menu, KEY_DOWN walks the selection, KEY_ENTER confirms QUIT.
  * Observables are game.menu.open, game.menu.selected, and

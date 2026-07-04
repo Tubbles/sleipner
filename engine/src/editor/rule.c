@@ -132,9 +132,34 @@ static void rule_tree_flatten_children(
 }
 // NOLINTEND(misc-no-recursion)
 
+/* Counts reachable action rows the same depth-first way
+ * rule_tree_flatten_children walks them, without writing any output --
+ * needed because S5.6c's DELETE removes a node's index from its containing
+ * list without compacting action_tree.nodes (the orphaned subtree stays in
+ * the pool, unreachable, until the next save+reparse drops it for good; see
+ * editor/rule.c's delete_rule_action_node). Before S5.6c, nodes.count and
+ * "reachable node count" were always equal (parsing never leaves an
+ * orphan), so the old `1 + conditions.count + nodes.count` formula worked;
+ * once a delete can orphan pool entries, nodes.count overcounts and the row
+ * cursor could clamp past the last real row into never-written
+ * RuleTreeRow slots. */
+// NOLINTBEGIN(misc-no-recursion) -- same bounded-depth rationale as rule_tree_flatten_children above.
+static int rule_tree_count_reachable(const vec_action_node *pool, const vec_int *indices)
+{
+    int count = 0;
+    for (int position = 0; position < indices->count; position++) {
+        const ActionNode *node = &pool->data[indices->data[position]];
+        count++;
+        count += rule_tree_count_reachable(pool, &node->children);
+        count += rule_tree_count_reachable(pool, &node->else_children);
+    }
+    return count;
+}
+// NOLINTEND(misc-no-recursion)
+
 int rule_tree_row_count(const Rule *rule)
 {
-    return 1 + rule->conditions.count + rule->action_tree.nodes.count;
+    return 1 + rule->conditions.count + rule_tree_count_reachable(&rule->action_tree.nodes, &rule->action_tree.roots);
 }
 
 void rule_tree_flatten(const Rule *rule, RuleTreeRow *out)
@@ -804,6 +829,313 @@ void dispatch_rule_radial_confirm(GameState *state, EditorState *editor_state, U
     }
 }
 
+/* --- S5.6c: structural editing (insert/delete/reorder action nodes) ---
+ *
+ * Node storage (S2.3): action_tree.nodes is a flat pool; every control-flow
+ * node's own children/else_children, and the tree's roots, are index lists
+ * into that pool. A node's "containing list" -- roots, or some ancestor's
+ * children/else_children -- is not tracked anywhere; it has to be found by
+ * walking the tree. RuleNodeSlot names that list by the parent node's index
+ * (-1 for roots) plus which branch, rather than a raw vec_int* pointer,
+ * because the list may live inside a pool ActionNode -- a
+ * vec_action_node_push between finding the slot and using it can reallocate
+ * the pool and move that ActionNode (see CLAUDE.md "Vec growth and pointer
+ * stability"). rule_node_slot_list re-resolves the pointer fresh every time
+ * it's called, so the only safe pattern is: find the slot, do any pushes,
+ * THEN resolve the list pointer and use it immediately. */
+
+typedef struct {
+    int parent_node_index; /* -1 = action_tree.roots; >=0 = pool node's children/else_children */
+    bool in_else_branch;   /* which of the two lists, when parent_node_index >= 0 */
+    int position;          /* index within that list */
+} RuleNodeSlot;
+
+static bool rule_node_slot_search_list(const vec_int *indices, int target_index, int *out_position)
+{
+    for (int position = 0; position < indices->count; position++) {
+        if (indices->data[position] == target_index) {
+            *out_position = position;
+            return true;
+        }
+    }
+    return false;
+}
+
+/* Depth-first search for target_index's containing list, mirroring
+ * rule_tree_flatten_children's own traversal order. Read-only (the pool
+ * isn't mutated during the search), so no pointer-stability concern here --
+ * that only applies to the insert/delete/move callers built on top, which
+ * mutate after this returns. */
+// NOLINTBEGIN(misc-no-recursion) -- same bounded-depth rationale as rule_tree_flatten_children above.
+static bool rule_node_slot_search(const vec_action_node *pool,
+                                  int parent_node_index,
+                                  bool in_else_branch,
+                                  const vec_int *indices,
+                                  int target_index,
+                                  RuleNodeSlot *out)
+{
+    int position = 0;
+    if (rule_node_slot_search_list(indices, target_index, &position)) {
+        *out = (RuleNodeSlot){
+            .parent_node_index = parent_node_index,
+            .in_else_branch = in_else_branch,
+            .position = position,
+        };
+        return true;
+    }
+    for (int index = 0; index < indices->count; index++) {
+        int child_index = indices->data[index];
+        const ActionNode *node = &pool->data[child_index];
+        if (rule_node_slot_search(pool, child_index, false, &node->children, target_index, out)) {
+            return true;
+        }
+        if (rule_node_slot_search(pool, child_index, true, &node->else_children, target_index, out)) {
+            return true;
+        }
+    }
+    return false;
+}
+// NOLINTEND(misc-no-recursion)
+
+static bool rule_find_node_slot(const ActionTree *tree, int node_index, RuleNodeSlot *out)
+{
+    return rule_node_slot_search(&tree->nodes, -1, false, &tree->roots, node_index, out);
+}
+
+/* Resolves a RuleNodeSlot to its live vec_int* -- call this AFTER any pool
+ * push, never before (see the section doc comment above). */
+static vec_int *rule_node_slot_list(ActionTree *tree, RuleNodeSlot slot)
+{
+    if (slot.parent_node_index < 0) {
+        return &tree->roots;
+    }
+    ActionNode *parent = &tree->nodes.data[slot.parent_node_index];
+    return slot.in_else_branch ? &parent->else_children : &parent->children;
+}
+
+/* vec_int has no insert-at/remove-at of its own (vec.h only offers
+ * push/clear/free) -- these two are small enough, and specific enough to an
+ * ordered index list, that generalizing them into vec.h for every vec_<name>
+ * isn't warranted yet; kept local until a second caller needs them. Insert
+ * grows via vec_int_push first (the only path that can reallocate `list`'s
+ * own backing array) and then shifts, so the growth check lives in one
+ * place. */
+static bool rule_tree_list_insert_at(vec_int *list, int position, int value)
+{
+    if (!vec_int_push(list, value)) {
+        return false;
+    }
+    for (int index = list->count - 1; index > position; index--) {
+        list->data[index] = list->data[index - 1];
+    }
+    list->data[position] = value;
+    return true;
+}
+
+static void rule_tree_list_remove_at(vec_int *list, int position)
+{
+    for (int index = position; index < list->count - 1; index++) {
+        list->data[index] = list->data[index + 1];
+    }
+    list->count--;
+}
+
+/* Finds the flattened row index for node_index by re-flattening the live
+ * tree -- used after insert/move to re-point rule_tree_row at the node the
+ * gesture just acted on, since its row index shifts whenever sibling order
+ * or tree shape changes. Returns -1 if not found (defensive; shouldn't
+ * happen for a node this function's callers just inserted or moved). */
+static int rule_row_index_for_node(GameState *state, const Rule *rule, int node_index)
+{
+    SCRATCH_SCOPE(&state->scratch_arena);
+    int row_count = rule_tree_row_count(rule);
+    RuleTreeRow *rows = arena_alloc(&state->scratch_arena, sizeof(RuleTreeRow) * (size_t)row_count);
+    if (!rows) {
+        return -1;
+    }
+    rule_tree_flatten(rule, rows);
+    for (int index = 0; index < row_count; index++) {
+        if (rows[index].kind == RULE_TREE_ROW_ACTION && rows[index].node_index == node_index) {
+            return index;
+        }
+    }
+    return -1;
+}
+
+/* INSERT (ACTION_EDITOR_PLACE on a RULE_TREE row): appends a new, blank
+ * action node and immediately opens the ACTION_TYPE radial (RADIAL_CTX_
+ * ACTION_TYPE) on its row so the user sets a real type/args via S5.6b's
+ * reused picker. The new node's argument/second_argument are explicitly
+ * str_from_cstr("")'d rather than left as a bare str_new (ptr == nullptr) --
+ * a zeroed Str is only safe as an immediately-filled parse-time placeholder
+ * (see parse_branch_array_into's identical `ActionNode blank = {0}`); here
+ * the placeholder can survive across frames (the user can back out of the
+ * type radial, or reach Settings' Save through the pause menu, which is
+ * checked before the editor's own sub_mode dispatch and so is reachable
+ * even mid-gesture) and toml_emitter.c's action_emit_table does `"%s",
+ * node->argument.ptr` unconditionally for any has-args type, so a nullptr
+ * ptr there would be a live UB/crash risk, not just a cosmetic gap.
+ *
+ * Where the new node lands:
+ *  - focused row is a control-flow action (if_else/repeat/for_each):
+ *    appended to the END of that node's own `children` ("then"/"do" list)
+ *    -- the only way to populate a freshly authored, still-empty block.
+ *    Inserting straight into `else_children` isn't offered here: an empty
+ *    else branch has no row to focus in the first place. Once an else
+ *    branch has at least one row, focusing it and inserting reaches the
+ *    branch below and appends a further else sibling.
+ *  - focused row is any other action: inserted as the sibling immediately
+ *    AFTER the focused node, in whichever list currently contains it.
+ *  - focused row is the trigger or a rule-level condition (no action node
+ *    focused yet): appended to the END of the rule's top-level action list
+ *    (action_tree.roots).
+ * Pushes one undo entry for the structural insert itself; the follow-up
+ * type/argument gesture pushes its own separate entry when it commits (see
+ * finalize_rule_edit), or nothing at all if the user CANCELs out of the
+ * radial -- the placeholder then stays as a harmless empty set_flag, and
+ * ACTION_EDITOR_UNDO removes it in one step since it's exactly what the
+ * insert's own undo entry captured. */
+static void insert_rule_action_node(GameState *state, EditorState *editor_state, UndoHistory *undo_history)
+{
+    Rule *rule = rule_selected_rule_mut(state, editor_state);
+    if (!rule) {
+        return;
+    }
+    RuleTreeRow row = rule_focused_row(state, editor_state, rule);
+
+    RuleNodeSlot target = {
+        .parent_node_index = -1,
+        .in_else_branch = false,
+        .position = rule->action_tree.roots.count,
+    };
+    if (row.kind == RULE_TREE_ROW_ACTION) {
+        if (row.node_index < 0 || row.node_index >= rule->action_tree.nodes.count) {
+            return;
+        }
+        const ActionNode *focused = &rule->action_tree.nodes.data[row.node_index];
+        if (focused->type == ACTION_IF_ELSE || focused->type == ACTION_REPEAT || focused->type == ACTION_FOR_EACH) {
+            target = (RuleNodeSlot){
+                .parent_node_index = row.node_index,
+                .in_else_branch = false,
+                .position = focused->children.count,
+            };
+        } else {
+            if (!rule_find_node_slot(&rule->action_tree, row.node_index, &target)) {
+                return;
+            }
+            target.position++; /* insert AFTER the focused sibling */
+        }
+    }
+
+    Allocator alloc = allocator_arena(&state->gamedata_arena);
+    ActionNode blank = {0};
+    blank.argument = str_new(alloc);
+    (void)str_from_cstr(&blank.argument, "");
+    blank.second_argument = str_new(alloc);
+    (void)str_from_cstr(&blank.second_argument, "");
+    if (!vec_action_node_push(&rule->action_tree.nodes, blank)) {
+        return;
+    }
+    int new_node_index = rule->action_tree.nodes.count - 1;
+
+    /* Re-derive the target list only now, after the pool push above -- see
+     * the section doc comment's pointer-stability rule. */
+    vec_int *target_list = rule_node_slot_list(&rule->action_tree, target);
+    if (!rule_tree_list_insert_at(target_list, target.position, new_node_index)) {
+        return;
+    }
+
+    int new_row = rule_row_index_for_node(state, rule, new_node_index);
+    if (new_row >= 0) {
+        editor_state->rule_tree_row = new_row;
+    }
+    undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
+                           strv_from_cstr("Insert rule action"));
+    open_rule_type_radial(editor_state, RADIAL_CTX_ACTION_TYPE, RULE_ACTION_TYPE_COUNT);
+}
+
+/* DELETE (ACTION_EDITOR_DELETE on a RULE_TREE row): drops the focused
+ * node's index from whichever list currently contains it. Per S2.3's flat
+ * pool, the node itself (and its own children/else_children subtree, if
+ * any) is NOT freed or compacted out of action_tree.nodes -- removing the
+ * one index that made it reachable is the entire delete: nothing else
+ * points to it, the emitter never walks to it, and a save+reparse drops it
+ * for good. No-op for anything but a RULE_TREE_ROW_ACTION row, which also
+ * makes deleting the trigger row structurally impossible here (it's a
+ * RULE_TREE_ROW_TRIGGER row, never ACTION). rule_tree_row_count (fixed
+ * above to walk reachable rows instead of trusting nodes.count) reflects
+ * the shrink immediately, so the cursor is re-clamped right after. */
+static void delete_rule_action_node(GameState *state, EditorState *editor_state, UndoHistory *undo_history)
+{
+    Rule *rule = rule_selected_rule_mut(state, editor_state);
+    if (!rule) {
+        return;
+    }
+    RuleTreeRow row = rule_focused_row(state, editor_state, rule);
+    if (row.kind != RULE_TREE_ROW_ACTION) {
+        return;
+    }
+    RuleNodeSlot slot;
+    if (!rule_find_node_slot(&rule->action_tree, row.node_index, &slot)) {
+        return;
+    }
+    vec_int *list = rule_node_slot_list(&rule->action_tree, slot);
+    rule_tree_list_remove_at(list, slot.position);
+
+    int row_count = rule_tree_row_count(rule);
+    if (editor_state->rule_tree_row >= row_count) {
+        editor_state->rule_tree_row = row_count - 1;
+    }
+    undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
+                           strv_from_cstr("Delete rule action"));
+}
+
+/* MOVE (ACTION_EDITOR_MOVE_UP/DOWN on a RULE_TREE row): reorders the
+ * focused action node among its siblings -- swap with the previous
+ * (direction<0) or next (direction>0) entry in whichever list currently
+ * contains it. A no-op at a list boundary.
+ *
+ * Deferred: promoting a node out of an if_else's then/else list into its
+ * parent's list (or the reverse) when the cursor runs off the end of its
+ * current siblings -- the fuller reparent S5.6c's brief allows shipping
+ * without. It needs a design call this slice doesn't resolve: which
+ * branch (then vs else) is on the receiving/donating end isn't
+ * determined by "direction" alone once the node could enter or leave
+ * either list, and the brief doesn't specify a second control to pick.
+ * Sibling reorder plus insert/delete already covers authoring if/else
+ * bodies (insert appends into a control-flow node's own children; delete
+ * plus a fresh insert elsewhere covers moving a node between branches). */
+static void move_rule_action_node(GameState *state, EditorState *editor_state, UndoHistory *undo_history, int direction)
+{
+    Rule *rule = rule_selected_rule_mut(state, editor_state);
+    if (!rule) {
+        return;
+    }
+    RuleTreeRow row = rule_focused_row(state, editor_state, rule);
+    if (row.kind != RULE_TREE_ROW_ACTION) {
+        return;
+    }
+    RuleNodeSlot slot;
+    if (!rule_find_node_slot(&rule->action_tree, row.node_index, &slot)) {
+        return;
+    }
+    vec_int *list = rule_node_slot_list(&rule->action_tree, slot);
+    int swap_with = slot.position + direction;
+    if (swap_with < 0 || swap_with >= list->count) {
+        return;
+    }
+    int moved_node_index = list->data[slot.position];
+    list->data[slot.position] = list->data[swap_with];
+    list->data[swap_with] = moved_node_index;
+
+    int new_row = rule_row_index_for_node(state, rule, moved_node_index);
+    if (new_row >= 0) {
+        editor_state->rule_tree_row = new_row;
+    }
+    undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
+                           strv_from_cstr("Move rule action"));
+}
+
 /* --- RULE_LIST: blueprint picker (rule_blueprint_index < 0) --- */
 
 static void handle_rule_blueprint_list_input(GameState *state, EditorState *editor_state, const InputState *input)
@@ -877,6 +1209,21 @@ void handle_rule_tree_input(GameState *state,
         editor_state->sub_mode = EDITOR_SUB_RULE_LIST;
         return;
     }
+    /* MOVE_UP/DOWN are chords sharing their D-pad-Up/Down (or arrow-key)
+     * atom with NAV_UP/DOWN -- same order-sensitivity rule ACTION_EDITOR_
+     * UNDO/REDO already need against NAV_LEFT/RIGHT (see core.c's
+     * handle_browse_input and input_func.h's order-sensitivity warning).
+     * Checking these first and returning keeps a single Ctrl+Up/L1+Up from
+     * ALSO moving the row cursor an extra step via the plain NAV_UP check
+     * below. */
+    if (input_pressed(input, &state->bindings, ACTION_EDITOR_MOVE_UP)) {
+        move_rule_action_node(state, editor_state, undo_history, -1);
+        return;
+    }
+    if (input_pressed(input, &state->bindings, ACTION_EDITOR_MOVE_DOWN)) {
+        move_rule_action_node(state, editor_state, undo_history, 1);
+        return;
+    }
     const Rule *rule = rule_selected_rule(state, editor_state);
     if (!rule) {
         return;
@@ -887,6 +1234,14 @@ void handle_rule_tree_input(GameState *state,
     }
     if (input_pressed(input, &state->bindings, ACTION_NAV_UP) && editor_state->rule_tree_row > 0) {
         editor_state->rule_tree_row--;
+    }
+    if (input_pressed(input, &state->bindings, ACTION_EDITOR_PLACE)) {
+        insert_rule_action_node(state, editor_state, undo_history);
+        return;
+    }
+    if (input_pressed(input, &state->bindings, ACTION_EDITOR_DELETE)) {
+        delete_rule_action_node(state, editor_state, undo_history);
+        return;
     }
     if (input_pressed(input, &state->bindings, ACTION_CONFIRM)) {
         begin_rule_edit_for_row(state, editor_state);
@@ -1130,10 +1485,10 @@ const EditorHintTable *rule_list_hints_table(void)
 }
 
 static const EditorActionHint rule_tree_hints[] = {
-    {ACTION_CANCEL, "Back to list"},
-    {ACTION_NAV_UP, "Prev"},
-    {ACTION_NAV_DOWN, "Next"},
-    {ACTION_CONFIRM, "Edit"},
+    {ACTION_CANCEL, "Back to list"},    {ACTION_NAV_UP, "Prev"},
+    {ACTION_NAV_DOWN, "Next"},          {ACTION_CONFIRM, "Edit"},
+    {ACTION_EDITOR_PLACE, "Insert"},    {ACTION_EDITOR_DELETE, "Delete"},
+    {ACTION_EDITOR_MOVE_UP, "Move up"}, {ACTION_EDITOR_MOVE_DOWN, "Move down"},
 };
 
 static const EditorHintTable rule_tree_table = {
