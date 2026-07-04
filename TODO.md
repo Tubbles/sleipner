@@ -47,7 +47,13 @@ tables.
 
 - **Tile mode** (DESIGN.md §26) — `EDITOR_SUB_TILE_PAINT`,
   `EDITOR_SUB_TILE_PALETTE` (radial/scroll picker of tile kinds), ground /
-  overlay layer toggle.
+  overlay layer toggle. Engine-side prerequisite landed (S5.3a):
+  `Level.tiles_ground`/`tiles_overlay` (flat row-major `vec_int`,
+  `level.h`/`level.c`), `GamedataState.tileset` (id -> texture+src,
+  `tileset.h`/`tileset.c`), TOML parse/emit, and ground/overlay render in
+  `main.c` (`draw_tile_layer`, `draw_ground_or_fallback`). S5.3b builds the
+  paint UI against this data model — no engine work should be needed beyond
+  it.
 - **Atlas mode** (§27) — `EDITOR_SUB_ATLAS_BROWSE`,
   `EDITOR_SUB_ATLAS_REGION_EDIT` (source-rect drag, like HANDLES but on the
   atlas image).

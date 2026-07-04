@@ -4,6 +4,7 @@
 #include "level.h"
 #include "raylib.h"
 #include "rule.h"
+#include "tileset.h"
 #include "vec.h"
 
 /* Fields snapshotted by the undo system — all arena-backed, all reset by game_load_gamedata. */
@@ -16,6 +17,9 @@ typedef struct {
     map_int_str entity_blueprints;
     vec_subroutine subroutines;
     vec_timer timers;
+    /* Tile id -> texture+src map shared by every level's tiles_ground/
+     * tiles_overlay layers (D36). Indexed by tile id — see tileset.h. */
+    vec_tileset_entry tileset;
     Level current_level;
     vec_level other_levels;
     Vector2 camera_target;

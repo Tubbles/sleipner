@@ -62,6 +62,7 @@ const char *__lsan_default_suppressions(void)
 #include "rule.h"
 #include "str.h"
 #include "strv.h"
+#include "tileset.h"
 #include "undo.h"
 
 #include "toml_emitter.h"
@@ -129,7 +130,6 @@ static Str trace_log_path(const GameState *state, Allocator alloc)
 #define HOT_RELOAD_POLL_FRAMES 30
 
 #define PIXEL_SCALE 4
-#define TILE_SIZE 16
 #define DEBUG_FONT_SIZE 32
 #define DEBUG_LINE_HEIGHT 26
 #define DEBUG_PANEL_WIDTH 420
@@ -242,6 +242,48 @@ static void draw_background_tiles(Texture2D texture, RectU32 bounds, Color tint)
             DrawTexture(texture, (int)tile_x, (int)tile_y, tint);
         }
     }
+}
+
+/* Draws every nonzero tile in `layer` using tileset[id].texture (resolved
+ * through texture_registry_lookup) and tileset[id].src, at the screen rect
+ * (col*TILE_SIZE, row*TILE_SIZE, TILE_SIZE, TILE_SIZE). Tile id 0, an id
+ * past the end of `tileset`, or an id whose entry has no texture are all
+ * skipped — draws nothing for that cell (D36). */
+static void
+draw_tile_layer(const Level *level, const vec_int *layer, const vec_tileset_entry *tileset, GameState *state)
+{
+    for (int row = 0; row < level->tiles_high; row++) {
+        for (int col = 0; col < level->tiles_wide; col++) {
+            int tile_id = layer->data[level_tile_index(row, col, level->tiles_wide)];
+            if (tile_id <= 0 || tile_id >= tileset->count) {
+                continue;
+            }
+            const TilesetEntry *entry = &tileset->data[tile_id];
+            if (entry->texture.len == 0) {
+                continue;
+            }
+            Texture2D *texture = texture_registry_lookup(entry->texture.ptr, state);
+            if (!texture) {
+                continue;
+            }
+            Rectangle dest = {(float)(col * TILE_SIZE), (float)(row * TILE_SIZE), TILE_SIZE, TILE_SIZE};
+            DrawTexturePro(*texture, entry->src, dest, (Vector2){0, 0}, 0.0F, WHITE);
+        }
+    }
+}
+
+/* Ground tile layer if the level authored one; otherwise the flat
+ * background_tile fill this feature replaces (D36) — kept as the fallback
+ * for every level that predates the tile system. */
+static void draw_ground_or_fallback(GameState *state, const Level *level)
+{
+    if (level->tiles_ground.count > 0) {
+        draw_tile_layer(level, &level->tiles_ground, &state->gamedata.tileset, state);
+        return;
+    }
+    const char *bg_tile = level->background_tile.ptr ? level->background_tile.ptr : "grass.png";
+    RectU32 floor_bounds = {(uint32_t)level->floor_width, (uint32_t)level->floor_height};
+    draw_background_tiles(*texture_registry_lookup(bg_tile, state), floor_bounds, level->background_tint);
 }
 
 /* Per-entity collision_region (green) and trigger_region (yellow) outlines,
@@ -545,7 +587,7 @@ static bool save_gamedata(GameState *state)
 
     char buffer[MAX_GAMEDATA_SIZE];
     int written = toml_emit_gamedata(&state->error, buffer, (int)sizeof(buffer), &state->gamedata.blueprints,
-                                     &state->gamedata.subroutines, all_levels, total_levels);
+                                     &state->gamedata.subroutines, &state->gamedata.tileset, all_levels, total_levels);
     if (written < 0) {
         error_wrap(&state->error, "save_gamedata");
         return false;
@@ -956,13 +998,11 @@ static void render_frame(GameState *state, RenderParams params)
     } else {
         BeginMode2D(gameplay_camera);
     }
-    const char *bg_tile = state->gamedata.current_level.background_tile.ptr
-                              ? state->gamedata.current_level.background_tile.ptr
-                              : "grass.png";
-    RectU32 floor_bounds = {(uint32_t)state->gamedata.current_level.floor_width,
-                            (uint32_t)state->gamedata.current_level.floor_height};
-    draw_background_tiles(*texture_registry_lookup(bg_tile, state), floor_bounds,
-                          state->gamedata.current_level.background_tint);
+    const Level *current_level = &state->gamedata.current_level;
+    draw_ground_or_fallback(state, current_level);
+    if (current_level->tiles_overlay.count > 0) {
+        draw_tile_layer(current_level, &current_level->tiles_overlay, &state->gamedata.tileset, state);
+    }
     draw_entities_depth_sorted(state);
     if (state->editor_mode) {
         int hover_index = find_nearest_entity(&state->gamedata.current_level, params.editor_camera.target);

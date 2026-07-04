@@ -13,6 +13,7 @@ static Diag test_diag = {&test_err, &test_dbg};
 #include "collision.h"
 #include "input_func.h"
 #include "rule.h"
+#include "tileset.h"
 #include "toml.h"
 
 #include <stdio.h>
@@ -20,6 +21,7 @@ static Diag test_diag = {&test_err, &test_dbg};
 
 static Texture2D dummy_texture;
 static const vec_subroutine empty_subroutines = {0};
+static const vec_tileset_entry empty_tileset = {0};
 
 static Texture2D *dummy_lookup(const char *texture_name, void *user_data)
 {
@@ -78,8 +80,8 @@ void test_toml_emit_blueprints(void)
 
     char output[4096];
     Level empty_level = {0};
-    int written =
-        toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &empty_subroutines, &empty_level, 0);
+    int written = toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &empty_subroutines,
+                                     &empty_tileset, &empty_level, 0);
     TEST_ASSERT_TRUE(written > 0);
 
     /* Verify the output contains the blueprint data */
@@ -108,8 +110,8 @@ void test_toml_emit_level_with_entities(void)
     toml_free(root);
 
     char output[4096];
-    int written =
-        toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &empty_subroutines, &level, 1);
+    int written = toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &empty_subroutines,
+                                     &empty_tileset, &level, 1);
     TEST_ASSERT_TRUE(written > 0);
 
     TEST_ASSERT_NOT_NULL(strstr(output, "[[level]]"));
@@ -143,8 +145,8 @@ void test_toml_emit_round_trip(void)
 
     /* Emit */
     char output[8192];
-    int written =
-        toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &empty_subroutines, &level, 1);
+    int written = toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &empty_subroutines,
+                                     &empty_tileset, &level, 1);
     TEST_ASSERT_TRUE(written > 0);
 
     /* Re-parse the emitted output */
@@ -202,7 +204,8 @@ void test_toml_emit_buffer_too_small(void)
         attr_set_string(&test_heap_alloc, &entry->attrs, (AttrStringPair){.name = "texture", .value = "test.png"}));
 
     char tiny[10];
-    int written = toml_emit_gamedata(&test_err, tiny, (int)sizeof(tiny), &blueprints, &empty_subroutines, nullptr, 0);
+    int written = toml_emit_gamedata(&test_err, tiny, (int)sizeof(tiny), &blueprints, &empty_subroutines,
+                                     &empty_tileset, nullptr, 0);
     TEST_ASSERT_EQUAL_INT(-1, written);
     test_blueprint_table_free(&blueprints);
 }
@@ -247,8 +250,8 @@ void test_toml_emit_blueprint_children(void)
 
     char output[4096];
     Level empty_level = {0};
-    int written =
-        toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &empty_subroutines, &empty_level, 0);
+    int written = toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &empty_subroutines,
+                                     &empty_tileset, &empty_level, 0);
     TEST_ASSERT_TRUE(written > 0);
 
     TEST_ASSERT_NOT_NULL(strstr(output, "[[blueprint.child]]"));
@@ -276,8 +279,8 @@ void test_toml_emit_skips_child_entities(void)
     TEST_ASSERT_EQUAL_INT(2, level.entities.count);
 
     char output[4096];
-    int written =
-        toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &empty_subroutines, &level, 1);
+    int written = toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &empty_subroutines,
+                                     &empty_tileset, &level, 1);
     TEST_ASSERT_TRUE(written > 0);
 
     /* Only the parent wagon should appear as a level.entity */
@@ -306,7 +309,8 @@ void test_toml_emit_no_music(void)
 
     BlueprintTable empty = {0};
     char output[1024];
-    int written = toml_emit_gamedata(&test_err, output, (int)sizeof(output), &empty, &empty_subroutines, &level, 1);
+    int written = toml_emit_gamedata(&test_err, output, (int)sizeof(output), &empty, &empty_subroutines, &empty_tileset,
+                                     &level, 1);
     TEST_ASSERT_TRUE(written > 0);
 
     /* Should not contain music line */
@@ -341,8 +345,8 @@ void test_toml_emit_custom_attrs(void)
 
     char output[4096];
     Level empty_level = {0};
-    int written =
-        toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &empty_subroutines, &empty_level, 0);
+    int written = toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &empty_subroutines,
+                                     &empty_tileset, &empty_level, 0);
     TEST_ASSERT_TRUE(written > 0);
 
     TEST_ASSERT_NOT_NULL(strstr(output, "behavior = \"static\""));
@@ -392,8 +396,8 @@ void test_toml_emit_health(void)
 
     char output[4096];
     Level empty_level = {0};
-    int written =
-        toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &empty_subroutines, &empty_level, 0);
+    int written = toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &empty_subroutines,
+                                     &empty_tileset, &empty_level, 0);
     TEST_ASSERT_TRUE(written > 0);
 
     TEST_ASSERT_NOT_NULL(strstr(output, "health = [10, 50]"));
@@ -449,8 +453,8 @@ void test_toml_emit_animation_round_trip(void)
 
     char output[4096];
     Level empty_level = {0};
-    int written =
-        toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &empty_subroutines, &empty_level, 0);
+    int written = toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &empty_subroutines,
+                                     &empty_tileset, &empty_level, 0);
     TEST_ASSERT_TRUE(written > 0);
 
     TEST_ASSERT_NOT_NULL(strstr(output, "animation = { frames = 6, size = 32, speed = 10, row = 2 }"));
@@ -519,8 +523,8 @@ void test_toml_emit_persisted_attrs(void)
 
     /* Emit and verify the persisted values appear on the [[level.entity]] line */
     char output[4096];
-    int written =
-        toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &empty_subroutines, &level, 1);
+    int written = toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &empty_subroutines,
+                                     &empty_tileset, &level, 1);
     TEST_ASSERT_TRUE(written > 0);
 
     TEST_ASSERT_NOT_NULL(strstr(output, "blueprint = \"chest\""));
@@ -532,8 +536,8 @@ void test_toml_emit_persisted_attrs(void)
     /* Runtime mutation to attrs must NOT affect persisted emission */
     TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, (AttrSet *)&entity->attrs, "coins", 999));
     char output2[4096];
-    int written2 =
-        toml_emit_gamedata(&test_err, output2, (int)sizeof(output2), &blueprints, &empty_subroutines, &level, 1);
+    int written2 = toml_emit_gamedata(&test_err, output2, (int)sizeof(output2), &blueprints, &empty_subroutines,
+                                      &empty_tileset, &level, 1);
     TEST_ASSERT_TRUE(written2 > 0);
     TEST_ASSERT_NOT_NULL(strstr(output2, "coins = 25"));
     TEST_ASSERT_NULL(strstr(output2, "coins = 999"));
@@ -584,8 +588,8 @@ void test_toml_emit_no_persisted_attrs(void)
     }
 
     char output[4096];
-    int written =
-        toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &empty_subroutines, &level, 1);
+    int written = toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &empty_subroutines,
+                                     &empty_tileset, &level, 1);
     TEST_ASSERT_TRUE(written > 0);
 
     /* Fixture has no solid attr, so nothing should be emitted for it */
@@ -687,8 +691,8 @@ void test_toml_emit_child_persisted_attrs_round_trip(void)
 
     /* Emit and confirm the overrides made it into the TOML text. */
     char output[4096];
-    int written =
-        toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &empty_subroutines, &level, 1);
+    int written = toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &empty_subroutines,
+                                     &empty_tileset, &level, 1);
     TEST_ASSERT_TRUE(written > 0);
 
     TEST_ASSERT_NOT_NULL(strstr(output, "[level.entity.children.door]"));
@@ -757,8 +761,8 @@ void test_toml_emit_rules(void)
 
     char output[8192];
     Level empty_level = {0};
-    int written =
-        toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &empty_subroutines, &empty_level, 0);
+    int written = toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &empty_subroutines,
+                                     &empty_tileset, &empty_level, 0);
     TEST_ASSERT_TRUE(written > 0);
 
     TEST_ASSERT_NOT_NULL(strstr(output, "[[blueprint.rule]]"));
@@ -857,8 +861,8 @@ void test_toml_emit_collision_composite_round_trip(void)
     /* Emit, then re-parse the emitted TOML into a second tree. */
     char output[4096];
     Level empty_level = {0};
-    int written =
-        toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &empty_subroutines, &empty_level, 0);
+    int written = toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &empty_subroutines,
+                                     &empty_tileset, &empty_level, 0);
     TEST_ASSERT_TRUE(written > 0);
 
     TEST_ASSERT_NOT_NULL(strstr(output, "[[blueprint.collision]]"));
@@ -949,8 +953,8 @@ void test_toml_emit_nested_control_flow_round_trip(void)
     /* Emit, then re-parse the emitted TOML into a second tree. */
     char output[4096];
     Level empty_level = {0};
-    int written =
-        toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &empty_subroutines, &empty_level, 0);
+    int written = toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &empty_subroutines,
+                                     &empty_tileset, &empty_level, 0);
     TEST_ASSERT_TRUE(written > 0);
 
     Arena arena2;
@@ -1021,7 +1025,8 @@ void test_toml_emit_subroutines_round_trip(void)
     assert_subroutine_structure(&subroutines);
 
     char output[4096];
-    int written = toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &subroutines, nullptr, 0);
+    int written = toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &subroutines, &empty_tileset,
+                                     nullptr, 0);
     TEST_ASSERT_TRUE(written > 0);
 
     TEST_ASSERT_NOT_NULL(strstr(output, "[[subroutine]]"));
@@ -1040,6 +1045,110 @@ void test_toml_emit_subroutines_round_trip(void)
 
     assert_subroutine_structure(&subroutines2);
 
+    arena_free(&arena);
+    arena_free(&arena2);
+}
+
+/* S5.3a/D36: the engine-side tile system. A tileset maps tile ids to a
+ * texture name + source rectangle, and a level's ground/overlay layers are
+ * row-major flat arrays of those ids. Level size 48x32 -> tiles_wide=3,
+ * tiles_high=2 (ceil(48/16), ceil(32/16)), matching the 3x2 row arrays
+ * below. */
+static const char *tile_fixture = "[[tileset]]\n"
+                                  "id = 1\n"
+                                  "texture = \"grass.png\"\n"
+                                  "src = [0, 0, 16, 16]\n"
+                                  "\n"
+                                  "[[tileset]]\n"
+                                  "id = 2\n"
+                                  "texture = \"grass.png\"\n"
+                                  "src = [16, 0, 16, 16]\n"
+                                  "\n"
+                                  "[[level]]\n"
+                                  "name = \"tiletest\"\n"
+                                  "size = [48, 32]\n"
+                                  "tiles_ground = [\n"
+                                  "  [1, 1, 1],\n"
+                                  "  [2, 2, 2],\n"
+                                  "]\n"
+                                  "tiles_overlay = [\n"
+                                  "  [0, 0, 0],\n"
+                                  "  [0, 1, 0],\n"
+                                  "]\n";
+
+void test_toml_emit_tiles_round_trip(void)
+{
+    Arena arena;
+    TEST_ASSERT_TRUE(arena_init(&test_err, &arena));
+    BlueprintTable blueprints = {0};
+    vec_tileset_entry tileset = {0};
+    Level level = {0};
+
+    /* Parse original: confirm the fixture itself parses into the expected
+     * tileset entries and tile grid before testing emit/round-trip. */
+    toml_table_t *root = parse_toml(tile_fixture);
+    TEST_ASSERT_NOT_NULL(root);
+    blueprints_load(&test_diag, &blueprints, root, &arena);
+    TEST_ASSERT_TRUE(tileset_load(&test_diag, &tileset, root, &arena) >= 0);
+    TEST_ASSERT_TRUE(
+        level_load(&test_diag, &level, root, "tiletest", &blueprints, dummy_lookup, nullptr, &test_heap_alloc));
+    toml_free(root);
+
+    TEST_ASSERT_EQUAL_INT(3, tileset.count); /* placeholder(0) + id 1 + id 2 */
+    TEST_ASSERT_EQUAL_STRING("grass.png", tileset.data[1].texture.ptr);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 16.0F, tileset.data[2].src.x);
+    TEST_ASSERT_EQUAL_INT(3, level.tiles_wide);
+    TEST_ASSERT_EQUAL_INT(2, level.tiles_high);
+    TEST_ASSERT_EQUAL_INT(6, level.tiles_ground.count);
+    TEST_ASSERT_EQUAL_INT(1, level.tiles_ground.data[level_tile_index(0, 0, level.tiles_wide)]);
+    TEST_ASSERT_EQUAL_INT(2, level.tiles_ground.data[level_tile_index(1, 0, level.tiles_wide)]);
+    TEST_ASSERT_EQUAL_INT(1, level.tiles_overlay.data[level_tile_index(1, 1, level.tiles_wide)]);
+
+    /* Emit and verify the tileset and both tile layers made it into the TOML text. */
+    char output[8192];
+    int written = toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &empty_subroutines, &tileset,
+                                     &level, 1);
+    TEST_ASSERT_TRUE(written > 0);
+
+    TEST_ASSERT_NOT_NULL(strstr(output, "[[tileset]]"));
+    TEST_ASSERT_NOT_NULL(strstr(output, "id = 1"));
+    TEST_ASSERT_NOT_NULL(strstr(output, "id = 2"));
+    TEST_ASSERT_NOT_NULL(strstr(output, "tiles_ground = ["));
+    TEST_ASSERT_NOT_NULL(strstr(output, "tiles_overlay = ["));
+
+    /* Re-parse the emitted output and confirm everything survives. */
+    Arena arena2;
+    TEST_ASSERT_TRUE(arena_init(&test_err, &arena2));
+    BlueprintTable blueprints2 = {0};
+    vec_tileset_entry tileset2 = {0};
+    Level level2 = {0};
+
+    toml_table_t *root2 = parse_toml(output);
+    TEST_ASSERT_NOT_NULL(root2);
+    blueprints_load(&test_diag, &blueprints2, root2, &arena2);
+    TEST_ASSERT_TRUE(tileset_load(&test_diag, &tileset2, root2, &arena2) >= 0);
+    TEST_ASSERT_TRUE(
+        level_load(&test_diag, &level2, root2, "tiletest", &blueprints2, dummy_lookup, nullptr, &test_heap_alloc));
+    toml_free(root2);
+
+    TEST_ASSERT_EQUAL_INT(tileset.count, tileset2.count);
+    TEST_ASSERT_EQUAL_STRING(tileset.data[1].texture.ptr, tileset2.data[1].texture.ptr);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, tileset.data[2].src.x, tileset2.data[2].src.x);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, tileset.data[2].src.width, tileset2.data[2].src.width);
+
+    TEST_ASSERT_EQUAL_INT(level.tiles_wide, level2.tiles_wide);
+    TEST_ASSERT_EQUAL_INT(level.tiles_high, level2.tiles_high);
+    TEST_ASSERT_EQUAL_INT(level.tiles_ground.count, level2.tiles_ground.count);
+    for (int index = 0; index < level.tiles_ground.count; index++) {
+        TEST_ASSERT_EQUAL_INT(level.tiles_ground.data[index], level2.tiles_ground.data[index]);
+    }
+    TEST_ASSERT_EQUAL_INT(level.tiles_overlay.count, level2.tiles_overlay.count);
+    for (int index = 0; index < level.tiles_overlay.count; index++) {
+        TEST_ASSERT_EQUAL_INT(level.tiles_overlay.data[index], level2.tiles_overlay.data[index]);
+    }
+
+    test_level_free(&level);
+    test_level_free(&level2);
     arena_free(&arena);
     arena_free(&arena2);
 }

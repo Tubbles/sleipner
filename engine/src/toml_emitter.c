@@ -8,6 +8,7 @@
 #include "input_func.h"
 #include "level.h"
 #include "rule.h"
+#include "tileset.h"
 
 #include "raylib.h"
 
@@ -551,6 +552,29 @@ static int emit_child_persisted_attrs(char *buffer,
 }
 // NOLINTEND(misc-no-recursion)
 
+/* Emit `key = [[...], ...]`: layer reshaped row-major into level->tiles_high
+ * rows of level->tiles_wide ints each, matching the parse schema in
+ * level.c. Takes `level` (rather than the two dimensions as separate int
+ * params) to sidestep bugprone-easily-swappable-parameters. Only called
+ * for non-empty layers — see emit_levels. */
+static int
+emit_tile_layer_rows(char *buffer, int capacity, int offset, const char *key, const vec_int *layer, const Level *level)
+{
+    offset = emit_append(buffer, capacity, offset, "%s = [\n", key);
+    for (int row = 0; row < level->tiles_high; row++) {
+        offset = emit_append(buffer, capacity, offset, "  [");
+        for (int col = 0; col < level->tiles_wide; col++) {
+            if (col > 0) {
+                offset = emit_append(buffer, capacity, offset, ", ");
+            }
+            offset =
+                emit_append(buffer, capacity, offset, "%d", layer->data[level_tile_index(row, col, level->tiles_wide)]);
+        }
+        offset = emit_append(buffer, capacity, offset, "],\n");
+    }
+    return emit_append(buffer, capacity, offset, "]\n");
+}
+
 static int emit_levels(char *buffer, int capacity, int offset, const Level *levels, int level_count)
 {
     for (int level_index = 0; level_index < level_count; level_index++) {
@@ -573,6 +597,12 @@ static int emit_levels(char *buffer, int capacity, int offset, const Level *leve
         Color tint = level->background_tint;
         if (tint.r != 255 || tint.g != 255 || tint.b != 255) {
             offset = emit_append(buffer, capacity, offset, "background_tint = [%d, %d, %d]\n", tint.r, tint.g, tint.b);
+        }
+        if (level->tiles_ground.count > 0) {
+            offset = emit_tile_layer_rows(buffer, capacity, offset, "tiles_ground", &level->tiles_ground, level);
+        }
+        if (level->tiles_overlay.count > 0) {
+            offset = emit_tile_layer_rows(buffer, capacity, offset, "tiles_overlay", &level->tiles_overlay, level);
         }
         offset = emit_append(buffer, capacity, offset, "\n");
 
@@ -602,11 +632,32 @@ static int emit_levels(char *buffer, int capacity, int offset, const Level *leve
     return offset;
 }
 
+/* Index 0 is the unused placeholder (see tileset.h); entries with no
+ * texture are gaps left by tileset_load's ensure-length padding and are
+ * skipped rather than emitted as an empty [[tileset]] block. */
+static int emit_tileset(char *buffer, int capacity, int offset, const vec_tileset_entry *tileset)
+{
+    for (int index = 1; index < tileset->count; index++) {
+        const TilesetEntry *entry = &tileset->data[index];
+        if (entry->texture.len == 0) {
+            continue;
+        }
+        offset = emit_append(buffer, capacity, offset, "[[tileset]]\n");
+        offset = emit_append(buffer, capacity, offset, "id = %d\n", index);
+        offset = emit_append(buffer, capacity, offset, "texture = \"%s\"\n", entry->texture.ptr);
+        offset = emit_append(buffer, capacity, offset, "src = [%d, %d, %d, %d]\n", (int)entry->src.x, (int)entry->src.y,
+                             (int)entry->src.width, (int)entry->src.height);
+        offset = emit_append(buffer, capacity, offset, "\n");
+    }
+    return offset;
+}
+
 int toml_emit_gamedata(ErrorState *err,
                        char *buffer,
                        int capacity,
                        const BlueprintTable *blueprints,
                        const vec_subroutine *subroutines,
+                       const vec_tileset_entry *tileset,
                        const Level *levels,
                        int level_count)
 {
@@ -614,6 +665,7 @@ int toml_emit_gamedata(ErrorState *err,
 
     offset = emit_blueprints(buffer, capacity, offset, blueprints);
     offset = emit_subroutines(buffer, capacity, offset, subroutines);
+    offset = emit_tileset(buffer, capacity, offset, tileset);
     offset = emit_levels(buffer, capacity, offset, levels, level_count);
 
     if (offset < 0) {

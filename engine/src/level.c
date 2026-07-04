@@ -479,11 +479,28 @@ bool level_spawn_entity(Diag *diag,
     return true;
 }
 
+int level_tiles_wide(int width)
+{
+    return (width + TILE_SIZE - 1) / TILE_SIZE;
+}
+
+int level_tiles_high(int height)
+{
+    return (height + TILE_SIZE - 1) / TILE_SIZE;
+}
+
+int level_tile_index(int row, int col, int tiles_wide)
+{
+    return (row * tiles_wide) + col;
+}
+
 void level_free(Allocator *alloc, Level *level)
 {
     str_free(&level->name);
     str_free(&level->music_name);
     str_free(&level->background_tile);
+    vec_int_free(&level->tiles_ground);
+    vec_int_free(&level->tiles_overlay);
     for (int index = 0; index < level->entities.count; index++) {
         str_free(&level->entities.data[index].blueprint_name);
         str_free(&level->entities.data[index].tag);
@@ -586,6 +603,67 @@ static bool parse_level_metadata(Allocator *alloc, Level *level, toml_table_t *l
     return true;
 }
 
+/* True if `rows` is a row-major array-of-arrays with exactly level->tiles_high
+ * rows, each exactly level->tiles_wide elements long. Takes `level` (rather
+ * than the two dimensions as separate int params) to sidestep
+ * bugprone-easily-swappable-parameters — tiles_wide/tiles_high are never
+ * meaningful independently of the level they describe. */
+static bool tile_layer_dims_match(toml_array_t *rows, const Level *level)
+{
+    if (toml_array_nelem(rows) != level->tiles_high) {
+        return false;
+    }
+    for (int row = 0; row < level->tiles_high; row++) {
+        toml_array_t *row_array = toml_array_at(rows, row);
+        if (!row_array || toml_array_nelem(row_array) != level->tiles_wide) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/* Parse a `key` row-array (`[[tile ids...], ...]`) from level_table into
+ * `layer` as a flat, row-major vec_int sized level->tiles_wide *
+ * level->tiles_high. A missing key leaves layer empty — the ground layer
+ * then falls back to the flat background_tile fill, and the overlay layer
+ * draws nothing. A row-array present but with the wrong dimensions is
+ * logged and the WHOLE layer is skipped (left empty) rather than padded or
+ * truncated: guessing at missing/extra tile data risks silently drawing
+ * the wrong tiles, while an empty layer just falls back to existing,
+ * well-understood behavior. */
+static void parse_tile_layer(
+    DebugState *dbg, Allocator *alloc, vec_int *layer, toml_table_t *level_table, const char *key, const Level *level)
+{
+    *layer = vec_int_new(*alloc);
+    toml_array_t *rows = toml_array_in(level_table, key);
+    if (!rows) {
+        return;
+    }
+    if (!tile_layer_dims_match(rows, level)) {
+        debug_log(dbg, "level: '%s' dimensions do not match level tile grid %dx%d — skipping layer", key,
+                  level->tiles_wide, level->tiles_high);
+        return;
+    }
+    for (int row = 0; row < level->tiles_high; row++) {
+        toml_array_t *row_array = toml_array_at(rows, row);
+        for (int col = 0; col < level->tiles_wide; col++) {
+            toml_datum_t value = toml_int_at(row_array, col);
+            (void)vec_int_push(layer, value.ok ? (int)value.u.i : 0);
+        }
+    }
+}
+
+/* Compute the level's tile-grid dimensions from its already-parsed
+ * width/height, then parse the ground and overlay tile layers against
+ * those dimensions. Must run after parse_level_metadata. */
+static void parse_level_tiles(DebugState *dbg, Allocator *alloc, Level *level, toml_table_t *level_table)
+{
+    level->tiles_wide = level_tiles_wide(level->width);
+    level->tiles_high = level_tiles_high(level->height);
+    parse_tile_layer(dbg, alloc, &level->tiles_ground, level_table, "tiles_ground", level);
+    parse_tile_layer(dbg, alloc, &level->tiles_overlay, level_table, "tiles_overlay", level);
+}
+
 bool level_load(Diag *diag,
                 Level *level,
                 void *toml_root,
@@ -615,6 +693,7 @@ bool level_load(Diag *diag,
     if (!parse_level_metadata(alloc, level, level_table)) {
         return false;
     }
+    parse_level_tiles(diag->debug, alloc, level, level_table);
 
     /* Parse entities */
     toml_array_t *entities = toml_array_in(level_table, "entity");
@@ -673,6 +752,7 @@ bool level_load_others(Diag *diag,
         if (!parse_level_metadata(alloc, &level, level_table)) {
             return false;
         }
+        parse_level_tiles(diag->debug, alloc, &level, level_table);
 
         toml_array_t *entities = toml_array_in(level_table, "entity");
         if (entities) {

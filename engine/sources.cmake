@@ -50,6 +50,7 @@ set(ENGINE_SOURCE_FILES
     shape.c
     str.c
     strv.c
+    tileset.c
     toml_emitter.c
     toml_str.c
     undo.c

@@ -430,3 +430,29 @@ void test_level_nested_children(void)
     toml_free(root);
     arena_free(&arena);
 }
+
+/* S5.3a/D36: tiles_wide/tiles_high are ceil(width|height / TILE_SIZE) —
+ * TILE_SIZE is 16, so an exact multiple divides evenly while one pixel over
+ * rolls into an extra row/column. */
+void test_level_tile_dims_ceil_division(void)
+{
+    TEST_ASSERT_EQUAL_INT(0, level_tiles_wide(0));
+    TEST_ASSERT_EQUAL_INT(1, level_tiles_wide(1));
+    TEST_ASSERT_EQUAL_INT(1, level_tiles_wide(16));
+    TEST_ASSERT_EQUAL_INT(2, level_tiles_wide(17));
+    TEST_ASSERT_EQUAL_INT(3, level_tiles_wide(48));
+    TEST_ASSERT_EQUAL_INT(4, level_tiles_wide(49));
+
+    TEST_ASSERT_EQUAL_INT(1, level_tiles_high(16));
+    TEST_ASSERT_EQUAL_INT(3, level_tiles_high(33));
+}
+
+/* Row-major flat index: row * tiles_wide + col. */
+void test_level_tile_index_row_major(void)
+{
+    TEST_ASSERT_EQUAL_INT(0, level_tile_index(0, 0, 5));
+    TEST_ASSERT_EQUAL_INT(3, level_tile_index(0, 3, 5));
+    TEST_ASSERT_EQUAL_INT(5, level_tile_index(1, 0, 5));
+    TEST_ASSERT_EQUAL_INT(7, level_tile_index(1, 2, 5));
+    TEST_ASSERT_EQUAL_INT(23, level_tile_index(4, 3, 5));
+}

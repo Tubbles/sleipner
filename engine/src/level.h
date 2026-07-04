@@ -12,6 +12,11 @@
  * The loader calls this for each entity's blueprint texture_name. */
 typedef Texture2D *(*TextureLookupFn)(const char *texture_name, void *user_data);
 
+/* Pixel size of one tile in both tile layers (D36). Single source of truth
+ * for level.c's tiles_wide/tiles_high computation and main.c's tile-layer
+ * screen-rect math — both must agree on this value. */
+#define TILE_SIZE 16
+
 typedef struct {
     Str name;
     Str music_name;
@@ -23,12 +28,32 @@ typedef struct {
     int floor_height;
     int next_entity_id;
     vec_entity entities;
+    /* Tile grid dimensions, ceil(width|height / TILE_SIZE) — see
+     * level_tiles_wide/level_tiles_high. tiles_ground and tiles_overlay are
+     * flat, row-major vec_int layers of size tiles_wide * tiles_high (index
+     * via level_tile_index). Tile value 0 means empty; nonzero indexes into
+     * GamedataState.tileset. Both layers are empty (count == 0) when the
+     * level authors no tile data — the ground layer then falls back to the
+     * flat background_tile fill, and the overlay layer simply draws
+     * nothing. */
+    int tiles_wide;
+    int tiles_high;
+    vec_int tiles_ground;
+    vec_int tiles_overlay;
 } Level;
 
 VEC_DECL(level, Level)
 
-/* Free level name, music name, and all entity Str fields and attrs. */
+/* Free level name, music name, tile layers, and all entity Str fields and attrs. */
 void level_free(Allocator *alloc, Level *level);
+
+/* Ceil-division tile-grid dimensions for a level of the given pixel
+ * width/height — the number of TILE_SIZE columns/rows needed to cover it. */
+int level_tiles_wide(int width);
+int level_tiles_high(int height);
+
+/* Row-major flat index into a tile layer vec_int (row * tiles_wide + col). */
+int level_tile_index(int row, int col, int tiles_wide);
 
 /* Find an entity by its stable id (Entity.id). Returns its current index
  * into level->entities, or -1 if no entity has that id. Ids survive

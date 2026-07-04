@@ -45,6 +45,8 @@ void test_level_child_entities_instantiated(void);
 void test_level_child_entity_positions(void);
 void test_level_child_entity_tags(void);
 void test_level_nested_children(void);
+void test_level_tile_dims_ceil_division(void);
+void test_level_tile_index_row_major(void);
 
 /* render_test.c */
 void test_render_split_camera_target_separates_integer_and_fraction(void);
@@ -107,6 +109,7 @@ void test_toml_emit_rules(void);
 void test_toml_emit_collision_composite_round_trip(void);
 void test_toml_emit_nested_control_flow_round_trip(void);
 void test_toml_emit_subroutines_round_trip(void);
+void test_toml_emit_tiles_round_trip(void);
 void test_toml_emit_bindings_round_trip_defaults(void);
 void test_toml_emit_bindings_round_trip_after_mutation(void);
 void test_toml_load_bindings_missing_file_keeps_defaults(void);
@@ -234,6 +237,8 @@ int main(void)
     RUN_TEST(test_level_child_entity_positions);
     RUN_TEST(test_level_child_entity_tags);
     RUN_TEST(test_level_nested_children);
+    RUN_TEST(test_level_tile_dims_ceil_division);
+    RUN_TEST(test_level_tile_index_row_major);
 
     RUN_TEST(test_render_split_camera_target_separates_integer_and_fraction);
     RUN_TEST(test_render_split_camera_target_exact_integer_has_zero_fraction);
@@ -298,6 +303,7 @@ int main(void)
     RUN_TEST(test_toml_emit_collision_composite_round_trip);
     RUN_TEST(test_toml_emit_nested_control_flow_round_trip);
     RUN_TEST(test_toml_emit_subroutines_round_trip);
+    RUN_TEST(test_toml_emit_tiles_round_trip);
     RUN_TEST(test_toml_emit_bindings_round_trip_defaults);
     RUN_TEST(test_toml_emit_bindings_round_trip_after_mutation);
     RUN_TEST(test_toml_load_bindings_missing_file_keeps_defaults);

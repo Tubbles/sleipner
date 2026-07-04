@@ -17,6 +17,7 @@
 #include "rule.h"
 #include "str.h"
 #include "strv.h"
+#include "tileset.h"
 
 #include "raylib.h"
 #include "toml.h"
@@ -168,6 +169,7 @@ bool game_load_gamedata(Diag *diag, GameState *state, GamedataParams params)
     state->gamedata.prev_solid_collisions = vec_bool_new(gamedata_alloc);
     state->gamedata.other_levels = vec_level_new(gamedata_alloc);
     blueprints_load(diag, &state->gamedata.blueprints, root, &state->gamedata_arena);
+    tileset_load(diag, &state->gamedata.tileset, root, &state->gamedata_arena);
     bool subs_ok = subroutines_parse(diag, &gamedata_alloc, &state->gamedata.subroutines, root, &state->gamedata_arena);
     bool level_ok = false;
     if (subs_ok) {
