@@ -90,6 +90,7 @@ void test_toml_emit_persisted_attrs(void);
 void test_toml_emit_no_persisted_attrs(void);
 void test_toml_emit_rules(void);
 void test_toml_emit_nested_control_flow_round_trip(void);
+void test_toml_emit_subroutines_round_trip(void);
 void test_toml_emit_bindings_round_trip_defaults(void);
 void test_toml_emit_bindings_round_trip_after_mutation(void);
 void test_toml_load_bindings_missing_file_keeps_defaults(void);
@@ -258,6 +259,7 @@ int main(void)
     RUN_TEST(test_toml_emit_no_persisted_attrs);
     RUN_TEST(test_toml_emit_rules);
     RUN_TEST(test_toml_emit_nested_control_flow_round_trip);
+    RUN_TEST(test_toml_emit_subroutines_round_trip);
     RUN_TEST(test_toml_emit_bindings_round_trip_defaults);
     RUN_TEST(test_toml_emit_bindings_round_trip_after_mutation);
     RUN_TEST(test_toml_load_bindings_missing_file_keeps_defaults);

@@ -403,6 +403,22 @@ static int emit_blueprints(char *buffer, int capacity, int offset, const Bluepri
     return offset;
 }
 
+static int emit_subroutines(char *buffer, int capacity, int offset, const vec_subroutine *subroutines)
+{
+    for (int index = 0; index < subroutines->count; index++) {
+        const Subroutine *subroutine = &subroutines->data[index];
+        offset = emit_append(buffer, capacity, offset, "[[subroutine]]\n");
+        offset = emit_append(buffer, capacity, offset, "name = \"%s\"\n", subroutine->name.ptr);
+        if (subroutine->action_tree.roots.count > 0) {
+            offset = emit_append(buffer, capacity, offset, "actions = ");
+            offset = emit_action_nodes_inline_array(buffer, capacity, offset, &subroutine->action_tree);
+            offset = emit_append(buffer, capacity, offset, "\n");
+        }
+        offset = emit_append(buffer, capacity, offset, "\n");
+    }
+    return offset;
+}
+
 static int emit_levels(char *buffer, int capacity, int offset, const Level *levels, int level_count)
 {
     for (int level_index = 0; level_index < level_count; level_index++) {
@@ -452,12 +468,18 @@ static int emit_levels(char *buffer, int capacity, int offset, const Level *leve
     return offset;
 }
 
-int toml_emit_gamedata(
-    ErrorState *err, char *buffer, int capacity, const BlueprintTable *blueprints, const Level *levels, int level_count)
+int toml_emit_gamedata(ErrorState *err,
+                       char *buffer,
+                       int capacity,
+                       const BlueprintTable *blueprints,
+                       const vec_subroutine *subroutines,
+                       const Level *levels,
+                       int level_count)
 {
     int offset = 0;
 
     offset = emit_blueprints(buffer, capacity, offset, blueprints);
+    offset = emit_subroutines(buffer, capacity, offset, subroutines);
     offset = emit_levels(buffer, capacity, offset, levels, level_count);
 
     if (offset < 0) {

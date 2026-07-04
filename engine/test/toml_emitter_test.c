@@ -18,6 +18,7 @@ static Diag test_diag = {&test_err, &test_dbg};
 #include <string.h>
 
 static Texture2D dummy_texture;
+static const vec_subroutine empty_subroutines = {0};
 
 static Texture2D *dummy_lookup(const char *texture_name, void *user_data)
 {
@@ -76,7 +77,8 @@ void test_toml_emit_blueprints(void)
 
     char output[4096];
     Level empty_level = {0};
-    int written = toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &empty_level, 0);
+    int written =
+        toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &empty_subroutines, &empty_level, 0);
     TEST_ASSERT_TRUE(written > 0);
 
     /* Verify the output contains the blueprint data */
@@ -105,7 +107,8 @@ void test_toml_emit_level_with_entities(void)
     toml_free(root);
 
     char output[4096];
-    int written = toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &level, 1);
+    int written =
+        toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &empty_subroutines, &level, 1);
     TEST_ASSERT_TRUE(written > 0);
 
     TEST_ASSERT_NOT_NULL(strstr(output, "[[level]]"));
@@ -139,7 +142,8 @@ void test_toml_emit_round_trip(void)
 
     /* Emit */
     char output[8192];
-    int written = toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &level, 1);
+    int written =
+        toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &empty_subroutines, &level, 1);
     TEST_ASSERT_TRUE(written > 0);
 
     /* Re-parse the emitted output */
@@ -197,7 +201,7 @@ void test_toml_emit_buffer_too_small(void)
         attr_set_string(&test_heap_alloc, &entry->attrs, (AttrStringPair){.name = "texture", .value = "test.png"}));
 
     char tiny[10];
-    int written = toml_emit_gamedata(&test_err, tiny, (int)sizeof(tiny), &blueprints, nullptr, 0);
+    int written = toml_emit_gamedata(&test_err, tiny, (int)sizeof(tiny), &blueprints, &empty_subroutines, nullptr, 0);
     TEST_ASSERT_EQUAL_INT(-1, written);
     test_blueprint_table_free(&blueprints);
 }
@@ -242,7 +246,8 @@ void test_toml_emit_blueprint_children(void)
 
     char output[4096];
     Level empty_level = {0};
-    int written = toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &empty_level, 0);
+    int written =
+        toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &empty_subroutines, &empty_level, 0);
     TEST_ASSERT_TRUE(written > 0);
 
     TEST_ASSERT_NOT_NULL(strstr(output, "[[blueprint.child]]"));
@@ -270,7 +275,8 @@ void test_toml_emit_skips_child_entities(void)
     TEST_ASSERT_EQUAL_INT(2, level.entities.count);
 
     char output[4096];
-    int written = toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &level, 1);
+    int written =
+        toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &empty_subroutines, &level, 1);
     TEST_ASSERT_TRUE(written > 0);
 
     /* Only the parent wagon should appear as a level.entity */
@@ -299,7 +305,7 @@ void test_toml_emit_no_music(void)
 
     BlueprintTable empty = {0};
     char output[1024];
-    int written = toml_emit_gamedata(&test_err, output, (int)sizeof(output), &empty, &level, 1);
+    int written = toml_emit_gamedata(&test_err, output, (int)sizeof(output), &empty, &empty_subroutines, &level, 1);
     TEST_ASSERT_TRUE(written > 0);
 
     /* Should not contain music line */
@@ -334,7 +340,8 @@ void test_toml_emit_custom_attrs(void)
 
     char output[4096];
     Level empty_level = {0};
-    int written = toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &empty_level, 0);
+    int written =
+        toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &empty_subroutines, &empty_level, 0);
     TEST_ASSERT_TRUE(written > 0);
 
     TEST_ASSERT_NOT_NULL(strstr(output, "behavior = \"static\""));
@@ -384,7 +391,8 @@ void test_toml_emit_health(void)
 
     char output[4096];
     Level empty_level = {0};
-    int written = toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &empty_level, 0);
+    int written =
+        toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &empty_subroutines, &empty_level, 0);
     TEST_ASSERT_TRUE(written > 0);
 
     TEST_ASSERT_NOT_NULL(strstr(output, "health = [10, 50]"));
@@ -451,7 +459,8 @@ void test_toml_emit_persisted_attrs(void)
 
     /* Emit and verify the persisted values appear on the [[level.entity]] line */
     char output[4096];
-    int written = toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &level, 1);
+    int written =
+        toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &empty_subroutines, &level, 1);
     TEST_ASSERT_TRUE(written > 0);
 
     TEST_ASSERT_NOT_NULL(strstr(output, "blueprint = \"chest\""));
@@ -463,7 +472,8 @@ void test_toml_emit_persisted_attrs(void)
     /* Runtime mutation to attrs must NOT affect persisted emission */
     TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, (AttrSet *)&entity->attrs, "coins", 999));
     char output2[4096];
-    int written2 = toml_emit_gamedata(&test_err, output2, (int)sizeof(output2), &blueprints, &level, 1);
+    int written2 =
+        toml_emit_gamedata(&test_err, output2, (int)sizeof(output2), &blueprints, &empty_subroutines, &level, 1);
     TEST_ASSERT_TRUE(written2 > 0);
     TEST_ASSERT_NOT_NULL(strstr(output2, "coins = 25"));
     TEST_ASSERT_NULL(strstr(output2, "coins = 999"));
@@ -514,7 +524,8 @@ void test_toml_emit_no_persisted_attrs(void)
     }
 
     char output[4096];
-    int written = toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &level, 1);
+    int written =
+        toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &empty_subroutines, &level, 1);
     TEST_ASSERT_TRUE(written > 0);
 
     /* Fixture has no solid attr, so nothing should be emitted for it */
@@ -553,7 +564,8 @@ void test_toml_emit_rules(void)
 
     char output[8192];
     Level empty_level = {0};
-    int written = toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &empty_level, 0);
+    int written =
+        toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &empty_subroutines, &empty_level, 0);
     TEST_ASSERT_TRUE(written > 0);
 
     TEST_ASSERT_NOT_NULL(strstr(output, "[[blueprint.rule]]"));
@@ -654,7 +666,8 @@ void test_toml_emit_nested_control_flow_round_trip(void)
     /* Emit, then re-parse the emitted TOML into a second tree. */
     char output[4096];
     Level empty_level = {0};
-    int written = toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &empty_level, 0);
+    int written =
+        toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &empty_subroutines, &empty_level, 0);
     TEST_ASSERT_TRUE(written > 0);
 
     Arena arena2;
@@ -670,6 +683,79 @@ void test_toml_emit_nested_control_flow_round_trip(void)
     TEST_ASSERT_EQUAL_INT(1, blueprints2.entries.count);
     TEST_ASSERT_EQUAL_INT(1, blueprints2.entries.data[0].rules.count);
     assert_nested_control_flow_structure(&blueprints2.entries.data[0].rules.data[0].action_tree);
+
+    arena_free(&arena);
+    arena_free(&arena2);
+}
+
+/* Regression fixture for F25/D19: [[subroutine]] blocks were parsed but never
+ * emitted, so a save silently dropped every authored subroutine. Includes an
+ * if/then/else action so the round trip also exercises S3.1's recursive
+ * control-flow emission inside a subroutine body. */
+static const char *subroutine_fixture = "[[subroutine]]\n"
+                                        "name = \"open_chest\"\n"
+                                        "actions = [{ if = [\"flag:test_flag\"], then = [\"destroy\"], else = "
+                                        "[\"set_flag:did_not_open\"] }]\n"
+                                        "\n";
+
+static void assert_subroutine_structure(const vec_subroutine *subroutines)
+{
+    TEST_ASSERT_EQUAL_INT(1, subroutines->count);
+    const Subroutine *subroutine = &subroutines->data[0];
+    TEST_ASSERT_EQUAL_STRING("open_chest", subroutine->name.ptr);
+
+    const ActionTree *tree = &subroutine->action_tree;
+    TEST_ASSERT_EQUAL_INT(1, tree->roots.count);
+
+    const ActionNode *if_node = &tree->nodes.data[tree->roots.data[0]];
+    TEST_ASSERT_EQUAL_INT(ACTION_IF_ELSE, if_node->type);
+    TEST_ASSERT_EQUAL_INT(1, if_node->conditions.count);
+    TEST_ASSERT_EQUAL_INT(COND_FLAG, if_node->conditions.data[0].type);
+    TEST_ASSERT_EQUAL_INT(1, if_node->children.count);
+    TEST_ASSERT_EQUAL_INT(1, if_node->else_children.count);
+
+    const ActionNode *then_node = &tree->nodes.data[if_node->children.data[0]];
+    TEST_ASSERT_EQUAL_INT(ACTION_DESTROY, then_node->type);
+
+    const ActionNode *else_node = &tree->nodes.data[if_node->else_children.data[0]];
+    TEST_ASSERT_EQUAL_INT(ACTION_SET_FLAG, else_node->type);
+    TEST_ASSERT_EQUAL_STRING("did_not_open", else_node->argument.ptr);
+}
+
+void test_toml_emit_subroutines_round_trip(void)
+{
+    Arena arena;
+    TEST_ASSERT_TRUE(arena_init(&test_err, &arena));
+    Allocator gamedata_alloc = allocator_arena(&arena);
+    BlueprintTable blueprints = {0};
+    vec_subroutine subroutines = vec_subroutine_new(gamedata_alloc);
+
+    toml_table_t *root = parse_toml(subroutine_fixture);
+    TEST_ASSERT_NOT_NULL(root);
+    TEST_ASSERT_TRUE(subroutines_parse(&test_diag, &gamedata_alloc, &subroutines, root, &arena));
+    toml_free(root);
+
+    assert_subroutine_structure(&subroutines);
+
+    char output[4096];
+    int written = toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &subroutines, nullptr, 0);
+    TEST_ASSERT_TRUE(written > 0);
+
+    TEST_ASSERT_NOT_NULL(strstr(output, "[[subroutine]]"));
+    TEST_ASSERT_NOT_NULL(strstr(output, "name = \"open_chest\""));
+
+    /* Round-trip: re-parse the emitted TOML and verify the subroutine survived. */
+    Arena arena2;
+    TEST_ASSERT_TRUE(arena_init(&test_err, &arena2));
+    Allocator gamedata_alloc2 = allocator_arena(&arena2);
+    vec_subroutine subroutines2 = vec_subroutine_new(gamedata_alloc2);
+
+    toml_table_t *root2 = parse_toml(output);
+    TEST_ASSERT_NOT_NULL(root2);
+    TEST_ASSERT_TRUE(subroutines_parse(&test_diag, &gamedata_alloc2, &subroutines2, root2, &arena2));
+    toml_free(root2);
+
+    assert_subroutine_structure(&subroutines2);
 
     arena_free(&arena);
     arena_free(&arena2);

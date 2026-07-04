@@ -154,7 +154,7 @@ void test_integration_collision_offset_edit_emitted_to_toml(void)
      * blueprint section. */
     char output[8192];
     int written = toml_emit_gamedata(&state.error, output, (int)sizeof(output), &state.gamedata.blueprints,
-                                     &state.gamedata.current_level, 1);
+                                     &state.gamedata.subroutines, &state.gamedata.current_level, 1);
     TEST_ASSERT_TRUE(written > 0);
 
     TEST_ASSERT_NOT_NULL_MESSAGE(strstr(output, "collision_offset = [3, 7]"),

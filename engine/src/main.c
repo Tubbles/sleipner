@@ -533,7 +533,7 @@ static bool save_gamedata(GameState *state)
 
     char buffer[MAX_GAMEDATA_SIZE];
     int written = toml_emit_gamedata(&state->error, buffer, (int)sizeof(buffer), &state->gamedata.blueprints,
-                                     all_levels, total_levels);
+                                     &state->gamedata.subroutines, all_levels, total_levels);
     if (written < 0) {
         error_wrap(&state->error, "save_gamedata");
         return false;
