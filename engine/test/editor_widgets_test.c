@@ -746,12 +746,12 @@ void test_fuzzy_finder_build_items_collects_flag_names(void)
     ErrorState err = {0};
     GameState state = {0};
     TEST_ASSERT_TRUE(arena_init(&err, &state.gamedata_arena));
-    state.gamedata.flags.names.alloc = test_heap_alloc;
+    state.progression.flags.names.alloc = test_heap_alloc;
 
     FlagName flag = {0};
     flag.name = str_new(test_heap_alloc);
     TEST_ASSERT_TRUE(str_from_cstr(&flag.name, "has_key"));
-    TEST_ASSERT_TRUE(vec_flag_name_push(&state.gamedata.flags.names, flag));
+    TEST_ASSERT_TRUE(vec_flag_name_push(&state.progression.flags.names, flag));
 
     EditorState editor_state = {0};
     fuzzy_finder_build_items(&state, &editor_state);
@@ -764,8 +764,8 @@ void test_fuzzy_finder_build_items_collects_flag_names(void)
     }
     TEST_ASSERT_TRUE(found_flag);
 
-    str_free(&state.gamedata.flags.names.data[0].name);
-    vec_flag_name_free(&state.gamedata.flags.names);
+    str_free(&state.progression.flags.names.data[0].name);
+    vec_flag_name_free(&state.progression.flags.names);
     arena_reset(&state.gamedata_arena);
 }
 
@@ -821,7 +821,8 @@ void test_fuzzy_finder_max_item_count_sums_all(void)
     TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, &entity.attrs, "x", 1));
     (void)vec_entity_push(&gamedata.current_level.entities, entity);
 
-    int result = fuzzy_finder_max_item_count(&gamedata);
+    FlagSet flags = {0};
+    int result = fuzzy_finder_max_item_count(&gamedata, &flags);
     /* 1 blueprint + 0 flags + 1 (current level) + 0 other levels + 1 entity + 2 bp attrs + 1 entity attr = 6 */
     TEST_ASSERT_EQUAL_INT(6, result);
 

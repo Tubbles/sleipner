@@ -6,6 +6,7 @@
 #include "error.h"
 #include "input.h"
 #include "input_func.h"
+#include "rule.h"
 #include "str.h"
 #include "strv.h"
 
@@ -407,10 +408,10 @@ static void fuzzy_finder_collect_blueprint_names(const GamedataState *gamedata, 
     }
 }
 
-static void fuzzy_finder_collect_flag_names(const GamedataState *gamedata, const char **items, int *count)
+static void fuzzy_finder_collect_flag_names(const FlagSet *flags, const char **items, int *count)
 {
-    for (int index = 0; index < gamedata->flags.names.count; index++) {
-        fuzzy_finder_try_add(items, count, gamedata->flags.names.data[index].name.ptr);
+    for (int index = 0; index < flags->names.count; index++) {
+        fuzzy_finder_try_add(items, count, flags->names.data[index].name.ptr);
     }
 }
 
@@ -446,10 +447,10 @@ static void fuzzy_finder_collect_all_attr_names(const GamedataState *gamedata, c
     }
 }
 
-static int fuzzy_finder_max_item_count(const GamedataState *gamedata)
+static int fuzzy_finder_max_item_count(const GamedataState *gamedata, const FlagSet *flags)
 {
-    int max_count = gamedata->blueprints.entries.count + gamedata->flags.names.count + 1 +
-                    gamedata->other_levels.count + gamedata->current_level.entities.count;
+    int max_count = gamedata->blueprints.entries.count + flags->names.count + 1 + gamedata->other_levels.count +
+                    gamedata->current_level.entities.count;
     for (int index = 0; index < gamedata->blueprints.entries.count; index++) {
         max_count += gamedata->blueprints.entries.data[index].attrs.entries.count;
     }
@@ -461,7 +462,7 @@ static int fuzzy_finder_max_item_count(const GamedataState *gamedata)
 
 void fuzzy_finder_build_items(GameState *state, EditorState *editor_state)
 {
-    int max_count = fuzzy_finder_max_item_count(&state->gamedata);
+    int max_count = fuzzy_finder_max_item_count(&state->gamedata, &state->progression.flags);
     const char **items = (const char **)arena_alloc(&state->gamedata_arena, sizeof(const char *) * (size_t)max_count);
     if (!items) {
         editor_state->fuzzy_finder_items = nullptr;
@@ -471,7 +472,7 @@ void fuzzy_finder_build_items(GameState *state, EditorState *editor_state)
     int count = 0;
 
     fuzzy_finder_collect_blueprint_names(&state->gamedata, items, &count);
-    fuzzy_finder_collect_flag_names(&state->gamedata, items, &count);
+    fuzzy_finder_collect_flag_names(&state->progression.flags, items, &count);
     fuzzy_finder_collect_level_names(&state->gamedata, items, &count);
     fuzzy_finder_collect_entity_tags(&state->gamedata, items, &count);
     fuzzy_finder_collect_all_attr_names(&state->gamedata, items, &count);

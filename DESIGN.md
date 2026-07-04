@@ -746,9 +746,9 @@ All engine memory is arena-backed — no `malloc`/`free` anywhere except tomlc99
    Zero runtime I/O for assets — they're part of the binary.
 
 2. Startup — game_init()
-   Two arenas allocated via mmap(MAP_ANONYMOUS|MAP_NORESERVE).
+   Three arenas allocated via mmap(MAP_ANONYMOUS|MAP_NORESERVE).
    1 TiB virtual reservation each; physical pages demand-paged.
-   Both start empty.
+   All start empty.
 
 3. Asset registration — once per process
    Raylib decodes raw bytes → GPU VRAM (not in arena).
@@ -768,10 +768,13 @@ All engine memory is arena-backed — no `malloc`/`free` anywhere except tomlc99
 6. Hot-reload / level transition
    arena_restore(&state->gamedata_arena, state->gamedata_base)
    rewinds gamedata_arena to the checkpoint. Asset registry at the
-   bottom is untouched. Step 4 runs again.
+   bottom is untouched. progression_arena is a separate arena and is
+   never touched by this restore, so flags and global vars (rule
+   `set_flag:` / `set_var:global.*`) survive both transitions and
+   hot-reloads. Step 4 runs again.
 
 7. Shutdown — game_free()
-   arena_free() munmaps both arenas (returns virtual range to OS).
+   arena_free() munmaps all three arenas (returns virtual range to OS).
    Raylib unloads GPU textures and fonts.
 ```
 
@@ -784,6 +787,14 @@ gamedata_arena:
 
 scratch_arena:
   [checkpoint .. top)     per-scope temporaries (rewound at SCRATCH_SCOPE exit)
+
+progression_arena:
+  [0 .. top)              flags, global vars (ProgressionState) — process
+                          lifetime, untouched by gamedata_arena's
+                          arena_restore. Cleared only by the pause-menu
+                          RESTORE action (game_reset_progression), which
+                          is the one place outside game_free that calls
+                          arena_reset on a live arena.
 ```
 
 ### Entity–blueprint connection
@@ -870,8 +881,8 @@ lower-level header. This hides the cycle rather than fixing it.
 
 ### Key Rules
 
-- `arena_restore` is the only lifecycle operation called at runtime — a bare pointer rewind, no syscall.
-- `arena_reset` (calls `MADV_DONTNEED`) is only called at full teardown in `game_free`.
+- `arena_restore` is the only lifecycle operation called at runtime on `gamedata_arena` — a bare pointer rewind, no syscall.
+- `arena_reset` (calls `MADV_DONTNEED`) is called at full teardown in `game_free`, and additionally on `progression_arena` alone by `game_reset_progression` (pause-menu RESTORE) — a deliberate "discard progress" reset, not a reload.
 - **Never** call `arena_reset` on `gamedata_arena` from game code — it would wipe the texture registry, causing a black screen.
 - The asset registry (textures, fonts) uses a dynamic vec backed by the arena. Adding a new asset is one line in `main.c`; no fixed-size arrays to resize.
 - **Prefer `vec` over fixed-size arrays with `MAX_*` constants.** If a collection's size isn't known at compile time, use a `vec` backed by the appropriate arena. `MAX_*` constants invite off-by-one bugs, silent truncation, and inflexibility — the arena makes dynamic sizing essentially free.
@@ -1091,7 +1102,7 @@ the caller is responsible for checking the chord first and early-returning.
 
 The function-layer overhaul (2026-04) unblocked black-box bug-repro tests: every binding site reads from an `InputState` snapshot via `input_pressed` / `input_axis` — no raylib globals.
 
-**Public frame entry point.** `engine/src/frame.h` exposes `frame_update` + `FrameContext`. Production `main.c` builds the context once per loop iteration; headless tests build a `TestGame` fixture (`engine/test/test_helpers.h`) around the same fields and drive `test_advance_frame` / `test_advance_frames` through the same dispatcher. Render, audio, gamepad polling, hot-reload, gamedata file I/O, and transition handling stay in `main.c` (production-only). Save / restore handlers reach the menu via `MenuSaveFn` / `MenuRestoreFn` function pointers on `MenuDispatchCtx`; tests pass `nullptr` so SAVE / RESTORE close the menu without touching disk.
+**Public frame entry point.** `engine/src/frame.h` exposes `frame_update` + `FrameContext`. Production `main.c` builds the context once per loop iteration; headless tests build a `TestGame` fixture (`engine/test/test_helpers.h`) around the same fields and drive `test_advance_frame` / `test_advance_frames` through the same dispatcher. Render, audio, gamepad polling, hot-reload, gamedata file I/O, and transition handling stay in `main.c` (production-only). Save / restore handlers reach the menu via `MenuSaveFn` / `MenuRestoreFn` function pointers on `MenuDispatchCtx`; tests that don't care about SAVE/RESTORE pass `nullptr` so they close the menu without touching disk. Tests that need to observe RESTORE's actual effect (e.g. progression being cleared) wire `test_restore_fn` (`engine/test/test_helpers.c`) instead — it mirrors `main.c`'s `menu_dispatch_restore` (reload from the fixture's in-memory TOML + `game_reset_progression`) since `main.c` itself is not linked into the test binary. Hot-reload has the same shape: `test_trigger_hot_reload` mirrors `poll_hot_reload`'s `game_load_gamedata` call, skipping only the disk-mtime check.
 
 **Black-box pattern.** Build a `TestGame` with `test_game_setup`, construct `InputState` values via the `input_state_*` helpers, drive `test_advance_frames`, then assert on observable game state. The fixture struct grows over time as new top-level state appears in `main.c`; new sane defaults go in `test_game_setup`.
 
@@ -1140,7 +1151,7 @@ The function-layer overhaul (2026-04) unblocked black-box bug-repro tests: every
 - [x] TOML parsing of [[blueprint.rule]] entries
 - [x] Evaluation loop with event cascading (max 8 rounds)
 - [x] Interact trigger detection (edge-triggered A-button, proximity-based)
-- [x] Flag storage (FlagSet on GameState)
+- [x] Flag storage (`FlagSet` on `GameState.progression`, a dedicated process-lifetime arena so flags survive level transitions and hot-reloads — see Memory Architecture § Arena Zone Layout)
 - [x] Custom events (fire_event / event trigger, cross-entity decoupling)
 - [x] Control flow nodes (if/else, repeat)
 - [x] for-each control flow node (entity queries)

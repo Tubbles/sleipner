@@ -836,6 +836,13 @@ static void menu_dispatch_restore(
     bool was_dirty = undo_history_is_dirty(undo_history);
     debug_log(diag->debug, "gamedata: menu reload requested (dirty=%s)", was_dirty ? "yes" : "no");
     load_gamedata(diag, state, nullptr);
+    /* RESTORE is a deliberate "discard my changes" reset, unlike a
+     * hot-reload: progression (flags, global vars) is cleared here too,
+     * not just gamedata. Ordering vs. load_gamedata doesn't matter —
+     * progression lives in its own arena that load_gamedata never
+     * touches — but this runs after it to read naturally as "reload,
+     * then reset progression". */
+    game_reset_progression(state);
     reset_editor_after_reload(state, editor_state, watches, undo_history, strv_from_cstr("Menu reload"));
     editor_state->toast_text = strv_from_cstr("Reloaded from disk");
     editor_state->toast_timer = 2.0F;

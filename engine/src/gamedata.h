@@ -1,6 +1,5 @@
 #pragma once
 
-#include "attribute.h"
 #include "blueprint.h"
 #include "level.h"
 #include "raylib.h"
@@ -19,7 +18,5 @@ typedef struct {
     vec_timer timers;
     Level current_level;
     vec_level other_levels;
-    FlagSet flags;
-    AttrSet vars;
     Vector2 camera_target;
 } GamedataState;

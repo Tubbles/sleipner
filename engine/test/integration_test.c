@@ -341,7 +341,7 @@ void test_integration_on_spawn_trigger_fires_on_load(void)
 
     /* beacon blueprint has on_spawn → set_flag:beacon_spawned.
      * No frame advance needed — the flag must be set by game_load_gamedata. */
-    TEST_ASSERT_TRUE(flag_get(&game.state.gamedata.flags, "beacon_spawned"));
+    TEST_ASSERT_TRUE(flag_get(&game.state.progression.flags, "beacon_spawned"));
 
     test_game_teardown(&game);
 }
@@ -352,7 +352,7 @@ void test_integration_enter_trigger_fires_on_overlap(void)
     TEST_ASSERT_TRUE(test_game_setup(&game, fixture_triggers));
 
     /* zone_entered must not be set before the player reaches the zone */
-    TEST_ASSERT_FALSE(flag_get(&game.state.gamedata.flags, "zone_entered"));
+    TEST_ASSERT_FALSE(flag_get(&game.state.progression.flags, "zone_entered"));
 
     /* Player at (100,100), collision [100,100,16,16]. Zone at (200,100), collision [200,100,32,32].
      * Player right edge starts at 116, zone left edge at 200. Gap = 84px.
@@ -361,7 +361,7 @@ void test_integration_enter_trigger_fires_on_overlap(void)
     input_state_set_gp_axis(&input, GAMEPAD_AXIS_LEFT_X, 1.0F);
     test_advance_frames(&game, input, 80);
 
-    TEST_ASSERT_TRUE(flag_get(&game.state.gamedata.flags, "zone_entered"));
+    TEST_ASSERT_TRUE(flag_get(&game.state.progression.flags, "zone_entered"));
 
     test_game_teardown(&game);
 }
@@ -536,6 +536,143 @@ void test_integration_transition_changes_level(void)
     TEST_ASSERT_NOT_NULL(player);
     TEST_ASSERT_FLOAT_WITHIN(0.5F, 80.0F, player->position.x);
     TEST_ASSERT_FLOAT_WITHIN(0.5F, 60.0F, player->position.y);
+
+    test_game_teardown(&game);
+}
+
+/* Walk the player toward `destination`, re-aiming every frame, until
+ * within `range` pixels or `max_iterations` frames elapse. Re-aiming
+ * each frame (rather than a fixed heading) rides along any incidental
+ * obstacle edge in a straight-line path, but does not route around
+ * one — callers crossing a solid obstacle (e.g. a fence) need
+ * intermediate waypoints. Returns the frame count actually taken, or
+ * max_iterations if it never got close. Parameter order keeps `range`
+ * and `max_iterations` non-adjacent (Vector2 between them) to avoid
+ * bugprone-easily-swappable-parameters on the float/int pair. */
+static int walk_player_to(TestGame *game, float range, Vector2 destination, int max_iterations)
+{
+    for (int iteration = 0; iteration < max_iterations; iteration++) {
+        const Entity *player = game_get_player_const(&game->state);
+        float delta_x = destination.x - player->position.x;
+        float delta_y = destination.y - player->position.y;
+        if ((delta_x * delta_x) + (delta_y * delta_y) <= range * range) {
+            return iteration;
+        }
+        InputState step = {0};
+        input_state_set_gp_axis(&step, GAMEPAD_AXIS_LEFT_X, delta_x > 0.0F ? 1.0F : -1.0F);
+        input_state_set_gp_axis(&step, GAMEPAD_AXIS_LEFT_Y, delta_y > 0.0F ? 1.0F : -1.0F);
+        test_advance_frame(game, step);
+    }
+    return max_iterations;
+}
+
+/* F17: progression (flags, global vars) must survive a level
+ * transition. Reproduces the shipped gamedata.toml demo: opening a
+ * chest in "house_interior" (the default starting level) sets
+ * chest_opened, then walking out through exit_door transitions to the
+ * much larger "overworld" level. The flag must still read true
+ * afterwards — it lives outside the gamedata arena that the
+ * transition's arena_restore rewinds. Going small-level -> big-level
+ * matters: game_load_gamedata's post-parse per-entity-pair tracking
+ * (prev_solid_collisions, sized to the *new* current level's entity
+ * count squared) is what actually overwrites the flag's old bytes; a
+ * big -> small transition leaves them untouched by coincidence, which
+ * is why this exact direction is the reliable repro. */
+void test_integration_progression_survives_transition(void)
+{
+    char *content = read_file(GAMEDATA_FIXTURE_PATH);
+    TEST_ASSERT_NOT_NULL_MESSAGE(content, "could not read " GAMEDATA_FIXTURE_PATH);
+
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup_with_level(&game, content, "house_interior"));
+
+    const Entity *chest = test_find_entity_by_blueprint(&game.state, "chest");
+    TEST_ASSERT_NOT_NULL(chest);
+    (void)walk_player_to(&game, 10.0F, chest->position, 300);
+
+    InputState interact = {0};
+    input_state_press_gp_button(&interact, GAMEPAD_BUTTON_RIGHT_FACE_DOWN);
+    test_advance_frame(&game, interact);
+
+    TEST_ASSERT_TRUE(flag_get(&game.state.progression.flags, "chest_opened"));
+
+    const Entity *exit_door = test_find_entity_by_blueprint(&game.state, "exit_door");
+    TEST_ASSERT_NOT_NULL(exit_door);
+    Vector2 exit_position = exit_door->position;
+    int max_iterations = 300;
+    int iteration = 0;
+    while (iteration < max_iterations && strcmp(game.state.gamedata.current_level.name.ptr, "house_interior") == 0) {
+        const Entity *player = game_get_player_const(&game.state);
+        float delta_x = exit_position.x - player->position.x;
+        float delta_y = exit_position.y - player->position.y;
+        InputState step = {0};
+        input_state_set_gp_axis(&step, GAMEPAD_AXIS_LEFT_X, delta_x > 0.0F ? 1.0F : -1.0F);
+        input_state_set_gp_axis(&step, GAMEPAD_AXIS_LEFT_Y, delta_y > 0.0F ? 1.0F : -1.0F);
+        test_advance_frame(&game, step);
+        iteration++;
+    }
+    TEST_ASSERT_TRUE_MESSAGE(iteration < max_iterations, "transition to 'overworld' should fire within 300 frames");
+    TEST_ASSERT_EQUAL_STRING("overworld", game.state.gamedata.current_level.name.ptr);
+
+    TEST_ASSERT_TRUE(flag_get(&game.state.progression.flags, "chest_opened"));
+
+    test_game_teardown(&game);
+    free(content);
+}
+
+/* F17: progression must also survive a hot-reload (gamedata.toml
+ * edited on disk while the game is running). The mtime-based polling
+ * and disk read that trigger this in production are I/O plumbing
+ * already excluded from headless tests (see test_level_loader), so the
+ * test drives the same game_load_gamedata call test_trigger_hot_reload
+ * wraps. */
+void test_integration_progression_survives_hot_reload(void)
+{
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_triggers));
+
+    TEST_ASSERT_TRUE(flag_get(&game.state.progression.flags, "beacon_spawned"));
+
+    TEST_ASSERT_TRUE(test_trigger_hot_reload(&game));
+
+    TEST_ASSERT_TRUE(flag_get(&game.state.progression.flags, "beacon_spawned"));
+
+    test_game_teardown(&game);
+}
+
+/* F17: unlike hot-reload, the pause-menu RESTORE action is a deliberate
+ * "discard my changes" reset — progression must be cleared, not
+ * preserved. Drives the real menu open/navigate/confirm input path;
+ * test_restore_fn mirrors main.c's menu_dispatch_restore (reload +
+ * game_reset_progression) the same way test_recording_preferences_save
+ * mirrors dispatch_save_preferences, since main.c itself isn't linked
+ * into the test binary. */
+void test_integration_progression_restore_clears_progression(void)
+{
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_triggers));
+    game.frame_ctx.restore_fn = test_restore_fn;
+
+    TEST_ASSERT_TRUE(flag_get(&game.state.progression.flags, "beacon_spawned"));
+
+    InputState open_input = {0};
+    input_state_press_key(&open_input, KEY_F3);
+    test_advance_frame(&game, open_input);
+    TEST_ASSERT_TRUE(game.menu.open);
+
+    for (int step = 0; step < 2; step++) {
+        InputState down = {0};
+        input_state_press_key(&down, KEY_DOWN);
+        test_advance_frame(&game, down);
+    }
+    TEST_ASSERT_EQUAL_INT(MENU_ENTRY_RESTORE, game.menu.selected);
+
+    InputState confirm = {0};
+    input_state_press_key(&confirm, KEY_ENTER);
+    test_advance_frame(&game, confirm);
+    TEST_ASSERT_FALSE(game.menu.open);
+
+    TEST_ASSERT_FALSE(flag_get(&game.state.progression.flags, "beacon_spawned"));
 
     test_game_teardown(&game);
 }

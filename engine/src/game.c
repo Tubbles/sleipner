@@ -41,6 +41,12 @@ bool game_init(Diag *diag, GameState *state, RectU32 game_bounds)
         error_wrap(diag->error, "game_init");
         return false;
     }
+    if (!arena_init(diag->error, &state->progression_arena)) {
+        arena_free(&state->gamedata_arena);
+        arena_free(&state->scratch_arena);
+        error_wrap(diag->error, "game_init");
+        return false;
+    }
     /* Default input bindings and preferences live in the gamedata arena.
      * main.c overlays the TOML files on top once persistent assets are
      * loaded. Both are populated BEFORE the gamedata_base checkpoint is
@@ -166,10 +172,11 @@ bool game_load_gamedata(Diag *diag, GameState *state, GamedataParams params)
                                              (TriggerEvent){.type = TRIGGER_ON_SPAWN, .entity_index = index});
             }
             if (spawn_events.count > 0) {
+                Allocator progression_alloc = allocator_arena(&state->progression_arena);
                 rules_evaluate_batch(diag, &gamedata_alloc, spawn_views, spawn_count, spawn_events.data,
-                                     spawn_events.count, &state->gamedata.flags, &state->gamedata.vars,
-                                     &state->gamedata.rule_table, &state->gamedata.subroutines, &state->gamedata.timers,
-                                     &scratch_alloc, &state->transition);
+                                     spawn_events.count, &state->progression.flags, &state->progression.vars,
+                                     &progression_alloc, &state->gamedata.rule_table, &state->gamedata.subroutines,
+                                     &state->gamedata.timers, &scratch_alloc, &state->transition);
             }
         }
         game_snap_camera(state);
@@ -551,10 +558,11 @@ void game_update(Diag *diag, GameState *state, InputState input, float delta_tim
                 };
             }
             Allocator rule_alloc = allocator_arena(&state->gamedata_arena);
+            Allocator progression_alloc = allocator_arena(&state->progression_arena);
             rules_evaluate_batch(diag, &rule_alloc, update_views, update_count, trigger_events.data,
-                                 trigger_events.count, &state->gamedata.flags, &state->gamedata.vars,
-                                 &state->gamedata.rule_table, &state->gamedata.subroutines, &state->gamedata.timers,
-                                 &scratch_alloc, &state->transition);
+                                 trigger_events.count, &state->progression.flags, &state->progression.vars,
+                                 &progression_alloc, &state->gamedata.rule_table, &state->gamedata.subroutines,
+                                 &state->gamedata.timers, &scratch_alloc, &state->transition);
         }
     }
 }
@@ -564,7 +572,14 @@ void game_free(Diag *diag, GameState *state)
     (void)diag;
     arena_free(&state->gamedata_arena);
     arena_free(&state->scratch_arena);
+    arena_free(&state->progression_arena);
     *state = (GameState){0};
+}
+
+void game_reset_progression(GameState *state)
+{
+    arena_reset(&state->progression_arena);
+    state->progression = (ProgressionState){0};
 }
 
 Texture2D *texture_registry_lookup(const char *filename, void *user_data)

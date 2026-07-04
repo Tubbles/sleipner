@@ -170,13 +170,13 @@ void test_integration_interact_rule(void)
     TEST_ASSERT_EQUAL_INT(1, chest_bp->rules.count);
     TEST_ASSERT_EQUAL_INT(TRIGGER_INTERACT, chest_bp->rules.data[0].trigger.type);
 
-    TEST_ASSERT_FALSE(flag_get(&game.state.gamedata.flags, "chest_opened"));
+    TEST_ASSERT_FALSE(flag_get(&game.state.progression.flags, "chest_opened"));
 
     InputState input = {0};
     input_state_press_gp_button(&input, GAMEPAD_BUTTON_RIGHT_FACE_DOWN);
     test_advance_frame(&game, input);
 
-    TEST_ASSERT_TRUE(flag_get(&game.state.gamedata.flags, "chest_opened"));
+    TEST_ASSERT_TRUE(flag_get(&game.state.progression.flags, "chest_opened"));
 
     test_game_teardown(&game);
 }
@@ -243,7 +243,7 @@ void test_integration_condition_blocks_interact(void)
     InputState press_a = {0};
     input_state_press_gp_button(&press_a, GAMEPAD_BUTTON_RIGHT_FACE_DOWN);
     test_advance_frame(&game, press_a);
-    TEST_ASSERT_FALSE(flag_get(&game.state.gamedata.flags, "chest_opened"));
+    TEST_ASSERT_FALSE(flag_get(&game.state.progression.flags, "chest_opened"));
 
     /* Walk right past the chest and into the key's interact range.
      * 80 px/s, ~76 px to reach key range, plenty of margin at 80 frames. */
@@ -254,7 +254,7 @@ void test_integration_condition_blocks_interact(void)
     /* Pick up the key. Chest is now far away; only the key receives
      * the interact target. */
     test_advance_frame(&game, press_a);
-    TEST_ASSERT_TRUE(flag_get(&game.state.gamedata.flags, "has_key"));
+    TEST_ASSERT_TRUE(flag_get(&game.state.progression.flags, "has_key"));
 
     /* Walk back left to the chest. */
     InputState walk_left = {0};
@@ -264,7 +264,7 @@ void test_integration_condition_blocks_interact(void)
     /* Final interact: chest is back in range, has_key is set, rule
      * fires and chest_opened is set. */
     test_advance_frame(&game, press_a);
-    TEST_ASSERT_TRUE(flag_get(&game.state.gamedata.flags, "chest_opened"));
+    TEST_ASSERT_TRUE(flag_get(&game.state.progression.flags, "chest_opened"));
 
     test_game_teardown(&game);
 }
@@ -458,7 +458,7 @@ void test_integration_subroutine_call(void)
     TestGame game;
     TEST_ASSERT_TRUE(test_game_setup(&game, gamedata));
 
-    TEST_ASSERT_TRUE(flag_get(&game.state.gamedata.flags, "visited"));
+    TEST_ASSERT_TRUE(flag_get(&game.state.progression.flags, "visited"));
 
     test_game_teardown(&game);
 }
@@ -736,7 +736,7 @@ void test_integration_on_destroy_fires(void)
     const Entity *thing = test_find_entity_by_blueprint(&game.state, "thing");
     TEST_ASSERT_NOT_NULL(thing);
     TEST_ASSERT_FALSE(attr_get_bool(&thing->attrs, "active", true));
-    TEST_ASSERT_TRUE(flag_get(&game.state.gamedata.flags, "thing_destroyed"));
+    TEST_ASSERT_TRUE(flag_get(&game.state.progression.flags, "thing_destroyed"));
 
     test_game_teardown(&game);
 }
@@ -772,7 +772,7 @@ void test_integration_defeat_fires_when_health_drops_to_zero(void)
     TestGame game;
     TEST_ASSERT_TRUE(test_game_setup(&game, gamedata));
 
-    TEST_ASSERT_TRUE(flag_get(&game.state.gamedata.flags, "enemy_defeated"));
+    TEST_ASSERT_TRUE(flag_get(&game.state.progression.flags, "enemy_defeated"));
 
     test_game_teardown(&game);
 }
@@ -818,12 +818,12 @@ void test_integration_collide_fires_on_overlap(void)
     TEST_ASSERT_TRUE(test_game_setup(&game, gamedata));
 
     /* No collide event yet -- prev_solid_collisions initialised to false */
-    TEST_ASSERT_FALSE(flag_get(&game.state.gamedata.flags, "rock_hit"));
+    TEST_ASSERT_FALSE(flag_get(&game.state.progression.flags, "rock_hit"));
 
     /* First update -- overlap detected for the first time -> fire */
     InputState idle = {0};
     test_advance_frame(&game, idle);
-    TEST_ASSERT_TRUE(flag_get(&game.state.gamedata.flags, "rock_hit"));
+    TEST_ASSERT_TRUE(flag_get(&game.state.progression.flags, "rock_hit"));
 
     test_game_teardown(&game);
 }

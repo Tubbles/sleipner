@@ -232,6 +232,12 @@ typedef struct {
     vec_trigger_event *event_queue;
     AttrSet *local_vars;
     AttrSet *global_vars;
+    /* Backs writes to `flags` and `global_vars` only — both live in the
+     * process-lifetime progression arena (see progression.h), which
+     * survives the level-transition/hot-reload arena_restore that
+     * rewinds everything else here. `local_vars` stays on the caller's
+     * `alloc` (see action_node_execute / rules_evaluate_batch). */
+    Allocator *progression_alloc;
     const LocalScope *scope;            /* entity binding chain — walked by resolve_target */
     const vec_subroutine *subroutines;  /* read-only subroutine table */
     vec_timer *timers;                  /* mutable timer list for create_timer/destroy_timer */
@@ -245,9 +251,11 @@ typedef struct {
 /* --- Evaluation loop ---
  * `alloc` is the persistent gamedata allocator (the ACTION_TRANSITION handler
  * reads `transition->level`, allocated from it, after the batch returns).
- * `scratch_alloc` backs the per-batch cascade event vecs and may be safely
- * rewound as soon as the batch returns. Keeping the two non-adjacent avoids
- * bugprone-easily-swappable-parameters on the pair. */
+ * `progression_alloc` backs writes to `flags` and `global_vars` (see
+ * ActionContext.progression_alloc). `scratch_alloc` backs the per-batch
+ * cascade event vecs and may be safely rewound as soon as the batch
+ * returns. Keeping the three Allocator* params non-adjacent avoids
+ * bugprone-easily-swappable-parameters between any pair of them. */
 void rules_evaluate_batch(Diag *diag,
                           Allocator *alloc,
                           EntityView *views,
@@ -256,6 +264,7 @@ void rules_evaluate_batch(Diag *diag,
                           int event_count,
                           FlagSet *flags,
                           AttrSet *global_vars,
+                          Allocator *progression_alloc,
                           map_entity_ruleset *rule_table,
                           const vec_subroutine *subroutines,
                           vec_timer *timers,

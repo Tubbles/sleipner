@@ -147,6 +147,20 @@ static bool test_recording_preferences_save(GameState *state)
     return true;
 }
 
+void test_restore_fn(
+    Diag *diag, GameState *state, EditorState *editor_state, WatchList *watches, UndoHistory *undo_history)
+{
+    (void)editor_state;
+    (void)watches;
+    (void)undo_history;
+    TestGame *game = (TestGame *)state;
+    (void)game_load_gamedata(diag, state,
+                             (GamedataParams){.toml_string = game->toml_string,
+                                              .level_name = nullptr,
+                                              .texture_lookup = test_dummy_texture_lookup});
+    game_reset_progression(state);
+}
+
 bool test_game_setup(TestGame *out, const char *toml_string)
 {
     return test_game_setup_with_level(out, toml_string, nullptr);
@@ -210,6 +224,14 @@ void test_game_teardown(TestGame *game)
     menu_cleanup(&game->menu);
     settings_cleanup(&game->settings);
     game_free(&game->diag, &game->state);
+}
+
+bool test_trigger_hot_reload(TestGame *game)
+{
+    return game_load_gamedata(&game->diag, &game->state,
+                              (GamedataParams){.toml_string = game->toml_string,
+                                               .level_name = nullptr,
+                                               .texture_lookup = test_dummy_texture_lookup});
 }
 
 void test_advance_frame(TestGame *game, InputState input)

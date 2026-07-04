@@ -1069,33 +1069,36 @@ static bool execute_set_var_action(Diag *diag, Allocator *alloc, const ActionNod
     resolve_arg(resolved_value, MAX_ARG, node->second_argument.ptr, context);
 
     AttrSet *target_vars;
+    Allocator *var_alloc;
     const char *var_name;
     if (strv_starts_with_cstr(str_to_strv(node->argument), GLOBAL_VAR_PREFIX)) {
         target_vars = context.global_vars;
+        var_alloc = context.progression_alloc;
         var_name = node->argument.ptr + strlen(GLOBAL_VAR_PREFIX);
     } else {
         target_vars = context.local_vars;
+        var_alloc = alloc;
         var_name = node->argument.ptr;
     }
-    if (!target_vars) {
+    if (!target_vars || !var_alloc) {
         debug_log(diag->debug, "set_var: no var storage for '%s'", node->argument.ptr);
         return true;
     }
     if (strcmp(resolved_value, "true") == 0) {
-        return attr_set_bool(alloc, target_vars, var_name, true);
+        return attr_set_bool(var_alloc, target_vars, var_name, true);
     }
     if (strcmp(resolved_value, "false") == 0) {
-        return attr_set_bool(alloc, target_vars, var_name, false);
+        return attr_set_bool(var_alloc, target_vars, var_name, false);
     }
     if (strchr(resolved_value, '.')) {
-        return attr_set_float(alloc, target_vars, var_name, strtof(resolved_value, nullptr));
+        return attr_set_float(var_alloc, target_vars, var_name, strtof(resolved_value, nullptr));
     }
     char *endptr;
     long ival = strtol(resolved_value, &endptr, RADIX_DECIMAL);
     if (endptr != resolved_value && *endptr == '\0') {
-        return attr_set_int(alloc, target_vars, var_name, (int)ival);
+        return attr_set_int(var_alloc, target_vars, var_name, (int)ival);
     }
-    return attr_set_string(alloc, target_vars, (AttrStringPair){.name = var_name, .value = resolved_value});
+    return attr_set_string(var_alloc, target_vars, (AttrStringPair){.name = var_name, .value = resolved_value});
 }
 
 /* Resolves each index in `indices` against `pool` and pushes the resulting
@@ -1231,10 +1234,18 @@ static bool dispatch_simple_action(Diag *diag, Allocator *alloc, const ActionNod
 {
     switch (node->type) {
     case ACTION_SET_FLAG:
-        flag_set(diag, alloc, context.flags, node->argument.ptr);
+        if (!context.progression_alloc || !context.flags) {
+            debug_log(diag->debug, "set_flag: no progression storage for '%s'", node->argument.ptr);
+            return true;
+        }
+        flag_set(diag, context.progression_alloc, context.flags, node->argument.ptr);
         return true;
     case ACTION_CLEAR_FLAG:
-        flag_clear(alloc, context.flags, node->argument.ptr);
+        if (!context.progression_alloc || !context.flags) {
+            debug_log(diag->debug, "clear_flag: no progression storage for '%s'", node->argument.ptr);
+            return true;
+        }
+        flag_clear(context.progression_alloc, context.flags, node->argument.ptr);
         return true;
     case ACTION_SET_ATTR:
         return execute_set_attr_action(diag, alloc, node, context);
@@ -1414,6 +1425,7 @@ static void evaluate_entity_rules(Diag *diag,
                                   int view_count,
                                   FlagSet *flags,
                                   AttrSet *global_vars,
+                                  Allocator *progression_alloc,
                                   const vec_trigger_event *pending_events,
                                   vec_trigger_event *next_events,
                                   map_entity_ruleset *rule_table,
@@ -1449,6 +1461,7 @@ static void evaluate_entity_rules(Diag *diag,
             .event_queue = next_events,
             .local_vars = &local_vars,
             .global_vars = global_vars,
+            .progression_alloc = progression_alloc,
             .subroutines = subroutines,
             .timers = timers,
             .transition = transition,
@@ -1479,6 +1492,7 @@ void rules_evaluate_batch(Diag *diag,
                           int event_count,
                           FlagSet *flags,
                           AttrSet *global_vars,
+                          Allocator *progression_alloc,
                           map_entity_ruleset *rule_table,
                           const vec_subroutine *subroutines,
                           vec_timer *timers,
@@ -1511,7 +1525,8 @@ void rules_evaluate_batch(Diag *diag,
                 }
             }
             evaluate_entity_rules(diag, alloc, entity, entity_index, views, view_count, flags, global_vars,
-                                  &pending_events, &next_events, rule_table, subroutines, timers, transition);
+                                  progression_alloc, &pending_events, &next_events, rule_table, subroutines, timers,
+                                  transition);
         }
 
         pending_events = next_events;

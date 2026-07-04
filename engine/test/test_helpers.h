@@ -81,6 +81,24 @@ typedef struct {
 
 void test_game_teardown(TestGame *game);
 
+/* Simulate a hot-reload event: production's poll_hot_reload calls
+ * load_gamedata (nullptr level_name) whenever gamedata.toml's mtime
+ * changes on disk. The mtime polling and disk read are I/O plumbing
+ * already excluded from headless tests (see test_level_loader above);
+ * this drives the same game_load_gamedata call against the fixture's
+ * in-memory TOML instead. */
+[[nodiscard]] bool test_trigger_hot_reload(TestGame *game);
+
+/* MenuRestoreFn fake mirroring main.c's menu_dispatch_restore: reloads
+ * gamedata from the held toml_string (nullptr level_name, matching
+ * production's disk-mtime-triggered reload) and resets progression via
+ * game_reset_progression. main.c itself isn't linked into the test
+ * binary, so tests wire this into frame_ctx.restore_fn instead, the
+ * same way test_recording_preferences_save stands in for
+ * dispatch_save_preferences. */
+void test_restore_fn(
+    Diag *diag, GameState *state, EditorState *editor_state, WatchList *watches, UndoHistory *undo_history);
+
 /* Drive one black-box frame at a 1/60s delta. Wires through
  * frame_update — same dispatch path production runs. */
 void test_advance_frame(TestGame *game, InputState input);
