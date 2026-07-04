@@ -113,6 +113,10 @@ static const EditorHintTable *hints_table_for(bool editor_mode, const EditorStat
         return editor_state->anim_blueprint_index >= 0 ? anim_edit_hints_table() : anim_blueprint_list_hints_table();
     case EDITOR_SUB_ANIM_FRAMES:
         return anim_frames_hints_table();
+    case EDITOR_SUB_RULE_LIST:
+        return editor_state->rule_blueprint_index >= 0 ? rule_list_hints_table() : rule_blueprint_list_hints_table();
+    case EDITOR_SUB_RULE_TREE:
+        return rule_tree_hints_table();
     case EDITOR_SUB_BROWSE:
         if (editor_state->top_mode == EDITOR_TOP_BLUEPRINT) {
             return editor_state->selected_blueprint_index >= 0 ? blueprint_detail_hints_table()

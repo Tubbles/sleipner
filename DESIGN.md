@@ -1176,7 +1176,10 @@ The function-layer overhaul (2026-04) unblocked black-box bug-repro tests: every
 - [x] Atlas mode: browse the texture registry, list/create named regions per texture, drag-set a region's src rect via HANDLES-style dual-stick offset/size (`EDITOR_SUB_ATLAS_BROWSE`/`_REGION_EDIT`, `editor/atlas.c`) (S5.4b)
 - [x] Animation mode: pick a blueprint (list picker, or the already-selected scene entity's blueprint), edit `anim_frames`/`anim_size`/`anim_speed`/`anim_row` via value adjusters, and scrub frames with a live src-rect preview (`EDITOR_SUB_ANIM_EDIT`/`_FRAMES`, `editor/anim.c`) (S5.5, D20). Linking directional states to the animation state machine is Phase 8 (D31).
 - [x] Blueprint `animation = {frames,size,speed,row}` plumbed through parse and emit into `anim_frames`/`anim_size`/`anim_speed`/`anim_row` blueprint attrs, ahead of the mode UI and the animation state machine (Phase 8)
-- [ ] Rule mode: visual trigger/condition/action editor, test by switching to play
+- [x] Rule mode: read-only rule tree view — pick a blueprint (list picker, or the already-selected scene entity's blueprint), list its rules, and browse one rule as a navigable indented tree over the flat action-node pool (trigger, conditions, nested if/else/repeat/for_each actions) (`EDITOR_SUB_RULE_LIST`/`_TREE`, `editor/rule.c`) (S5.6a)
+- [ ] Rule mode: leaf editing — edit trigger/condition/action values in place (S5.6b)
+- [ ] Rule mode: structural editing — add/remove/reorder rules and action nodes, author if/else/repeat/for_each (S5.6c)
+- [ ] Rule mode: subroutine authoring and linking (S5.6d)
 - [x] Level mode: view all levels, switch active level in memory (S5.2a)
 - [x] Level mode: create levels (word builder name, 640x360 default) and edit the current level's size/floor/background/tint/music detail rows (S5.2b)
 - [x] Radial picker widget (generic N-item; Tab/Select opens tool picker)

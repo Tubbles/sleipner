@@ -179,6 +179,33 @@ bool trigger_parse(Diag *diag, Allocator *alloc, Trigger *trigger, const char *s
     return false;
 }
 
+const char *trigger_type_label(TriggerType type)
+{
+    switch (type) {
+    case TRIGGER_INTERACT:
+        return "interact";
+    case TRIGGER_ENTER:
+        return "enter";
+    case TRIGGER_ON_SPAWN:
+        return "on_spawn";
+    case TRIGGER_EVENT:
+        return "event";
+    case TRIGGER_ATTR_CHANGED:
+        return "attr_changed";
+    case TRIGGER_TIMER:
+        return "timer";
+    case TRIGGER_TIMER_PERIODIC:
+        return "timer_periodic";
+    case TRIGGER_ON_DESTROY:
+        return "on_destroy";
+    case TRIGGER_DEFEAT:
+        return "defeat";
+    case TRIGGER_COLLIDE:
+        return "collide";
+    }
+    return "?";
+}
+
 // Returns: 1 = comparison found and allocated, 0 = no comparison, -1 = alloc failed
 static int parse_condition_attr_comparison(Allocator *alloc, Condition *condition, const char *argument)
 {
@@ -299,6 +326,31 @@ bool condition_parse(Diag *diag, Allocator *alloc, Condition *condition, const c
     return false;
 }
 
+/* The three attr-comparison variants (LT/GT/EQ) share "attr" here; callers
+ * render the comparison operator themselves (see editor/rule.c's row-label
+ * formatting) since the operator isn't part of the type's own vocabulary. */
+const char *condition_type_label(ConditionType type)
+{
+    switch (type) {
+    case COND_FLAG:
+        return "flag";
+    case COND_NOT_FLAG:
+        return "not_flag";
+    case COND_ATTR:
+    case COND_ATTR_LT:
+    case COND_ATTR_GT:
+    case COND_ATTR_EQ:
+        return "attr";
+    case COND_NOT_ATTR:
+        return "not_attr";
+    case COND_HAS_ITEM:
+        return "has_item";
+    case COND_VAR:
+        return "var";
+    }
+    return "?";
+}
+
 static bool parse_action_two_args(Allocator *alloc, ActionNode *node, Strv strv)
 {
     node->argument = str_new(*alloc);
@@ -347,6 +399,21 @@ static const ActionMapping action_mappings[] = {
     {"destroy_timer:", ACTION_DESTROY_TIMER, true},
     {nullptr, 0, false},
 };
+
+Strv action_type_label(ActionType type)
+{
+    for (int index = 0; action_mappings[index].prefix; index++) {
+        if (action_mappings[index].type != type) {
+            continue;
+        }
+        Strv label = strv_from_cstr(action_mappings[index].prefix);
+        if (label.len > 0 && label.ptr[label.len - 1] == ':') {
+            label.len--;
+        }
+        return label;
+    }
+    return (Strv){0};
+}
 
 static bool parse_simple_action(Diag *diag, Allocator *alloc, ActionNode *node, const char *string)
 {

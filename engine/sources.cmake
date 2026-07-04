@@ -31,6 +31,7 @@ set(ENGINE_SOURCE_FILES
     editor/core.c
     editor/draw.c
     editor/level.c
+    editor/rule.c
     editor/tile.c
     editor/widgets.c
     entity.c

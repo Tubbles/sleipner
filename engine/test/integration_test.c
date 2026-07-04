@@ -2041,6 +2041,123 @@ void test_integration_editor_animation_edit_round_trip(void)
     test_game_teardown(&game);
 }
 
+/* Fixture blueprint with a rule whose action tree has depth: a root
+ * set_flag, followed by an if/else with two "then" actions and one "else"
+ * action (S5.6a rule tree navigation test below). Hand-derived flattened
+ * row count: trigger(1) + rule conditions(1) + action_tree.nodes(5:
+ * set_flag:used, if_else, destroy, set_flag:opened, set_flag:blocked) = 7
+ * rows, indices 0..6. */
+static const char *fixture_rule_tree =
+    "[[blueprint]]\n"
+    "name = \"switch\"\n"
+    "texture = \"switch.png\"\n"
+    "src = [0, 0, 16, 16]\n"
+    "collision_offset = [0, 0]\n"
+    "collision_size = [16, 16]\n"
+    "\n"
+    "[[blueprint.rule]]\n"
+    "trigger = \"interact\"\n"
+    "conditions = [\"flag:powered\"]\n"
+    "actions = [\"set_flag:used\", { if = [\"flag:test_flag\"], then = [\"destroy\", \"set_flag:opened\"], else = "
+    "[\"set_flag:blocked\"] }]\n"
+    "\n"
+    "[[level]]\n"
+    "name = \"test\"\n"
+    "size = [320, 240]\n"
+    "\n"
+    "[[level.entity]]\n"
+    "blueprint = \"switch\"\n"
+    "pos = [100, 100]\n";
+
+/* S5.6a: Rule mode's read-only tree view + navigation. Drives entirely
+ * through the real input layer: F5 into editor, TAB opens the Tools radial,
+ * test_radial_select_item aims the stick at the "Rules" sector
+ * (EDITOR_TOOLS_RULE_INDEX) and confirms, one more frame lets BROWSE
+ * dispatch the pending radial choice into EDITOR_TOP_RULE /
+ * EDITOR_SUB_RULE_LIST. No scene entity is selected at that point (fresh
+ * test_game_setup leaves selected_entity_id == -1), so enter_rule_mode
+ * cannot preselect a blueprint and rule_blueprint_index lands on -1 -- the
+ * blueprint list picker (EDITOR_SUB_RULE_LIST's dual duty, editor/rule.c).
+ * CONFIRM on scroll 0 ("switch", the only blueprint in fixture_rule_tree)
+ * opens its rule list; CONFIRM again on its only rule opens the tree.
+ *
+ * NAV_DOWN driven 10 times (more than the fixture's 7-row tree) must clamp
+ * the cursor at row 6, not wrap or overshoot; NAV_UP driven 10 times from
+ * there must clamp back at row 0. This indirectly proves the flattened row
+ * count matches the fixture's full tree (trigger + condition + all 5 action
+ * nodes, including the if/else's nested children and else_children) -- a
+ * flatten that forgot to recurse into either branch would clamp at a lower
+ * row. CANCEL is then driven three times to prove the full back-out chain:
+ * tree -> rule list -> blueprint picker -> scene. */
+void test_integration_editor_rule_tree_navigation(void)
+{
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_rule_tree));
+    TEST_ASSERT_EQUAL_INT(-1, game.editor_state.selected_entity_id);
+
+    InputState editor_toggle = {0};
+    input_state_press_key(&editor_toggle, KEY_F5);
+    test_advance_frame(&game, editor_toggle);
+    TEST_ASSERT_TRUE(game.state.editor_mode);
+
+    InputState open_tools = {0};
+    input_state_press_key(&open_tools, KEY_TAB);
+    test_advance_frame(&game, open_tools);
+    TEST_ASSERT_EQUAL_INT(EDITOR_SUB_RADIAL, game.editor_state.sub_mode);
+
+    /* Aim the stick at the "Rules" sector and confirm in the same frame. */
+    test_radial_select_item(&game, EDITOR_TOOLS_RULE_INDEX);
+    TEST_ASSERT_EQUAL_INT(EDITOR_SUB_BROWSE, game.editor_state.sub_mode);
+
+    /* BROWSE dispatches the pending radial confirmation on the next frame. */
+    InputState no_input = {0};
+    test_advance_frame(&game, no_input);
+    TEST_ASSERT_EQUAL_INT(EDITOR_TOP_RULE, game.editor_state.top_mode);
+    TEST_ASSERT_EQUAL_INT(EDITOR_SUB_RULE_LIST, game.editor_state.sub_mode);
+    TEST_ASSERT_EQUAL_INT(-1, game.editor_state.rule_blueprint_index);
+    TEST_ASSERT_EQUAL_INT(0, game.editor_state.rule_blueprint_scroll);
+
+    /* Pick "switch" (scroll 0, the only blueprint in the fixture). */
+    InputState confirm = {0};
+    input_state_press_key(&confirm, KEY_ENTER);
+    test_advance_frame(&game, confirm);
+    TEST_ASSERT_EQUAL_INT(0, game.editor_state.rule_blueprint_index);
+    TEST_ASSERT_EQUAL_INT(0, game.editor_state.rule_list_scroll);
+
+    /* Open the blueprint's only rule. */
+    test_advance_frame(&game, confirm);
+    TEST_ASSERT_EQUAL_INT(EDITOR_SUB_RULE_TREE, game.editor_state.sub_mode);
+    TEST_ASSERT_EQUAL_INT(0, game.editor_state.rule_tree_row);
+
+    /* Overshoot NAV_DOWN past the 7-row tree: must clamp at row 6. */
+    InputState nav_down = {0};
+    input_state_press_key(&nav_down, KEY_DOWN);
+    test_advance_frames(&game, nav_down, 10);
+    TEST_ASSERT_EQUAL_INT(6, game.editor_state.rule_tree_row);
+
+    /* Overshoot NAV_UP back past row 0: must clamp at 0. */
+    InputState nav_up = {0};
+    input_state_press_key(&nav_up, KEY_UP);
+    test_advance_frames(&game, nav_up, 10);
+    TEST_ASSERT_EQUAL_INT(0, game.editor_state.rule_tree_row);
+
+    /* CANCEL walks back out: tree -> rule list -> blueprint picker -> scene. */
+    InputState cancel = {0};
+    input_state_press_key(&cancel, KEY_ESCAPE);
+    test_advance_frame(&game, cancel);
+    TEST_ASSERT_EQUAL_INT(EDITOR_SUB_RULE_LIST, game.editor_state.sub_mode);
+    TEST_ASSERT_EQUAL_INT(0, game.editor_state.rule_blueprint_index);
+
+    test_advance_frame(&game, cancel);
+    TEST_ASSERT_EQUAL_INT(-1, game.editor_state.rule_blueprint_index);
+
+    test_advance_frame(&game, cancel);
+    TEST_ASSERT_EQUAL_INT(EDITOR_TOP_SCENE, game.editor_state.top_mode);
+    TEST_ASSERT_EQUAL_INT(EDITOR_SUB_BROWSE, game.editor_state.sub_mode);
+
+    test_game_teardown(&game);
+}
+
 /* Drive the pause menu through the real frame loop: F3 opens the
  * menu, KEY_DOWN walks the selection, KEY_ENTER confirms QUIT.
  * Observables are game.menu.open, game.menu.selected, and

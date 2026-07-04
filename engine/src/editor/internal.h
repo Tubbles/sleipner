@@ -12,6 +12,7 @@
 #include "game.h"
 #include "input_func.h"
 #include "level.h"
+#include "rule.h"
 #include "undo.h"
 
 #ifndef M_PI
@@ -72,6 +73,9 @@ const EditorHintTable *atlas_region_edit_hints_table(void);
 const EditorHintTable *anim_blueprint_list_hints_table(void);
 const EditorHintTable *anim_edit_hints_table(void);
 const EditorHintTable *anim_frames_hints_table(void);
+const EditorHintTable *rule_blueprint_list_hints_table(void);
+const EditorHintTable *rule_list_hints_table(void);
+const EditorHintTable *rule_tree_hints_table(void);
 
 /* --- Shared helpers: core.c --- */
 
@@ -103,6 +107,50 @@ AttrRow attr_row_at(const GameState *state, const Entity *entity, int attr_index
  * Returns -1 if the identity is EDITOR_ATTR_SEL_NONE or no longer matches any
  * row (e.g. the named attribute was removed elsewhere). */
 int editor_resolve_selected_attr_index(const GameState *state, const Entity *entity, const EditorState *editor_state);
+
+/* --- Shared type: rule.c (rule tree row model, S5.6a) ---
+ *
+ * One flattened row of a Rule's read-only tree view (editor/rule.c). The
+ * trigger and the rule's own conditions sit at depth 0, ahead of the action
+ * tree; the action tree is then walked depth-first over its flat node pool
+ * (ActionTree.nodes), each control-flow node's `children` before its
+ * `else_children`, recursing into nested control flow. This is the row
+ * model later Rule-mode slices (b/c/d) build leaf/structural editing on. */
+typedef enum {
+    RULE_TREE_ROW_TRIGGER,
+    RULE_TREE_ROW_CONDITION,
+    RULE_TREE_ROW_ACTION,
+} RuleTreeRowKind;
+
+typedef struct {
+    RuleTreeRowKind kind;
+    /* CONDITION: index into rule->conditions. ACTION: index into
+     * rule->action_tree.nodes (the flat pool). TRIGGER: unused (-1). */
+    int node_index;
+    int depth; /* indentation depth, 0 = top-level (trigger/conditions/root actions) */
+    /* ACTION rows only: true if this node was reached via its immediate
+     * parent's else_children list (not inherited from an outer ancestor). */
+    bool is_else_branch;
+    /* ACTION rows only: true for the first row of one specific
+     * else_children list traversal -- draw the "else:" divider before it.
+     * Unlike is_else_branch, this never repeats for later siblings in the
+     * same else list (see editor/rule.c's rule_tree_flatten_children). */
+    bool is_else_start;
+} RuleTreeRow;
+
+/* Total flattened row count for `rule`: trigger (1) + rule-level conditions
+ * + every node in the action tree's flat pool (S2.3) -- every pool node is
+ * reachable from roots/children/else_children by construction, so no tree
+ * walk is needed to compute this, just the three counts. Callers size a
+ * caller-owned RuleTreeRow buffer with this before calling
+ * rule_tree_flatten. */
+int rule_tree_row_count(const Rule *rule);
+
+/* Fills `out` (caller-allocated, sized to at least rule_tree_row_count(rule))
+ * with one row per trigger/condition/action-node, in display order. Pure
+ * function: no allocation, no GameState dependency -- callers own where the
+ * buffer lives (see draw_rule_tree_panel's scratch-arena buffer, editor/rule.c). */
+void rule_tree_flatten(const Rule *rule, RuleTreeRow *out);
 
 Blueprint *find_blueprint_by_name(GameState *state, const char *name);
 Attribute *attr_at_display_index(GameState *state, Entity *entity, int attr_index);
@@ -184,3 +232,13 @@ void confirm_level_string_edit(GameState *state, EditorState *editor_state, Undo
  * EDITOR_SUB_ANIM_EDIT's dual duty (editor/anim.c) renders as the
  * blueprint list picker. */
 void enter_anim_mode(GameState *state, EditorState *editor_state);
+
+/* --- Cross-file calls: rule.c (called from core.c) --- */
+
+/* Entering Rule mode from the Tools radial (dispatch_radial_confirm):
+ * mirrors enter_anim_mode's blueprint-picking choice above -- if a scene
+ * entity is currently selected, its blueprint is preselected (rule list
+ * opens directly); otherwise rule_blueprint_index lands on -1, which
+ * EDITOR_SUB_RULE_LIST's dual duty (editor/rule.c) renders as the
+ * blueprint list picker. Read-only (S5.6a): no undo integration. */
+void enter_rule_mode(GameState *state, EditorState *editor_state);

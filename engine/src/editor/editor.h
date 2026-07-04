@@ -34,12 +34,13 @@ typedef struct {
 #define EDITOR_ATLAS_DEFAULT_REGION_SIZE 32 /* default new-region width/height, texture px, before clamping */
 #define EDITOR_ATTR_LARGE_STEP 10           /* ±10 step for attribute value adjuster (bumpers/brackets) */
 #define EDITOR_ATTR_HUGE_STEP 100           /* ±100 step for value adjuster (L2/R2 / PgDn/PgUp) */
-#define EDITOR_TOOLS_ITEM_COUNT 10          /* items in the RADIAL_CTX_TOOLS picker */
+#define EDITOR_TOOLS_ITEM_COUNT 11          /* items in the RADIAL_CTX_TOOLS picker */
 #define EDITOR_TOOLS_WATCH_LIST_INDEX 5     /* RADIAL_CTX_TOOLS slot for "Watch list" */
 #define EDITOR_TOOLS_LEVELS_INDEX 6         /* RADIAL_CTX_TOOLS slot for "Levels" */
 #define EDITOR_TOOLS_TILE_INDEX 7           /* RADIAL_CTX_TOOLS slot for "Tiles" */
 #define EDITOR_TOOLS_ATLAS_INDEX 8          /* RADIAL_CTX_TOOLS slot for "Atlas" */
 #define EDITOR_TOOLS_ANIM_INDEX 9           /* RADIAL_CTX_TOOLS slot for "Animation" */
+#define EDITOR_TOOLS_RULE_INDEX 10          /* RADIAL_CTX_TOOLS slot for "Rules" */
 #define EDITOR_PLACE_PAGE_SIZE 5            /* blueprint page-jump size for L1/R1 in scroll picker */
 #define ATTR_REPEAT_DELAY 0.4F              /* seconds before auto-repeat starts on hold */
 #define ATTR_REPEAT_PERIOD 0.1F             /* initial repeat interval (10 Hz) */
@@ -66,6 +67,7 @@ typedef struct {
 #define TOAST_FADE_TIME 0.5F     /* seconds of fade-out at the end */
 #define TOAST_FONT_SIZE 32       /* toast text font size */
 #define ALPHA_MAX 255.0F         /* max alpha value for color byte conversion */
+#define RULE_TREE_INDENT_PX 20   /* screen px added to the panel's left margin per tree depth level */
 
 extern const Color debug_text_color;
 extern const Color debug_bg_color;
@@ -78,6 +80,7 @@ typedef enum {
     EDITOR_TOP_TILE,      /* tile grid: paint the current level's ground/overlay layers (S5.3b, D36) */
     EDITOR_TOP_ATLAS,     /* atlas region browser: define named sprite regions on a texture (S5.4b, D37) */
     EDITOR_TOP_ANIM,      /* animation params + frame scrubber for a blueprint (S5.5, D20) */
+    EDITOR_TOP_RULE,      /* read-only rule tree browser for a blueprint's rules (S5.6a) */
 } EditorTopMode;
 
 /* Identifies which Level string field the word builder is currently
@@ -93,7 +96,8 @@ typedef enum {
 } LevelStringField;
 
 typedef enum {
-    /* Grab / Place / Handles / Delete / Blueprints / Watch list / Levels / Tiles / Atlas / Animation — 10 items */
+    /* Grab / Place / Handles / Delete / Blueprints / Watch list / Levels / Tiles / Atlas / Animation / Rules — 11 items
+     */
     RADIAL_CTX_TOOLS,
     RADIAL_CTX_ATTR_TYPE,   /* Float / Int / Bool / String — 4 items */
     RADIAL_CTX_CHILD_PROPS, /* Tag / Offset X / Offset Y — 3 items */
@@ -132,6 +136,17 @@ typedef enum {
      * texture in the side panel (editor/anim.c). ACTION_TAB_PREV/NEXT (or
      * CANCEL) returns to EDITOR_SUB_ANIM_EDIT. */
     EDITOR_SUB_ANIM_FRAMES,
+    /* Blueprint list picker (rule_blueprint_index < 0) or the selected
+     * blueprint's rule list (rule_blueprint_index >= 0), S5.6a -- same dual
+     * duty as EDITOR_SUB_ANIM_EDIT/anim_blueprint_index above. CONFIRM on a
+     * focused rule row opens EDITOR_SUB_RULE_TREE for that rule. Read-only:
+     * no editing, no undo integration. */
+    EDITOR_SUB_RULE_LIST,
+    /* Read-only, navigable indented tree for one rule: trigger, conditions,
+     * then a depth-first walk of the action tree (editor/rule.c's
+     * rule_tree_flatten). rule_tree_row is the flattened-row cursor.
+     * CANCEL returns to EDITOR_SUB_RULE_LIST. */
+    EDITOR_SUB_RULE_TREE,
 } EditorSubMode;
 
 /* Which tile layer NAV/paint/erase currently act on in EDITOR_SUB_TILE_PAINT
@@ -255,6 +270,23 @@ typedef struct {
     int anim_blueprint_scroll;
     int anim_edit_row;
     int anim_frame_index;
+    /* Rule mode (S5.6a). rule_blueprint_index mirrors anim_blueprint_index's
+     * dual duty: -1 shows the blueprint list picker (dual duty within
+     * EDITOR_SUB_RULE_LIST, editor/rule.c), >=0 indexes
+     * gamedata.blueprints.entries and shows that blueprint's rule list
+     * instead. rule_blueprint_scroll is the list cursor, tracked
+     * independently so it survives drilling in/out (same relationship
+     * atlas_texture_scroll has to atlas_texture_index). rule_list_scroll
+     * focuses one row of the selected blueprint's rules vec; read-only Rule
+     * mode has no "+ ADD RULE" sentinel row, so it doubles as "which rule is
+     * open" in EDITOR_SUB_RULE_TREE (no separate field needed). rule_tree_row
+     * is the flattened-row cursor within EDITOR_SUB_RULE_TREE (see
+     * rule_tree_flatten, editor/rule.c), clamped to
+     * [0, rule_tree_row_count(rule)). */
+    int rule_blueprint_index;
+    int rule_blueprint_scroll;
+    int rule_list_scroll;
+    int rule_tree_row;
 } EditorState;
 
 typedef struct {
@@ -349,3 +381,11 @@ void handle_anim_edit_input(GameState *state,
                             const InputState *input);
 void handle_anim_frames_input(GameState *state, EditorState *editor_state, const InputState *input);
 void draw_anim_panel(ScreenSize screen, const GameState *state, const EditorState *editor_state);
+void handle_rule_list_input(GameState *state, EditorState *editor_state, const InputState *input);
+void handle_rule_tree_input(GameState *state, EditorState *editor_state, const InputState *input);
+/* Non-const state (unlike its sibling draw_*_panel functions): the tree view
+ * flattens the rule's action tree into a scratch-arena buffer to render it
+ * (see rule_tree_flatten, editor/rule.c), which needs a mutable Arena. The
+ * blueprint-list and rule-list views this also dispatches to only read
+ * fixed-shape data and don't need the buffer. */
+void draw_rule_panel(ScreenSize screen, GameState *state, const EditorState *editor_state);

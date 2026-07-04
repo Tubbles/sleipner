@@ -41,9 +41,9 @@ editor modes that DESIGN.md specifies but the engine did not yet implement.
 Level mode (§30), Tile mode (§26), Atlas mode (§27), and Animation mode
 (§28) are now done — see the follow-up bullets below for the gaps each one
 left open (Level mode's music picker, Tile mode's autotiling, Atlas mode's
-fuzzy-finder integration). Rule mode (§29) is the one remaining top-level
-mode from that enumeration; the keybinding registry is the place to plug it
-in — a new set of submodes plus their handlers, pickers, and hint tables.
+fuzzy-finder integration). Rule mode (§29) has its read-only foundation
+shipped (S5.6a) — see the follow-up bullet below for the editing/subroutine
+slices still open.
 
 - **Tile mode autotiling** (DESIGN.md §26, D36) — S5.3b shipped manual
   concrete-tile-id painting (`EDITOR_SUB_TILE_PAINT`/`_PALETTE`,
@@ -65,10 +65,16 @@ in — a new set of submodes plus their handlers, pickers, and hint tables.
   existing atlas region names as candidates when picking that value, so
   there's no autocomplete/browse-by-name for it — purely additive UX, not a
   round-trip gap.
-- **Rule mode** (§29, §100-104) — `EDITOR_SUB_RULE_LIST`,
-  `EDITOR_SUB_RULE_TRIGGER_PICK`, `EDITOR_SUB_RULE_COND_PICK`,
-  `EDITOR_SUB_RULE_ACTION_PICK` (all radial). Reuses existing FUZZY_FINDER
-  for flag / item refs.
+- **Rule mode** (§29, §100-104) — S5.6a shipped the read-only foundation:
+  `EDITOR_SUB_RULE_LIST` (blueprint picker / that blueprint's rule list,
+  dual duty mirroring `EDITOR_SUB_ANIM_EDIT`) and `EDITOR_SUB_RULE_TREE`
+  (one rule flattened into a navigable indented tree over the action-node
+  pool — `rule_tree_flatten`/`rule_tree_row_count`, `editor/rule.c`). Still
+  open: leaf editing (S5.6b), structural editing — add/remove/reorder
+  nodes, author if/else/repeat/for_each (S5.6c), and subroutine
+  authoring/linking (S5.6d). Slices b/c will likely reuse the existing
+  FUZZY_FINDER for flag/item/attr name refs, the same way blueprint attrs
+  do today.
 - **Animation mode's sparse-attr round trip** (§28, D20) —
   `emit_animation_if_present` (`engine/src/toml_emitter.c`) emits all four
   `animation = {...}` fields as soon as any one of

@@ -182,6 +182,10 @@ void handle_editor_input(Diag *diag,
         handle_anim_edit_input(state, editor_state, undo_history, &input);
     } else if (editor_state->sub_mode == EDITOR_SUB_ANIM_FRAMES) {
         handle_anim_frames_input(state, editor_state, &input);
+    } else if (editor_state->sub_mode == EDITOR_SUB_RULE_LIST) {
+        handle_rule_list_input(state, editor_state, &input);
+    } else if (editor_state->sub_mode == EDITOR_SUB_RULE_TREE) {
+        handle_rule_tree_input(state, editor_state, &input);
     } else if (editor_state->top_mode == EDITOR_TOP_BLUEPRINT) {
         handle_blueprint_browse_input(state, editor_state, undo_history, &input);
     } else if (editor_state->top_mode == EDITOR_TOP_LEVEL) {

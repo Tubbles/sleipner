@@ -5,6 +5,7 @@
 #include "entity.h"
 #include "map.h" // IWYU pragma: export
 #include "str.h"
+#include "strv.h"
 #include "vec.h" // IWYU pragma: export
 
 #include <stdbool.h>
@@ -187,6 +188,22 @@ VEC_DECL(trigger_event, TriggerEvent)
 rules_parse(Diag *diag, Allocator *alloc, vec_rule *rules, toml_table_t *toml_blueprint_table, Arena *arena);
 [[nodiscard]] bool
 subroutines_parse(Diag *diag, Allocator *alloc, vec_subroutine *subroutines, toml_table_t *toml_root, Arena *arena);
+
+/* --- Display labels ---
+ *
+ * Bare TOML keywords for each type's canonical vocabulary, independent of
+ * argument/compare_value. Consumed by the editor's read-only rule tree view
+ * (S5.6a, editor/rule.c) so it doesn't hand-roll a second copy of the
+ * vocabulary trigger_parse/condition_parse (above) and action_mappings/
+ * toml_emitter.c's emit_trigger_value/emit_condition_value already encode. */
+const char *trigger_type_label(TriggerType type);
+const char *condition_type_label(ConditionType type);
+/* Non-owning view into action_mappings' own prefix string with the trailing
+ * ':' trimmed (e.g. "set_flag" not "set_flag:"). Empty for the three
+ * control-flow types (ACTION_IF_ELSE/ACTION_REPEAT/ACTION_FOR_EACH), which
+ * aren't in action_mappings (they have no TOML prefix -- see
+ * toml_emitter.c's action_emit_table) -- callers render those by kind. */
+Strv action_type_label(ActionType type);
 
 /* --- Trigger matching --- */
 bool trigger_matches(const Trigger *trigger, const TriggerEvent *event);

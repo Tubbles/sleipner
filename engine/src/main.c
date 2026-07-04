@@ -829,7 +829,8 @@ static void reset_editor_after_reload(GameState *state,
                                   .blueprint_attr_index = -1,
                                   .blueprint_tree_index = -1,
                                   .atlas_texture_index = -1,
-                                  .anim_blueprint_index = -1};
+                                  .anim_blueprint_index = -1,
+                                  .rule_blueprint_index = -1};
     keyboard_widget_reset(&editor_state->word_builder_kb, editor_state->word_builder_buf,
                           &editor_state->word_builder_len, WORD_BUILDER_BUF_SIZE);
     *watches = (WatchList){0};
@@ -968,6 +969,9 @@ static void draw_active_editor_panel(ScreenSize screen, GameState *state, Render
     } else if (params.editor_state.sub_mode == EDITOR_SUB_ANIM_EDIT ||
                params.editor_state.sub_mode == EDITOR_SUB_ANIM_FRAMES) {
         draw_anim_panel(screen, state, &params.editor_state);
+    } else if (params.editor_state.sub_mode == EDITOR_SUB_RULE_LIST ||
+               params.editor_state.sub_mode == EDITOR_SUB_RULE_TREE) {
+        draw_rule_panel(screen, state, &params.editor_state);
     } else if (params.editor_state.top_mode == EDITOR_TOP_ATLAS) {
         if (params.editor_state.atlas_texture_index >= 0) {
             draw_atlas_region_list_panel(screen, state, &params.editor_state);
@@ -1184,7 +1188,8 @@ int main(void)
                                 .blueprint_attr_index = -1,
                                 .blueprint_tree_index = -1,
                                 .atlas_texture_index = -1,
-                                .anim_blueprint_index = -1};
+                                .anim_blueprint_index = -1,
+                                .rule_blueprint_index = -1};
     keyboard_widget_reset(&editor_state.word_builder_kb, editor_state.word_builder_buf, &editor_state.word_builder_len,
                           WORD_BUILDER_BUF_SIZE);
     WatchList watches = {0};
