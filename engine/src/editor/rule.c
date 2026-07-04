@@ -52,6 +52,7 @@ void enter_rule_mode(GameState *state, EditorState *editor_state)
     editor_state->rule_tree_row = 0;
     editor_state->rule_edit_field = RULE_EDIT_FIELD_NONE;
     editor_state->selected_entity_id = -1;
+    editor_state->multiselect_count = 0;
     editor_state->rule_viewing_subroutines = false;
     editor_state->rule_subroutine_scroll = 0;
 }

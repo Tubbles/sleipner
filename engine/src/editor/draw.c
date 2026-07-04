@@ -22,6 +22,7 @@ static const Color place_ghost_color = {100, 255, 100, 180};  /* semi-transparen
 static const Color attr_override_color = {255, 200, 50, 255}; /* amber: overrides blueprint default */
 static const Color attr_custom_color = {100, 220, 100, 255};  /* green: instance-only attribute */
 static const Color attr_dimmed_color = {120, 130, 140, 255};  /* gray: overridden by instance */
+static const Color multiselect_color = {255, 165, 0, 255};    /* orange: multi-selected entity (S5.7) */
 
 void draw_ui_text(Font font, const char *text, int pos_x, int pos_y, int font_size, Color color)
 {
@@ -202,10 +203,21 @@ void draw_hints_bar(bool editor_mode,
     (void)editor_hint_table_render(bindings, table, hints, (int)sizeof(hints));
     int text_y = bar_y + ((HINTS_BAR_HEIGHT - HINTS_FONT_SIZE) / 2);
     draw_ui_text(ui_font, hints, DEBUG_MARGIN, text_y, HINTS_FONT_SIZE, debug_text_color);
+    int right_edge = screen.width - DEBUG_MARGIN;
     if (editor_mode && is_dirty) {
         const char *dirty_label = "[*]";
         int dirty_width = measure_ui_text(ui_font, dirty_label, HINTS_FONT_SIZE);
-        draw_ui_text(ui_font, dirty_label, screen.width - dirty_width - DEBUG_MARGIN, text_y, HINTS_FONT_SIZE, WHITE);
+        draw_ui_text(ui_font, dirty_label, right_edge - dirty_width, text_y, HINTS_FONT_SIZE, WHITE);
+        right_edge -= dirty_width + DEBUG_MARGIN;
+    }
+    /* Grid-snap indicator (S5.7, D38): persistent, unlike a toast, so the
+     * toggle's current state stays visible for as long as it's on. Sits to
+     * the left of the dirty marker's slot, whether or not that marker is
+     * currently shown, so its position doesn't jump around. */
+    if (editor_mode && editor_state->grid_snap) {
+        const char *grid_label = "[GRID]";
+        int grid_width = measure_ui_text(ui_font, grid_label, HINTS_FONT_SIZE);
+        draw_ui_text(ui_font, grid_label, right_edge - grid_width, text_y, HINTS_FONT_SIZE, attr_custom_color);
     }
 }
 
@@ -272,6 +284,18 @@ void draw_editor_highlights(const GameState *state, const EditorState *editor_st
     if (hover_entity_index >= 0 && hover_entity_index < state->gamedata.current_level.entities.count) {
         DrawRectangleLinesEx(
             entity_outline_rect(state, &state->gamedata.current_level.entities.data[hover_entity_index]), 1.0F, YELLOW);
+    }
+    /* Multi-selection first, in orange, so the anchor's white outline
+     * (below) draws on top and stays visually distinct even though the
+     * anchor is always itself a member of the multi-selection. */
+    for (int index = 0; index < editor_state->multiselect_count; index++) {
+        int multiselect_index =
+            level_find_entity_by_id(&state->gamedata.current_level, editor_state->multiselect_ids[index]);
+        if (multiselect_index >= 0) {
+            DrawRectangleLinesEx(
+                entity_outline_rect(state, &state->gamedata.current_level.entities.data[multiselect_index]), 2.0F,
+                multiselect_color);
+        }
     }
     int sel = level_find_entity_by_id(&state->gamedata.current_level, editor_state->selected_entity_id);
     if (sel >= 0) {

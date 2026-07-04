@@ -57,6 +57,7 @@ void enter_anim_mode(GameState *state, EditorState *editor_state)
     editor_state->anim_edit_row = 0;
     editor_state->anim_frame_index = 0;
     editor_state->selected_entity_id = -1;
+    editor_state->multiselect_count = 0;
 }
 
 /* --- ANIM_EDIT: blueprint list (anim_blueprint_index < 0) --- */

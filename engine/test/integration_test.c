@@ -1141,6 +1141,100 @@ void test_integration_editor_selection_survives_undo_of_edit(void)
     test_game_teardown(&game);
 }
 
+/* S5.7/D38: multi-select + group move. Drives entirely through the real
+ * input layer: F5 into editor, plain CONFIRM selects the nearest root
+ * entity to the camera (tall_tree at (50,50), same reasoning as the undo
+ * test above) and seeds the multi-selection with it. TestGame exposes
+ * editor_camera directly, so the test pans it onto rock's position (200,120)
+ * without simulating a multi-second stick hold, then the real
+ * multi-select-ADD chord (Ctrl+Enter keyboard, L1+A gamepad) adds rock to
+ * the selection. Grab + hold RIGHT drags the whole group; CONFIRM commits.
+ * Asserts both entities moved by the same x delta, each resolved by its
+ * stable id (editor/core.c's handle_drag_input walks multiselect_ids, never
+ * a cached index). */
+void test_integration_editor_multiselect_group_move(void)
+{
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_gamedata));
+
+    InputState editor_toggle = {0};
+    input_state_press_key(&editor_toggle, KEY_F5);
+    test_advance_frame(&game, editor_toggle);
+    TEST_ASSERT_TRUE(game.state.editor_mode);
+
+    InputState select_input = {0};
+    input_state_press_key(&select_input, KEY_ENTER);
+    test_advance_frame(&game, select_input);
+
+    Entity *tall_tree = test_find_entity_by_blueprint(&game.state, "tall_tree");
+    TEST_ASSERT_NOT_NULL(tall_tree);
+    int tall_tree_id = tall_tree->id;
+    float tall_tree_start_x = tall_tree->position.x;
+    TEST_ASSERT_EQUAL_INT(tall_tree_id, game.editor_state.selected_entity_id);
+    /* Plain CONFIRM seeds the multi-selection with the freshly picked entity. */
+    TEST_ASSERT_EQUAL_INT(1, game.editor_state.multiselect_count);
+    TEST_ASSERT_EQUAL_INT(tall_tree_id, game.editor_state.multiselect_ids[0]);
+
+    Entity *rock = test_find_entity_by_blueprint(&game.state, "rock");
+    TEST_ASSERT_NOT_NULL(rock);
+    int rock_id = rock->id;
+    float rock_start_x = rock->position.x;
+    /* Pan the camera onto rock so it resolves as nearest for the ADD chord
+     * below (find_nearest_entity, editor/draw.c) — same target math the ADD
+     * handler itself uses, set directly rather than simulated over frames. */
+    game.editor_camera.target = rock->position;
+
+    InputState add_input = {0};
+    input_state_hold_key(&add_input, KEY_LEFT_CONTROL);
+    input_state_press_key(&add_input, KEY_ENTER);
+    test_advance_frame(&game, add_input);
+
+    TEST_ASSERT_EQUAL_INT(2, game.editor_state.multiselect_count);
+    bool multiselect_has_tall_tree = false;
+    bool multiselect_has_rock = false;
+    for (int index = 0; index < game.editor_state.multiselect_count; index++) {
+        if (game.editor_state.multiselect_ids[index] == tall_tree_id) {
+            multiselect_has_tall_tree = true;
+        }
+        if (game.editor_state.multiselect_ids[index] == rock_id) {
+            multiselect_has_rock = true;
+        }
+    }
+    TEST_ASSERT_TRUE_MESSAGE(multiselect_has_tall_tree, "multiselect should still contain the anchor (tall_tree)");
+    TEST_ASSERT_TRUE_MESSAGE(multiselect_has_rock, "multiselect should now also contain rock");
+    /* The ADD chord only grows the set — single-select's own anchor is untouched. */
+    TEST_ASSERT_EQUAL_INT(tall_tree_id, game.editor_state.selected_entity_id);
+
+    InputState grab_input = {0};
+    input_state_press_key(&grab_input, KEY_G);
+    test_advance_frame(&game, grab_input);
+    TEST_ASSERT_EQUAL_INT(EDITOR_SUB_DRAG, game.editor_state.sub_mode);
+
+    for (int step = 0; step < 5; step++) {
+        InputState move_input = {0};
+        input_state_hold_key(&move_input, KEY_RIGHT);
+        test_advance_frame(&game, move_input);
+    }
+
+    InputState confirm_move = {0};
+    input_state_press_key(&confirm_move, KEY_ENTER);
+    test_advance_frame(&game, confirm_move);
+    TEST_ASSERT_EQUAL_INT(EDITOR_SUB_BROWSE, game.editor_state.sub_mode);
+
+    Entity *moved_tall_tree = test_find_entity_by_blueprint(&game.state, "tall_tree");
+    Entity *moved_rock = test_find_entity_by_blueprint(&game.state, "rock");
+    TEST_ASSERT_NOT_NULL(moved_tall_tree);
+    TEST_ASSERT_NOT_NULL(moved_rock);
+
+    float tall_tree_delta = moved_tall_tree->position.x - tall_tree_start_x;
+    float rock_delta = moved_rock->position.x - rock_start_x;
+    TEST_ASSERT_TRUE_MESSAGE(tall_tree_delta > 1.0F, "group move should have shifted tall_tree right");
+    TEST_ASSERT_FLOAT_WITHIN_MESSAGE(0.01F, tall_tree_delta, rock_delta,
+                                     "group move should shift both by the same delta");
+
+    test_game_teardown(&game);
+}
+
 /* S5.1: WATCH-LIST picker submode. Drives entirely through the real input
  * layer: F5 into editor, CONFIRM selects the nearest root entity
  * (deterministically "tall_tree" — the editor camera starts at (0,0) and the
@@ -1350,6 +1444,239 @@ static toml_table_t *test_find_level_table_by_name(toml_array_t *levels, const c
         }
     }
     return nullptr;
+}
+
+/* Fixture for the copy/paste round-trip test below: same blueprint shapes
+ * as fixture_gamedata, plus a custom instance attr ("hp") on rock so the
+ * test can verify persisted attrs survive copy/paste, not just position
+ * and blueprint. Level is sized to comfortably contain the pasted clones'
+ * offset position. */
+static const char *fixture_gamedata_copy_paste = "[[blueprint]]\n"
+                                                 "name = \"player\"\n"
+                                                 "texture = \"player.png\"\n"
+                                                 "src = [0, 0, 32, 32]\n"
+                                                 "behavior = \"player\"\n"
+                                                 "speed = 80\n"
+                                                 "\n"
+                                                 "[[blueprint]]\n"
+                                                 "name = \"rock\"\n"
+                                                 "texture = \"rock.png\"\n"
+                                                 "src = [0, 0, 16, 16]\n"
+                                                 "solid = true\n"
+                                                 "\n"
+                                                 "[[blueprint]]\n"
+                                                 "name = \"tall_tree\"\n"
+                                                 "texture = \"tree.png\"\n"
+                                                 "src = [0, 0, 32, 48]\n"
+                                                 "solid = true\n"
+                                                 "\n"
+                                                 "[[level]]\n"
+                                                 "name = \"field\"\n"
+                                                 "size = [640, 480]\n"
+                                                 "\n"
+                                                 "[[level.entity]]\n"
+                                                 "blueprint = \"player\"\n"
+                                                 "pos = [160, 120]\n"
+                                                 "\n"
+                                                 "[[level.entity]]\n"
+                                                 "blueprint = \"rock\"\n"
+                                                 "pos = [200, 120]\n"
+                                                 "hp = 5\n"
+                                                 "\n"
+                                                 "[[level.entity]]\n"
+                                                 "blueprint = \"tall_tree\"\n"
+                                                 "pos = [50, 50]\n";
+
+/* Find the entity with the given stable id — used below to distinguish a
+ * pasted clone from the original it was copied from, since both share the
+ * same blueprint name. */
+static Entity *test_find_entity_by_id(GameState *state, int entity_id)
+{
+    Level *level = &state->gamedata.current_level;
+    for (int index = 0; index < level->entities.count; index++) {
+        if (level->entities.data[index].id == entity_id) {
+            return &level->entities.data[index];
+        }
+    }
+    return nullptr;
+}
+
+/* Find the entity with blueprint_name == name and id != exclude_id — the
+ * pasted clone, once the original's id is known. */
+static Entity *test_find_entity_by_blueprint_excluding_id(GameState *state, const char *name, int exclude_id)
+{
+    Level *level = &state->gamedata.current_level;
+    for (int index = 0; index < level->entities.count; index++) {
+        Entity *entity = &level->entities.data[index];
+        if (entity->id != exclude_id && strcmp(entity->blueprint_name.ptr, name) == 0) {
+            return entity;
+        }
+    }
+    return nullptr;
+}
+
+/* S5.7/D38: copy/paste. Builds the same tall_tree+rock multi-selection as
+ * the group-move test above (select tall_tree, pan onto rock, ADD chord),
+ * copies (Ctrl+C), pans the camera to a fresh anchor away from the
+ * originals, then pastes (Ctrl+V). Asserts: the originals are untouched;
+ * two new clones exist at the new anchor plus each entry's offset from the
+ * first copied entity (preserving the copied group's relative layout);
+ * rock's persisted "hp" attr rode along onto its clone; the pasted clones
+ * become the new multi-selection. Finishes with a real pause-menu Save and
+ * reparses the emitted TOML to confirm the clones round-trip (blueprint,
+ * pos, and the "hp" attr all present in the saved file). */
+void test_integration_editor_copy_paste(void)
+{
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_gamedata_copy_paste));
+    game.frame_ctx.save_fn = test_recording_gamedata_save;
+
+    InputState editor_toggle = {0};
+    input_state_press_key(&editor_toggle, KEY_F5);
+    test_advance_frame(&game, editor_toggle);
+    TEST_ASSERT_TRUE(game.state.editor_mode);
+
+    InputState select_input = {0};
+    input_state_press_key(&select_input, KEY_ENTER);
+    test_advance_frame(&game, select_input);
+
+    Entity *tall_tree = test_find_entity_by_blueprint(&game.state, "tall_tree");
+    TEST_ASSERT_NOT_NULL(tall_tree);
+    int tall_tree_id = tall_tree->id;
+    Vector2 tall_tree_original_pos = tall_tree->position;
+
+    Entity *rock = test_find_entity_by_blueprint(&game.state, "rock");
+    TEST_ASSERT_NOT_NULL(rock);
+    int rock_id = rock->id;
+    Vector2 rock_original_pos = rock->position;
+    game.editor_camera.target = rock->position;
+
+    InputState add_input = {0};
+    input_state_hold_key(&add_input, KEY_LEFT_CONTROL);
+    input_state_press_key(&add_input, KEY_ENTER);
+    test_advance_frame(&game, add_input);
+    TEST_ASSERT_EQUAL_INT(2, game.editor_state.multiselect_count);
+
+    /* Copy: Ctrl+C (keyboard), L1+Y (gamepad). */
+    InputState copy_input = {0};
+    input_state_hold_key(&copy_input, KEY_LEFT_CONTROL);
+    input_state_press_key(&copy_input, KEY_C);
+    test_advance_frame(&game, copy_input);
+    TEST_ASSERT_EQUAL_INT(2, game.editor_state.copy_buffer_count);
+
+    /* Pan to a fresh anchor, well away from either original, before pasting. */
+    Vector2 paste_anchor = {400.0F, 300.0F};
+    game.editor_camera.target = paste_anchor;
+
+    /* Paste: Ctrl+V (keyboard), L1+X (gamepad). */
+    InputState paste_input = {0};
+    input_state_hold_key(&paste_input, KEY_LEFT_CONTROL);
+    input_state_press_key(&paste_input, KEY_V);
+    test_advance_frame(&game, paste_input);
+
+    /* Originals are untouched. */
+    Entity *still_tall_tree = test_find_entity_by_id(&game.state, tall_tree_id);
+    TEST_ASSERT_NOT_NULL(still_tall_tree);
+    TEST_ASSERT_EQUAL_FLOAT(tall_tree_original_pos.x, still_tall_tree->position.x);
+    TEST_ASSERT_EQUAL_FLOAT(tall_tree_original_pos.y, still_tall_tree->position.y);
+    Entity *still_rock = test_find_entity_by_id(&game.state, rock_id);
+    TEST_ASSERT_NOT_NULL(still_rock);
+    TEST_ASSERT_EQUAL_FLOAT(rock_original_pos.x, still_rock->position.x);
+    TEST_ASSERT_EQUAL_FLOAT(rock_original_pos.y, still_rock->position.y);
+
+    /* Two clones exist, at the new anchor plus their offset from tall_tree
+     * (the first copied entity, so its own relative offset is zero). */
+    TEST_ASSERT_EQUAL_INT(2, test_count_entities_by_blueprint(&game.state, "tall_tree"));
+    TEST_ASSERT_EQUAL_INT(2, test_count_entities_by_blueprint(&game.state, "rock"));
+
+    Entity *clone_tall_tree = test_find_entity_by_blueprint_excluding_id(&game.state, "tall_tree", tall_tree_id);
+    TEST_ASSERT_NOT_NULL(clone_tall_tree);
+    TEST_ASSERT_EQUAL_FLOAT(paste_anchor.x, clone_tall_tree->position.x);
+    TEST_ASSERT_EQUAL_FLOAT(paste_anchor.y, clone_tall_tree->position.y);
+
+    Entity *clone_rock = test_find_entity_by_blueprint_excluding_id(&game.state, "rock", rock_id);
+    TEST_ASSERT_NOT_NULL(clone_rock);
+    float expected_clone_rock_x = paste_anchor.x + (rock_original_pos.x - tall_tree_original_pos.x);
+    float expected_clone_rock_y = paste_anchor.y + (rock_original_pos.y - tall_tree_original_pos.y);
+    TEST_ASSERT_EQUAL_FLOAT(expected_clone_rock_x, clone_rock->position.x);
+    TEST_ASSERT_EQUAL_FLOAT(expected_clone_rock_y, clone_rock->position.y);
+    /* The persisted "hp" attr rode along from the copied original. */
+    TEST_ASSERT_EQUAL_INT(5, attr_get_int(&clone_rock->persisted_attrs, "hp", -1));
+
+    /* Paste selects the clones. */
+    TEST_ASSERT_EQUAL_INT(2, game.editor_state.multiselect_count);
+    bool multiselect_has_clone_tall_tree = false;
+    bool multiselect_has_clone_rock = false;
+    for (int index = 0; index < game.editor_state.multiselect_count; index++) {
+        if (game.editor_state.multiselect_ids[index] == clone_tall_tree->id) {
+            multiselect_has_clone_tall_tree = true;
+        }
+        if (game.editor_state.multiselect_ids[index] == clone_rock->id) {
+            multiselect_has_clone_rock = true;
+        }
+    }
+    TEST_ASSERT_TRUE(multiselect_has_clone_tall_tree);
+    TEST_ASSERT_TRUE(multiselect_has_clone_rock);
+
+    /* Save through the real pause-menu path (F3 -> DOWN to SAVE -> CONFIRM),
+     * then reparse to confirm the clones round-trip. */
+    InputState menu_open = {0};
+    input_state_press_key(&menu_open, KEY_F3);
+    test_advance_frame(&game, menu_open);
+
+    InputState menu_down = {0};
+    input_state_press_key(&menu_down, KEY_DOWN);
+    test_advance_frame(&game, menu_down);
+    TEST_ASSERT_EQUAL_INT(MENU_ENTRY_SAVE, game.menu.selected);
+
+    InputState confirm = {0};
+    input_state_press_key(&confirm, KEY_ENTER);
+    test_advance_frame(&game, confirm);
+    TEST_ASSERT_EQUAL_INT(1, game.gamedata_save_count);
+
+    char errbuf[200];
+    char *parse_buf = strdup(game.saved_gamedata_buf);
+    toml_table_t *root = toml_parse(parse_buf, errbuf, (int)sizeof(errbuf));
+    free(parse_buf);
+    TEST_ASSERT_NOT_NULL_MESSAGE(root, errbuf);
+
+    toml_array_t *levels = toml_array_in(root, "level");
+    TEST_ASSERT_NOT_NULL(levels);
+    toml_table_t *field_table = test_find_level_table_by_name(levels, "field");
+    TEST_ASSERT_NOT_NULL_MESSAGE(field_table, "'field' missing from saved TOML");
+
+    toml_array_t *entities = toml_array_in(field_table, "entity");
+    TEST_ASSERT_NOT_NULL(entities);
+    int rock_entity_count = 0;
+    int tall_tree_entity_count = 0;
+    bool found_clone_rock_hp = false;
+    int entity_count = toml_array_nelem(entities);
+    for (int index = 0; index < entity_count; index++) {
+        toml_table_t *entity_table = toml_table_at(entities, index);
+        toml_datum_t blueprint = toml_string_in(entity_table, "blueprint");
+        TEST_ASSERT_TRUE(blueprint.ok);
+        toml_array_t *pos = toml_array_in(entity_table, "pos");
+        toml_datum_t pos_x = toml_int_at(pos, 0);
+        toml_datum_t pos_y = toml_int_at(pos, 1);
+        if (strcmp(blueprint.u.s, "rock") == 0) {
+            rock_entity_count++;
+            if ((int)pos_x.u.i == (int)expected_clone_rock_x && (int)pos_y.u.i == (int)expected_clone_rock_y) {
+                toml_datum_t hp_datum = toml_int_in(entity_table, "hp");
+                if (hp_datum.ok && hp_datum.u.i == 5) {
+                    found_clone_rock_hp = true;
+                }
+            }
+        } else if (strcmp(blueprint.u.s, "tall_tree") == 0) {
+            tall_tree_entity_count++;
+        }
+        free(blueprint.u.s);
+    }
+    TEST_ASSERT_EQUAL_INT(2, rock_entity_count);
+    TEST_ASSERT_EQUAL_INT(2, tall_tree_entity_count);
+    TEST_ASSERT_TRUE_MESSAGE(found_clone_rock_hp, "pasted rock clone should round-trip at its offset with hp=5");
+
+    toml_free(root);
+    test_game_teardown(&game);
 }
 
 /* S5.2b: "+ NEW LEVEL" creation. Drives the same Tools-radial-into-

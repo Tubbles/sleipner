@@ -1,5 +1,6 @@
 #pragma once
 
+#include "attribute.h"
 #include "diag.h"
 #include "game.h"
 #include "input.h"
@@ -28,6 +29,16 @@ typedef struct {
 /* Fixed-size: 4 slots is a hard UI display limit — the watch overlay has room for
  * exactly EDITOR_WATCH_MAX entries; more would overflow the panel. */
 #define EDITOR_WATCH_MAX 4
+/* Multi-select cap (S5.7, D38): an editor-session interaction limit, not a
+ * growth concern — the same justification as EDITOR_WATCH_MAX above, just a
+ * generous bound rather than a UI display limit. EDITOR_COPY_MAX shares the
+ * value because a copy can never hold more entries than the multi-selection
+ * it snapshots. */
+#define EDITOR_MULTISELECT_MAX 32
+#define EDITOR_COPY_MAX EDITOR_MULTISELECT_MAX
+/* Max persisted attrs captured per copied entity. Real gamedata.toml tops
+ * out at 9 attrs per entity block today; 16 leaves headroom. */
+#define EDITOR_COPY_ATTR_MAX 16
 #define EDITOR_HANDLE_SIZE 4                /* corner handle square side, world pixels */
 #define EDITOR_HANDLE_SPEED 60.0F           /* px/s for collision/atlas-region offset/size editing */
 #define EDITOR_ATLAS_ZOOM 4.0F              /* scale factor for the atlas texture view (texture px -> world px) */
@@ -213,13 +224,64 @@ typedef enum {
     RULE_EDIT_FIELD_REPEAT_COUNT,    /* standalone: only a repeat node's count changes */
 } RuleEditField;
 
+/* Copy buffer entry (S5.7, D38): a plain-value snapshot of one copied
+ * entity's blueprint name, position relative to the first copied entity,
+ * and persisted attrs. Deliberately plain char/scalar fields rather than
+ * Str/AttrSet -- no pointer into gamedata_arena or scratch_arena, so the
+ * buffer survives across frames, undo, and hot-reload without ever
+ * dangling (the copy can be made now and pasted many frames later). PASTE
+ * clones each entry via level_spawn_entity and re-applies these attrs onto
+ * the new instance's persisted_attrs/attrs. */
+typedef struct {
+    char name[EDITOR_ATTR_NAME_MAX];
+    AttrType type;
+    union {
+        float f;
+        int i;
+        bool b;
+        char str[EDITOR_ATTR_NAME_MAX];
+    } value;
+} EditorCopyAttr;
+
+typedef struct {
+    char blueprint_name[EDITOR_ATTR_NAME_MAX];
+    Vector2 relative_position; /* offset from the first copied entity's position */
+    EditorCopyAttr attrs[EDITOR_COPY_ATTR_MAX];
+    int attr_count;
+} EditorCopyEntity;
+
 typedef struct {
     EditorTopMode top_mode;
     int selected_entity_id; /* -1 = nothing selected; stable Entity.id, resolved to an
                              * index via level_find_entity_by_id at point of use. Survives
                              * undo/reload/delete instead of going stale like a raw index. */
     EditorSubMode sub_mode;
-    Vector2 saved_position;
+    /* Multi-select (S5.7, D38): stable Entity.id values the group-move/
+     * copy/paste features operate over. A fixed cap array, NOT
+     * gamedata-arena or scratch-arena backed -- deliberately avoiding the
+     * vec-in-gamedata-arena hazard the watch list already sidesteps with
+     * its own fixed WatchList.watch_ids array. Always seeded to contain at
+     * least the current single selection (see multiselect_reset_to,
+     * editor/core.c) so DRAG/COPY have exactly one code path regardless of
+     * whether the user ever presses the ADD chord. Cleared on CANCEL (full
+     * deselect), on every top-mode transition, and by the whole-struct
+     * reset on reload (main.c/test_helpers.c). */
+    int multiselect_ids[EDITOR_MULTISELECT_MAX];
+    int multiselect_count;
+    /* Per-multiselect_ids[i] position captured at DRAG entry (Grab), so
+     * CANCEL can restore every dragged entity exactly, not just the
+     * anchor. Parallel array to multiselect_ids, valid for indices
+     * [0, multiselect_count). */
+    Vector2 saved_group_positions[EDITOR_MULTISELECT_MAX];
+    /* Grid-snap toggle (S5.7, D38): when true, PLACE's spawn position and
+     * DRAG/group-move's commit position round to the nearest TILE_SIZE
+     * grid cell (editor_snap_position_to_grid). */
+    bool grid_snap;
+    /* Copy buffer (S5.7, D38): populated by ACTION_EDITOR_COPY from the
+     * current multi-selection, consumed (not cleared) by
+     * ACTION_EDITOR_PASTE so the same buffer can be pasted repeatedly. */
+    EditorCopyEntity copy_buffer[EDITOR_COPY_MAX];
+    int copy_buffer_count;
     Vector2 saved_col_offset;
     Vector2 saved_col_size;
     int place_blueprint_index; /* index into state->gamedata.blueprints.entries */
@@ -393,13 +455,19 @@ void draw_editor_highlights(const GameState *state, const EditorState *editor_st
 void draw_editor_panel(ScreenSize screen, const GameState *state, const EditorState *editor_state);
 void draw_watch_overlay(ScreenSize screen, const GameState *state, const WatchList *watches);
 void draw_collision_handles(const GameState *state, const EditorState *editor_state);
-void handle_browse_input(GameState *state,
+void handle_browse_input(Diag *diag,
+                         GameState *state,
                          Camera2D *camera,
                          EditorState *editor_state,
                          WatchList *watches,
                          UndoHistory *undo_history,
                          InputState input,
                          float delta_time);
+/* Round `value` to the nearest multiple of TILE_SIZE. Pure math, no side
+ * effects (S5.7, D38) -- used for grid-snap on PLACE's spawn position and
+ * DRAG/group-move's commit position when EditorState.grid_snap is set. */
+float editor_snap_to_grid(float value);
+Vector2 editor_snap_position_to_grid(Vector2 position);
 void draw_place_panel(ScreenSize screen, const GameState *state, const EditorState *editor_state);
 void draw_place_preview(const GameState *state, const EditorState *editor_state, Camera2D camera);
 void handle_mode_transitions(GameState *state, EditorState *editor_state, const InputState *input);

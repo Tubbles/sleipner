@@ -71,6 +71,7 @@ static const CodeName keyboard_codes[] = {
     {KEY_P, "P", "P"},
     {KEY_Q, "Q", "Q"},
     {KEY_S, "S", "S"},
+    {KEY_V, "V", "V"},
     {KEY_W, "W", "W"},
     {KEY_X, "X", "X"},
     {KEY_Y, "Y", "Y"},
@@ -588,6 +589,38 @@ static const DefaultAtom default_editor_move_down[] = {
     ALTS_END,
 };
 
+/* S5.7/D38 editor UX batch. All four reuse the L1 modifier established
+ * above: it is the only shoulder/trigger button with no independent,
+ * Browse-checked binding of its own (R1 fires PLACE, L2 fires WATCH, R2
+ * fires TYPE_PROPS on a bare press), so it is the only one safe to pair
+ * with a face/D-pad button without the modifier's own press firing an
+ * unwanted action first. GRID_SNAP_TOGGLE deliberately reuses MOVE_UP's
+ * exact physical chord (L1+Up / Ctrl+Up): the two actions are mutually
+ * exclusive by mode (grid-snap only checked in Scene Browse,
+ * ACTION_EDITOR_MOVE_UP only checked in Rule Tree), the same
+ * shared-physical-binding pattern already used for TAB_PREV/PAGE_UP
+ * above. */
+static const DefaultAtom default_editor_multiselect_add[] = {
+    K(KEY_LEFT_CONTROL), K(KEY_ENTER), ATOM_END,
+    GB(GAMEPAD_BUTTON_LEFT_TRIGGER_1), GB(GAMEPAD_BUTTON_RIGHT_FACE_DOWN), ATOM_END,
+    ALTS_END,
+};
+static const DefaultAtom default_editor_grid_snap_toggle[] = {
+    K(KEY_LEFT_CONTROL), K(KEY_UP), ATOM_END,
+    GB(GAMEPAD_BUTTON_LEFT_TRIGGER_1), GB(GAMEPAD_BUTTON_LEFT_FACE_UP), ATOM_END,
+    ALTS_END,
+};
+static const DefaultAtom default_editor_copy[] = {
+    K(KEY_LEFT_CONTROL), K(KEY_C), ATOM_END,
+    GB(GAMEPAD_BUTTON_LEFT_TRIGGER_1), GB(GAMEPAD_BUTTON_RIGHT_FACE_UP), ATOM_END,
+    ALTS_END,
+};
+static const DefaultAtom default_editor_paste[] = {
+    K(KEY_LEFT_CONTROL), K(KEY_V), ATOM_END,
+    GB(GAMEPAD_BUTTON_LEFT_TRIGGER_1), GB(GAMEPAD_BUTTON_RIGHT_FACE_LEFT), ATOM_END,
+    ALTS_END,
+};
+
 static const DefaultAtom default_attr_dec_1[]   = { K(KEY_LEFT),  ATOM_END, GB(GAMEPAD_BUTTON_LEFT_FACE_LEFT),   ATOM_END, ALTS_END };
 static const DefaultAtom default_attr_inc_1[]   = { K(KEY_RIGHT), ATOM_END, GB(GAMEPAD_BUTTON_LEFT_FACE_RIGHT),  ATOM_END, ALTS_END };
 static const DefaultAtom default_attr_dec_10[]  = { K(KEY_LEFT_BRACKET),  ATOM_END, GB(GAMEPAD_BUTTON_LEFT_TRIGGER_1),  ATOM_END, ALTS_END };
@@ -670,6 +703,10 @@ static const DefaultAtom *const default_action_atoms[ACTION_COUNT] = {
     [ACTION_EDITOR_REDO] = default_editor_redo,
     [ACTION_EDITOR_MOVE_UP] = default_editor_move_up,
     [ACTION_EDITOR_MOVE_DOWN] = default_editor_move_down,
+    [ACTION_EDITOR_MULTISELECT_ADD] = default_editor_multiselect_add,
+    [ACTION_EDITOR_GRID_SNAP_TOGGLE] = default_editor_grid_snap_toggle,
+    [ACTION_EDITOR_COPY] = default_editor_copy,
+    [ACTION_EDITOR_PASTE] = default_editor_paste,
     [ACTION_ATTR_INC_1] = default_attr_inc_1,
     [ACTION_ATTR_DEC_1] = default_attr_dec_1,
     [ACTION_ATTR_INC_10] = default_attr_inc_10,
@@ -932,6 +969,10 @@ static const char *const action_toml_names[ACTION_COUNT] = {
     [ACTION_EDITOR_REDO] = "EDITOR_REDO",
     [ACTION_EDITOR_MOVE_UP] = "EDITOR_MOVE_UP",
     [ACTION_EDITOR_MOVE_DOWN] = "EDITOR_MOVE_DOWN",
+    [ACTION_EDITOR_MULTISELECT_ADD] = "EDITOR_MULTISELECT_ADD",
+    [ACTION_EDITOR_GRID_SNAP_TOGGLE] = "EDITOR_GRID_SNAP_TOGGLE",
+    [ACTION_EDITOR_COPY] = "EDITOR_COPY",
+    [ACTION_EDITOR_PASTE] = "EDITOR_PASTE",
     [ACTION_ATTR_INC_1] = "ATTR_INC_1",
     [ACTION_ATTR_DEC_1] = "ATTR_DEC_1",
     [ACTION_ATTR_INC_10] = "ATTR_INC_10",

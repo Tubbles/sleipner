@@ -140,6 +140,17 @@ void game_snap_camera(GameState *state);
  * arena bytes and must not be replayed against the new one. */
 [[nodiscard]] bool level_activate(Diag *diag, GameState *state, Strv target_name);
 
+/* Rebuild the runtime-derived state tied to the current Level: rule_table,
+ * entity_blueprints, player_index, and the prev_player_overlaps /
+ * prev_solid_collisions trigger-edge trackers, all resized to the CURRENT
+ * entity count. Exposed (rather than file-local to game.c) so any editor
+ * flow that spawns a batch of entities directly into current_level (S5.7's
+ * paste, editor/core.c) can rebuild every count-parallel tracking structure
+ * in one call afterward, instead of hand-patching entity_blueprints/
+ * rule_table per spawn and leaving prev_player_overlaps/prev_solid_collisions
+ * under-sized until the next full reload. */
+[[nodiscard]] bool setup_current_level_runtime(Diag *diag, GameState *state);
+
 /* Resolve an entity's blueprint defaults via the entity→blueprint map.
  * Returns nullptr if entity has no blueprint mapping or blueprint not found. */
 const AttrSet *entity_resolve_defaults(const GameState *state, int entity_id);

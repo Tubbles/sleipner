@@ -129,6 +129,7 @@ void create_new_level(
     editor_state->level_detail_open = false;
     editor_state->level_detail_row = 0;
     editor_state->selected_entity_id = -1;
+    editor_state->multiselect_count = 0;
     editor_state->selected_attr_kind = EDITOR_ATTR_SEL_NONE;
     editor_state->selected_tree_index = -1;
 }
@@ -408,6 +409,7 @@ static void confirm_level_switch(Diag *diag, GameState *state, EditorState *edit
     editor_state->top_mode = EDITOR_TOP_SCENE;
     editor_state->level_list_scroll = 0;
     editor_state->selected_entity_id = -1;
+    editor_state->multiselect_count = 0;
     editor_state->selected_attr_kind = EDITOR_ATTR_SEL_NONE;
     editor_state->selected_tree_index = -1;
 }

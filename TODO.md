@@ -123,6 +123,16 @@ predicate rows and MOVE reparenting).
   `enter_level_detail_string_edit`); the master plan (S5.2, S6.13) always
   intended a fuzzy-finder over an embedded music-name registry once that
   registry exists. Revisit when S6.13 (audio polish) lands.
+- **DESIGN.md's "Editor Controls (Draft)" table is stale for multi-select
+  and grid-snap (DESIGN.md:121-122).** S5.7 (D38) implemented multi-select-
+  add as L1+CONFIRM / Ctrl+Enter and the grid-snap toggle as L1+Up /
+  Ctrl+Up (`default_editor_multiselect_add`/`default_editor_grid_snap_toggle`,
+  `input_func.c`), not the draft table's "LT (hold)" / "RT + D-pad up" — R1
+  and L2 were already independently bound to actions checked every frame in
+  Scene Browse (`ACTION_EDITOR_PLACE`, `ACTION_EDITOR_WATCH`), so chording
+  either would fire that action alongside the new gesture. The Undo/
+  Duplicate rows in the same table were already stale before this slice.
+  Revisit the whole table if it's ever promoted out of "Draft."
 
 ## Collision system follow-ups
 

@@ -1194,6 +1194,7 @@ The function-layer overhaul (2026-04) unblocked black-box bug-repro tests: every
 - [x] Attribute watcher (pin to debug overlay, live values during play)
 - [ ] Instance attribute persistence (serialize per-entity attr overrides to TOML)
 - [x] Add blueprint attributes from blueprint mode (and from browse mode via scoped editing)
+- [x] Editor spatial editing: multi-select (a modifier chord adds the focused entity to a fixed-cap selection set, `EditorState.multiselect_ids`, always seeded with the current single selection), group move (DRAG applies the same per-frame delta to every multiselect entry, resolved by id each frame, not a cached index), copy/paste (blueprint name, position relative to the first copied entity, and persisted attrs snapshotted into a plain-value copy buffer with no arena/heap pointers, cloned via `level_spawn_entity` at the camera position on paste, with `setup_current_level_runtime` rebuilding rule_table/entity_blueprints/overlap-tracking in one call afterward), and a grid-snap toggle (`EditorState.grid_snap`, `editor_snap_to_grid` rounds PLACE's spawn position and DRAG's commit position to the nearest `TILE_SIZE` cell) (S5.7, D38). Completes Stage 5 of the open-work master plan (`work/open-work-master-plan.md`).
 
 ### Phase 6 — Multiplayer
 - [ ] Input source abstraction (decouple player behavior from hardcoded gamepad)

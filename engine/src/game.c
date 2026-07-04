@@ -106,7 +106,7 @@ static int find_player_entity(const GameState *state)
  * because entity ids are only unique within a single Level's own
  * next_entity_id sequence, so carrying over another level's entries would
  * silently misresolve rather than error. */
-[[nodiscard]] static bool setup_current_level_runtime(Diag *diag, GameState *state)
+[[nodiscard]] bool setup_current_level_runtime(Diag *diag, GameState *state)
 {
     (void)diag;
     Allocator gamedata_alloc = allocator_arena(&state->gamedata_arena);

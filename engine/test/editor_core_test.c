@@ -43,6 +43,19 @@ FAKE_VOID_FUNC(enter_rule_mode, GameState *, EditorState *);
 FAKE_VALUE_FUNC(const AttrSet *, entity_resolve_defaults, const GameState *, int);
 FAKE_VALUE_FUNC(const Blueprint *, blueprint_find, const BlueprintTable *, const char *);
 FAKE_VALUE_FUNC(int, level_find_entity_by_id, const Level *, int);
+/* Cross-file fakes: level.c/game.c (S5.7 paste path) */
+FAKE_VALUE_FUNC(bool,
+                level_spawn_entity,
+                Diag *,
+                Level *,
+                const Blueprint *,
+                Vector2,
+                const BlueprintTable *,
+                TextureLookupFn,
+                void *,
+                Allocator *);
+FAKE_VALUE_FUNC(Texture2D *, texture_registry_lookup, const char *, void *);
+FAKE_VALUE_FUNC(bool, setup_current_level_runtime, Diag *, GameState *);
 FAKE_VOID_FUNC(undo_history_new_entry, UndoHistory *, GamedataState *, Arena *, ArenaCheckpoint, Strv);
 FAKE_VOID_FUNC(undo_history_step_back, UndoHistory *, GamedataState *, Arena *, ArenaCheckpoint);
 FAKE_VOID_FUNC(undo_history_step_forward, UndoHistory *, GamedataState *, Arena *, ArenaCheckpoint);
@@ -805,6 +818,19 @@ void test_toggle_watch_adds_and_removes(void)
     TEST_ASSERT_EQUAL_INT(0, watches.count);
 }
 
+/* ---- editor_snap_to_grid (S5.7, D38) ------------------------------------ */
+
+void test_grid_snap_round(void)
+{
+    TEST_ASSERT_EQUAL_FLOAT(0.0F, editor_snap_to_grid(0.0F));
+    TEST_ASSERT_EQUAL_FLOAT(0.0F, editor_snap_to_grid(7.9F));   /* below half-tile: rounds down to 0 */
+    TEST_ASSERT_EQUAL_FLOAT(16.0F, editor_snap_to_grid(8.0F));  /* exact half-tile: rounds up (away from zero) */
+    TEST_ASSERT_EQUAL_FLOAT(16.0F, editor_snap_to_grid(15.0F)); /* above half-tile: rounds up to next tile */
+    TEST_ASSERT_EQUAL_FLOAT(96.0F, editor_snap_to_grid(100.0F));
+    TEST_ASSERT_EQUAL_FLOAT(112.0F, editor_snap_to_grid(104.0F)); /* exact half-tile past 96: rounds up */
+    TEST_ASSERT_EQUAL_FLOAT(-16.0F, editor_snap_to_grid(-20.0F)); /* negative positions snap too */
+}
+
 int main(void)
 {
     test_helpers_init();
@@ -844,6 +870,7 @@ int main(void)
     RUN_TEST(test_find_place_blueprint_index_no_selection);
     RUN_TEST(test_clear_stale_tree_cursor_preserves_identity_selection);
     RUN_TEST(test_toggle_watch_adds_and_removes);
+    RUN_TEST(test_grid_snap_round);
 
     return UNITY_END();
 }

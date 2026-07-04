@@ -78,6 +78,8 @@ void test_integration_editor_attr_edit_tap_decrements_by_one(void);
 void test_integration_editor_attr_edit_hold_repeats_after_delay(void);
 void test_integration_editor_selection_survives_deleting_different_entity(void);
 void test_integration_editor_selection_survives_undo_of_edit(void);
+void test_integration_editor_multiselect_group_move(void);
+void test_integration_editor_copy_paste(void);
 void test_integration_editor_watch_list_removes_focused_entry(void);
 void test_integration_editor_radial_keyboard_nav(void);
 void test_integration_editor_radial_handles_entry(void);
@@ -227,6 +229,8 @@ int main(void)
     RUN_TEST(test_integration_editor_attr_edit_hold_repeats_after_delay);
     RUN_TEST(test_integration_editor_selection_survives_deleting_different_entity);
     RUN_TEST(test_integration_editor_selection_survives_undo_of_edit);
+    RUN_TEST(test_integration_editor_multiselect_group_move);
+    RUN_TEST(test_integration_editor_copy_paste);
     RUN_TEST(test_integration_editor_watch_list_removes_focused_entry);
     RUN_TEST(test_integration_editor_radial_keyboard_nav);
     RUN_TEST(test_integration_editor_radial_handles_entry);

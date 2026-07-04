@@ -2,10 +2,13 @@
 
 #include "alloc.h"
 #include "arena.h"
+#include "debug.h"
+#include "error.h"
 #include "map.h"
 #include "rule.h"
 #include "strv.h"
 
+#include <math.h>
 #include <string.h>
 
 /* --- Shared helpers (declared in internal.h) --- */
@@ -254,7 +257,62 @@ void mark_deleted_descendants(const Level *level, bool *is_deleted, int count)
     }
 }
 
+float editor_snap_to_grid(float value)
+{
+    return roundf(value / (float)TILE_SIZE) * (float)TILE_SIZE;
+}
+
+Vector2 editor_snap_position_to_grid(Vector2 position)
+{
+    return (Vector2){editor_snap_to_grid(position.x), editor_snap_to_grid(position.y)};
+}
+
 /* --- File-local helpers --- */
+
+/* Replace the multi-selection with a single entry, or clear it if
+ * entity_id < 0. The single-select path (handle_browse_select's fresh pick,
+ * select_entity_and_pan's tree navigation) always reseeds through here so
+ * DRAG/COPY only ever need to walk multiselect_ids -- no separate
+ * single-entity fallback. */
+static void multiselect_reset_to(EditorState *editor_state, int entity_id)
+{
+    if (entity_id < 0) {
+        editor_state->multiselect_count = 0;
+        return;
+    }
+    editor_state->multiselect_ids[0] = entity_id;
+    editor_state->multiselect_count = 1;
+}
+
+/* Append entity_id to the multi-selection if not already present. Silently
+ * no-ops at EDITOR_MULTISELECT_MAX, mirroring toggle_watch's own silent cap
+ * below -- an editor-session interaction limit, not an error. */
+static void multiselect_add(EditorState *editor_state, int entity_id)
+{
+    for (int index = 0; index < editor_state->multiselect_count; index++) {
+        if (editor_state->multiselect_ids[index] == entity_id) {
+            return;
+        }
+    }
+    if (editor_state->multiselect_count >= EDITOR_MULTISELECT_MAX) {
+        return;
+    }
+    editor_state->multiselect_ids[editor_state->multiselect_count++] = entity_id;
+}
+
+/* Capture the current position of every multiselect_ids entry into
+ * saved_group_positions, in lockstep. Called at every Grab entry point (Tools
+ * radial and the mode_transitions shortcut) so DRAG's CANCEL can restore the
+ * whole group, not just the anchor entity. */
+static void save_group_positions_for_drag(const GameState *state, EditorState *editor_state)
+{
+    const Level *level = &state->gamedata.current_level;
+    for (int index = 0; index < editor_state->multiselect_count; index++) {
+        int entity_index = level_find_entity_by_id(level, editor_state->multiselect_ids[index]);
+        editor_state->saved_group_positions[index] =
+            (entity_index >= 0) ? level->entities.data[entity_index].position : (Vector2){0.0F, 0.0F};
+    }
+}
 
 static void delete_selected_entity(GameState *state, EditorState *editor_state, WatchList *watches)
 {
@@ -318,6 +376,7 @@ static void delete_selected_entity(GameState *state, EditorState *editor_state, 
 static void select_entity_and_pan(EditorState *editor_state, Camera2D *camera, const Level *level, int entity_index)
 {
     editor_state->selected_entity_id = level->entities.data[entity_index].id;
+    multiselect_reset_to(editor_state, editor_state->selected_entity_id);
     editor_state->selected_tree_index = -1;
     editor_state->selected_attr_kind = EDITOR_ATTR_SEL_NONE;
     camera->target = level->entities.data[entity_index].position;
@@ -364,6 +423,7 @@ handle_browse_select(GameState *state, Camera2D *camera, EditorState *editor_sta
         int nearest = find_nearest_entity(&state->gamedata.current_level, camera->target);
         editor_state->selected_entity_id =
             (nearest >= 0) ? state->gamedata.current_level.entities.data[nearest].id : -1;
+        multiselect_reset_to(editor_state, editor_state->selected_entity_id);
         editor_state->selected_attr_kind = EDITOR_ATTR_SEL_NONE;
         editor_state->selected_tree_index = -1;
         return;
@@ -422,6 +482,7 @@ static void handle_browse_cancel(EditorState *editor_state)
         editor_state->selected_tree_index = -1;
     } else {
         editor_state->selected_entity_id = -1;
+        editor_state->multiselect_count = 0;
         editor_state->selected_attr_kind = EDITOR_ATTR_SEL_NONE;
         editor_state->selected_tree_index = -1;
     }
@@ -544,6 +605,194 @@ handle_browse_delete(GameState *state, EditorState *editor_state, WatchList *wat
     }
 }
 
+/* ACTION_EDITOR_MULTISELECT_ADD (S5.7, D38): resolve the entity nearest the
+ * camera target -- the same target find_nearest_entity would pick for a
+ * fresh plain CONFIRM -- and append it to the multi-selection instead of
+ * replacing it. Does not touch selected_entity_id: a plain CONFIRM already
+ * seeds/replaces the anchor selection, this action only ever grows the set
+ * alongside it. */
+static void handle_browse_multiselect_add(GameState *state, Camera2D *camera, EditorState *editor_state)
+{
+    int nearest = find_nearest_entity(&state->gamedata.current_level, camera->target);
+    if (nearest < 0) {
+        return;
+    }
+    multiselect_add(editor_state, state->gamedata.current_level.entities.data[nearest].id);
+}
+
+/* ACTION_EDITOR_COPY (S5.7, D38): snapshot every multiselect_ids entry
+ * (always at least the anchor entity, per multiselect_reset_to) into
+ * editor_state->copy_buffer -- blueprint name, position relative to the
+ * first entry, and persisted attrs. Plain-value copy only: no Str/AttrSet
+ * pointers survive into the buffer, so it stays valid across frames, undo,
+ * and hot-reload. */
+static void copy_cstr_truncate(char *dest, size_t cap, const char *source)
+{
+    size_t copy_len = strlen(source);
+    if (copy_len > cap - 1) {
+        copy_len = cap - 1;
+    }
+    memcpy(dest, source, copy_len);
+    dest[copy_len] = '\0';
+}
+
+static void copy_one_attr(EditorCopyAttr *dest, const Attribute *source)
+{
+    copy_cstr_truncate(dest->name, EDITOR_ATTR_NAME_MAX, source->name.ptr);
+    dest->type = source->type;
+    switch (source->type) {
+    case ATTR_FLOAT:
+        dest->value.f = source->value.f;
+        break;
+    case ATTR_INT:
+        dest->value.i = source->value.i;
+        break;
+    case ATTR_BOOL:
+        dest->value.b = source->value.b;
+        break;
+    case ATTR_STRING:
+        copy_cstr_truncate(dest->value.str, EDITOR_ATTR_NAME_MAX, source->value.str.ptr ? source->value.str.ptr : "");
+        break;
+    }
+}
+
+static void copy_one_entity(EditorCopyEntity *dest, const Entity *source, Vector2 anchor)
+{
+    copy_cstr_truncate(dest->blueprint_name, EDITOR_ATTR_NAME_MAX, source->blueprint_name.ptr);
+    dest->relative_position = (Vector2){source->position.x - anchor.x, source->position.y - anchor.y};
+    dest->attr_count = 0;
+    int attr_total = source->persisted_attrs.entries.count;
+    for (int attr_index = 0; attr_index < attr_total && dest->attr_count < EDITOR_COPY_ATTR_MAX; attr_index++) {
+        copy_one_attr(&dest->attrs[dest->attr_count], &source->persisted_attrs.entries.data[attr_index]);
+        dest->attr_count++;
+    }
+}
+
+static void handle_browse_copy(const GameState *state, EditorState *editor_state)
+{
+    const Level *level = &state->gamedata.current_level;
+    if (editor_state->multiselect_count <= 0) {
+        editor_state->toast_text = strv_from_cstr("Select an entity first");
+        editor_state->toast_timer = TOAST_DURATION;
+        return;
+    }
+    int anchor_index = level_find_entity_by_id(level, editor_state->multiselect_ids[0]);
+    if (anchor_index < 0) {
+        return;
+    }
+    Vector2 anchor = level->entities.data[anchor_index].position;
+    int written = 0;
+    for (int index = 0; index < editor_state->multiselect_count && written < EDITOR_COPY_MAX; index++) {
+        int entity_index = level_find_entity_by_id(level, editor_state->multiselect_ids[index]);
+        if (entity_index < 0) {
+            continue;
+        }
+        copy_one_entity(&editor_state->copy_buffer[written], &level->entities.data[entity_index], anchor);
+        written++;
+    }
+    editor_state->copy_buffer_count = written;
+    editor_state->toast_text = strv_from_cstr("Copied");
+    editor_state->toast_timer = TOAST_DURATION;
+}
+
+/* Re-apply a copied attr onto BOTH an entity's persisted_attrs (what gets
+ * saved/emitted) and attrs (the runtime-read set) -- mirrors how
+ * parse_entity_from_toml seeds attrs as a copy of persisted_attrs after
+ * applying instance overrides (level.c), just without a shared helper to
+ * call across the module boundary. */
+static void apply_copied_attr(Allocator *alloc, Entity *entity, const EditorCopyAttr *source)
+{
+    switch (source->type) {
+    case ATTR_FLOAT:
+        (void)attr_set_float(alloc, &entity->persisted_attrs, source->name, source->value.f);
+        (void)attr_set_float(alloc, &entity->attrs, source->name, source->value.f);
+        break;
+    case ATTR_INT:
+        (void)attr_set_int(alloc, &entity->persisted_attrs, source->name, source->value.i);
+        (void)attr_set_int(alloc, &entity->attrs, source->name, source->value.i);
+        break;
+    case ATTR_BOOL:
+        (void)attr_set_bool(alloc, &entity->persisted_attrs, source->name, source->value.b);
+        (void)attr_set_bool(alloc, &entity->attrs, source->name, source->value.b);
+        break;
+    case ATTR_STRING:
+        (void)attr_set_string(alloc, &entity->persisted_attrs, (AttrStringPair){source->name, source->value.str});
+        (void)attr_set_string(alloc, &entity->attrs, (AttrStringPair){source->name, source->value.str});
+        break;
+    }
+}
+
+/* Clone one copy_buffer entry at `spawn_position` via level_spawn_entity
+ * (the same spawn path PLACE uses), re-applying its captured persisted
+ * attrs onto the new instance. Returns the new entity's id, or -1 if the
+ * blueprint no longer exists or the spawn failed. */
+static int spawn_copied_entity(Diag *diag, GameState *state, const EditorCopyEntity *source, Vector2 spawn_position)
+{
+    Blueprint *blueprint = find_blueprint_by_name(state, source->blueprint_name);
+    if (!blueprint) {
+        return -1;
+    }
+    Allocator alloc = allocator_arena(&state->gamedata_arena);
+    int spawned_index = state->gamedata.current_level.entities.count;
+    if (!level_spawn_entity(diag, &state->gamedata.current_level, blueprint, spawn_position,
+                            &state->gamedata.blueprints, texture_registry_lookup, state, &alloc)) {
+        debug_log(diag->debug, "error: %s", error_get(diag->error));
+        error_clear(diag->error);
+        return -1;
+    }
+    Entity *spawned = &state->gamedata.current_level.entities.data[spawned_index];
+    for (int attr_index = 0; attr_index < source->attr_count; attr_index++) {
+        apply_copied_attr(&alloc, spawned, &source->attrs[attr_index]);
+    }
+    return spawned->id;
+}
+
+/* ACTION_EDITOR_PASTE (S5.7, D38): clone every copy_buffer entry at
+ * camera->target plus its stored offset from the first entry, preserving
+ * the copied group's relative layout. Spawns via level_spawn_entity (the
+ * PLACE path) then rebuilds every count-parallel runtime tracking
+ * structure in ONE setup_current_level_runtime call, rather than
+ * hand-patching entity_blueprints/rule_table per spawn the way
+ * handle_place_input does for a single entity -- a multi-entity batch is
+ * exactly the case that helper exists for. Selects the pasted clones
+ * (multiselect + anchor) so a follow-up group-move/copy acts on them.
+ * Does not consume the copy buffer -- the same buffer can be pasted again
+ * at a different camera position. */
+static void handle_browse_paste(
+    Diag *diag, GameState *state, Camera2D *camera, EditorState *editor_state, UndoHistory *undo_history)
+{
+    if (editor_state->copy_buffer_count <= 0) {
+        editor_state->toast_text = strv_from_cstr("Nothing to paste");
+        editor_state->toast_timer = TOAST_DURATION;
+        return;
+    }
+    int new_ids[EDITOR_COPY_MAX];
+    int new_count = 0;
+    for (int index = 0; index < editor_state->copy_buffer_count; index++) {
+        const EditorCopyEntity *source = &editor_state->copy_buffer[index];
+        Vector2 spawn_position = {camera->target.x + source->relative_position.x,
+                                  camera->target.y + source->relative_position.y};
+        int new_id = spawn_copied_entity(diag, state, source, spawn_position);
+        if (new_id >= 0 && new_count < EDITOR_COPY_MAX) {
+            new_ids[new_count++] = new_id;
+        }
+    }
+    if (!setup_current_level_runtime(diag, state)) {
+        error_wrap(diag->error, "handle_browse_paste");
+        debug_log(diag->debug, "error: %s", error_get(diag->error));
+        error_clear(diag->error);
+    }
+    editor_state->multiselect_count = 0;
+    for (int index = 0; index < new_count; index++) {
+        multiselect_add(editor_state, new_ids[index]);
+    }
+    editor_state->selected_entity_id = new_count > 0 ? new_ids[0] : -1;
+    editor_state->toast_text = strv_from_cstr("Pasted");
+    editor_state->toast_timer = TOAST_DURATION;
+    undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
+                           strv_from_cstr("Paste entities"));
+}
+
 /* Called on undo/redo. The entity/attr selection (selected_entity_id +
  * selected_attr_* identity) and the watch list all resolve by stable id/name
  * against the restored gamedata, so they survive the step — a selection whose
@@ -598,6 +847,7 @@ static void enter_tile_mode(GameState *state, EditorState *editor_state)
     editor_state->top_mode = EDITOR_TOP_TILE;
     editor_state->sub_mode = EDITOR_SUB_TILE_PAINT;
     editor_state->selected_entity_id = -1;
+    editor_state->multiselect_count = 0;
     if (level->tiles_wide <= 0 || editor_state->tile_cursor_col >= level->tiles_wide) {
         editor_state->tile_cursor_col = level->tiles_wide > 0 ? level->tiles_wide - 1 : 0;
     }
@@ -617,6 +867,7 @@ static void enter_atlas_mode(EditorState *editor_state)
     editor_state->atlas_texture_scroll = 0;
     editor_state->atlas_region_scroll = 0;
     editor_state->selected_entity_id = -1;
+    editor_state->multiselect_count = 0;
 }
 
 static void
@@ -627,7 +878,7 @@ dispatch_radial_confirm(GameState *state, EditorState *editor_state, WatchList *
     if (editor_state->radial_context == RADIAL_CTX_TOOLS) {
         int sel = level_find_entity_by_id(&state->gamedata.current_level, editor_state->selected_entity_id);
         if (confirmed == 0 && sel >= 0) { /* Grab */
-            editor_state->saved_position = state->gamedata.current_level.entities.data[sel].position;
+            save_group_positions_for_drag(state, editor_state);
             editor_state->sub_mode = EDITOR_SUB_DRAG;
         } else if (confirmed == 1) { /* Place */
             if (state->gamedata.blueprints.entries.count > 0) {
@@ -660,6 +911,7 @@ dispatch_radial_confirm(GameState *state, EditorState *editor_state, WatchList *
             editor_state->blueprint_attr_index = -1;
             editor_state->blueprint_tree_index = -1;
             editor_state->selected_entity_id = -1;
+            editor_state->multiselect_count = 0;
         } else if (confirmed == EDITOR_TOOLS_WATCH_LIST_INDEX && watches->count > 0) { /* Watch list */
             editor_state->watch_list_scroll = 0;
             editor_state->sub_mode = EDITOR_SUB_WATCH_LIST;
@@ -668,6 +920,7 @@ dispatch_radial_confirm(GameState *state, EditorState *editor_state, WatchList *
             editor_state->level_list_scroll = 0;
             editor_state->level_switch_confirm_pending = false;
             editor_state->selected_entity_id = -1;
+            editor_state->multiselect_count = 0;
         } else if (confirmed == EDITOR_TOOLS_TILE_INDEX) { /* Tiles */
             enter_tile_mode(state, editor_state);
         } else if (confirmed == EDITOR_TOOLS_ATLAS_INDEX) { /* Atlas */
@@ -686,7 +939,8 @@ dispatch_radial_confirm(GameState *state, EditorState *editor_state, WatchList *
 
 /* --- Public functions --- */
 
-void handle_browse_input(GameState *state,
+void handle_browse_input(Diag *diag,
+                         GameState *state,
                          Camera2D *camera,
                          EditorState *editor_state,
                          WatchList *watches,
@@ -698,19 +952,12 @@ void handle_browse_input(GameState *state,
         dispatch_radial_confirm(state, editor_state, watches, undo_history);
         return;
     }
-    if (input_pressed(&input, &state->bindings, ACTION_EDITOR_OPEN_TOOLS)) {
-        editor_state->radial_selected = -1;
-        editor_state->radial_confirmed = -1;
-        editor_state->radial_item_count = EDITOR_TOOLS_ITEM_COUNT;
-        editor_state->radial_context = RADIAL_CTX_TOOLS;
-        editor_state->sub_mode = EDITOR_SUB_RADIAL;
-        return;
-    }
-    /* Chord bindings (undo/redo) run BEFORE navigation/delete checks so that
-     * L1+Left doesn't also trigger "Handles" on bare L1 — Handles has been
-     * moved off the L1 tap shortcut to avoid this, but the order also matters
-     * for any future chord additions. The function layer does not resolve
-     * priority; callers must check chords first and early-return. */
+    /* Every chord action is checked before any single-atom action it shares
+     * a physical atom with (the function layer is a binding lookup, not a
+     * priority resolver — input_func.h), so e.g. L1+A (multi-select add)
+     * doesn't also fire plain CONFIRM, and L1+Up (grid-snap toggle) doesn't
+     * also fire NAV_UP. This also pushes ACTION_EDITOR_OPEN_TOOLS (bare
+     * Y/Tab, shared with the COPY chord's Y atom) below the chord block. */
     if (input_pressed(&input, &state->bindings, ACTION_EDITOR_UNDO)) {
         undo_history_step_back(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base);
         clear_stale_tree_cursor(editor_state);
@@ -723,6 +970,30 @@ void handle_browse_input(GameState *state,
         clear_stale_tree_cursor(editor_state);
         editor_state->toast_text = undo_history_description(undo_history);
         editor_state->toast_timer = TOAST_DURATION;
+        return;
+    }
+    if (input_pressed(&input, &state->bindings, ACTION_EDITOR_MULTISELECT_ADD)) {
+        handle_browse_multiselect_add(state, camera, editor_state);
+        return;
+    }
+    if (input_pressed(&input, &state->bindings, ACTION_EDITOR_GRID_SNAP_TOGGLE)) {
+        editor_state->grid_snap = !editor_state->grid_snap;
+        return;
+    }
+    if (input_pressed(&input, &state->bindings, ACTION_EDITOR_COPY)) {
+        handle_browse_copy(state, editor_state);
+        return;
+    }
+    if (input_pressed(&input, &state->bindings, ACTION_EDITOR_PASTE)) {
+        handle_browse_paste(diag, state, camera, editor_state, undo_history);
+        return;
+    }
+    if (input_pressed(&input, &state->bindings, ACTION_EDITOR_OPEN_TOOLS)) {
+        editor_state->radial_selected = -1;
+        editor_state->radial_confirmed = -1;
+        editor_state->radial_item_count = EDITOR_TOOLS_ITEM_COUNT;
+        editor_state->radial_context = RADIAL_CTX_TOOLS;
+        editor_state->sub_mode = EDITOR_SUB_RADIAL;
         return;
     }
     if (input_pressed(&input, &state->bindings, ACTION_CONFIRM)) {
@@ -785,7 +1056,7 @@ void handle_mode_transitions(GameState *state, EditorState *editor_state, const 
     }
     const Entity *entity = &state->gamedata.current_level.entities.data[sel];
     if (input_pressed(input, &state->bindings, ACTION_EDITOR_GRAB)) {
-        editor_state->saved_position = entity->position;
+        save_group_positions_for_drag(state, editor_state);
         editor_state->sub_mode = EDITOR_SUB_DRAG;
     }
     /* Handles shortcut: keyboard-only (H). Gamepad users reach Handles via
@@ -806,6 +1077,43 @@ void handle_mode_transitions(GameState *state, EditorState *editor_state, const 
     }
 }
 
+/* Snap every multiselect_ids entry's CURRENT position to the grid, in
+ * place. Only called at DRAG's CONFIRM (commit time), never per-frame while
+ * the stick is held -- a live per-frame snap would make the group jump in
+ * discrete steps instead of moving smoothly. */
+static void snap_group_positions_to_grid(GameState *state, const EditorState *editor_state)
+{
+    Level *level = &state->gamedata.current_level;
+    for (int index = 0; index < editor_state->multiselect_count; index++) {
+        int entity_index = level_find_entity_by_id(level, editor_state->multiselect_ids[index]);
+        if (entity_index < 0) {
+            continue;
+        }
+        level->entities.data[entity_index].position =
+            editor_snap_position_to_grid(level->entities.data[entity_index].position);
+    }
+}
+
+/* Restore every multiselect_ids entry to its saved_group_positions entry
+ * (DRAG's CANCEL). Uniform offset means this is exact even for the common
+ * single-entity case -- no separate "restore just the one entity" path. */
+static void restore_group_positions(GameState *state, const EditorState *editor_state)
+{
+    Level *level = &state->gamedata.current_level;
+    for (int index = 0; index < editor_state->multiselect_count; index++) {
+        int entity_index = level_find_entity_by_id(level, editor_state->multiselect_ids[index]);
+        if (entity_index >= 0) {
+            level->entities.data[entity_index].position = editor_state->saved_group_positions[index];
+        }
+    }
+}
+
+/* Group move (S5.7, D38): applies the same per-frame delta to every entity
+ * in the multi-selection, resolved fresh by id each frame (never a cached
+ * index — a prior push/reorder elsewhere in the frame could have moved
+ * it). multiselect_ids always contains at least the anchor entity (see
+ * multiselect_reset_to), so the single-entity case is just this loop
+ * running once — no separate code path. */
 void handle_drag_input(
     GameState *state, EditorState *editor_state, UndoHistory *undo_history, InputState input, float delta_time)
 {
@@ -813,21 +1121,35 @@ void handle_drag_input(
     if (sel < 0) {
         return;
     }
-    Entity *entity = &state->gamedata.current_level.entities.data[sel];
     if (input_pressed(&input, &state->bindings, ACTION_CONFIRM)) {
+        if (editor_state->grid_snap) {
+            snap_group_positions_to_grid(state, editor_state);
+        }
+        Strv description =
+            editor_state->multiselect_count > 1 ? strv_from_cstr("Move entities") : strv_from_cstr("Move entity");
         undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
-                               strv_from_cstr("Move entity"));
+                               description);
         editor_state->sub_mode = EDITOR_SUB_BROWSE;
         return;
     }
     if (input_pressed(&input, &state->bindings, ACTION_CANCEL)) {
-        entity->position = editor_state->saved_position;
+        restore_group_positions(state, editor_state);
         editor_state->sub_mode = EDITOR_SUB_BROWSE;
         return;
     }
     Vector2 move = input_axis_pair(&input, &state->bindings, AXIS_PRIMARY_X, AXIS_PRIMARY_Y);
-    entity->position.x += move.x * EDITOR_CAMERA_SPEED * delta_time;
-    entity->position.y += move.y * EDITOR_CAMERA_SPEED * delta_time;
+    float delta_x = move.x * EDITOR_CAMERA_SPEED * delta_time;
+    float delta_y = move.y * EDITOR_CAMERA_SPEED * delta_time;
+    Level *level = &state->gamedata.current_level;
+    for (int index = 0; index < editor_state->multiselect_count; index++) {
+        int entity_index = level_find_entity_by_id(level, editor_state->multiselect_ids[index]);
+        if (entity_index < 0) {
+            continue;
+        }
+        Entity *entity = &level->entities.data[entity_index];
+        entity->position.x += delta_x;
+        entity->position.y += delta_y;
+    }
 }
 
 void handle_handle_input(
@@ -930,6 +1252,10 @@ static const EditorActionHint browse_hints[] = {
     {ACTION_EDITOR_HANDLES, "Handles"},
     {ACTION_EDITOR_UNDO, "Undo"},
     {ACTION_EDITOR_REDO, "Redo"},
+    {ACTION_EDITOR_MULTISELECT_ADD, "Add to selection"},
+    {ACTION_EDITOR_GRID_SNAP_TOGGLE, "Grid snap"},
+    {ACTION_EDITOR_COPY, "Copy"},
+    {ACTION_EDITOR_PASTE, "Paste"},
 };
 
 static const EditorHintTable browse_table = {

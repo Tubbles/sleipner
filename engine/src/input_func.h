@@ -57,6 +57,16 @@ typedef enum {
      * for the "check chords before nav" ordering this requires. */
     ACTION_EDITOR_MOVE_UP,
     ACTION_EDITOR_MOVE_DOWN,
+    /* Multi-select / copy-paste / grid-snap (S5.7, D38). Chord bindings so
+     * they don't collide with the single-atom actions they share a physical
+     * atom with (CONFIRM, NAV_UP) -- see input_func.c's
+     * default_editor_multiselect_add/grid_snap_toggle for the exact atoms
+     * and editor/core.c's handle_browse_input for the "check chords before
+     * the single-atom action" ordering this requires. */
+    ACTION_EDITOR_MULTISELECT_ADD,  /* modifier + CONFIRM: add the focused entity to the multi-selection */
+    ACTION_EDITOR_GRID_SNAP_TOGGLE, /* toggle EditorState.grid_snap */
+    ACTION_EDITOR_COPY,             /* snapshot the multi-/single-selected entities into the copy buffer */
+    ACTION_EDITOR_PASTE,            /* clone the copy buffer's entities at a new anchor */
 
     /* Attribute editing */
     ACTION_ATTR_INC_1,

@@ -100,7 +100,9 @@ static void handle_place_input(Diag *diag,
         const Blueprint *blueprint = &state->gamedata.blueprints.entries.data[bp_index];
         Allocator alloc = allocator_arena(&state->gamedata_arena);
         int count_before = state->gamedata.current_level.entities.count;
-        if (!level_spawn_entity(diag, &state->gamedata.current_level, blueprint, camera->target,
+        Vector2 spawn_position =
+            editor_state->grid_snap ? editor_snap_position_to_grid(camera->target) : camera->target;
+        if (!level_spawn_entity(diag, &state->gamedata.current_level, blueprint, spawn_position,
                                 &state->gamedata.blueprints, texture_registry_lookup, state, &alloc)) {
             debug_log(diag->debug, "error: %s", error_get(diag->error));
             error_clear(diag->error);
@@ -191,7 +193,7 @@ void handle_editor_input(Diag *diag,
     } else if (editor_state->top_mode == EDITOR_TOP_LEVEL) {
         handle_level_browse_input(diag, state, editor_state, undo_history, &input);
     } else {
-        handle_browse_input(state, camera, editor_state, watches, undo_history, input, delta_time);
+        handle_browse_input(diag, state, camera, editor_state, watches, undo_history, input, delta_time);
     }
 }
 
