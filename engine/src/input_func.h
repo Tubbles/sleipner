@@ -139,6 +139,16 @@ typedef struct {
     AxisBinding axes[AXIS_COUNT];
 } BindingStore;
 
+/* --- Comparison ------------------------------------------------------------ */
+
+/* True if `first` and `second` require the same set of physical inputs to
+ * fire. Order-independent: a chord evaluates as a set of atoms that must
+ * all hold (see physical_held in input_func.c), not a sequence, so two
+ * PhysicalInputs with the same atoms in different orders are the same
+ * binding. Used by Settings to warn when a freshly captured binding
+ * collides with an existing one on a different action. */
+[[nodiscard]] bool physical_input_eq(const PhysicalInput *first, const PhysicalInput *second);
+
 /* --- Evaluation ---------------------------------------------------------- */
 
 /* True if any alternative has all parts down AND at least one part newly

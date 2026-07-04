@@ -298,6 +298,39 @@ static bool physical_pressed(const InputState *input, const PhysicalInput *physi
     return false;
 }
 
+/* True if `atom` and `other` are the same physical input element: same
+ * kind and same codes. Ignores `scale` -- it encodes axis sign/inversion,
+ * not identity, and physical_input_eq (the only caller) only ever
+ * compares atoms of the kinds Settings capture produces (ATOM_KEY,
+ * ATOM_GP_BUTTON), whose scale is always 1.0. */
+static bool atomic_input_eq(const AtomicInput *atom, const AtomicInput *other)
+{
+    return atom->kind == other->kind && atom->int_a == other->int_a && atom->int_b == other->int_b;
+}
+
+static bool atomic_input_in_parts(const vec_atomic_input *parts, const AtomicInput *atom)
+{
+    for (int index = 0; index < parts->count; index++) {
+        if (atomic_input_eq(&parts->data[index], atom)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool physical_input_eq(const PhysicalInput *first, const PhysicalInput *second)
+{
+    if (first->parts.count != second->parts.count) {
+        return false;
+    }
+    for (int index = 0; index < first->parts.count; index++) {
+        if (!atomic_input_in_parts(&second->parts, &first->parts.data[index])) {
+            return false;
+        }
+    }
+    return true;
+}
+
 /* --- Public evaluation API ------------------------------------------------ */
 
 bool input_pressed(const InputState *input, const BindingStore *store, InputAction action)

@@ -107,6 +107,12 @@ typedef enum {
 
 #define SETTINGS_MAX_CHORD_ATOMS 8
 
+/* Backing store for formatted toast messages (e.g. the "Also bound to
+ * <action>" conflict warning) that can't be a string literal. Comfortably
+ * covers "Also bound to " (14 chars) plus the longest action TOML name
+ * ("BLUEPRINT_DUPLICATE", 19 chars). */
+#define TOAST_MSG_BUF_CAP 64
+
 /* Cap on the previous-frame held-atom snapshot used by release-edge chord
  * capture (see capture_prev_held below). A bit above SETTINGS_MAX_CHORD_ATOMS:
  * atoms can be transiently held during capture (e.g. a modifier the user
@@ -172,9 +178,11 @@ typedef struct {
      * either flag can be raised without coupling to the other. */
     bool save_preferences_requested;
     /* Toast text shown below the title for a couple of frames after a
-     * save / reset. Pointer to a string literal; no ownership. */
+     * save / reset. Points either at a string literal or at toast_msg_buf
+     * below; no ownership either way. */
     const char *toast_text;
     float toast_timer;
+    char toast_msg_buf[TOAST_MSG_BUF_CAP];
 } SettingsState;
 
 void settings_init(SettingsState *settings);

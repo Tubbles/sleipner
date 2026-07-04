@@ -241,6 +241,56 @@ void test_capture_action_single_key(void)
     TEST_ASSERT_TRUE(physical_contains(bound, ATOM_KEY, KEY_F1));
 }
 
+/* ---- ACTION-mode capture: duplicate-binding warning (D17) ------------------ */
+
+/* Binding CONFIRM to F5, which is EDITOR_TOGGLE's default key, must still
+ * succeed (no hard block -- the function layer resolves order by design,
+ * see input_func.h) but should surface a non-blocking "Also bound to"
+ * toast naming the other action. */
+void test_capture_action_conflict_shows_warning_toast(void)
+{
+    settings.target_kind = SETTINGS_TARGET_ACTION;
+    settings.target_index = ACTION_CONFIRM;
+
+    InputState open_frame = {0};
+    enter_capture(&settings, &open_frame, -1);
+
+    InputState press = {0};
+    input_state_hold_key(&press, KEY_F5); /* EDITOR_TOGGLE's default binding */
+    handle_capture_action(&settings, &press, &store, test_heap_alloc);
+
+    InputState release = {0};
+    handle_capture_action(&settings, &release, &store, test_heap_alloc);
+
+    TEST_ASSERT_EQUAL_INT(SETTINGS_SCREEN_DETAIL, (int)settings.screen);
+    const PhysicalInput *bound = last_action_alternative(ACTION_CONFIRM);
+    TEST_ASSERT_TRUE(physical_contains(bound, ATOM_KEY, KEY_F5)); /* bind still succeeded */
+    TEST_ASSERT_EQUAL_STRING("Also bound to EDITOR_TOGGLE", settings.toast_text);
+}
+
+/* Binding to a key no default action uses shows the plain "Bound" toast,
+ * not a warning. */
+void test_capture_action_no_conflict_shows_bound_toast(void)
+{
+    settings.target_kind = SETTINGS_TARGET_ACTION;
+    settings.target_index = ACTION_CONFIRM;
+
+    InputState open_frame = {0};
+    enter_capture(&settings, &open_frame, -1);
+
+    InputState press = {0};
+    input_state_hold_key(&press, KEY_F1); /* unused by any default binding */
+    handle_capture_action(&settings, &press, &store, test_heap_alloc);
+
+    InputState release = {0};
+    handle_capture_action(&settings, &release, &store, test_heap_alloc);
+
+    TEST_ASSERT_EQUAL_INT(SETTINGS_SCREEN_DETAIL, (int)settings.screen);
+    const PhysicalInput *bound = last_action_alternative(ACTION_CONFIRM);
+    TEST_ASSERT_TRUE(physical_contains(bound, ATOM_KEY, KEY_F1));
+    TEST_ASSERT_EQUAL_STRING("Bound", settings.toast_text);
+}
+
 /* ---- AXIS-mode capture: unchanged ------------------------------------------
  *
  * Axis capture (SETTINGS_CAPTURE_AXIS_FIRST/SECOND) is a separate path from
@@ -280,6 +330,8 @@ int main(void)
     RUN_TEST(test_capture_action_includes_repress_of_opening_key);
     RUN_TEST(test_capture_action_out_of_order_release);
     RUN_TEST(test_capture_action_single_key);
+    RUN_TEST(test_capture_action_conflict_shows_warning_toast);
+    RUN_TEST(test_capture_action_no_conflict_shows_bound_toast);
     RUN_TEST(test_capture_axis_first_unchanged);
 
     return UNITY_END();

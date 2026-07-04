@@ -320,6 +320,42 @@ static PhysicalInput chord_as_physical(const SettingsState *settings)
     return view;
 }
 
+/* Scan every action other than `just_bound` for an alternative equal to
+ * `physical`. Advisory only -- the function layer is a binding lookup, not
+ * a priority resolver (see input_func.h), so a duplicate binding is not an
+ * error, just something the caller should surface to the user. Returns the
+ * first conflicting action found, or -1 if none. */
+static int find_conflicting_action(const BindingStore *store, InputAction just_bound, const PhysicalInput *physical)
+{
+    for (int action_index = 0; action_index < ACTION_COUNT; action_index++) {
+        if (action_index == (int)just_bound) {
+            continue;
+        }
+        const vec_physical_input *alternatives = &store->actions[action_index].alternatives;
+        for (int alt_index = 0; alt_index < alternatives->count; alt_index++) {
+            if (physical_input_eq(&alternatives->data[alt_index], physical)) {
+                return action_index;
+            }
+        }
+    }
+    return -1;
+}
+
+/* Show "Bound", or "Also bound to <action>" if `physical` collides with a
+ * different action's binding. Called only after a successful commit --
+ * either way the bind itself already succeeded and is never blocked. */
+static void show_bound_toast(SettingsState *settings, const BindingStore *store, const PhysicalInput *physical)
+{
+    int conflict = find_conflicting_action(store, (InputAction)settings->target_index, physical);
+    if (conflict < 0) {
+        show_toast(settings, "Bound");
+        return;
+    }
+    const char *name = input_func_action_toml_name_at(conflict);
+    (void)snprintf(settings->toast_msg_buf, sizeof(settings->toast_msg_buf), "Also bound to %s", name ? name : "?");
+    show_toast(settings, settings->toast_msg_buf);
+}
+
 static void
 apply_action_alternative(SettingsState *settings, BindingStore *store, Allocator alloc, const PhysicalInput *physical)
 {
@@ -330,12 +366,12 @@ apply_action_alternative(SettingsState *settings, BindingStore *store, Allocator
     } else {
         success = input_func_add_action_alternative(store, alloc, (InputAction)settings->target_index, physical);
     }
-    if (success) {
-        settings->save_requested = true;
-        show_toast(settings, "Bound");
-    } else {
+    if (!success) {
         show_toast(settings, "Bind failed");
+        return;
     }
+    settings->save_requested = true;
+    show_bound_toast(settings, store, physical);
 }
 
 static void

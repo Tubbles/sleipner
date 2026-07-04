@@ -69,10 +69,6 @@ below is a new set of submodes plus their handlers, pickers, and hint tables.
 
 - **Plugin-declared actions.** When a plugin/engine system arrives,
   bindings need a parallel registry alongside the central enum.
-- **Conflict warnings in Settings.** The Settings UI lets the user bind
-  the same key/button to two actions without warning. The function
-  layer documents that the *caller* resolves order-sensitivity, so
-  this is not a correctness bug, but a usability nicety worth adding.
 - **Per-gamepad binding.** AtomicInput.int_b stores a gamepad id but
   the entire codebase still assumes gamepad 0. Settings UI does not
   expose a gamepad selector. Defer until the engine actually supports
