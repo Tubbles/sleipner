@@ -178,6 +178,10 @@ void handle_editor_input(Diag *diag,
         handle_atlas_browse_input(state, camera, editor_state, &input);
     } else if (editor_state->sub_mode == EDITOR_SUB_ATLAS_REGION_EDIT) {
         handle_atlas_region_edit_input(state, editor_state, undo_history, input, delta_time);
+    } else if (editor_state->sub_mode == EDITOR_SUB_ANIM_EDIT) {
+        handle_anim_edit_input(state, editor_state, undo_history, &input);
+    } else if (editor_state->sub_mode == EDITOR_SUB_ANIM_FRAMES) {
+        handle_anim_frames_input(state, editor_state, &input);
     } else if (editor_state->top_mode == EDITOR_TOP_BLUEPRINT) {
         handle_blueprint_browse_input(state, editor_state, undo_history, &input);
     } else if (editor_state->top_mode == EDITOR_TOP_LEVEL) {

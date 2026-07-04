@@ -84,6 +84,7 @@ void test_integration_editor_level_create_round_trip(void);
 void test_integration_editor_level_edit_detail_round_trip(void);
 void test_integration_editor_tile_paint_round_trip(void);
 void test_integration_editor_atlas_region_create_round_trip(void);
+void test_integration_editor_animation_edit_round_trip(void);
 void test_integration_menu_navigation_and_quit(void);
 void test_integration_menu_escape_returns_resume(void);
 void test_integration_menu_gamepad_navigation(void);
@@ -224,6 +225,7 @@ int main(void)
     RUN_TEST(test_integration_editor_level_edit_detail_round_trip);
     RUN_TEST(test_integration_editor_tile_paint_round_trip);
     RUN_TEST(test_integration_editor_atlas_region_create_round_trip);
+    RUN_TEST(test_integration_editor_animation_edit_round_trip);
     RUN_TEST(test_integration_menu_navigation_and_quit);
     RUN_TEST(test_integration_menu_escape_returns_resume);
     RUN_TEST(test_integration_menu_gamepad_navigation);

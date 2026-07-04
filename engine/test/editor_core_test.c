@@ -33,6 +33,9 @@ FAKE_VALUE_FUNC(int, find_child_entity, const Level *, int, const char *, const 
 /* Cross-file editor fakes: widgets.c */
 FAKE_VOID_FUNC(fuzzy_finder_build_items, GameState *, EditorState *);
 
+/* Cross-file editor fakes: anim.c */
+FAKE_VOID_FUNC(enter_anim_mode, GameState *, EditorState *);
+
 /* External module fakes */
 FAKE_VALUE_FUNC(const AttrSet *, entity_resolve_defaults, const GameState *, int);
 FAKE_VALUE_FUNC(const Blueprint *, blueprint_find, const BlueprintTable *, const char *);

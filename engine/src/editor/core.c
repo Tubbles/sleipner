@@ -669,6 +669,8 @@ dispatch_radial_confirm(GameState *state, EditorState *editor_state, WatchList *
             enter_tile_mode(state, editor_state);
         } else if (confirmed == EDITOR_TOOLS_ATLAS_INDEX) { /* Atlas */
             enter_atlas_mode(editor_state);
+        } else if (confirmed == EDITOR_TOOLS_ANIM_INDEX) { /* Animation */
+            enter_anim_mode(state, editor_state);
         }
     } else if (editor_state->radial_context == RADIAL_CTX_ATTR_TYPE) {
         dispatch_attr_type_change(state, editor_state, confirmed, undo_history);

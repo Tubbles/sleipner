@@ -69,6 +69,9 @@ const EditorHintTable *tile_paint_hints_table(void);
 const EditorHintTable *tile_palette_hints_table(void);
 const EditorHintTable *atlas_browse_hints_table(void);
 const EditorHintTable *atlas_region_edit_hints_table(void);
+const EditorHintTable *anim_blueprint_list_hints_table(void);
+const EditorHintTable *anim_edit_hints_table(void);
+const EditorHintTable *anim_frames_hints_table(void);
 
 /* --- Shared helpers: core.c --- */
 
@@ -170,3 +173,14 @@ void confirm_level_string_edit(GameState *state, EditorState *editor_state, Undo
  * caller to switch to EDITOR_SUB_ATLAS_REGION_EDIT; false means a toast
  * was raised and the caller should return to EDITOR_SUB_ATLAS_BROWSE. */
 [[nodiscard]] bool start_new_atlas_region(GameState *state, EditorState *editor_state, const char *name);
+
+/* --- Cross-file calls: anim.c (called from core.c) --- */
+
+/* Entering Animation mode from the Tools radial (dispatch_radial_confirm):
+ * mirrors enter_tile_mode/enter_atlas_mode's split-out-for-complexity
+ * rationale. Also resolves S5.5's blueprint-picking choice: if a scene
+ * entity is currently selected, its blueprint is preselected (params-edit
+ * view opens directly); otherwise anim_blueprint_index lands on -1, which
+ * EDITOR_SUB_ANIM_EDIT's dual duty (editor/anim.c) renders as the
+ * blueprint list picker. */
+void enter_anim_mode(GameState *state, EditorState *editor_state);

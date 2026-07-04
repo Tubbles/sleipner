@@ -1174,7 +1174,7 @@ The function-layer overhaul (2026-04) unblocked black-box bug-repro tests: every
 - [x] Tile mode: paint ground and overlay layers, tile palette (S5.3b)
 - [x] Atlas system engine side: `[[atlas.region]]` named texture regions (name/texture/src), gamedata atlas registry, blueprint `sprite = "name"` resolution to src_*/texture attrs (sprite wins over a raw src/texture on the same blueprint), TOML parse/emit round-trip (S5.4a, D37)
 - [x] Atlas mode: browse the texture registry, list/create named regions per texture, drag-set a region's src rect via HANDLES-style dual-stick offset/size (`EDITOR_SUB_ATLAS_BROWSE`/`_REGION_EDIT`, `editor/atlas.c`) (S5.4b)
-- [ ] Animation mode: define frame sequences, preview playback, link directional states
+- [x] Animation mode: pick a blueprint (list picker, or the already-selected scene entity's blueprint), edit `anim_frames`/`anim_size`/`anim_speed`/`anim_row` via value adjusters, and scrub frames with a live src-rect preview (`EDITOR_SUB_ANIM_EDIT`/`_FRAMES`, `editor/anim.c`) (S5.5, D20). Linking directional states to the animation state machine is Phase 8 (D31).
 - [x] Blueprint `animation = {frames,size,speed,row}` plumbed through parse and emit into `anim_frames`/`anim_size`/`anim_speed`/`anim_row` blueprint attrs, ahead of the mode UI and the animation state machine (Phase 8)
 - [ ] Rule mode: visual trigger/condition/action editor, test by switching to play
 - [x] Level mode: view all levels, switch active level in memory (S5.2a)

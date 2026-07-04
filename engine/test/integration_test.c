@@ -2,6 +2,7 @@
 #include "arena.h"
 #include "atlas.h"
 #include "attribute.h"
+#include "blueprint.h"
 #include "editor/editor.h"
 #include "entity.h"
 #include "error.h"
@@ -1893,6 +1894,150 @@ void test_integration_editor_atlas_region_create_round_trip(void)
     TEST_ASSERT_EQUAL_INT((int)expected_src.height, (int)region2->src.height);
 
     arena_free(&arena2);
+    test_game_teardown(&game);
+}
+
+/* Find a [[blueprint]] table by name in a re-parsed TOML root. Standalone
+ * helper (mirrors test_find_level_table_by_name above) for the S5.5
+ * round-trip test below. */
+static toml_table_t *test_find_blueprint_table_by_name(toml_array_t *blueprints, const char *name)
+{
+    int count = toml_array_nelem(blueprints);
+    for (int index = 0; index < count; index++) {
+        toml_table_t *candidate = toml_table_at(blueprints, index);
+        toml_datum_t table_name = toml_string_in(candidate, "name");
+        if (!table_name.ok) {
+            continue;
+        }
+        bool match = strcmp(table_name.u.s, name) == 0;
+        free(table_name.u.s);
+        if (match) {
+            return candidate;
+        }
+    }
+    return nullptr;
+}
+
+/* S5.5/D20: Animation mode edit + frame-scrub + save/reparse round trip.
+ * Drives entirely through the real input layer: F5 into editor, TAB opens
+ * the Tools radial, test_radial_select_item aims the stick at the
+ * "Animation" sector (EDITOR_TOOLS_ANIM_INDEX) and confirms, one more frame
+ * lets BROWSE dispatch the pending radial choice into EDITOR_TOP_ANIM /
+ * EDITOR_SUB_ANIM_EDIT. No scene entity is selected at that point (fresh
+ * test_game_setup leaves selected_entity_id == -1), so enter_anim_mode
+ * cannot preselect a blueprint and anim_blueprint_index lands on -1 -- the
+ * blueprint list picker (EDITOR_SUB_ANIM_EDIT's dual duty, editor/anim.c).
+ * CONFIRM on scroll 0 ("player", first blueprint in fixture_gamedata)
+ * enters the params-edit rows.
+ *
+ * "player" has no anim_* attrs yet (S3.4 plumbing only touches blueprints
+ * that author `animation = {...}`), so the FRAMES row reads the S5.5
+ * default (1) until bumped. ACTION_ATTR_INC_1 (real KEY_RIGHT binding)
+ * bumps it to 2, creating the anim_frames attr and pushing an undo entry.
+ * TAB then switches to EDITOR_SUB_ANIM_FRAMES (frame scrubber); NAV_RIGHT
+ * (real KEY_RIGHT/ACTION_NAV_RIGHT binding) is pressed 5 times to drive
+ * anim_frame_index past the [0, anim_frames) bound (frames == 2), proving
+ * the clamp holds at index 1.
+ *
+ * Saves through the real pause-menu path (wiring the recording
+ * gamedata-save fake) and reparses the emitted TOML to confirm the bumped
+ * anim_frames survives inside the player blueprint's `animation = {...}`
+ * sugar (S3.4's round-trip, now driven by an editor session instead of a
+ * hand-authored fixture). */
+void test_integration_editor_animation_edit_round_trip(void)
+{
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_gamedata));
+    game.frame_ctx.save_fn = test_recording_gamedata_save;
+    TEST_ASSERT_EQUAL_INT(-1, game.editor_state.selected_entity_id);
+
+    const Blueprint *player_blueprint = blueprint_find(&game.state.gamedata.blueprints, "player");
+    TEST_ASSERT_NOT_NULL(player_blueprint);
+    TEST_ASSERT_EQUAL_INT(-1, attr_get_int(&player_blueprint->attrs, "anim_frames", -1));
+
+    InputState editor_toggle = {0};
+    input_state_press_key(&editor_toggle, KEY_F5);
+    test_advance_frame(&game, editor_toggle);
+    TEST_ASSERT_TRUE(game.state.editor_mode);
+
+    InputState open_tools = {0};
+    input_state_press_key(&open_tools, KEY_TAB);
+    test_advance_frame(&game, open_tools);
+    TEST_ASSERT_EQUAL_INT(EDITOR_SUB_RADIAL, game.editor_state.sub_mode);
+
+    /* Aim the stick at the "Animation" sector and confirm in the same frame. */
+    test_radial_select_item(&game, EDITOR_TOOLS_ANIM_INDEX);
+    TEST_ASSERT_EQUAL_INT(EDITOR_SUB_BROWSE, game.editor_state.sub_mode);
+
+    /* BROWSE dispatches the pending radial confirmation on the next frame. */
+    InputState no_input = {0};
+    test_advance_frame(&game, no_input);
+    TEST_ASSERT_EQUAL_INT(EDITOR_TOP_ANIM, game.editor_state.top_mode);
+    TEST_ASSERT_EQUAL_INT(EDITOR_SUB_ANIM_EDIT, game.editor_state.sub_mode);
+    TEST_ASSERT_EQUAL_INT(-1, game.editor_state.anim_blueprint_index);
+    TEST_ASSERT_EQUAL_INT(0, game.editor_state.anim_blueprint_scroll);
+
+    /* Pick "player" (scroll 0, the first blueprint in fixture_gamedata). */
+    InputState confirm = {0};
+    input_state_press_key(&confirm, KEY_ENTER);
+    test_advance_frame(&game, confirm);
+    TEST_ASSERT_EQUAL_INT(0, game.editor_state.anim_blueprint_index);
+    TEST_ASSERT_EQUAL_INT(0, game.editor_state.anim_edit_row); /* FRAMES row focused */
+
+    /* Bump FRAMES from the unset-attr default (1) to 2. */
+    InputState inc_1 = {0};
+    input_state_press_key(&inc_1, KEY_RIGHT);
+    test_advance_frame(&game, inc_1);
+    TEST_ASSERT_EQUAL_INT(2, attr_get_int(&player_blueprint->attrs, "anim_frames", -1));
+    TEST_ASSERT_TRUE(strv_eq_cstr(undo_history_description(&game.undo_history), "Edit animation"));
+
+    /* TAB (real ACTION_TAB_NEXT binding) switches to the frame scrubber. */
+    InputState tab = {0};
+    input_state_press_key(&tab, KEY_TAB);
+    test_advance_frame(&game, tab);
+    TEST_ASSERT_EQUAL_INT(EDITOR_SUB_ANIM_FRAMES, game.editor_state.sub_mode);
+    TEST_ASSERT_EQUAL_INT(0, game.editor_state.anim_frame_index);
+
+    /* Drive NAV_RIGHT past anim_frames (2): index must clamp to 1. */
+    InputState nav_right = {0};
+    input_state_press_key(&nav_right, KEY_RIGHT);
+    test_advance_frames(&game, nav_right, 5);
+    TEST_ASSERT_EQUAL_INT(1, game.editor_state.anim_frame_index);
+
+    /* Save through the real pause-menu path (F3 -> DOWN to SAVE -> CONFIRM),
+     * driven straight from EDITOR_SUB_ANIM_FRAMES: ACTION_MENU_TOGGLE is
+     * read unconditionally in frame_update, ahead of any editor sub_mode
+     * dispatch, so no need to back out of Animation mode first. */
+    InputState menu_open = {0};
+    input_state_press_key(&menu_open, KEY_F3);
+    test_advance_frame(&game, menu_open);
+
+    InputState menu_down = {0};
+    input_state_press_key(&menu_down, KEY_DOWN);
+    test_advance_frame(&game, menu_down);
+    TEST_ASSERT_EQUAL_INT(MENU_ENTRY_SAVE, game.menu.selected);
+
+    test_advance_frame(&game, confirm);
+    TEST_ASSERT_EQUAL_INT(1, game.gamedata_save_count);
+
+    char errbuf[200];
+    char *parse_buf = strdup(game.saved_gamedata_buf);
+    toml_table_t *root = toml_parse(parse_buf, errbuf, (int)sizeof(errbuf));
+    free(parse_buf);
+    TEST_ASSERT_NOT_NULL_MESSAGE(root, errbuf);
+
+    toml_array_t *blueprints = toml_array_in(root, "blueprint");
+    TEST_ASSERT_NOT_NULL(blueprints);
+    toml_table_t *player_table = test_find_blueprint_table_by_name(blueprints, "player");
+    TEST_ASSERT_NOT_NULL_MESSAGE(player_table, "'player' missing from saved TOML");
+
+    toml_table_t *animation = toml_table_in(player_table, "animation");
+    TEST_ASSERT_NOT_NULL_MESSAGE(animation, "animation sugar missing from saved 'player' blueprint");
+    toml_datum_t frames = toml_int_in(animation, "frames");
+    TEST_ASSERT_TRUE(frames.ok);
+    TEST_ASSERT_EQUAL_INT(2, (int)frames.u.i);
+
+    toml_free(root);
     test_game_teardown(&game);
 }
 

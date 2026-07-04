@@ -34,11 +34,12 @@ typedef struct {
 #define EDITOR_ATLAS_DEFAULT_REGION_SIZE 32 /* default new-region width/height, texture px, before clamping */
 #define EDITOR_ATTR_LARGE_STEP 10           /* ±10 step for attribute value adjuster (bumpers/brackets) */
 #define EDITOR_ATTR_HUGE_STEP 100           /* ±100 step for value adjuster (L2/R2 / PgDn/PgUp) */
-#define EDITOR_TOOLS_ITEM_COUNT 9           /* items in the RADIAL_CTX_TOOLS picker */
+#define EDITOR_TOOLS_ITEM_COUNT 10          /* items in the RADIAL_CTX_TOOLS picker */
 #define EDITOR_TOOLS_WATCH_LIST_INDEX 5     /* RADIAL_CTX_TOOLS slot for "Watch list" */
 #define EDITOR_TOOLS_LEVELS_INDEX 6         /* RADIAL_CTX_TOOLS slot for "Levels" */
 #define EDITOR_TOOLS_TILE_INDEX 7           /* RADIAL_CTX_TOOLS slot for "Tiles" */
 #define EDITOR_TOOLS_ATLAS_INDEX 8          /* RADIAL_CTX_TOOLS slot for "Atlas" */
+#define EDITOR_TOOLS_ANIM_INDEX 9           /* RADIAL_CTX_TOOLS slot for "Animation" */
 #define EDITOR_PLACE_PAGE_SIZE 5            /* blueprint page-jump size for L1/R1 in scroll picker */
 #define ATTR_REPEAT_DELAY 0.4F              /* seconds before auto-repeat starts on hold */
 #define ATTR_REPEAT_PERIOD 0.1F             /* initial repeat interval (10 Hz) */
@@ -76,6 +77,7 @@ typedef enum {
     EDITOR_TOP_LEVEL,     /* level list: view all levels, switch the active one in memory */
     EDITOR_TOP_TILE,      /* tile grid: paint the current level's ground/overlay layers (S5.3b, D36) */
     EDITOR_TOP_ATLAS,     /* atlas region browser: define named sprite regions on a texture (S5.4b, D37) */
+    EDITOR_TOP_ANIM,      /* animation params + frame scrubber for a blueprint (S5.5, D20) */
 } EditorTopMode;
 
 /* Identifies which Level string field the word builder is currently
@@ -91,7 +93,8 @@ typedef enum {
 } LevelStringField;
 
 typedef enum {
-    RADIAL_CTX_TOOLS, /* Grab / Place / Handles / Delete / Blueprints / Watch list / Levels / Tiles / Atlas — 9 items */
+    /* Grab / Place / Handles / Delete / Blueprints / Watch list / Levels / Tiles / Atlas / Animation — 10 items */
+    RADIAL_CTX_TOOLS,
     RADIAL_CTX_ATTR_TYPE,   /* Float / Int / Bool / String — 4 items */
     RADIAL_CTX_CHILD_PROPS, /* Tag / Offset X / Offset Y — 3 items */
 } RadialContext;
@@ -117,6 +120,18 @@ typedef enum {
      * in-progress region's src rect (atlas_edit_src). CONFIRM commits to
      * gamedata.atlas_regions, CANCEL discards. */
     EDITOR_SUB_ATLAS_REGION_EDIT,
+    /* Blueprint list picker (anim_blueprint_index < 0) or the four anim_*
+     * params rows -- frames/size/speed/row -- for the selected blueprint
+     * (anim_blueprint_index >= 0), S5.5/D20. Value-adjuster editing via
+     * ACTION_ATTR_INC/DEC_1/10, same immediate-commit-per-press pattern as
+     * Level mode's detail rows (editor/level.c). ACTION_TAB_PREV/NEXT
+     * switches to the frame scrubber below. */
+    EDITOR_SUB_ANIM_EDIT,
+    /* Frame scrubber: ACTION_NAV_LEFT/RIGHT steps anim_frame_index over
+     * [0, anim_frames), with a live src-rect preview of the blueprint's
+     * texture in the side panel (editor/anim.c). ACTION_TAB_PREV/NEXT (or
+     * CANCEL) returns to EDITOR_SUB_ANIM_EDIT. */
+    EDITOR_SUB_ANIM_FRAMES,
 } EditorSubMode;
 
 /* Which tile layer NAV/paint/erase currently act on in EDITOR_SUB_TILE_PAINT
@@ -225,6 +240,21 @@ typedef struct {
     bool creating_atlas_region; /* word builder is naming a new atlas region */
     char atlas_region_pending_name[EDITOR_ATTR_NAME_MAX]; /* stashed name between word-builder DONE and commit */
     Rectangle atlas_edit_src; /* staging src rect (texture px) being dragged in REGION_EDIT */
+    /* Animation mode (S5.5, D20). anim_blueprint_index mirrors
+     * atlas_texture_index's "-1 = list, >=0 = selected" double duty: -1
+     * shows the blueprint list picker (dual duty within
+     * EDITOR_SUB_ANIM_EDIT, editor/anim.c), >=0 indexes
+     * gamedata.blueprints.entries for the params-edit rows.
+     * anim_blueprint_scroll is the list cursor, tracked independently so it
+     * survives drilling in/out (same relationship atlas_texture_scroll has
+     * to atlas_texture_index). anim_edit_row focuses one of the four anim_*
+     * attr rows (frames/size/speed/row) in the params view. anim_frame_index
+     * is the scrub cursor in EDITOR_SUB_ANIM_FRAMES, clamped to
+     * [0, anim_frames) (or 0 if anim_frames <= 0). */
+    int anim_blueprint_index;
+    int anim_blueprint_scroll;
+    int anim_edit_row;
+    int anim_frame_index;
 } EditorState;
 
 typedef struct {
@@ -313,3 +343,9 @@ void draw_atlas_texture_list_panel(ScreenSize screen, const GameState *state, co
 void draw_atlas_region_list_panel(ScreenSize screen, const GameState *state, const EditorState *editor_state);
 void draw_atlas_region_edit_panel(ScreenSize screen, const GameState *state, const EditorState *editor_state);
 void draw_atlas_texture_view(const GameState *state, const EditorState *editor_state);
+void handle_anim_edit_input(GameState *state,
+                            EditorState *editor_state,
+                            UndoHistory *undo_history,
+                            const InputState *input);
+void handle_anim_frames_input(GameState *state, EditorState *editor_state, const InputState *input);
+void draw_anim_panel(ScreenSize screen, const GameState *state, const EditorState *editor_state);

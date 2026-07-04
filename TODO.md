@@ -37,13 +37,13 @@
 ## Editor: missing top-level modes
 
 Phase 6 of the keybinding audit (`work/keybinding-audit.md`) enumerated five
-editor modes that DESIGN.md specifies but the engine does not yet implement.
-Level mode (§30) is now done (S5.2a list + in-memory switch, S5.2b new-level
-creation + size/floor/background/tint/music detail rows) — see the Level
-mode music picker bullet below for the one gap S5.2b left open. The
-keybinding registry is now the place to plug each remaining mode in — each
-item below is a new set of submodes plus their handlers, pickers, and hint
-tables.
+editor modes that DESIGN.md specifies but the engine did not yet implement.
+Level mode (§30), Tile mode (§26), Atlas mode (§27), and Animation mode
+(§28) are now done — see the follow-up bullets below for the gaps each one
+left open (Level mode's music picker, Tile mode's autotiling, Atlas mode's
+fuzzy-finder integration). Rule mode (§29) is the one remaining top-level
+mode from that enumeration; the keybinding registry is the place to plug it
+in — a new set of submodes plus their handlers, pickers, and hint tables.
 
 - **Tile mode autotiling** (DESIGN.md §26, D36) — S5.3b shipped manual
   concrete-tile-id painting (`EDITOR_SUB_TILE_PAINT`/`_PALETTE`,
@@ -65,13 +65,25 @@ tables.
   existing atlas region names as candidates when picking that value, so
   there's no autocomplete/browse-by-name for it — purely additive UX, not a
   round-trip gap.
-- **Animation mode** (§28) — `EDITOR_SUB_ANIM_FRAMES` (scrub),
-  `EDITOR_SUB_ANIM_EDIT` (frame count / speed via the existing value
-  adjuster).
 - **Rule mode** (§29, §100-104) — `EDITOR_SUB_RULE_LIST`,
   `EDITOR_SUB_RULE_TRIGGER_PICK`, `EDITOR_SUB_RULE_COND_PICK`,
   `EDITOR_SUB_RULE_ACTION_PICK` (all radial). Reuses existing FUZZY_FINDER
   for flag / item refs.
+- **Animation mode's sparse-attr round trip** (§28, D20) —
+  `emit_animation_if_present` (`engine/src/toml_emitter.c`) emits all four
+  `animation = {...}` fields as soon as any one of
+  `anim_frames`/`anim_size`/`anim_speed`/`anim_row` exists, defaulting the
+  untouched ones to 0 for emission. Bumping a single field via the
+  Animation editor (`editor/anim.c`, S5.5) therefore writes `size = 0` /
+  `speed = 0` / `row = 0` for the sibling fields into the saved TOML, and
+  `parse_animation` re-reads them as real 0-valued attrs on reload — below
+  the editor's own `>= 1` floor for `anim_size`, since parsing bypasses
+  `anim_edit_clamp`. Pre-existing S3.4 emitter/parser gap, not introduced
+  by S5.5, but the row-by-row adjuster is the first UI path that naturally
+  invites touching only one of the four fields. Not attempted in S5.5;
+  would need `emit_animation_if_present` to track which fields were
+  authored vs defaulted, or the editor to eagerly set all four attrs on
+  first touch.
 - **Level mode music picker** — S5.2b's detail-row editor lets you type an
   arbitrary string into `music` via the word builder (`editor/level.c`
   `enter_level_detail_string_edit`); the master plan (S5.2, S6.13) always
