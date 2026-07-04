@@ -32,6 +32,10 @@ DECLARE_ASSET(floor_png);
 /* Music */
 DECLARE_ASSET(bgm_mp3);
 
+/* SFX (placeholders pending real sound design, see U1) */
+DECLARE_ASSET(pickup_wav);
+DECLARE_ASSET(hit_wav);
+
 /* Fonts */
 DECLARE_ASSET(earth_illusion_ttf);
 DECLARE_ASSET(golden_apple_ttf);

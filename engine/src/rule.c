@@ -1404,6 +1404,18 @@ static bool dispatch_simple_action(Diag *diag, Allocator *alloc, const ActionNod
         TriggerEvent fire = {.type = TRIGGER_EVENT, .entity_index = -1, .argument = node->argument};
         return vec_trigger_event_push(context.event_queue, fire);
     }
+    case ACTION_PLAY_SOUND:
+        /* D22: the VM only enqueues -- the per-frame apply pass (frame.c)
+         * looks the name up in the SFX registry and plays it. node->argument
+         * is a Str parsed into gamedata_arena at load time (never rewound
+         * mid-frame), so it stays valid through the same-frame drain; no
+         * $variable substitution needed here (mirrors ACTION_FIRE_EVENT
+         * above, which also pushes node->argument directly). */
+        if (!context.effects) {
+            debug_log(diag->debug, "play_sound: no effect channel for '%s'", node->argument.ptr);
+            return true;
+        }
+        return effect_queue_push_sound(context.effects, str_to_strv(node->argument));
     case ACTION_CREATE_TIMER:
         return execute_create_timer_action(diag, node, context, false);
     case ACTION_CREATE_TIMER_PERIODIC:

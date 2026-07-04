@@ -544,6 +544,73 @@ void test_integration_change_sprite_action_updates_source_rect(void)
     test_game_teardown(&game);
 }
 
+void test_integration_play_sound_enqueues(void)
+{
+    /* Same player/zone geometry and enter-trigger timing as
+     * test_integration_change_sprite_action_updates_source_rect above,
+     * swapping the action for play_sound:pickup.wav. "pickup.wav" matches
+     * one of the two placeholder SFX main.c's load_persistent_assets
+     * registers into the SFX registry (S6.4); this fixture doesn't need
+     * that registry to exist, since the assertion below is purely about
+     * the VM enqueuing the request. */
+    static const char *fixture_play_sound = "[[blueprint]]\n"
+                                            "name = \"player\"\n"
+                                            "texture = \"player.png\"\n"
+                                            "src = [0, 0, 32, 32]\n"
+                                            "collision_offset = [0, 0]\n"
+                                            "collision_size = [16, 16]\n"
+                                            "behavior = \"player\"\n"
+                                            "speed = 80\n"
+                                            "\n"
+                                            "[[blueprint]]\n"
+                                            "name = \"zone\"\n"
+                                            "texture = \"rock.png\"\n"
+                                            "src = [0, 0, 16, 16]\n"
+                                            "collision_offset = [0, 0]\n"
+                                            "collision_size = [32, 32]\n"
+                                            "solid = false\n"
+                                            "\n"
+                                            "[[blueprint.rule]]\n"
+                                            "trigger = \"enter\"\n"
+                                            "actions = [\"play_sound:pickup.wav\"]\n"
+                                            "\n"
+                                            "[[level]]\n"
+                                            "name = \"test\"\n"
+                                            "size = [320, 240]\n"
+                                            "\n"
+                                            "[[level.entity]]\n"
+                                            "blueprint = \"player\"\n"
+                                            "pos = [100, 100]\n"
+                                            "\n"
+                                            "[[level.entity]]\n"
+                                            "blueprint = \"zone\"\n"
+                                            "pos = [200, 100]\n";
+
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_play_sound));
+    TEST_ASSERT_EQUAL_INT(0, game.state.effects.sounds.count);
+
+    /* Drive game_update directly rather than test_advance_frame(s): D32's
+     * per-frame drain (frame.c's apply_effect_queue, run right after
+     * game_update inside run_active_frame) clears state->effects every
+     * frame it runs, including the one that pushes this request, so
+     * inspecting the queue through frame_update would always see it
+     * already emptied. Calling game_update -- the engine's headless
+     * update() entry point -- drives the real rule VM through the same
+     * real InputState and skips only that same-frame drain, which is
+     * exactly what "headless asserts queue" (D32) needs to observe. */
+    InputState input = {0};
+    input_state_set_gp_axis(&input, GAMEPAD_AXIS_LEFT_X, 1.0F);
+    for (int frame = 0; frame < 80; frame++) {
+        game_update(&game.diag, &game.state, input, 1.0F / 60.0F);
+    }
+
+    TEST_ASSERT_EQUAL_INT(1, game.state.effects.sounds.count);
+    TEST_ASSERT_TRUE(strv_eq_cstr(game.state.effects.sounds.data[0].name, "pickup.wav"));
+
+    test_game_teardown(&game);
+}
+
 static char *read_file(const char *path)
 {
     FILE *file = fopen(path, "re");

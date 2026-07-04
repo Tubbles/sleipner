@@ -3,6 +3,7 @@
 #include "alloc.h"
 #include "arena.h"
 #include "attribute.h"
+#include "audio.h"
 #include "blueprint.h"
 #include "collision.h"
 #include "debug.h"
@@ -198,6 +199,81 @@ void handle_editor_input(Diag *diag,
     }
 }
 
+/* Sound is the only effect type with a real handler yet (S6.4): look the
+ * name up in the SFX registry and play it through the alias concurrency
+ * cap. A miss (unknown name, or headless -- the registry is only
+ * populated by main.c's asset-loading path, never in tests) is logged and
+ * skipped, not treated as an error. */
+static void apply_sound_effects(Diag *diag, GameState *state, const vec_sound_effect_request *sounds)
+{
+    for (int index = 0; index < sounds->count; index++) {
+        const SoundEffectRequest *request = &sounds->data[index];
+        debug_log(diag->debug, "effect: sound %.*s", (int)request->name.len, request->name.ptr);
+        const Sound *sound = map_strv_sound_get(&state->assets.sounds, request->name);
+        if (!sound) {
+            debug_log(diag->debug, "effect: sound '%.*s' not found in registry", (int)request->name.len,
+                      request->name.ptr);
+            continue;
+        }
+        sfx_alias_pool_play(&state->audio.sfx_aliases, *sound);
+    }
+}
+
+/* camera_pan/camera_shake/spawn/dialogue have no handler yet (S6.5-S6.7):
+ * logged for the same observability the S6.2 scaffold had, otherwise
+ * no-ops. apply_effect_queue below still clears these vecs every frame so
+ * they never accumulate in the meantime. */
+static void log_camera_pan_effects(Diag *diag, const vec_camera_pan_request *camera_pans)
+{
+    for (int index = 0; index < camera_pans->count; index++) {
+        const CameraPanRequest *request = &camera_pans->data[index];
+        debug_log(diag->debug, "effect: camera_pan target=(%.1f, %.1f) duration=%.2f", (double)request->target.x,
+                  (double)request->target.y, (double)request->duration);
+    }
+}
+
+static void log_camera_shake_effects(Diag *diag, const vec_camera_shake_request *camera_shakes)
+{
+    for (int index = 0; index < camera_shakes->count; index++) {
+        const CameraShakeRequest *request = &camera_shakes->data[index];
+        debug_log(diag->debug, "effect: camera_shake magnitude=%.2f duration=%.2f", (double)request->magnitude,
+                  (double)request->duration);
+    }
+}
+
+static void log_spawn_effects(Diag *diag, const vec_spawn_request *spawns)
+{
+    for (int index = 0; index < spawns->count; index++) {
+        const SpawnRequest *request = &spawns->data[index];
+        debug_log(diag->debug, "effect: spawn %.*s at (%.1f, %.1f)", (int)request->blueprint.len,
+                  request->blueprint.ptr, (double)request->x, (double)request->y);
+    }
+}
+
+static void log_dialogue_effects(Diag *diag, const vec_dialogue_request *dialogues)
+{
+    for (int index = 0; index < dialogues->count; index++) {
+        const DialogueRequest *request = &dialogues->data[index];
+        debug_log(diag->debug, "effect: dialogue %.*s", (int)request->text.len, request->text.ptr);
+    }
+}
+
+/* GameState-aware replacement for the old S6.2 effect_queue_drain scaffold
+ * (which lived in effect.c and only logged). effect.c stays a pure push/
+ * clear channel; this is the per-frame apply pass with real GameState
+ * access (SFX registry, audio device), which is why it lives here instead.
+ * Sound is the only handled type so far -- S6.5-S6.7 add handlers for the
+ * rest, following this same pattern. */
+static void apply_effect_queue(Diag *diag, GameState *state)
+{
+    apply_sound_effects(diag, state, &state->effects.sounds);
+    log_camera_pan_effects(diag, &state->effects.camera_pans);
+    log_camera_shake_effects(diag, &state->effects.camera_shakes);
+    log_spawn_effects(diag, &state->effects.spawns);
+    log_dialogue_effects(diag, &state->effects.dialogues);
+    effect_queue_clear(&state->effects);
+}
+
 void run_active_frame(Diag *diag,
                       GameState *state,
                       Camera2D *editor_camera,
@@ -214,7 +290,7 @@ void run_active_frame(Diag *diag,
         }
     }
     game_update(diag, state, input, delta_time);
-    effect_queue_drain(diag, &state->effects);
+    apply_effect_queue(diag, state);
 }
 
 void handle_transition(Diag *diag, GameState *state, FrameContext *ctx)

@@ -6,19 +6,7 @@
 
 DEFINE_FFF_GLOBALS;
 
-/* debug_log stub — effect_queue_drain logs through it, but debug.c isn't
- * linked into this pure unit test (matches rule_test.c / menu_test.c). */
-void debug_log(DebugState *dbg, const char *format, ...)
-{
-    (void)dbg;
-    (void)format;
-}
-
 #include "test_heap_alloc.h"
-
-static ErrorState test_err;
-static DebugState test_dbg;
-static Diag test_diag = {&test_err, &test_dbg};
 
 void setUp(void) {}
 void tearDown(void) {}
@@ -146,7 +134,13 @@ void test_effect_queue_clear_resets_counts_and_allows_reuse(void)
     free_all(&queue);
 }
 
-void test_effect_queue_drain_logs_then_clears(void)
+/* effect_queue_drain used to own this assertion (push all five, drain,
+ * assert all five empty) before S6.4 moved the per-frame apply/handler
+ * pass out of effect.c and into frame.c (apply_effect_queue), leaving
+ * effect.c a pure push/clear channel with no Diag/GameState dependency.
+ * Retargeted to effect_queue_clear, the pure function that still lives
+ * here and still backs frame.c's apply pass. */
+void test_effect_queue_clear_empties_all_five_after_full_push(void)
 {
     EffectQueue queue;
     effect_queue_init(&queue, test_heap_alloc);
@@ -157,7 +151,7 @@ void test_effect_queue_drain_logs_then_clears(void)
     TEST_ASSERT_TRUE(effect_queue_push_spawn(&queue, strv_from_cstr("b"), (Vector2){0.0F, 0.0F}));
     TEST_ASSERT_TRUE(effect_queue_push_dialogue(&queue, strv_from_cstr("c")));
 
-    effect_queue_drain(&test_diag, &queue);
+    effect_queue_clear(&queue);
 
     TEST_ASSERT_EQUAL_INT(0, queue.sounds.count);
     TEST_ASSERT_EQUAL_INT(0, queue.camera_pans.count);
@@ -179,6 +173,6 @@ int main(void)
     RUN_TEST(test_effect_queue_push_spawn_stores_blueprint_and_position);
     RUN_TEST(test_effect_queue_push_dialogue_stores_text);
     RUN_TEST(test_effect_queue_clear_resets_counts_and_allows_reuse);
-    RUN_TEST(test_effect_queue_drain_logs_then_clears);
+    RUN_TEST(test_effect_queue_clear_empties_all_five_after_full_push);
     return UNITY_END();
 }

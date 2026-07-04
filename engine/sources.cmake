@@ -103,6 +103,9 @@ macro(embed_all_assets target root)
     embed_asset(${target} floor_png            "${root}/assets/sprites/floor.png")
     # Music
     embed_asset(${target} bgm_mp3              "${root}/assets/music/bgm.mp3")
+    # SFX (placeholders pending real sound design, see U1)
+    embed_asset(${target} pickup_wav           "${root}/assets/sfx/pickup.wav")
+    embed_asset(${target} hit_wav              "${root}/assets/sfx/hit.wav")
     # Fonts
     embed_asset(${target} earth_illusion_ttf   "${root}/assets/ttf/Role Playing Fonts/Role Playing Fonts/Earth Illusion/earth-illusion.ttf")
     embed_asset(${target} golden_apple_ttf     "${root}/assets/ttf/Role Playing Fonts/Role Playing Fonts/Golden Apple/golden-apple.ttf")

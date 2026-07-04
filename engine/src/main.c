@@ -54,6 +54,7 @@ const char *__lsan_default_suppressions(void)
 #include "input_func.h"
 #include "keyboard_widget.h"
 #include "level.h"
+#include "map.h"
 #include "menu.h"
 #include "platform_paths.h"
 #include "preferences.h"
@@ -158,6 +159,22 @@ static Texture2D load_embedded_texture(EmbeddedAsset asset)
     Texture2D texture = LoadTextureFromImage(image);
     UnloadImage(image);
     return texture;
+}
+
+/* SFX registry (S6.4, D32) -- mirrors texture_registry_add's lifetime:
+ * called from load_persistent_assets, before main() re-checkpoints
+ * gamedata_base, so entries survive every hot-reload/level-transition
+ * arena_restore. `name` is the lookup key play_sound: rules reference
+ * (full filename with extension, e.g. "pickup.wav", matching the texture
+ * registry's "player.png" convention). */
+static void sfx_registry_add(GameState *state, const char *name, EmbeddedAsset asset, Allocator *alloc)
+{
+    state->assets.sounds.alloc = *alloc;
+    Wave wave = LoadWaveFromMemory(".wav", asset.data, asset.size);
+    Sound sound = LoadSoundFromWave(wave);
+    UnloadWave(wave);
+    debug_log(&state->debug, "sfx: '%s' valid=%d", name, IsSoundValid(sound));
+    (void)map_strv_sound_set(&state->assets.sounds, strv_from_cstr(name), sound);
 }
 
 static int count_connected_gamepads(void)
@@ -404,6 +421,10 @@ static void load_persistent_assets(GameState *state)
                   state->assets.textures.data[index].texture.id, state->assets.textures.data[index].texture.width,
                   state->assets.textures.data[index].texture.height);
     }
+
+    sfx_registry_add(state, "pickup.wav", ASSET(pickup_wav), &gamedata_alloc);
+    sfx_registry_add(state, "hit.wav", ASSET(hit_wav), &gamedata_alloc);
+
     font_preview_add(state, "Earth Illusion", ASSET(earth_illusion_ttf), &gamedata_alloc);
     font_preview_add(state, "Golden Apple", ASSET(golden_apple_ttf), &gamedata_alloc);
     font_preview_add(state, "MenuCard", ASSET(menucard_ttf), &gamedata_alloc);
@@ -469,6 +490,17 @@ static void unload_textures(GameState *state)
 {
     for (int index = 0; index < state->assets.textures.count; index++) {
         UnloadTexture(state->assets.textures.data[index].texture);
+    }
+}
+
+/* map_strv_sound has no generic iterator (see map.h) -- walk the open-
+ * addressing entries array directly, same as map.c's own rehash loop. */
+static void unload_sfx_registry(GameState *state)
+{
+    for (int index = 0; index < state->assets.sounds.capacity; index++) {
+        if (state->assets.sounds.entries[index].state == MAP_ENTRY_OCCUPIED) {
+            UnloadSound(state->assets.sounds.entries[index].value);
+        }
     }
 }
 
@@ -1310,6 +1342,7 @@ int main(void)
     UnloadMusicStream(bgm);
     UnloadRenderTexture(target);
     unload_textures(state);
+    unload_sfx_registry(state);
     font_preview_cleanup(state);
     font_cache_cleanup(&state->assets.font_cache);
     game_free(diag, state);

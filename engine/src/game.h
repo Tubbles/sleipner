@@ -66,6 +66,10 @@ typedef struct {
     vec_font_preview font_previews;
     Font ui_font;
     vec_font_cache font_cache;
+    /* Embedded SFX registry (S6.4, D32) -- see audio.h's MAP_DECL(strv_sound, ...)
+     * for the full lifecycle/lookup contract. Same persistent, below-
+     * gamedata_base lifetime as textures/font_cache above. */
+    map_strv_sound sounds;
 } AssetRegistry;
 
 typedef struct {

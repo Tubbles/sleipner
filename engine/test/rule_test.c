@@ -27,6 +27,11 @@ FAKE_VALUE_FUNC(toml_datum_t, toml_string_at, const toml_array_t *, int);
 FAKE_VALUE_FUNC(toml_datum_t, toml_string_in, const toml_table_t *, const char *);
 FAKE_VALUE_FUNC(toml_table_t *, toml_table_at, const toml_array_t *, int);
 
+/* effect.c isn't linked into this pure unit test (matches the toml_* fakes
+ * above) — ACTION_PLAY_SOUND's handler calls this, but no existing test
+ * here populates ActionContext.effects, so it's never actually invoked. */
+FAKE_VALUE_FUNC(bool, effect_queue_push_sound, EffectQueue *, Strv);
+
 #include "test_heap_alloc.h"
 
 #include <string.h>

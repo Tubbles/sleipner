@@ -155,6 +155,15 @@ predicate rows and MOVE reparenting).
   TOML-only today. A visual editor for this would need a primitive list UI
   (add/remove/select kind) plus per-kind drag handles.
 
+## Audio / SFX follow-ups
+
+- **`map_strv_sound` has no generic iterator.** `unload_sfx_registry`
+  (`main.c`) walks `.entries[]`/`.capacity` directly, checking
+  `MAP_ENTRY_OCCUPIED` by hand, since `map.h`'s `MAP_DECL`/`MAP_IMPL`
+  macros don't emit a for-each helper. Fine for the two-entry S6.4
+  registry; worth a generic `map_<name>_for_each` if a bigger map ever
+  needs the same teardown-by-value pattern.
+
 ## Input system future work
 
 - **Plugin-declared actions.** When a plugin/engine system arrives,

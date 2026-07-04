@@ -1,7 +1,6 @@
 #pragma once
 
 #include "alloc.h"
-#include "diag.h"
 #include "strv.h"
 #include "vec.h" // IWYU pragma: export
 
@@ -16,8 +15,16 @@
  * level-transition/hot-reload arena_restore that rewinds gamedata_arena,
  * and its lifecycle matches the queue exactly (init at game_init, re-init
  * at game_reset_progression, freed wholesale with progression_arena at
- * game_free). frame.c drains it once per frame, right after game_update
- * returns, then clears it -- see effect_queue_drain.
+ * game_free).
+ *
+ * This module is a PURE channel: push helpers and effect_queue_clear only,
+ * no GameState access and no side effects. The per-frame apply pass that
+ * actually handles each effect type (looks up sounds in the SFX registry,
+ * moves the camera, spawns entities, shows dialogue) lives in frame.c
+ * instead (apply_effect_queue), since it needs GameState (registry, audio
+ * device, camera) that this header deliberately does not depend on.
+ * frame.c calls it once per frame, right after game_update returns, and it
+ * clears the queue via effect_queue_clear at the end.
  *
  * STRING LIFETIME RULE -- read before pushing a Strv into any of these:
  * every Strv pushed here (sound name, spawn blueprint, dialogue text) is
@@ -95,9 +102,3 @@ void effect_queue_clear(EffectQueue *queue);
 [[nodiscard]] bool effect_queue_push_camera_shake(EffectQueue *queue, CameraShakeRequest request);
 [[nodiscard]] bool effect_queue_push_spawn(EffectQueue *queue, Strv blueprint, Vector2 position);
 [[nodiscard]] bool effect_queue_push_dialogue(EffectQueue *queue, Strv text);
-
-/* Drain the queue: log every pending effect via debug_log, then clear all
- * five vecs. S6.2 scaffold only -- no real side effects land here yet;
- * those are S6.4 (sound) through S6.7 (dialogue). Headless: takes Diag,
- * not a window or GameState, so it is testable without raylib init. */
-void effect_queue_drain(Diag *diag, EffectQueue *queue);
