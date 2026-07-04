@@ -78,7 +78,9 @@ below is a new set of submodes plus their handlers, pickers, and hint tables.
   multiple gamepads.
 
 ## misc
-- add persisted attrs for children in toml emit and editor ui
+- add an editor UI toggle to mark a child entity attr as persisted (S3.3b;
+  emit+parse of child persisted attrs via `[level.entity.children.<tag>]`
+  is done, see level.c/toml_emitter.c)
 - for some reason, when running against the walls significantly warps the
   sprite. could be related to float position not scaling up correctly or other
   scaling issue.

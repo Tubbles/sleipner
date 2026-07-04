@@ -191,6 +191,79 @@ static bool instantiate_children(ErrorState *err,
     return true;
 }
 
+/* Find a direct child of parent_index tagged with `tag`. Returns -1 if no
+ * instantiated child carries that tag — the caller logs and skips rather
+ * than failing the whole load. */
+static int find_child_by_tag(const Entity *entities, int parent_index, const char *tag, int entity_count)
+{
+    for (int index = 0; index < entity_count; index++) {
+        if (entities[index].parent_index == parent_index && entities[index].tag.len > 0 &&
+            strcmp(entities[index].tag.ptr, tag) == 0) {
+            return index;
+        }
+    }
+    return -1;
+}
+
+/* Parse every key of a `[level.entity.children.<tag>]` table into persisted_attrs,
+ * skipping the "children" key (that's the nested-grandchild sub-table, not an attr). */
+static void
+parse_child_override_attrs(DebugState *dbg, Allocator *alloc, AttrSet *persisted_attrs, toml_table_t *child_table)
+{
+    int total_keys = toml_table_nkval(child_table) + toml_table_narr(child_table) + toml_table_ntab(child_table);
+    for (int key_index = 0; key_index < total_keys; key_index++) {
+        const char *key = toml_key_in(child_table, key_index);
+        if (!key || strcmp(key, "children") == 0) {
+            continue;
+        }
+        if (!parse_instance_attr(alloc, persisted_attrs, child_table, key)) {
+            debug_log(dbg, "ent: child override attr '%s' failed to set (set full)", key);
+            break;
+        }
+    }
+}
+
+/* Apply persisted-attr overrides from a `children` sub-table (keyed by tag) onto
+ * the matching instantiated children of parent_index, then mirror persisted ->
+ * runtime attrs the same way root entities are handled (see copy_attr_set).
+ * Recurses into each child's own nested "children" table for grandchildren.
+ * Bounded by MAX_CHILD_DEPTH — instantiate_children never nests deeper. */
+// NOLINTBEGIN(misc-no-recursion) -- bounded by MAX_CHILD_DEPTH, see instantiate_children.
+static void apply_child_override_table(
+    DebugState *dbg, Allocator *alloc, Level *level, int parent_index, toml_table_t *children_table)
+{
+    int total_keys =
+        toml_table_nkval(children_table) + toml_table_narr(children_table) + toml_table_ntab(children_table);
+    for (int key_index = 0; key_index < total_keys; key_index++) {
+        const char *tag = toml_key_in(children_table, key_index);
+        if (!tag) {
+            continue;
+        }
+        toml_table_t *child_table = toml_table_in(children_table, tag);
+        if (!child_table) {
+            continue;
+        }
+
+        int child_index = find_child_by_tag(level->entities.data, parent_index, tag, level->entities.count);
+        if (child_index < 0) {
+            debug_log(dbg, "ent: children override tag '%s' matches no instantiated child", tag);
+            continue;
+        }
+
+        Entity *child = &level->entities.data[child_index];
+        parse_child_override_attrs(dbg, alloc, &child->persisted_attrs, child_table);
+        if (!copy_attr_set(alloc, &child->attrs, &child->persisted_attrs)) {
+            debug_log(dbg, "ent: children override tag '%s': persisted->runtime attr copy failed", tag);
+        }
+
+        toml_table_t *grandchildren = toml_table_in(child_table, "children");
+        if (grandchildren) {
+            apply_child_override_table(dbg, alloc, level, child_index, grandchildren);
+        }
+    }
+}
+// NOLINTEND(misc-no-recursion)
+
 static void parse_entity(Diag *diag,
                          Allocator *alloc,
                          Level *level,
@@ -255,6 +328,11 @@ static void parse_entity(Diag *diag,
 
     if (!instantiate_children(diag->error, alloc, level, parent_index, blueprints, texture_lookup, texture_user_data)) {
         debug_log(diag->debug, "ent[%d]: failed to instantiate children: %s", entity_index, error_get(diag->error));
+    }
+
+    toml_table_t *children_table = toml_table_in(entity_table, "children");
+    if (children_table) {
+        apply_child_override_table(diag->debug, alloc, level, parent_index, children_table);
     }
 }
 

@@ -88,6 +88,7 @@ void test_toml_emit_custom_attrs(void);
 void test_toml_emit_health(void);
 void test_toml_emit_persisted_attrs(void);
 void test_toml_emit_no_persisted_attrs(void);
+void test_toml_emit_child_persisted_attrs_round_trip(void);
 void test_toml_emit_rules(void);
 void test_toml_emit_nested_control_flow_round_trip(void);
 void test_toml_emit_subroutines_round_trip(void);
@@ -257,6 +258,7 @@ int main(void)
     RUN_TEST(test_toml_emit_health);
     RUN_TEST(test_toml_emit_persisted_attrs);
     RUN_TEST(test_toml_emit_no_persisted_attrs);
+    RUN_TEST(test_toml_emit_child_persisted_attrs_round_trip);
     RUN_TEST(test_toml_emit_rules);
     RUN_TEST(test_toml_emit_nested_control_flow_round_trip);
     RUN_TEST(test_toml_emit_subroutines_round_trip);

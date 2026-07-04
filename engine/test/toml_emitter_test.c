@@ -535,6 +535,139 @@ void test_toml_emit_no_persisted_attrs(void)
     arena_free(&arena);
 }
 
+/* Regression fixture for D19/S3.3a: child-instance persisted attrs (declared
+ * via `[level.entity.children.<tag>]`) used to be silently dropped on save.
+ * `chest` has a tagged child `door`, which itself has a tagged grandchild
+ * `hinge`, so the fixture exercises one level of nesting in addition to the
+ * direct-child case. */
+static const char *child_persisted_attr_fixture = "[[blueprint]]\n"
+                                                  "name = \"hinge\"\n"
+                                                  "texture = \"hinge.png\"\n"
+                                                  "src = [0, 0, 8, 8]\n"
+                                                  "collision_offset = [0, 0]\n"
+                                                  "collision_size = [8, 8]\n"
+                                                  "\n"
+                                                  "[[blueprint]]\n"
+                                                  "name = \"door\"\n"
+                                                  "texture = \"door.png\"\n"
+                                                  "src = [0, 0, 16, 16]\n"
+                                                  "collision_offset = [0, 0]\n"
+                                                  "collision_size = [16, 16]\n"
+                                                  "\n"
+                                                  "[[blueprint.child]]\n"
+                                                  "blueprint = \"hinge\"\n"
+                                                  "tag = \"hinge\"\n"
+                                                  "offset = [8, 0]\n"
+                                                  "\n"
+                                                  "[[blueprint]]\n"
+                                                  "name = \"chest\"\n"
+                                                  "texture = \"chest.png\"\n"
+                                                  "src = [0, 0, 16, 16]\n"
+                                                  "collision_offset = [0, 0]\n"
+                                                  "collision_size = [16, 16]\n"
+                                                  "\n"
+                                                  "[[blueprint.child]]\n"
+                                                  "blueprint = \"door\"\n"
+                                                  "tag = \"door\"\n"
+                                                  "offset = [0, -8]\n"
+                                                  "\n"
+                                                  "[[level]]\n"
+                                                  "name = \"test\"\n"
+                                                  "size = [320, 240]\n"
+                                                  "\n"
+                                                  "[[level.entity]]\n"
+                                                  "blueprint = \"chest\"\n"
+                                                  "pos = [40, 60]\n"
+                                                  "opened = true\n"
+                                                  "\n"
+                                                  "[level.entity.children.door]\n"
+                                                  "locked = true\n"
+                                                  "\n"
+                                                  "[level.entity.children.door.children.hinge]\n"
+                                                  "rusty = true\n";
+
+static const Entity *find_entity_by_tag(const Level *level, const char *tag)
+{
+    for (int index = 0; index < level->entities.count; index++) {
+        const Entity *candidate = &level->entities.data[index];
+        if (candidate->tag.len > 0 && strcmp(candidate->tag.ptr, tag) == 0) {
+            return candidate;
+        }
+    }
+    return nullptr;
+}
+
+void test_toml_emit_child_persisted_attrs_round_trip(void)
+{
+    Arena arena;
+    TEST_ASSERT_TRUE(arena_init(&test_err, &arena));
+    BlueprintTable blueprints = {0};
+    Level level = {0};
+
+    /* Parse original: child overrides must land on the instantiated door/hinge,
+     * not just be silently ignored. */
+    toml_table_t *root = parse_toml(child_persisted_attr_fixture);
+    TEST_ASSERT_NOT_NULL(root);
+    blueprints_load(&test_diag, &blueprints, root, &arena);
+    TEST_ASSERT_TRUE(
+        level_load(&test_diag, &level, root, "test", &blueprints, dummy_lookup, nullptr, &test_heap_alloc));
+    toml_free(root);
+
+    TEST_ASSERT_EQUAL_INT(3, level.entities.count); /* chest + door + hinge */
+
+    const Entity *door = find_entity_by_tag(&level, "door");
+    TEST_ASSERT_NOT_NULL(door);
+    TEST_ASSERT_EQUAL_INT(1, attr_get_bool(&door->persisted_attrs, "locked", 0));
+    TEST_ASSERT_EQUAL_INT(1, attr_get_bool(&door->attrs, "locked", 0));
+
+    const Entity *hinge = find_entity_by_tag(&level, "hinge");
+    TEST_ASSERT_NOT_NULL(hinge);
+    TEST_ASSERT_EQUAL_INT(1, attr_get_bool(&hinge->persisted_attrs, "rusty", 0));
+    TEST_ASSERT_EQUAL_INT(1, attr_get_bool(&hinge->attrs, "rusty", 0));
+
+    /* Emit and confirm the overrides made it into the TOML text. */
+    char output[4096];
+    int written =
+        toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &empty_subroutines, &level, 1);
+    TEST_ASSERT_TRUE(written > 0);
+
+    TEST_ASSERT_NOT_NULL(strstr(output, "[level.entity.children.door]"));
+    TEST_ASSERT_NOT_NULL(strstr(output, "locked = true"));
+    TEST_ASSERT_NOT_NULL(strstr(output, "[level.entity.children.door.children.hinge]"));
+    TEST_ASSERT_NOT_NULL(strstr(output, "rusty = true"));
+
+    /* Re-parse the emitted output and confirm the overrides survive onto the
+     * freshly instantiated door/hinge — the actual regression this guards. */
+    Arena arena2;
+    TEST_ASSERT_TRUE(arena_init(&test_err, &arena2));
+    BlueprintTable blueprints2 = {0};
+    Level level2 = {0};
+
+    toml_table_t *root2 = parse_toml(output);
+    TEST_ASSERT_NOT_NULL(root2);
+    blueprints_load(&test_diag, &blueprints2, root2, &arena2);
+    TEST_ASSERT_TRUE(
+        level_load(&test_diag, &level2, root2, "test", &blueprints2, dummy_lookup, nullptr, &test_heap_alloc));
+    toml_free(root2);
+
+    TEST_ASSERT_EQUAL_INT(3, level2.entities.count);
+
+    const Entity *door2 = find_entity_by_tag(&level2, "door");
+    TEST_ASSERT_NOT_NULL(door2);
+    TEST_ASSERT_EQUAL_INT(1, attr_get_bool(&door2->persisted_attrs, "locked", 0));
+    TEST_ASSERT_EQUAL_INT(1, attr_get_bool(&door2->attrs, "locked", 0));
+
+    const Entity *hinge2 = find_entity_by_tag(&level2, "hinge");
+    TEST_ASSERT_NOT_NULL(hinge2);
+    TEST_ASSERT_EQUAL_INT(1, attr_get_bool(&hinge2->persisted_attrs, "rusty", 0));
+    TEST_ASSERT_EQUAL_INT(1, attr_get_bool(&hinge2->attrs, "rusty", 0));
+
+    test_level_free(&level);
+    test_level_free(&level2);
+    arena_free(&arena);
+    arena_free(&arena2);
+}
+
 static const char *rule_fixture = "[[blueprint]]\n"
                                   "name = \"chest\"\n"
                                   "texture = \"chest.png\"\n"

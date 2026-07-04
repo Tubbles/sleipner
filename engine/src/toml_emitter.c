@@ -419,6 +419,54 @@ static int emit_subroutines(char *buffer, int capacity, int offset, const vec_su
     return offset;
 }
 
+#define CHILD_ATTR_PATH_BUFSIZE 256
+
+/* Recursively emit `[<path>.<tag>]` headers for persisted-attr overrides on
+ * tagged entities in the child subtree rooted at parent_index. `path` starts
+ * as "level.entity.children" for a root's direct children and grows
+ * ".<tag>.children" per nesting level for grandchildren — this mirrors how a
+ * dotted TOML sub-table attaches to the last [[level.entity]] array element
+ * (D19). Only tagged children with non-empty persisted_attrs get a header;
+ * untagged children have no TOML key to hang overrides on and are skipped
+ * (their own persisted attrs, if any, are simply not representable). Bounded
+ * by MAX_CHILD_DEPTH (level.c) so recursion terminates. */
+// NOLINTBEGIN(misc-no-recursion) -- bounded by MAX_CHILD_DEPTH, see level.c instantiate_children.
+static int emit_child_persisted_attrs(char *buffer,
+                                      int capacity,
+                                      int offset,
+                                      const Entity *entities,
+                                      int parent_index,
+                                      const char *path,
+                                      int entity_count)
+{
+    for (int index = 0; index < entity_count; index++) {
+        const Entity *child = &entities[index];
+        if (child->parent_index != parent_index || child->tag.len == 0) {
+            continue;
+        }
+
+        if (child->persisted_attrs.entries.count > 0) {
+            offset = emit_append(buffer, capacity, offset, "[%s.%s]\n", path, child->tag.ptr);
+            for (int attr_index = 0; attr_index < child->persisted_attrs.entries.count; attr_index++) {
+                const Attribute *attr = &child->persisted_attrs.entries.data[attr_index];
+                offset = emit_append(buffer, capacity, offset, "%s = ", attr->name.ptr);
+                offset = emit_attr_value(buffer, capacity, offset, attr);
+                offset = emit_append(buffer, capacity, offset, "\n");
+            }
+            offset = emit_append(buffer, capacity, offset, "\n");
+        }
+
+        char nested_path[CHILD_ATTR_PATH_BUFSIZE];
+        int nested_len = snprintf(nested_path, sizeof(nested_path), "%s.%s.children", path, child->tag.ptr);
+        if (nested_len < 0 || (size_t)nested_len >= sizeof(nested_path)) {
+            continue;
+        }
+        offset = emit_child_persisted_attrs(buffer, capacity, offset, entities, index, nested_path, entity_count);
+    }
+    return offset;
+}
+// NOLINTEND(misc-no-recursion)
+
 static int emit_levels(char *buffer, int capacity, int offset, const Level *levels, int level_count)
 {
     for (int level_index = 0; level_index < level_count; level_index++) {
@@ -462,6 +510,8 @@ static int emit_levels(char *buffer, int capacity, int offset, const Level *leve
                 offset = emit_attr_value(buffer, capacity, offset, attr);
                 offset = emit_append(buffer, capacity, offset, "\n");
             }
+            offset = emit_child_persisted_attrs(buffer, capacity, offset, level->entities.data, entity_index,
+                                                "level.entity.children", level->entities.count);
             offset = emit_append(buffer, capacity, offset, "\n");
         }
     }
