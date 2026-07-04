@@ -12,6 +12,7 @@
 #include "raylib.h"
 #include "toml.h"
 
+#include <math.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -300,6 +301,57 @@ void test_integration_boundary_all_directions(void)
     TEST_ASSERT_FLOAT_WITHIN(0.1F, 240.0F - half, game_get_player_const(&game.state)->position.y);
 
     test_game_teardown(&game);
+}
+
+/* Regression guard for TODO.md's "wall-warp" report ("running against the
+ * walls significantly warps the sprite"). Drives the player into every
+ * cardinal level-boundary wall and both reachable corners of the "field"
+ * level (320x240), recording position every single frame, and asserts no
+ * frame-to-frame move ever exceeds one movement step. A "warp" is a
+ * discontinuous jump far larger than a single step; smooth clamping against
+ * the boundary (or push-back from the solid rock/tree obstacles the
+ * cardinal runs also reach) must never produce one. */
+void test_integration_wall_press_no_position_jump(void)
+{
+    /* speed=80px/s (fixture_gamedata) at the fixed 1/60s test delta_time =>
+     * ~1.333px/frame max single-axis step. Diagonal input is clamped to the
+     * unit disc (input_apply_deadzone), so it never exceeds that same
+     * per-axis magnitude either. Generous epsilon for float slop. */
+    const float max_step_per_axis = (DEFAULT_PLAYER_SPEED / 60.0F) + 0.5F;
+
+    struct {
+        float axis_x;
+        float axis_y;
+        const char *label;
+    } approaches[] = {
+        {-1.0F, 0.0F, "left wall"},          {1.0F, 0.0F, "right wall"},          {0.0F, -1.0F, "top wall"},
+        {0.0F, 1.0F, "bottom wall"},         {-1.0F, -1.0F, "top-left corner"},   {1.0F, -1.0F, "top-right corner"},
+        {-1.0F, 1.0F, "bottom-left corner"}, {1.0F, 1.0F, "bottom-right corner"},
+    };
+
+    for (size_t approach = 0; approach < sizeof(approaches) / sizeof(approaches[0]); approach++) {
+        TestGame game;
+        TEST_ASSERT_TRUE(test_game_setup(&game, fixture_gamedata));
+
+        InputState input = {0};
+        input_state_set_gp_axis(&input, GAMEPAD_AXIS_LEFT_X, approaches[approach].axis_x);
+        input_state_set_gp_axis(&input, GAMEPAD_AXIS_LEFT_Y, approaches[approach].axis_y);
+
+        Vector2 previous = game_get_player_const(&game.state)->position;
+        for (int frame = 0; frame < 400; frame++) {
+            test_advance_frame(&game, input);
+            Vector2 current = game_get_player_const(&game.state)->position;
+            char message[128];
+            (void)snprintf(message, sizeof(message), "%s: frame %d moved (%.3f, %.3f) (max %.3fpx/axis)",
+                           approaches[approach].label, frame, (double)(current.x - previous.x),
+                           (double)(current.y - previous.y), (double)max_step_per_axis);
+            TEST_ASSERT_TRUE_MESSAGE(fabsf(current.x - previous.x) <= max_step_per_axis, message);
+            TEST_ASSERT_TRUE_MESSAGE(fabsf(current.y - previous.y) <= max_step_per_axis, message);
+            previous = current;
+        }
+
+        test_game_teardown(&game);
+    }
 }
 
 void test_integration_player_entity_spawns(void)

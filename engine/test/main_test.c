@@ -46,12 +46,20 @@ void test_level_child_entity_positions(void);
 void test_level_child_entity_tags(void);
 void test_level_nested_children(void);
 
+/* render_test.c */
+void test_render_split_camera_target_separates_integer_and_fraction(void);
+void test_render_split_camera_target_exact_integer_has_zero_fraction(void);
+void test_render_upscale_dest_rect_matches_formula(void);
+void test_render_world_to_screen_position_continuous_sweeping_x_at_wall(void);
+void test_render_world_to_screen_position_continuous_sweeping_y_at_wall(void);
+
 /* integration_test.c */
 void test_integration_load_gamedata(void);
 void test_integration_load_specific_level(void);
 void test_integration_walk_and_collide(void);
 void test_integration_walk_freely(void);
 void test_integration_boundary_all_directions(void);
+void test_integration_wall_press_no_position_jump(void);
 void test_integration_player_entity_spawns(void);
 void test_integration_on_spawn_trigger_fires_on_load(void);
 void test_integration_enter_trigger_fires_on_overlap(void);
@@ -178,6 +186,7 @@ int main(void)
     RUN_TEST(test_integration_walk_and_collide);
     RUN_TEST(test_integration_walk_freely);
     RUN_TEST(test_integration_boundary_all_directions);
+    RUN_TEST(test_integration_wall_press_no_position_jump);
     RUN_TEST(test_integration_player_entity_spawns);
     RUN_TEST(test_integration_on_spawn_trigger_fires_on_load);
     RUN_TEST(test_integration_enter_trigger_fires_on_overlap);
@@ -212,6 +221,12 @@ int main(void)
     RUN_TEST(test_level_child_entity_positions);
     RUN_TEST(test_level_child_entity_tags);
     RUN_TEST(test_level_nested_children);
+
+    RUN_TEST(test_render_split_camera_target_separates_integer_and_fraction);
+    RUN_TEST(test_render_split_camera_target_exact_integer_has_zero_fraction);
+    RUN_TEST(test_render_upscale_dest_rect_matches_formula);
+    RUN_TEST(test_render_world_to_screen_position_continuous_sweeping_x_at_wall);
+    RUN_TEST(test_render_world_to_screen_position_continuous_sweeping_y_at_wall);
 
     RUN_TEST(test_rules_parse_from_toml);
     RUN_TEST(test_rules_parse_no_rules);

@@ -118,3 +118,37 @@ void render_particles(const Particle *particles, int count)
         DrawCircleV(particle->position, particle->size, col);
     }
 }
+
+CameraSplit render_split_camera_target(Vector2 camera_target)
+{
+    Vector2 integer_target = {floorf(camera_target.x), floorf(camera_target.y)};
+    Vector2 fractional_offset = {camera_target.x - integer_target.x, camera_target.y - integer_target.y};
+    return (CameraSplit){integer_target, fractional_offset};
+}
+
+Rectangle render_upscale_dest_rect(Vector2 fractional_offset, int pixel_scale, int screen_width, int screen_height)
+{
+    return (Rectangle){
+        -fractional_offset.x * (float)pixel_scale,
+        -fractional_offset.y * (float)pixel_scale,
+        (float)screen_width + (float)pixel_scale,
+        (float)screen_height + (float)pixel_scale,
+    };
+}
+
+Vector2 render_world_to_screen_position(Vector2 world_position,
+                                        RectU32 game_bounds,
+                                        Vector2 camera_target,
+                                        int screen_width,
+                                        int screen_height,
+                                        int pixel_scale)
+{
+    CameraSplit split = render_split_camera_target(camera_target);
+    Vector2 low_res_offset = {(float)game_bounds.width / 2.0F, (float)game_bounds.height / 2.0F};
+    Vector2 low_res_position = {world_position.x - split.integer_target.x + low_res_offset.x,
+                                world_position.y - split.integer_target.y + low_res_offset.y};
+    Rectangle dest = render_upscale_dest_rect(split.fractional_offset, pixel_scale, screen_width, screen_height);
+    float scale_x = dest.width / (float)game_bounds.width;
+    float scale_y = dest.height / (float)game_bounds.height;
+    return (Vector2){dest.x + (low_res_position.x * scale_x), dest.y + (low_res_position.y * scale_y)};
+}

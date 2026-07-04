@@ -57,6 +57,7 @@ const char *__lsan_default_suppressions(void)
 #include "platform_paths.h"
 #include "preferences.h"
 #include "rect.h"
+#include "render.h"
 #include "rule.h"
 #include "str.h"
 #include "strv.h"
@@ -67,7 +68,6 @@ const char *__lsan_default_suppressions(void)
 #include "error.h"
 
 #include <errno.h>
-#include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -895,9 +895,9 @@ static void render_frame(GameState *state, RenderParams params)
     /* Gameplay camera: split into integer target (pixel-perfect in low-res buffer)
      * and fractional remainder (applied as sub-pixel offset during upscale blit).
      * Without this, camera jumps in PIXEL_SCALE-sized steps on screen. */
-    Vector2 cam = state->gamedata.camera_target;
-    Vector2 int_cam = {floorf(cam.x), floorf(cam.y)};
-    Vector2 frac_cam = {cam.x - int_cam.x, cam.y - int_cam.y};
+    CameraSplit camera_split = render_split_camera_target(state->gamedata.camera_target);
+    Vector2 int_cam = camera_split.integer_target;
+    Vector2 frac_cam = camera_split.fractional_offset;
 
     Camera2D gameplay_camera = {
         .offset = {(float)params.game_bounds.width / 2.0F, (float)params.game_bounds.height / 2.0F},
@@ -932,10 +932,9 @@ static void render_frame(GameState *state, RenderParams params)
     EndTextureMode();
 
     BeginDrawing();
+    Rectangle upscale_dest = render_upscale_dest_rect(frac_cam, PIXEL_SCALE, state->screen_width, state->screen_height);
     DrawTexturePro(params.target.texture,
-                   (Rectangle){0, 0, (float)params.game_bounds.width, -(float)params.game_bounds.height},
-                   (Rectangle){-frac_cam.x * PIXEL_SCALE, -frac_cam.y * PIXEL_SCALE,
-                               (float)state->screen_width + PIXEL_SCALE, (float)state->screen_height + PIXEL_SCALE},
+                   (Rectangle){0, 0, (float)params.game_bounds.width, -(float)params.game_bounds.height}, upscale_dest,
                    (Vector2){0, 0}, 0.0F, WHITE);
     if (state->debug_enabled) {
         draw_debug_info(state, params.game_bounds);
