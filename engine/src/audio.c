@@ -6,25 +6,12 @@
 
 #include <math.h>
 #include <stddef.h>
-#include <stdint.h>
 
-/* FNV-1a, 32-bit. Only string-keyed map in the codebase so far (see
- * MAP_DECL(strv_sound, ...) in audio.h) -- every other MAP_DECL keys on
- * int and reuses map_hash_int/map_eq_int from map.h. */
-#define FNV_OFFSET_BASIS 2166136261U
-#define FNV_PRIME 16777619U
-
-static uint32_t hash_strv(Strv value)
-{
-    uint32_t hash = FNV_OFFSET_BASIS;
-    for (size_t index = 0; index < value.len; index++) {
-        hash ^= (uint8_t)value.ptr[index];
-        hash *= FNV_PRIME;
-    }
-    return hash;
-}
-
-MAP_IMPL(strv_sound, Strv, Sound, hash_strv, strv_eq)
+/* strv_hash (strv.h) is the shared FNV-1a hash for every Strv-keyed
+ * MAP_DECL -- see rule.h's map_strv_int (S6.8a) for the other one; every
+ * other MAP_DECL keys on int and reuses map_hash_int/map_eq_int from
+ * map.h. */
+MAP_IMPL(strv_sound, Strv, Sound, strv_hash, strv_eq)
 
 #define SAMPLE_RATE 44100
 #define SAMPLE_MAX 32767.0F

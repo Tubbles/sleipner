@@ -2,7 +2,11 @@
 
 #include <ctype.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <string.h>
+
+#define FNV_OFFSET_BASIS 2166136261U
+#define FNV_PRIME 16777619U
 
 Strv strv_from_cstr(const char *cstr)
 {
@@ -64,6 +68,16 @@ Strv strv_split(Strv *strv, char delim)
 bool strv_eq(Strv lhs, Strv rhs)
 {
     return lhs.len == rhs.len && memcmp(lhs.ptr, rhs.ptr, lhs.len) == 0;
+}
+
+uint32_t strv_hash(Strv value)
+{
+    uint32_t hash = FNV_OFFSET_BASIS;
+    for (size_t index = 0; index < value.len; index++) {
+        hash ^= (uint8_t)value.ptr[index];
+        hash *= FNV_PRIME;
+    }
+    return hash;
 }
 
 bool strv_eq_cstr(Strv strv, const char *cstr)

@@ -207,6 +207,159 @@ static const char *fixture_transition = "[[blueprint]]\n"
                                         "blueprint = \"exit_door\"\n"
                                         "pos = [80, 110]\n";
 
+/* Fixture for give_item/remove_item/has_item (S6.8a, D25). Player at
+ * (50,50); item_giver/item_remover/item_checker sit 100px apart on the
+ * same row so INTERACT_RANGE (24px) never overlaps two at once. Each
+ * fires on interact: giver gives "key", remover removes it, checker
+ * sets "key_present" only if has_item:key currently holds -- this rule
+ * is the give/has_item repro: it would fire (wrongly) even before any
+ * give under the old COND_HAS_ITEM stub (always true). */
+static const char *fixture_items = "[[blueprint]]\n"
+                                   "name = \"player\"\n"
+                                   "texture = \"player.png\"\n"
+                                   "src = [0, 0, 32, 32]\n"
+                                   "collision_offset = [0, 0]\n"
+                                   "collision_size = [16, 16]\n"
+                                   "behavior = \"player\"\n"
+                                   "speed = 80\n"
+                                   "\n"
+                                   "[[blueprint]]\n"
+                                   "name = \"item_giver\"\n"
+                                   "texture = \"rock.png\"\n"
+                                   "src = [0, 0, 16, 16]\n"
+                                   "collision_offset = [0, 0]\n"
+                                   "collision_size = [16, 16]\n"
+                                   "solid = false\n"
+                                   "\n"
+                                   "[[blueprint.rule]]\n"
+                                   "trigger = \"interact\"\n"
+                                   "actions = [\"give_item:key\"]\n"
+                                   "\n"
+                                   "[[blueprint]]\n"
+                                   "name = \"item_remover\"\n"
+                                   "texture = \"rock.png\"\n"
+                                   "src = [0, 0, 16, 16]\n"
+                                   "collision_offset = [0, 0]\n"
+                                   "collision_size = [16, 16]\n"
+                                   "solid = false\n"
+                                   "\n"
+                                   "[[blueprint.rule]]\n"
+                                   "trigger = \"interact\"\n"
+                                   "actions = [\"remove_item:key\"]\n"
+                                   "\n"
+                                   "[[blueprint]]\n"
+                                   "name = \"item_checker\"\n"
+                                   "texture = \"rock.png\"\n"
+                                   "src = [0, 0, 16, 16]\n"
+                                   "collision_offset = [0, 0]\n"
+                                   "collision_size = [16, 16]\n"
+                                   "solid = false\n"
+                                   "\n"
+                                   "[[blueprint.rule]]\n"
+                                   "trigger = \"interact\"\n"
+                                   "conditions = [\"has_item:key\"]\n"
+                                   "actions = [\"set_flag:key_present\"]\n"
+                                   "\n"
+                                   "[[level]]\n"
+                                   "name = \"test\"\n"
+                                   "size = [400, 300]\n"
+                                   "\n"
+                                   "[[level.entity]]\n"
+                                   "blueprint = \"player\"\n"
+                                   "pos = [50, 50]\n"
+                                   "\n"
+                                   "[[level.entity]]\n"
+                                   "blueprint = \"item_giver\"\n"
+                                   "pos = [150, 50]\n"
+                                   "\n"
+                                   "[[level.entity]]\n"
+                                   "blueprint = \"item_remover\"\n"
+                                   "pos = [250, 50]\n"
+                                   "\n"
+                                   "[[level.entity]]\n"
+                                   "blueprint = \"item_checker\"\n"
+                                   "pos = [350, 50]\n";
+
+/* Two-level fixture for the item-survives-transition test: give an item
+ * in "field" (item_giver, interact), walk into "door" (enter ->
+ * transition:interior), then the "interior" level's item_checker fires
+ * has_item:key on_spawn -- proving the item's map entry survived the
+ * transition's gamedata_arena rewind (rides S2.5, mirrors
+ * fixture_transition/test_integration_progression_survives_transition). */
+static const char *fixture_item_transition = "[[blueprint]]\n"
+                                             "name = \"player\"\n"
+                                             "texture = \"player.png\"\n"
+                                             "src = [0, 0, 32, 32]\n"
+                                             "collision_offset = [0, 0]\n"
+                                             "collision_size = [16, 16]\n"
+                                             "behavior = \"player\"\n"
+                                             "speed = 80\n"
+                                             "\n"
+                                             "[[blueprint]]\n"
+                                             "name = \"item_giver\"\n"
+                                             "texture = \"rock.png\"\n"
+                                             "src = [0, 0, 16, 16]\n"
+                                             "collision_offset = [0, 0]\n"
+                                             "collision_size = [16, 16]\n"
+                                             "solid = false\n"
+                                             "\n"
+                                             "[[blueprint.rule]]\n"
+                                             "trigger = \"interact\"\n"
+                                             "actions = [\"give_item:key\"]\n"
+                                             "\n"
+                                             "[[blueprint]]\n"
+                                             "name = \"door\"\n"
+                                             "texture = \"rock.png\"\n"
+                                             "src = [0, 0, 16, 16]\n"
+                                             "collision_offset = [0, 0]\n"
+                                             "collision_size = [32, 32]\n"
+                                             "solid = false\n"
+                                             "\n"
+                                             "[[blueprint.rule]]\n"
+                                             "trigger = \"enter\"\n"
+                                             "actions = [\"transition:interior,80,60\"]\n"
+                                             "\n"
+                                             "[[blueprint]]\n"
+                                             "name = \"item_checker\"\n"
+                                             "texture = \"rock.png\"\n"
+                                             "src = [0, 0, 16, 16]\n"
+                                             "collision_offset = [0, 0]\n"
+                                             "collision_size = [16, 16]\n"
+                                             "solid = false\n"
+                                             "\n"
+                                             "[[blueprint.rule]]\n"
+                                             "trigger = \"on_spawn\"\n"
+                                             "conditions = [\"has_item:key\"]\n"
+                                             "actions = [\"set_flag:key_present\"]\n"
+                                             "\n"
+                                             "[[level]]\n"
+                                             "name = \"field\"\n"
+                                             "size = [320, 240]\n"
+                                             "\n"
+                                             "[[level.entity]]\n"
+                                             "blueprint = \"player\"\n"
+                                             "pos = [100, 100]\n"
+                                             "\n"
+                                             "[[level.entity]]\n"
+                                             "blueprint = \"item_giver\"\n"
+                                             "pos = [150, 100]\n"
+                                             "\n"
+                                             "[[level.entity]]\n"
+                                             "blueprint = \"door\"\n"
+                                             "pos = [250, 100]\n"
+                                             "\n"
+                                             "[[level]]\n"
+                                             "name = \"interior\"\n"
+                                             "size = [160, 120]\n"
+                                             "\n"
+                                             "[[level.entity]]\n"
+                                             "blueprint = \"player\"\n"
+                                             "pos = [80, 60]\n"
+                                             "\n"
+                                             "[[level.entity]]\n"
+                                             "blueprint = \"item_checker\"\n"
+                                             "pos = [80, 110]\n";
+
 void test_integration_load_gamedata(void)
 {
     TestGame game;
@@ -1171,6 +1324,174 @@ void test_integration_progression_restore_clears_progression(void)
     TEST_ASSERT_FALSE(game.menu.open);
 
     TEST_ASSERT_FALSE(flag_get(&game.state.progression.flags, "beacon_spawned"));
+
+    test_game_teardown(&game);
+}
+
+/* S6.8a, D25: a rule gated on has_item:key must only fire AFTER give_item
+ * has run -- this is the repro for the COND_HAS_ITEM stub (rule.c, fixed
+ * from "return true" to a real count>0 lookup): with the stub, item_checker
+ * would set "key_present" on the very first interact, before any give.
+ * Verified against the stub directly (temporarily restoring `return true;`
+ * makes this test fail on the first assertion, since key_present would
+ * already be true) before writing the fix. */
+void test_integration_give_item_then_has_item(void)
+{
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_items));
+
+    Entity *checker = test_find_entity_by_blueprint(&game.state, "item_checker");
+    TEST_ASSERT_NOT_NULL(checker);
+    (void)walk_player_to(&game, 10.0F, checker->position, 300);
+
+    InputState interact_before = {0};
+    input_state_press_gp_button(&interact_before, GAMEPAD_BUTTON_RIGHT_FACE_DOWN);
+    test_advance_frame(&game, interact_before);
+    TEST_ASSERT_FALSE(flag_get(&game.state.progression.flags, "key_present"));
+
+    Entity *giver = test_find_entity_by_blueprint(&game.state, "item_giver");
+    TEST_ASSERT_NOT_NULL(giver);
+    (void)walk_player_to(&game, 10.0F, giver->position, 300);
+
+    InputState give = {0};
+    input_state_press_gp_button(&give, GAMEPAD_BUTTON_RIGHT_FACE_DOWN);
+    test_advance_frame(&game, give);
+    TEST_ASSERT_TRUE(item_has(&game.state.progression.items, "key"));
+
+    (void)walk_player_to(&game, 10.0F, checker->position, 300);
+    InputState interact_after = {0};
+    input_state_press_gp_button(&interact_after, GAMEPAD_BUTTON_RIGHT_FACE_DOWN);
+    test_advance_frame(&game, interact_after);
+    TEST_ASSERT_TRUE(flag_get(&game.state.progression.flags, "key_present"));
+
+    test_game_teardown(&game);
+}
+
+/* S6.8a, D25: remove_item decrements and removes the map entry at 0;
+ * give_item increments an existing entry rather than resetting it to 1.
+ * "give once, remove once" must clear has_item; "give twice, remove once"
+ * must leave it true with count 1 -- the count semantics D25 specifies. */
+void test_integration_remove_item_at_zero(void)
+{
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_items));
+
+    Entity *giver = test_find_entity_by_blueprint(&game.state, "item_giver");
+    Entity *remover = test_find_entity_by_blueprint(&game.state, "item_remover");
+    TEST_ASSERT_NOT_NULL(giver);
+    TEST_ASSERT_NOT_NULL(remover);
+
+    (void)walk_player_to(&game, 10.0F, giver->position, 300);
+    InputState give_once = {0};
+    input_state_press_gp_button(&give_once, GAMEPAD_BUTTON_RIGHT_FACE_DOWN);
+    test_advance_frame(&game, give_once);
+    TEST_ASSERT_EQUAL_INT(1, item_count(&game.state.progression.items, "key"));
+
+    (void)walk_player_to(&game, 10.0F, remover->position, 300);
+    InputState remove_once = {0};
+    input_state_press_gp_button(&remove_once, GAMEPAD_BUTTON_RIGHT_FACE_DOWN);
+    test_advance_frame(&game, remove_once);
+    TEST_ASSERT_FALSE(item_has(&game.state.progression.items, "key"));
+    TEST_ASSERT_EQUAL_INT(0, item_count(&game.state.progression.items, "key"));
+
+    (void)walk_player_to(&game, 10.0F, giver->position, 300);
+    InputState give_first = {0};
+    input_state_press_gp_button(&give_first, GAMEPAD_BUTTON_RIGHT_FACE_DOWN);
+    test_advance_frame(&game, give_first);
+    InputState give_second = {0};
+    input_state_press_gp_button(&give_second, GAMEPAD_BUTTON_RIGHT_FACE_DOWN);
+    test_advance_frame(&game, give_second);
+    TEST_ASSERT_EQUAL_INT(2, item_count(&game.state.progression.items, "key"));
+
+    (void)walk_player_to(&game, 10.0F, remover->position, 300);
+    InputState remove_again = {0};
+    input_state_press_gp_button(&remove_again, GAMEPAD_BUTTON_RIGHT_FACE_DOWN);
+    test_advance_frame(&game, remove_again);
+    TEST_ASSERT_TRUE(item_has(&game.state.progression.items, "key"));
+    TEST_ASSERT_EQUAL_INT(1, item_count(&game.state.progression.items, "key"));
+
+    test_game_teardown(&game);
+}
+
+/* S6.8a, D25: items ride progression_arena (like flags/vars) precisely so
+ * they survive a level transition's gamedata_arena rewind -- mirrors
+ * test_integration_progression_survives_transition. This is the S2.5 ride
+ * the map-key-copy exists for: if item_give had stored a bare view into
+ * the gamedata-arena-backed ActionNode argument instead of copying it into
+ * progression_alloc, the key would dangle after "field" -> "interior" and
+ * the interior item_checker's has_item:key lookup would silently miss. */
+void test_integration_item_survives_transition(void)
+{
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_item_transition));
+
+    Entity *giver = test_find_entity_by_blueprint(&game.state, "item_giver");
+    TEST_ASSERT_NOT_NULL(giver);
+    (void)walk_player_to(&game, 10.0F, giver->position, 300);
+
+    InputState give = {0};
+    input_state_press_gp_button(&give, GAMEPAD_BUTTON_RIGHT_FACE_DOWN);
+    test_advance_frame(&game, give);
+    TEST_ASSERT_TRUE(item_has(&game.state.progression.items, "key"));
+
+    InputState input = {0};
+    input_state_set_gp_axis(&input, GAMEPAD_AXIS_LEFT_X, 1.0F);
+    int max_iterations = 200;
+    int iteration = 0;
+    while (iteration < max_iterations && strcmp(game.state.gamedata.current_level.name.ptr, "field") == 0) {
+        test_advance_frame(&game, input);
+        iteration++;
+    }
+    TEST_ASSERT_TRUE_MESSAGE(iteration < max_iterations, "transition to 'interior' should fire within 200 frames");
+    TEST_ASSERT_EQUAL_STRING("interior", game.state.gamedata.current_level.name.ptr);
+
+    /* item_checker's on_spawn rule (conditions = ["has_item:key"]) only
+     * sets "key_present" if the item survived -- see the fixture comment. */
+    TEST_ASSERT_TRUE(flag_get(&game.state.progression.flags, "key_present"));
+
+    test_game_teardown(&game);
+}
+
+/* S6.8a, D25: the pause-menu RESTORE action clears ProgressionState
+ * wholesale (game_reset_progression zeroes the struct), same as it already
+ * does for flags/vars -- mirrors
+ * test_integration_progression_restore_clears_progression exactly, with an
+ * item instead of a flag. No game_reset_progression code change was needed:
+ * `state->progression = (ProgressionState){0}` already zeroes the new
+ * `items` field, and a zero-valued map is a valid empty ItemSet per map.h. */
+void test_integration_restore_clears_items(void)
+{
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_items));
+    game.frame_ctx.restore_fn = test_restore_fn;
+
+    Entity *giver = test_find_entity_by_blueprint(&game.state, "item_giver");
+    TEST_ASSERT_NOT_NULL(giver);
+    (void)walk_player_to(&game, 10.0F, giver->position, 300);
+
+    InputState give = {0};
+    input_state_press_gp_button(&give, GAMEPAD_BUTTON_RIGHT_FACE_DOWN);
+    test_advance_frame(&game, give);
+    TEST_ASSERT_TRUE(item_has(&game.state.progression.items, "key"));
+
+    InputState open_input = {0};
+    input_state_press_key(&open_input, KEY_F3);
+    test_advance_frame(&game, open_input);
+    TEST_ASSERT_TRUE(game.menu.open);
+
+    for (int step = 0; step < 2; step++) {
+        InputState down = {0};
+        input_state_press_key(&down, KEY_DOWN);
+        test_advance_frame(&game, down);
+    }
+    TEST_ASSERT_EQUAL_INT(MENU_ENTRY_RESTORE, game.menu.selected);
+
+    InputState confirm = {0};
+    input_state_press_key(&confirm, KEY_ENTER);
+    test_advance_frame(&game, confirm);
+    TEST_ASSERT_FALSE(game.menu.open);
+
+    TEST_ASSERT_FALSE(item_has(&game.state.progression.items, "key"));
 
     test_game_teardown(&game);
 }

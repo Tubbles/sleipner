@@ -256,11 +256,11 @@ bool game_load_gamedata(Diag *diag, GameState *state, GamedataParams params)
             }
             if (spawn_events.count > 0) {
                 Allocator progression_alloc = allocator_arena(&state->progression_arena);
-                rules_evaluate_batch(diag, &gamedata_alloc, spawn_views, spawn_count, spawn_events.data,
-                                     spawn_events.count, &state->progression.flags, &state->progression.vars,
-                                     &progression_alloc, &state->gamedata.rule_table, &state->gamedata.subroutines,
-                                     &state->gamedata.timers, &scratch_alloc, &state->transition, &state->effects,
-                                     &state->dialogue, &state->gamedata.continuations);
+                rules_evaluate_batch(
+                    diag, &gamedata_alloc, spawn_views, spawn_count, spawn_events.data, spawn_events.count,
+                    &state->progression.flags, &state->progression.vars, &state->progression.items, &progression_alloc,
+                    &state->gamedata.rule_table, &state->gamedata.subroutines, &state->gamedata.timers, &scratch_alloc,
+                    &state->transition, &state->effects, &state->dialogue, &state->gamedata.continuations);
             }
         }
         game_snap_camera(state);
@@ -703,9 +703,10 @@ void game_update(Diag *diag, GameState *state, InputState input, float delta_tim
             Allocator rule_alloc = allocator_arena(&state->gamedata_arena);
             Allocator progression_alloc = allocator_arena(&state->progression_arena);
             rules_resume_continuations(diag, &rule_alloc, views, view_count, &trigger_events, &state->progression.flags,
-                                       &state->progression.vars, &progression_alloc, &state->gamedata.rule_table,
-                                       &state->gamedata.subroutines, &state->gamedata.timers, &state->transition,
-                                       &state->effects, &state->dialogue, &state->gamedata.continuations, delta_time);
+                                       &state->progression.vars, &state->progression.items, &progression_alloc,
+                                       &state->gamedata.rule_table, &state->gamedata.subroutines,
+                                       &state->gamedata.timers, &state->transition, &state->effects, &state->dialogue,
+                                       &state->gamedata.continuations, delta_time);
         }
 
         /* Detect new solid-entity overlaps and fire collide events on both parties */
@@ -741,10 +742,10 @@ void game_update(Diag *diag, GameState *state, InputState input, float delta_tim
             Allocator rule_alloc = allocator_arena(&state->gamedata_arena);
             Allocator progression_alloc = allocator_arena(&state->progression_arena);
             rules_evaluate_batch(diag, &rule_alloc, views, view_count, trigger_events.data, trigger_events.count,
-                                 &state->progression.flags, &state->progression.vars, &progression_alloc,
-                                 &state->gamedata.rule_table, &state->gamedata.subroutines, &state->gamedata.timers,
-                                 &scratch_alloc, &state->transition, &state->effects, &state->dialogue,
-                                 &state->gamedata.continuations);
+                                 &state->progression.flags, &state->progression.vars, &state->progression.items,
+                                 &progression_alloc, &state->gamedata.rule_table, &state->gamedata.subroutines,
+                                 &state->gamedata.timers, &scratch_alloc, &state->transition, &state->effects,
+                                 &state->dialogue, &state->gamedata.continuations);
         }
     }
 }

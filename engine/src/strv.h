@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stddef.h>
+#include <stdint.h>
 
 typedef struct {
     const char *ptr;
@@ -32,6 +33,11 @@ Strv strv_split(Strv *strv, char delim);
 
 /* Return true if a and b have the same length and content. */
 bool strv_eq(Strv lhs, Strv rhs);
+
+/* FNV-1a, 32-bit. Shared hash function for every Strv-keyed MAP_DECL
+ * (map_strv_sound, audio.h; map_strv_int, rule.h) so they agree on
+ * distribution without duplicating the algorithm per call site. */
+uint32_t strv_hash(Strv value);
 
 /* Return true if strv has the same content as the null-terminated cstr. */
 bool strv_eq_cstr(Strv strv, const char *cstr);

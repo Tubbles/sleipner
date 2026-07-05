@@ -117,8 +117,8 @@ typedef struct {
     Arena gamedata_arena;
     ArenaCheckpoint gamedata_base; /* offset just above persistent assets (textures, fonts) */
     Arena scratch_arena;
-    /* Process-lifetime play progression (flags, global vars). Backed by
-     * its own arena so it survives game_load_gamedata's
+    /* Process-lifetime play progression (flags, global vars, inventory
+     * items). Backed by its own arena so it survives game_load_gamedata's
      * arena_restore(gamedata_base) on transitions and hot-reloads (see
      * progression.h). Explicitly cleared by the pause-menu RESTORE
      * action via game_reset_progression. */
@@ -181,8 +181,8 @@ Entity *game_get_player(GameState *state);
 const Entity *game_get_player_const(const GameState *state);
 void game_free(Diag *diag, GameState *state);
 
-/* Discard all play progression (flags, global vars): resets
- * progression_arena and zeroes state->progression. This is a
+/* Discard all play progression (flags, global vars, inventory items):
+ * resets progression_arena and zeroes state->progression. This is a
  * new-game-style reset, not a reload — callers that also want fresh
  * gamedata must separately call game_load_gamedata. Used by the
  * pause-menu RESTORE action. */

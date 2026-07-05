@@ -40,6 +40,7 @@ VEC_IMPL(exec_frame_snapshot, ExecFrameSnapshot)
 VEC_IMPL(rule_continuation, RuleContinuation)
 VEC_IMPL(str, Str)
 MAP_IMPL(entity_ruleset, int, vec_rule, map_hash_int, map_eq_int)
+MAP_IMPL(strv_int, Strv, int, strv_hash, strv_eq)
 
 /* ---- FlagSet ---- */
 
@@ -98,6 +99,84 @@ void flag_set_free(Allocator *alloc, FlagSet *flags)
     }
     vec_flag_name_free(&flags->names);
     *flags = (FlagSet){0};
+}
+
+/* ---- ItemSet ---- */
+
+static const int *item_find(const ItemSet *items, const char *name)
+{
+    return map_strv_int_get(&items->counts, strv_from_cstr(name));
+}
+
+int item_count(const ItemSet *items, const char *name)
+{
+    const int *count = item_find(items, name);
+    return count ? *count : 0;
+}
+
+bool item_has(const ItemSet *items, const char *name)
+{
+    return item_count(items, name) > 0;
+}
+
+void item_give(Diag *diag, Allocator *alloc, ItemSet *items, const char *name)
+{
+    const int *existing = item_find(items, name);
+    if (existing) {
+        /* map_strv_int_set only overwrites `.value` on an existing key
+         * (see map.h's MAP_IMPL) -- it never touches `.key` on this
+         * path, so passing a transient view into `name` (which may live
+         * in gamedata_arena) here is safe even though the STORED key is
+         * a progression_alloc copy from the first give below. */
+        int new_count = *existing + 1;
+        if (!map_strv_int_set(&items->counts, strv_from_cstr(name), new_count)) {
+            debug_log(diag->debug, "give_item: update failed for '%s'", name);
+        }
+        return;
+    }
+    /* First give of this item: `name` may point into gamedata_arena
+     * (rewound on the next transition/hot-reload) but `items` lives in
+     * progression_arena for the rest of the process, so the key must be
+     * copied into `alloc` (progression_alloc) here -- never stored as a
+     * bare view of the caller's argument. */
+    items->counts.alloc = *alloc;
+    Str owned = str_new(*alloc);
+    if (!str_from_cstr(&owned, name)) {
+        debug_log(diag->debug, "give_item: allocation failed for '%s'", name);
+        return;
+    }
+    if (!map_strv_int_set(&items->counts, str_to_strv(owned), 1)) {
+        str_free(&owned);
+        debug_log(diag->debug, "give_item: map insert failed for '%s'", name);
+    }
+}
+
+void item_remove(ItemSet *items, const char *name)
+{
+    const int *existing = item_find(items, name);
+    if (!existing) {
+        return;
+    }
+    int new_count = *existing - 1;
+    if (new_count <= 0) {
+        (void)map_strv_int_remove(&items->counts, strv_from_cstr(name));
+        return;
+    }
+    /* Existing-key path only -- see item_give's comment on why a
+     * transient view is safe to pass as the set argument here. */
+    (void)map_strv_int_set(&items->counts, strv_from_cstr(name), new_count);
+}
+
+void item_set_free(Allocator *alloc, ItemSet *items)
+{
+    if (alloc->free_fn) {
+        for (int index = 0; index < items->counts.capacity; index++) {
+            if (items->counts.entries[index].state == MAP_ENTRY_OCCUPIED) {
+                alloc->free_fn(alloc->ctx, (void *)items->counts.entries[index].key.ptr);
+            }
+        }
+    }
+    map_strv_int_free(&items->counts);
 }
 
 /* ---- Parsing helpers ---- */
@@ -917,7 +996,7 @@ static bool evaluate_single_condition(const Condition *condition, ConditionConte
         return attr_to_float(attr) == condition->compare_value;
     }
     case COND_HAS_ITEM:
-        return true;
+        return context.items && item_has(context.items, condition->argument.ptr);
     case COND_VAR: {
         const Attribute *var = nullptr;
         if (context.local_vars) {
@@ -1548,6 +1627,7 @@ static bool expand_if_else_node(
         .flags = context.flags,
         .local_vars = context.local_vars,
         .global_vars = context.global_vars,
+        .items = context.items,
     };
     bool condition_met = conditions_evaluate(node->conditions.data, node->conditions.count, cond_ctx);
     if (!require_action_pool(diag, context.action_pool)) {
@@ -1675,6 +1755,20 @@ static bool dispatch_simple_action(Diag *diag, Allocator *alloc, const ActionNod
         }
         flag_clear(context.progression_alloc, context.flags, node->argument.ptr);
         return true;
+    case ACTION_GIVE_ITEM:
+        if (!context.progression_alloc || !context.items) {
+            debug_log(diag->debug, "give_item: no progression storage for '%s'", node->argument.ptr);
+            return true;
+        }
+        item_give(diag, context.progression_alloc, context.items, node->argument.ptr);
+        return true;
+    case ACTION_REMOVE_ITEM:
+        if (!context.items) {
+            debug_log(diag->debug, "remove_item: no progression storage for '%s'", node->argument.ptr);
+            return true;
+        }
+        item_remove(context.items, node->argument.ptr);
+        return true;
     case ACTION_SET_ATTR:
         return execute_set_attr_action(diag, alloc, node, context);
     case ACTION_ADD_ATTR:
@@ -1751,6 +1845,7 @@ static bool advance_for_each_frame(ExecFrame *frame)
             .flags = frame->context.flags,
             .local_vars = frame->context.local_vars,
             .global_vars = frame->context.global_vars,
+            .items = frame->context.items,
         };
         if (!conditions_evaluate(frame->for_each_node->conditions.data, frame->for_each_node->conditions.count,
                                  cond_ctx)) {
@@ -2324,6 +2419,7 @@ void rules_resume_continuations(Diag *diag,
                                 vec_trigger_event *event_queue,
                                 FlagSet *flags,
                                 AttrSet *global_vars,
+                                ItemSet *items,
                                 Allocator *progression_alloc,
                                 map_entity_ruleset *rule_table,
                                 const vec_subroutine *subroutines,
@@ -2384,6 +2480,7 @@ void rules_resume_continuations(Diag *diag,
             .event_queue = event_queue,
             .local_vars = &due.local_vars,
             .global_vars = global_vars,
+            .items = items,
             .progression_alloc = progression_alloc,
             .subroutines = subroutines,
             .timers = timers,
@@ -2436,6 +2533,7 @@ static void evaluate_entity_rules(Diag *diag,
                                   int view_count,
                                   FlagSet *flags,
                                   AttrSet *global_vars,
+                                  ItemSet *items,
                                   Allocator *progression_alloc,
                                   const vec_trigger_event *pending_events,
                                   vec_trigger_event *next_events,
@@ -2465,6 +2563,7 @@ static void evaluate_entity_rules(Diag *diag,
             .flags = flags,
             .local_vars = &local_vars,
             .global_vars = global_vars,
+            .items = items,
         };
         ActionContext act_ctx = {
             .entity = entity,
@@ -2475,6 +2574,7 @@ static void evaluate_entity_rules(Diag *diag,
             .event_queue = next_events,
             .local_vars = &local_vars,
             .global_vars = global_vars,
+            .items = items,
             .progression_alloc = progression_alloc,
             .subroutines = subroutines,
             .timers = timers,
@@ -2511,6 +2611,7 @@ void rules_evaluate_batch(Diag *diag,
                           int event_count,
                           FlagSet *flags,
                           AttrSet *global_vars,
+                          ItemSet *items,
                           Allocator *progression_alloc,
                           map_entity_ruleset *rule_table,
                           const vec_subroutine *subroutines,
@@ -2546,7 +2647,7 @@ void rules_evaluate_batch(Diag *diag,
                     continue;
                 }
             }
-            evaluate_entity_rules(diag, alloc, entity, entity_index, views, view_count, flags, global_vars,
+            evaluate_entity_rules(diag, alloc, entity, entity_index, views, view_count, flags, global_vars, items,
                                   progression_alloc, &pending_events, &next_events, rule_table, subroutines, timers,
                                   transition, effects, dialogue, continuations);
         }

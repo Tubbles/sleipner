@@ -874,8 +874,9 @@ void test_evaluate_interact_sets_flag(void)
     TriggerEvent event = {.type = TRIGGER_INTERACT, .entity_index = 0};
     EntityView views[] = {{.entity = &entity, .defaults = &blueprint.attrs}};
 
-    rules_evaluate_batch(&test_diag, &test_heap_alloc, views, 1, &event, 1, &flags, &global_vars, &test_heap_alloc,
-                         &rule_table, nullptr, nullptr, &rule_alloc, nullptr, nullptr, nullptr, nullptr);
+    rules_evaluate_batch(&test_diag, &test_heap_alloc, views, 1, &event, 1, &flags, &global_vars, nullptr,
+                         &test_heap_alloc, &rule_table, nullptr, nullptr, &rule_alloc, nullptr, nullptr, nullptr,
+                         nullptr);
     TEST_ASSERT_TRUE(flag_get(&flags, "chest_opened"));
 
     arena_free(&arena);
@@ -930,8 +931,9 @@ void test_evaluate_condition_blocks_action(void)
     TriggerEvent event = {.type = TRIGGER_INTERACT, .entity_index = 0};
     EntityView views[] = {{.entity = &entity, .defaults = &blueprint.attrs}};
 
-    rules_evaluate_batch(&test_diag, &test_heap_alloc, views, 1, &event, 1, &flags, &global_vars, &test_heap_alloc,
-                         &rule_table, nullptr, nullptr, &rule_alloc, nullptr, nullptr, nullptr, nullptr);
+    rules_evaluate_batch(&test_diag, &test_heap_alloc, views, 1, &event, 1, &flags, &global_vars, nullptr,
+                         &test_heap_alloc, &rule_table, nullptr, nullptr, &rule_alloc, nullptr, nullptr, nullptr,
+                         nullptr);
     TEST_ASSERT_FALSE(flag_get(&flags, "chest_opened"));
 
     arena_free(&arena);
@@ -1005,8 +1007,9 @@ void test_evaluate_fire_event_cascading(void)
         {.entity = &entities[1], .defaults = &bp_door.attrs},
     };
 
-    rules_evaluate_batch(&test_diag, &test_heap_alloc, views, 2, &event, 1, &flags, &global_vars, &test_heap_alloc,
-                         &rule_table, nullptr, nullptr, &rule_alloc, nullptr, nullptr, nullptr, nullptr);
+    rules_evaluate_batch(&test_diag, &test_heap_alloc, views, 2, &event, 1, &flags, &global_vars, nullptr,
+                         &test_heap_alloc, &rule_table, nullptr, nullptr, &rule_alloc, nullptr, nullptr, nullptr,
+                         nullptr);
     TEST_ASSERT_TRUE(flag_get(&flags, "door_opened"));
 
     arena_free(&arena);
@@ -1066,8 +1069,8 @@ void test_evaluate_batch_handles_over_64_seeded_events(void)
     AttrSet global_vars = {0};
 
     rules_evaluate_batch(&test_diag, &test_heap_alloc, views, ENTITY_COUNT, events, ENTITY_COUNT, &flags, &global_vars,
-                         &test_heap_alloc, &rule_table, nullptr, nullptr, &rule_alloc, nullptr, nullptr, nullptr,
-                         nullptr);
+                         nullptr, &test_heap_alloc, &rule_table, nullptr, nullptr, &rule_alloc, nullptr, nullptr,
+                         nullptr, nullptr);
 
     for (int index = 0; index < ENTITY_COUNT; index++) {
         TEST_ASSERT_EQUAL_INT(1, attr_get_int(&entities[index].attrs, "hit_count", 0));

@@ -266,6 +266,45 @@ void flag_set(Diag *diag, Allocator *alloc, FlagSet *flags, const char *name);
 void flag_clear(Allocator *alloc, FlagSet *flags, const char *name);
 void flag_set_free(Allocator *alloc, FlagSet *flags);
 
+/* --- ItemSet (inventory: item-name -> count, S6.8a, D25) ---
+ *
+ * Unlimited, stackable by count; item ids are display-name strings in v1
+ * (equipment/categories and the pause-menu inventory grid are deferred).
+ * Keyed on Strv, reusing strv_hash (strv.h) the same way map_strv_sound
+ * (audio.h) does -- the only other Strv-keyed map in the codebase.
+ *
+ * Key lifetime is the trap here: `item_give`'s `name` argument is a raw
+ * C string view into an ActionNode's `argument` (a Str parsed into
+ * gamedata_arena at load time), which is REWOUND by every level
+ * transition/hot-reload. But ItemSet lives in the process-lifetime
+ * progression_arena (ProgressionState, progression.h) alongside FlagSet,
+ * so a map key pointing straight into gamedata_arena would dangle after
+ * the first transition. `item_give` copies the name into `alloc`
+ * (progression_alloc) on first insert, and only mutates the existing
+ * entry's value (never its key) on every subsequent give -- see the
+ * function body comment for why that makes a transient, gamedata-arena
+ * key safe to pass as the lookup argument. */
+MAP_DECL(strv_int, Strv, int)
+
+typedef struct {
+    map_strv_int counts;
+} ItemSet;
+
+/* 0 if `name` has never been given, or has been removed back down to 0. */
+int item_count(const ItemSet *items, const char *name);
+/* item_count(items, name) > 0. */
+bool item_has(const ItemSet *items, const char *name);
+/* +1, creating the entry (count 1) if absent. `alloc` must be the
+ * process-lifetime progression allocator -- see the ItemSet doc comment
+ * above for why a fresh key is copied into it rather than borrowed from
+ * the caller's (gamedata-arena-backed) `name`. */
+void item_give(Diag *diag, Allocator *alloc, ItemSet *items, const char *name);
+/* -1; removes the entry entirely once its count reaches 0. No-op if
+ * `name` was never given (or already removed). Never allocates -- a
+ * decrement/removal never needs progression_alloc. */
+void item_remove(ItemSet *items, const char *name);
+void item_set_free(Allocator *alloc, ItemSet *items);
+
 /* --- Trigger events --- */
 typedef struct {
     TriggerType type;
@@ -320,6 +359,10 @@ typedef struct {
     const FlagSet *flags;
     const AttrSet *local_vars;
     const AttrSet *global_vars;
+    /* Backs COND_HAS_ITEM (S6.8a). nullptr is tolerated -- has_item
+     * reads as false, mirroring how other conditions treat a missing
+     * lookup as not-met. */
+    const ItemSet *items;
 } ConditionContext;
 
 bool conditions_evaluate(const Condition *conditions, int count, ConditionContext context);
@@ -408,11 +451,17 @@ typedef struct {
     vec_trigger_event *event_queue;
     AttrSet *local_vars;
     AttrSet *global_vars;
-    /* Backs writes to `flags` and `global_vars` only — both live in the
-     * process-lifetime progression arena (see progression.h), which
-     * survives the level-transition/hot-reload arena_restore that
-     * rewinds everything else here. `local_vars` stays on the caller's
-     * `alloc` (see action_node_execute / rules_evaluate_batch). */
+    /* ACTION_GIVE_ITEM/ACTION_REMOVE_ITEM target (S6.8a). Same
+     * progression-arena lifetime and progression_alloc backing as
+     * `flags`/`global_vars` -- see the doc comment below and ItemSet's
+     * own (rule.h, above). */
+    ItemSet *items;
+    /* Backs writes to `flags`, `global_vars`, and `items` only — all
+     * three live in the process-lifetime progression arena (see
+     * progression.h), which survives the level-transition/hot-reload
+     * arena_restore that rewinds everything else here. `local_vars`
+     * stays on the caller's `alloc` (see action_node_execute /
+     * rules_evaluate_batch). */
     Allocator *progression_alloc;
     const LocalScope *scope;           /* entity binding chain — walked by resolve_target */
     const vec_subroutine *subroutines; /* read-only subroutine table */
@@ -456,8 +505,8 @@ typedef struct {
 /* --- Evaluation loop ---
  * `alloc` is the persistent gamedata allocator (the ACTION_TRANSITION handler
  * reads `transition->level`, allocated from it, after the batch returns).
- * `progression_alloc` backs writes to `flags` and `global_vars` (see
- * ActionContext.progression_alloc). `scratch_alloc` backs the per-batch
+ * `progression_alloc` backs writes to `flags`, `global_vars`, and `items`
+ * (see ActionContext.progression_alloc). `scratch_alloc` backs the per-batch
  * cascade event vecs and may be safely rewound as soon as the batch
  * returns. Keeping the three Allocator* params non-adjacent avoids
  * bugprone-easily-swappable-parameters between any pair of them. */
@@ -469,6 +518,7 @@ void rules_evaluate_batch(Diag *diag,
                           int event_count,
                           FlagSet *flags,
                           AttrSet *global_vars,
+                          ItemSet *items,
                           Allocator *progression_alloc,
                           map_entity_ruleset *rule_table,
                           const vec_subroutine *subroutines,
@@ -505,6 +555,7 @@ void rules_resume_continuations(Diag *diag,
                                 vec_trigger_event *event_queue,
                                 FlagSet *flags,
                                 AttrSet *global_vars,
+                                ItemSet *items,
                                 Allocator *progression_alloc,
                                 map_entity_ruleset *rule_table,
                                 const vec_subroutine *subroutines,
