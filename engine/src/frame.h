@@ -47,6 +47,15 @@ typedef bool (*KeybindingsSaveFn)(GameState *state);
  * optional. */
 typedef bool (*PreferencesSaveFn)(GameState *state);
 
+/* Autosave to the platform saves directory after a level transition
+ * completes (S6.15d1, D33). Matches save.h's save_autosave signature;
+ * production wires that function in directly. nullptr is permitted --
+ * headless tests get no autosave by default, the same nullptr-is-OK shape
+ * as every other FrameContext callback. A false return is non-fatal: the
+ * caller (frame.c's run_transition_swap) logs and continues, never
+ * aborting the transition over a failed autosave. */
+typedef bool (*AutosaveFn)(Diag *diag, GameState *state);
+
 /* Pluggable level loader for handle_transition. Production wires this
  * to a wrapper around its file-I/O load_gamedata; tests wire it to a
  * wrapper around game_load_gamedata against an in-memory TOML
@@ -121,6 +130,7 @@ typedef struct {
     PreferencesSaveFn preferences_save_fn;
     LevelLoaderFn level_loader_fn;
     void *level_loader_user_data;
+    AutosaveFn autosave_fn;
 } FrameContext;
 
 /* Run one full frame of input dispatch: global toggles, menu open /

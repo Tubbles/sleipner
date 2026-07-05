@@ -46,7 +46,9 @@ const char *__lsan_default_suppressions(void)
 #include "editor/editor.h"
 #include "entity.h"
 #include "diag.h"
+#include "file_backup.h"
 #include "font_cache.h"
+#include "fopen_mode.h"
 #include "frame.h"
 #include "settings.h"
 #include "game.h"
@@ -64,6 +66,7 @@ const char *__lsan_default_suppressions(void)
 #include "rect.h"
 #include "render.h"
 #include "rule.h"
+#include "save.h"
 #include "str.h"
 #include "strv.h"
 #include "tileset.h"
@@ -79,16 +82,6 @@ const char *__lsan_default_suppressions(void)
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
-
-#ifdef _WIN32
-#define FOPEN_READ "r"
-#define FOPEN_WRITE "w"
-#define FOPEN_APPEND "a"
-#else
-#define FOPEN_READ "re"
-#define FOPEN_WRITE "we"
-#define FOPEN_APPEND "ae"
-#endif
 
 VEC_IMPL(font_preview, FontPreviewEntry)
 
@@ -693,53 +686,6 @@ static void draw_font_preview(GameState *state)
 }
 
 #define MAX_GAMEDATA_SIZE (256UL * 1024)
-#define MAX_PATH_LEN 512
-#define COPY_BUFFER_SIZE 4096
-
-static bool backup_file(GameState *state, const char *path)
-{
-    char backup_path[MAX_PATH_LEN];
-    (void)snprintf(backup_path, MAX_PATH_LEN, "%s.bak", path);
-
-    FILE *source = fopen(path, FOPEN_READ);
-    if (!source) {
-        error_set(&state->error, "backup fopen(%s): %s", path, strerror(errno));
-        return false;
-    }
-
-    FILE *dest = fopen(backup_path, FOPEN_WRITE);
-    if (!dest) {
-        error_set(&state->error, "backup fopen(%s): %s", backup_path, strerror(errno));
-        (void)fclose(source);
-        return false;
-    }
-
-    char buffer[COPY_BUFFER_SIZE];
-    for (;;) {
-        size_t bytes = fread(buffer, 1, sizeof(buffer), source);
-        if (bytes > 0 && fwrite(buffer, 1, bytes, dest) != bytes) {
-            error_set(&state->error, "backup fwrite(%s): %s", backup_path, strerror(errno));
-            (void)fclose(source);
-            (void)fclose(dest);
-            return false;
-        }
-        if (bytes < sizeof(buffer)) {
-            break;
-        }
-    }
-
-    bool read_ok = (ferror(source) == 0);
-    (void)fclose(source);
-    (void)fclose(dest);
-
-    if (!read_ok) {
-        error_set(&state->error, "backup fread(%s): %s", path, strerror(errno));
-        return false;
-    }
-
-    debug_log(&state->debug, "backup: %s -> %s", path, backup_path);
-    return true;
-}
 
 static bool save_gamedata(GameState *state)
 {
@@ -749,7 +695,8 @@ static bool save_gamedata(GameState *state)
     Allocator scratch = allocator_arena(&state->scratch_arena);
     Str gd_path = gamedata_path(state, scratch);
 
-    if (!backup_file(state, gd_path.ptr)) {
+    Diag diag = {&state->error, &state->debug};
+    if (!backup_file(&diag, gd_path.ptr)) {
         error_wrap(&state->error, "save_gamedata");
         return false;
     }
@@ -1526,6 +1473,7 @@ int main(void)
         .preferences_save_fn = dispatch_save_preferences,
         .level_loader_fn = production_level_loader,
         .level_loader_user_data = nullptr,
+        .autosave_fn = save_autosave,
     };
 
     while (!WindowShouldClose() && !quit_requested) {
@@ -1568,6 +1516,16 @@ int main(void)
     }
 
     debug_log(&state->debug, "exiting game loop (frame=%d t=%.1fs)", state->frame, state->elapsed);
+
+    /* Autosave-on-quit (S6.15d1, D33): non-fatal -- a failed autosave must
+     * not block shutdown. Mirrors run_transition_swap's autosave hook
+     * (frame.c) but runs directly here since main.c's own scope already
+     * has diag/state and isn't reachable through FrameContext at this
+     * point in the shutdown sequence. */
+    if (!save_autosave(diag, state)) {
+        debug_log(&state->debug, "autosave-on-quit failed: %s", error_get(&state->error));
+        error_clear(&state->error);
+    }
 
     blur_cleanup(&blur);
     inventory_screen_cleanup(&inventory);

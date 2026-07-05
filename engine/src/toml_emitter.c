@@ -917,6 +917,21 @@ static int emit_save_position(char *buffer, int capacity, int offset, Vector2 po
     return emit_append(buffer, capacity, offset, "]\n");
 }
 
+/* "id"/"pos"/"active" are EntityDelta's own dedicated fields, emitted
+ * unconditionally above -- mirrors save.c's entity_delta_key_is_known,
+ * which skips these same three names on the parse side. Without this
+ * check, an entity whose instance attrs also contain "active" (the
+ * documented soft-destroy convention: set_attr:active,false writes
+ * "active" into the AttrSet exactly like any other instance attr, see
+ * progression.h's EntityDelta.active doc comment) would emit a second
+ * `active = ...` line in the same TOML table -- a duplicate key that
+ * tomlc99's parser rejects outright, breaking save_load on any save
+ * containing such an entity. */
+static bool entity_delta_attr_is_reserved(const char *name)
+{
+    return strcmp(name, "id") == 0 || strcmp(name, "pos") == 0 || strcmp(name, "active") == 0;
+}
+
 static int emit_save_entity_delta(char *buffer, int capacity, int offset, const EntityDelta *entity_delta)
 {
     offset = emit_append(buffer, capacity, offset, "[[level_delta.entity]]\n");
@@ -925,6 +940,9 @@ static int emit_save_entity_delta(char *buffer, int capacity, int offset, const 
     offset = emit_append(buffer, capacity, offset, "active = %s\n", entity_delta->active ? "true" : "false");
     for (int index = 0; index < entity_delta->attrs.entries.count; index++) {
         const Attribute *attr = &entity_delta->attrs.entries.data[index];
+        if (entity_delta_attr_is_reserved(attr->name.ptr)) {
+            continue;
+        }
         offset = emit_append(buffer, capacity, offset, "%s = ", attr->name.ptr);
         offset = emit_attr_value(buffer, capacity, offset, attr);
         offset = emit_append(buffer, capacity, offset, "\n");

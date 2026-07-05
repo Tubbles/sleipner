@@ -510,6 +510,14 @@ static void run_transition_swap(Diag *diag, GameState *state, FrameContext *ctx)
     }
     undo_history_new_entry(ctx->undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
                            strv_from_cstr("Level loaded"));
+
+    /* Autosave-on-transition (S6.15d1, D33): non-fatal by design -- a
+     * failed autosave (no writable saves dir, disk full, etc.) must never
+     * abort or roll back a transition that has already fully swapped. */
+    if (ctx->autosave_fn && !ctx->autosave_fn(diag, state)) {
+        debug_log(diag->debug, "autosave failed: %s", error_get(diag->error));
+        error_clear(diag->error);
+    }
 }
 
 /* Fade-to-black transition driver (S6.14, D27). Called once per frame

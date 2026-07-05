@@ -1,16 +1,25 @@
 #include "save.h"
 
 #include "alloc.h"
+#include "arena.h"
 #include "attribute.h"
+#include "debug.h"
+#include "diag.h"
 #include "error.h"
+#include "file_backup.h"
+#include "game.h"
 #include "map.h"
+#include "platform_paths.h"
 #include "progression.h"
 #include "rule.h"
 #include "str.h"
+#include "strv.h"
 #include "toml_emitter.h"
 #include "toml_str.h"
+#include "undo.h"
 #include "vec.h"
 
+#include "raylib.h"
 #include "toml.h"
 
 #include <stdlib.h>
@@ -320,4 +329,128 @@ bool save_deserialize(const char *toml, Allocator *alloc, ErrorState *err, SaveS
         error_wrap(err, "save_deserialize");
     }
     return parsed;
+}
+
+bool save_write(Diag *diag, GameState *state, const char *path)
+{
+    Allocator progression_alloc = allocator_arena(&state->progression_arena);
+    progression_capture_level_delta(diag, &state->progression, &progression_alloc, &state->gamedata.current_level);
+
+    SaveState save = {
+        .current_level_name = state->gamedata.current_level.name,
+        .progression = state->progression,
+    };
+
+    SCRATCH_SCOPE(&state->scratch_arena);
+    Allocator scratch_alloc = allocator_arena(&state->scratch_arena);
+    Str serialized = save_serialize(&save, &scratch_alloc, diag->error);
+    if (!serialized.ptr) {
+        error_wrap(diag->error, "save_write");
+        return false;
+    }
+
+    if (FileExists(path) && !backup_file(diag, path)) {
+        error_wrap(diag->error, "save_write");
+        return false;
+    }
+
+    if (!SaveFileText(path, serialized.ptr)) {
+        error_set(diag->error, "save_write: SaveFileText failed for %s", path);
+        return false;
+    }
+
+    debug_log(diag->debug, "save: wrote %zu bytes to %s", serialized.len, path);
+    return true;
+}
+
+bool save_load(Diag *diag,
+               GameState *state,
+               const char *path,
+               SaveLevelLoaderFn level_loader_fn,
+               void *level_loader_user_data,
+               UndoHistory *undo_history)
+{
+    char *content = LoadFileText(path);
+    if (!content) {
+        error_set(diag->error, "save_load: could not read %s", path);
+        return false;
+    }
+
+    /* Deserialize straight into progression_arena via a checkpoint rather
+     * than a scratch buffer + deep copy: on success the parsed SaveState's
+     * flags/vars/items/level_deltas already live in the right arena and
+     * state->progression can just be reassigned to it below; on failure
+     * arena_restore discards the partial parse and state->progression
+     * (still the OLD value) is untouched -- matches game_reset_progression's
+     * "arena owns everything, no separate deep-copy pass" shape. */
+    ArenaCheckpoint progression_checkpoint = arena_save(&state->progression_arena);
+    Allocator progression_alloc = allocator_arena(&state->progression_arena);
+    SaveState parsed = {0};
+    bool parsed_ok = save_deserialize(content, &progression_alloc, diag->error, &parsed);
+    UnloadFileText(content);
+    if (!parsed_ok) {
+        arena_restore(&state->progression_arena, progression_checkpoint);
+        error_wrap(diag->error, "save_load");
+        return false;
+    }
+
+    if (!level_loader_fn) {
+        arena_restore(&state->progression_arena, progression_checkpoint);
+        error_set(diag->error, "save_load: no level loader configured");
+        return false;
+    }
+    /* parsed.current_level_name.ptr may be nullptr here (a save whose
+     * [save] table omits current_level) -- level_loader_fn's underlying
+     * game_load_gamedata/level_load treats a nullptr level_name as "load
+     * the first level" (see level.c's find_level_table), not a crash, so
+     * this is passed through unchanged rather than special-cased. */
+    if (!level_loader_fn(diag, state, parsed.current_level_name.ptr, level_loader_user_data)) {
+        arena_restore(&state->progression_arena, progression_checkpoint);
+        error_wrap(diag->error, "save_load");
+        return false;
+    }
+
+    /* Commit: the old state->progression's arena bytes are simply orphaned
+     * below the checkpoint (never freed individually) -- a Load is a
+     * bounded user action, not a per-frame allocation, so this fits the
+     * arena's documented growth rule (see CLAUDE.md's "Arena growth
+     * strategy"). */
+    state->progression = parsed.progression;
+    Allocator gamedata_alloc = allocator_arena(&state->gamedata_arena);
+    progression_apply_level_delta(diag, &state->progression, &state->gamedata.current_level, &gamedata_alloc);
+    game_snap_camera(state);
+
+    undo_history_clear(undo_history);
+    undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
+                           strv_from_cstr("Loaded save"));
+
+    debug_log(diag->debug, "save: loaded %s (level '%s')", path, state->gamedata.current_level.name.ptr);
+    return true;
+}
+
+#define AUTOSAVE_FILENAME "autosave.toml"
+
+bool save_autosave(Diag *diag, GameState *state)
+{
+    SCRATCH_SCOPE(&state->scratch_arena);
+    Allocator scratch_alloc = allocator_arena(&state->scratch_arena);
+
+    Str saves_dir = {0};
+    if (!platform_saves_dir(&saves_dir, scratch_alloc, diag->error)) {
+        error_wrap(diag->error, "save_autosave");
+        return false;
+    }
+    if (!platform_ensure_saves_dir(saves_dir.ptr, diag->error)) {
+        error_wrap(diag->error, "save_autosave");
+        return false;
+    }
+
+    Str autosave_path = str_new(scratch_alloc);
+    if (!str_append_strv(&autosave_path, str_to_strv(saves_dir)) ||
+        !str_append_cstr(&autosave_path, AUTOSAVE_FILENAME)) {
+        error_set(diag->error, "save_autosave: path build failed");
+        return false;
+    }
+
+    return save_write(diag, state, autosave_path.ptr);
 }

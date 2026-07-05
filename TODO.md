@@ -376,8 +376,23 @@ predicate rows and MOVE reparenting).
   `progression_capture_level_delta` -- correct for a save taken
   mid-level (the caller must run that capture for the current level
   first), but there is no cross-level home for player state independent
-  of which level it happens to be standing in. Revisit once S6.15d
-  (file I/O + pause-menu UI) or multiplayer forces the question.
+  of which level it happens to be standing in. Revisit once S6.15d2
+  (pause-menu Save/Load UI, S6.15d1's file I/O + apply mechanism
+  already landed without forcing the question) or multiplayer forces
+  the question.
+- **`save_load` doesn't pre-seed overlap tracking after loading a save
+  (S6.15d1, D33).** `frame.c`'s `run_transition_swap` pre-seeds
+  `prev_player_overlaps` after positioning the player at a transition's
+  spawn point specifically so `enter`/`collide` triggers don't refire
+  for entities the player already overlaps at that position;
+  `save_load` (`save.c`) has no equivalent step after
+  `progression_apply_level_delta` restores the player's saved position.
+  A save taken while the player stood inside a trigger's region could
+  cause that trigger to fire again immediately after loading. Narrow
+  in practice (most triggers are one-shot or state-gated) but not
+  proven safe; revisit once the pause-menu Load UI (S6.15d2) makes
+  this reachable from real play instead of only from direct
+  `save_load` calls.
 
 ## Input system future work
 

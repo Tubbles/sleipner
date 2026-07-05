@@ -37,6 +37,7 @@ set(ENGINE_SOURCE_FILES
     effect.c
     entity.c
     error.c
+    file_backup.c
     font_cache.c
     frame.c
     game.c

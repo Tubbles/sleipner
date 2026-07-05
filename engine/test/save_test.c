@@ -1,9 +1,13 @@
 #include "unity.h"
 
+#include "alloc.h"
 #include "attribute.h"
 #include "debug.h"
 #include "diag.h"
+#include "entity.h"
 #include "error.h"
+#include "game.h"
+#include "input.h"
 #include "map.h"
 #include "progression.h"
 #include "rule.h"
@@ -13,6 +17,11 @@
 #include "test_helpers.h"
 
 #include "raylib.h"
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
 
 static ErrorState test_err;
 static DebugState test_dbg;
@@ -221,4 +230,295 @@ void test_save_deserialize_unsupported_version_fails(void)
     SaveState result = {0};
     TEST_ASSERT_FALSE(save_deserialize(future_save, &test_heap_alloc, &test_err, &result));
     TEST_ASSERT_NOT_NULL(error_get(&test_err));
+}
+
+/* --- S6.15d1, D33: save file I/O + autosave mechanism (black-box, real
+ * filesystem) --- */
+
+/* Single-level fixture: item_giver's interact gives "key" and sets flag
+ * "met_wizard" (covers both flags and items in one save.progression), and
+ * chest's interact sets an INSTANCE attr + soft-destroys itself (mirrors
+ * integration_test.c's fixture_entity_delta) -- so one save/load round
+ * trip exercises flags, items, and a level_delta entity in one pass. */
+static const char *fixture_save_round_trip = "[[blueprint]]\n"
+                                             "name = \"player\"\n"
+                                             "texture = \"player.png\"\n"
+                                             "src = [0, 0, 32, 32]\n"
+                                             "collision_offset = [0, 0]\n"
+                                             "collision_size = [16, 16]\n"
+                                             "behavior = \"player\"\n"
+                                             "speed = 80\n"
+                                             "\n"
+                                             "[[blueprint]]\n"
+                                             "name = \"item_giver\"\n"
+                                             "texture = \"rock.png\"\n"
+                                             "src = [0, 0, 16, 16]\n"
+                                             "collision_offset = [0, 0]\n"
+                                             "collision_size = [16, 16]\n"
+                                             "solid = false\n"
+                                             "\n"
+                                             "[[blueprint.rule]]\n"
+                                             "trigger = \"interact\"\n"
+                                             "actions = [\"give_item:key\", \"set_flag:met_wizard\"]\n"
+                                             "\n"
+                                             "[[blueprint]]\n"
+                                             "name = \"chest\"\n"
+                                             "texture = \"rock.png\"\n"
+                                             "src = [0, 0, 16, 16]\n"
+                                             "collision_offset = [0, 0]\n"
+                                             "collision_size = [16, 16]\n"
+                                             "solid = false\n"
+                                             "\n"
+                                             "[[blueprint.rule]]\n"
+                                             "trigger = \"interact\"\n"
+                                             "actions = [\"set_attr:opened,true\", \"set_attr:active,false\"]\n"
+                                             "\n"
+                                             "[[level]]\n"
+                                             "name = \"field\"\n"
+                                             "size = [320, 240]\n"
+                                             "\n"
+                                             "[[level.entity]]\n"
+                                             "blueprint = \"player\"\n"
+                                             "pos = [50, 50]\n"
+                                             "\n"
+                                             "[[level.entity]]\n"
+                                             "blueprint = \"item_giver\"\n"
+                                             "pos = [150, 50]\n"
+                                             "\n"
+                                             "[[level.entity]]\n"
+                                             "blueprint = \"chest\"\n"
+                                             "pos = [50, 150]\n";
+
+/* Two-level fixture for the autosave-on-transition test: "door"'s enter
+ * trigger sends the player to (120, 90) in "interior", which deliberately
+ * does NOT match interior's own authored player spawn (80, 60) -- so if
+ * save_load's apply step were a no-op, the restored position would read
+ * back as the authored (80, 60) instead of the captured (120, 90),
+ * making the assertion a real differentiator rather than a coincidence. */
+static const char *fixture_autosave_transition = "[[blueprint]]\n"
+                                                 "name = \"player\"\n"
+                                                 "texture = \"player.png\"\n"
+                                                 "src = [0, 0, 32, 32]\n"
+                                                 "collision_offset = [0, 0]\n"
+                                                 "collision_size = [16, 16]\n"
+                                                 "behavior = \"player\"\n"
+                                                 "speed = 80\n"
+                                                 "\n"
+                                                 "[[blueprint]]\n"
+                                                 "name = \"door\"\n"
+                                                 "texture = \"rock.png\"\n"
+                                                 "src = [0, 0, 16, 16]\n"
+                                                 "collision_offset = [0, 0]\n"
+                                                 "collision_size = [32, 32]\n"
+                                                 "solid = false\n"
+                                                 "\n"
+                                                 "[[blueprint.rule]]\n"
+                                                 "trigger = \"enter\"\n"
+                                                 "actions = [\"transition:interior,120,90\"]\n"
+                                                 "\n"
+                                                 "[[level]]\n"
+                                                 "name = \"field\"\n"
+                                                 "size = [320, 240]\n"
+                                                 "\n"
+                                                 "[[level.entity]]\n"
+                                                 "blueprint = \"player\"\n"
+                                                 "pos = [100, 100]\n"
+                                                 "\n"
+                                                 "[[level.entity]]\n"
+                                                 "blueprint = \"door\"\n"
+                                                 "pos = [200, 100]\n"
+                                                 "\n"
+                                                 "[[level]]\n"
+                                                 "name = \"interior\"\n"
+                                                 "size = [160, 120]\n"
+                                                 "\n"
+                                                 "[[level.entity]]\n"
+                                                 "blueprint = \"player\"\n"
+                                                 "pos = [80, 60]\n";
+
+/* Walk the player toward `destination` until within `range` pixels or
+ * `max_iterations` frames elapse. Local copy of integration_test.c's
+ * walk_player_to (file-local static there too, no shared header) --
+ * mirrors this file's own parse_save_attr precedent of duplicating a
+ * small established idiom across files rather than forcing one open. */
+static int walk_player_to_target(TestGame *game, float range, Vector2 destination, int max_iterations)
+{
+    for (int iteration = 0; iteration < max_iterations; iteration++) {
+        const Entity *player = game_get_player_const(&game->state);
+        float delta_x = destination.x - player->position.x;
+        float delta_y = destination.y - player->position.y;
+        if ((delta_x * delta_x) + (delta_y * delta_y) <= range * range) {
+            return iteration;
+        }
+        InputState step = {0};
+        input_state_set_gp_axis(&step, GAMEPAD_AXIS_LEFT_X, delta_x > 0.0F ? 1.0F : -1.0F);
+        input_state_set_gp_axis(&step, GAMEPAD_AXIS_LEFT_Y, delta_y > 0.0F ? 1.0F : -1.0F);
+        test_advance_frame(game, step);
+    }
+    return max_iterations;
+}
+
+/* Full serialize -> file -> deserialize -> apply loop: drive real
+ * gameplay (give an item, set a flag, open+soft-destroy a chest) via the
+ * real interact input, save_write to a temp file, mutate the LIVE state
+ * directly (proving what follows isn't a no-op), then save_load from
+ * that file and assert every mutated field was overwritten back to what
+ * was captured at save time. Verified to fail (mutated values survive)
+ * against a save_load whose apply step (the level_loader_fn call, the
+ * progression_apply_level_delta call, or the state->progression
+ * reassignment) is stubbed to a no-op. */
+void test_save_write_then_load_round_trips_via_file(void)
+{
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_save_round_trip));
+
+    Entity *giver = test_find_entity_by_blueprint(&game.state, "item_giver");
+    TEST_ASSERT_NOT_NULL(giver);
+    (void)walk_player_to_target(&game, 10.0F, giver->position, 300);
+    InputState give = {0};
+    input_state_press_gp_button(&give, GAMEPAD_BUTTON_RIGHT_FACE_DOWN);
+    test_advance_frame(&game, give);
+    TEST_ASSERT_TRUE(item_has(&game.state.progression.items, "key"));
+    TEST_ASSERT_TRUE(flag_get(&game.state.progression.flags, "met_wizard"));
+
+    Entity *chest = test_find_entity_by_blueprint(&game.state, "chest");
+    TEST_ASSERT_NOT_NULL(chest);
+    (void)walk_player_to_target(&game, 10.0F, chest->position, 300);
+    InputState open_chest = {0};
+    input_state_press_gp_button(&open_chest, GAMEPAD_BUTTON_RIGHT_FACE_DOWN);
+    test_advance_frame(&game, open_chest);
+    chest = test_find_entity_by_blueprint(&game.state, "chest");
+    TEST_ASSERT_NOT_NULL(chest);
+    TEST_ASSERT_TRUE(attr_get_bool(&chest->attrs, "opened", false));
+    TEST_ASSERT_FALSE(attr_get_bool(&chest->attrs, "active", true));
+
+    Vector2 saved_player_position = game_get_player_const(&game.state)->position;
+
+    char save_path[128];
+    (void)snprintf(save_path, sizeof(save_path), "/tmp/sleipner_save_test_%d_roundtrip.toml", (int)getpid());
+
+    TEST_ASSERT_TRUE(save_write(&game.diag, &game.state, save_path));
+
+    /* Mutate the live state directly: clear the flag, double the item
+     * count, re-close and reactivate the chest, and move the player away. */
+    Allocator progression_alloc = allocator_arena(&game.state.progression_arena);
+    flag_clear(&progression_alloc, &game.state.progression.flags, "met_wizard");
+    item_give(&game.diag, &progression_alloc, &game.state.progression.items, "key");
+    TEST_ASSERT_EQUAL_INT(2, item_count(&game.state.progression.items, "key"));
+
+    Allocator gamedata_alloc = allocator_arena(&game.state.gamedata_arena);
+    chest = test_find_entity_by_blueprint(&game.state, "chest");
+    TEST_ASSERT_NOT_NULL(chest);
+    TEST_ASSERT_TRUE(attr_set_bool(&gamedata_alloc, &chest->attrs, "opened", false));
+    TEST_ASSERT_TRUE(attr_set_bool(&gamedata_alloc, &chest->attrs, "active", true));
+
+    Entity *player = game_get_player(&game.state);
+    TEST_ASSERT_NOT_NULL(player);
+    player->position = (Vector2){0.0F, 0.0F};
+
+    TEST_ASSERT_TRUE(save_load(&game.diag, &game.state, save_path, game.frame_ctx.level_loader_fn,
+                               game.frame_ctx.level_loader_user_data, &game.undo_history));
+
+    TEST_ASSERT_EQUAL_STRING("field", game.state.gamedata.current_level.name.ptr);
+    TEST_ASSERT_TRUE(flag_get(&game.state.progression.flags, "met_wizard"));
+    TEST_ASSERT_EQUAL_INT(1, item_count(&game.state.progression.items, "key"));
+
+    chest = test_find_entity_by_blueprint(&game.state, "chest");
+    TEST_ASSERT_NOT_NULL(chest);
+    TEST_ASSERT_TRUE(attr_get_bool(&chest->attrs, "opened", false));
+    TEST_ASSERT_FALSE(attr_get_bool(&chest->attrs, "active", true));
+
+    const Entity *restored_player = game_get_player_const(&game.state);
+    TEST_ASSERT_FLOAT_WITHIN(0.5F, saved_player_position.x, restored_player->position.x);
+    TEST_ASSERT_FLOAT_WITHIN(0.5F, saved_player_position.y, restored_player->position.y);
+
+    test_game_teardown(&game);
+    (void)remove(save_path);
+}
+
+void test_save_load_missing_file_fails(void)
+{
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_save_round_trip));
+
+    char missing_path[128];
+    (void)snprintf(missing_path, sizeof(missing_path), "/tmp/sleipner_save_test_%d_missing.toml", (int)getpid());
+    (void)remove(missing_path); /* guarantee absence, mirrors preferences_test.c's tmp_path convention */
+
+    error_clear(&game.state.error);
+    TEST_ASSERT_FALSE(save_load(&game.diag, &game.state, missing_path, game.frame_ctx.level_loader_fn,
+                                game.frame_ctx.level_loader_user_data, &game.undo_history));
+    TEST_ASSERT_NOT_NULL(error_get(&game.state.error));
+
+    test_game_teardown(&game);
+}
+
+/* Drives a real transition (walking into "door") with frame_ctx.autosave_fn
+ * wired to save_autosave, redirecting platform_saves_dir's resolution to a
+ * temp directory via XDG_DATA_HOME (the env-var override platform_paths.c
+ * reads -- see platform_paths_test.c for the same convention). Asserts the
+ * autosave file actually landed on disk, then mutates the live player
+ * position and proves save_load restores the position run_transition_swap's
+ * autosave hook captured (the door's spawn point, 120,90 -- deliberately
+ * different from interior's own authored player position, 80,60, so a
+ * broken apply step would be caught rather than coincidentally matching). */
+void test_autosave_on_transition_writes_and_round_trips(void)
+{
+    const char *original_xdg_data_home = getenv("XDG_DATA_HOME");
+    char original_xdg_data_home_copy[256] = {0};
+    bool had_original_xdg_data_home = original_xdg_data_home != nullptr;
+    if (had_original_xdg_data_home) {
+        (void)snprintf(original_xdg_data_home_copy, sizeof(original_xdg_data_home_copy), "%s", original_xdg_data_home);
+    }
+
+    char xdg_data_home[128];
+    (void)snprintf(xdg_data_home, sizeof(xdg_data_home), "/tmp/sleipner_save_test_%d_xdg", (int)getpid());
+    TEST_ASSERT_EQUAL_INT(0, setenv("XDG_DATA_HOME", xdg_data_home, 1));
+
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_autosave_transition));
+    game.frame_ctx.autosave_fn = save_autosave;
+
+    InputState right = {0};
+    input_state_set_gp_axis(&right, GAMEPAD_AXIS_LEFT_X, 1.0F);
+    int max_iterations = 300;
+    int iteration = 0;
+    while (iteration < max_iterations && strcmp(game.state.gamedata.current_level.name.ptr, "field") == 0) {
+        test_advance_frame(&game, right);
+        iteration++;
+    }
+    TEST_ASSERT_TRUE_MESSAGE(iteration < max_iterations, "transition to 'interior' should fire within 300 frames");
+    TEST_ASSERT_EQUAL_STRING("interior", game.state.gamedata.current_level.name.ptr);
+
+    char autosave_path[192];
+    (void)snprintf(autosave_path, sizeof(autosave_path), "%s/sleipner/saves/autosave.toml", xdg_data_home);
+    TEST_ASSERT_TRUE(FileExists(autosave_path));
+
+    Entity *player = game_get_player(&game.state);
+    TEST_ASSERT_NOT_NULL(player);
+    player->position = (Vector2){0.0F, 0.0F};
+
+    TEST_ASSERT_TRUE(save_load(&game.diag, &game.state, autosave_path, game.frame_ctx.level_loader_fn,
+                               game.frame_ctx.level_loader_user_data, &game.undo_history));
+    TEST_ASSERT_EQUAL_STRING("interior", game.state.gamedata.current_level.name.ptr);
+
+    const Entity *restored_player = game_get_player_const(&game.state);
+    TEST_ASSERT_FLOAT_WITHIN(0.5F, 120.0F, restored_player->position.x);
+    TEST_ASSERT_FLOAT_WITHIN(0.5F, 90.0F, restored_player->position.y);
+
+    test_game_teardown(&game);
+
+    if (had_original_xdg_data_home) {
+        (void)setenv("XDG_DATA_HOME", original_xdg_data_home_copy, 1);
+    } else {
+        (void)unsetenv("XDG_DATA_HOME");
+    }
+    (void)remove(autosave_path);
+    char saves_dir[160];
+    (void)snprintf(saves_dir, sizeof(saves_dir), "%s/sleipner/saves", xdg_data_home);
+    (void)rmdir(saves_dir);
+    char sleipner_dir[160];
+    (void)snprintf(sleipner_dir, sizeof(sleipner_dir), "%s/sleipner", xdg_data_home);
+    (void)rmdir(sleipner_dir);
+    (void)rmdir(xdg_data_home);
 }

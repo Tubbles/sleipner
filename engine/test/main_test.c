@@ -195,6 +195,9 @@ void test_save_deserialize_malformed_toml_fails(void);
 void test_save_deserialize_missing_save_section_fails(void);
 void test_save_deserialize_minimal_valid_is_empty(void);
 void test_save_deserialize_unsupported_version_fails(void);
+void test_save_write_then_load_round_trips_via_file(void);
+void test_save_load_missing_file_fails(void);
+void test_autosave_on_transition_writes_and_round_trips(void);
 
 /* sprite_offset_integration_test.c */
 void test_integration_sprite_offset_edit_updates_entity_live(void);
@@ -504,6 +507,9 @@ int main(void)
     RUN_TEST(test_save_deserialize_missing_save_section_fails);
     RUN_TEST(test_save_deserialize_minimal_valid_is_empty);
     RUN_TEST(test_save_deserialize_unsupported_version_fails);
+    RUN_TEST(test_save_write_then_load_round_trips_via_file);
+    RUN_TEST(test_save_load_missing_file_fails);
+    RUN_TEST(test_autosave_on_transition_writes_and_round_trips);
 
     return UNITY_END();
 }
