@@ -55,6 +55,30 @@ void attr_set_free(Allocator *alloc, AttrSet *set)
     *set = (AttrSet){0};
 }
 
+bool attr_set_copy(Allocator *alloc, AttrSet *dst, const AttrSet *src)
+{
+    *dst = (AttrSet){0};
+    dst->entries.alloc = *alloc;
+    for (int index = 0; index < src->entries.count; index++) {
+        const Attribute *source_attr = &src->entries.data[index];
+        Attribute copy = {.type = source_attr->type, .value = source_attr->value};
+        copy.name = str_new(*alloc);
+        if (!str_from_cstr(&copy.name, source_attr->name.ptr)) {
+            return false;
+        }
+        if (copy.type == ATTR_STRING) {
+            copy.value.str = str_new(*alloc);
+            if (!str_from_cstr(&copy.value.str, source_attr->value.str.ptr)) {
+                return false;
+            }
+        }
+        if (!vec_attribute_push(&dst->entries, copy)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 bool attr_set_float(Allocator *alloc, AttrSet *set, const char *name, float value)
 {
     Attribute *entry = find_or_append(alloc, set, name);

@@ -52,6 +52,7 @@ set(ENGINE_SOURCE_FILES
     particle.c
     platform_paths.c
     preferences.c
+    progression.c
     random.c
     render.c
     rule.c

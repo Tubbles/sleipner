@@ -273,6 +273,34 @@ void test_attr_get_scoped_null_blueprint(void)
     attr_set_free(&test_heap_alloc, &instance);
 }
 
+/* S6.15b, D33: the per-level entity delta layer snapshots an entity's
+ * instance attrs by calling attr_set_copy before the entity itself is torn
+ * down by a transition's gamedata_arena rewind, then restores them onto a
+ * freshly-parsed entity later -- so the copy must be genuinely independent
+ * of the source, not an aliased view. Mutating "health"/"label" on source
+ * after the copy (attr_set_int/attr_set_string's existing-entry path frees
+ * and reallocates the entry's Str) and then freeing source entirely proves
+ * it: a shallow copy would read stale/freed memory back out of `copy`. */
+void test_attr_set_copy_is_independent(void)
+{
+    AttrSet source = {0};
+    TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, &source, "health", 10));
+    TEST_ASSERT_TRUE(
+        attr_set_string(&test_heap_alloc, &source, (AttrStringPair){.name = "label", .value = "original"}));
+
+    AttrSet copy = {0};
+    TEST_ASSERT_TRUE(attr_set_copy(&test_heap_alloc, &copy, &source));
+
+    TEST_ASSERT_TRUE(attr_set_int(&test_heap_alloc, &source, "health", 99));
+    TEST_ASSERT_TRUE(attr_set_string(&test_heap_alloc, &source, (AttrStringPair){.name = "label", .value = "mutated"}));
+    attr_set_free(&test_heap_alloc, &source);
+
+    TEST_ASSERT_EQUAL_INT(10, attr_get_int(&copy, "health", -1));
+    TEST_ASSERT_EQUAL_STRING("original", attr_get_string(&copy, "label"));
+
+    attr_set_free(&test_heap_alloc, &copy);
+}
+
 int main(void)
 {
     test_helpers_init();
@@ -292,5 +320,6 @@ int main(void)
     RUN_TEST(test_attr_get_scoped_bool);
     RUN_TEST(test_attr_get_scoped_string);
     RUN_TEST(test_attr_get_scoped_null_blueprint);
+    RUN_TEST(test_attr_set_copy_is_independent);
     return UNITY_END();
 }

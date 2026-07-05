@@ -37,6 +37,17 @@ const Attribute *attr_get(const AttrSet *set, const char *name);
 /* Free all name allocations and the underlying vec. */
 void attr_set_free(Allocator *alloc, AttrSet *set);
 
+/* Deep-copy src into dst: every entry's name (and, for ATTR_STRING entries,
+ * its value) is freshly allocated from alloc, so mutating src afterward --
+ * including reassigning a string attr, which frees and reallocates its Str
+ * (see find_or_append) -- never affects dst. dst is reset to empty before
+ * copying, so pass a zero-value AttrSet (or one already freed); passing one
+ * still holding live entries leaks them. Returns false (dst left however far
+ * the copy got) if any allocation fails. Used by the per-level entity delta
+ * layer (progression.h, S6.15b/D33) to snapshot an entity's instance attrs
+ * independently of the live entity the transition is about to tear down. */
+[[nodiscard]] bool attr_set_copy(Allocator *alloc, AttrSet *dst, const AttrSet *src);
+
 /* Set an attribute. Overwrites if name exists, appends if new.
  * Returns true on success, false if the set is full. */
 [[nodiscard]] bool attr_set_float(Allocator *alloc, AttrSet *set, const char *name, float value);

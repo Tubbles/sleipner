@@ -60,6 +60,7 @@ const char *__lsan_default_suppressions(void)
 #include "menu.h"
 #include "platform_paths.h"
 #include "preferences.h"
+#include "progression.h"
 #include "rect.h"
 #include "render.h"
 #include "rule.h"
@@ -984,10 +985,22 @@ static bool production_level_loader(Diag *diag, GameState *state, const char *le
 }
 
 /* Reset editor-side state after a gamedata load: drop the old undo chain,
- * push a fresh baseline snapshot, and clear transient editor UI state.
- * The sentinel -1 init is load-bearing — a zero-init EditorState has
- * radial_confirmed = 0 which is a valid radial sector and silently breaks
- * handle_browse_input. Any reload path must go through here. */
+ * push a fresh baseline snapshot, clear transient editor UI state, and drop
+ * any captured per-level entity deltas (S6.15b, D33). The delta clear
+ * matters specifically here, not inside game_load_gamedata itself: this
+ * function's two callers (poll_hot_reload via handle_hot_reload, and
+ * menu_dispatch_restore) are the "the gamedata on disk changed" or
+ * "discard my changes" reload paths, where a captured gameplay delta is
+ * stale against the fresh authoring -- unlike a level transition, which
+ * also calls game_load_gamedata (via level_loader_fn) but must NOT clear
+ * the delta it just captured moments earlier (see frame.c's
+ * run_transition_swap). menu_dispatch_restore's game_reset_progression
+ * call (which runs first there) already wholesale-zeroes level_deltas, so
+ * this call is a harmless no-op on that path; it is load-bearing only for
+ * hot-reload. The sentinel -1 init is load-bearing — a zero-init
+ * EditorState has radial_confirmed = 0 which is a valid radial sector and
+ * silently breaks handle_browse_input. Any reload path must go through
+ * here. */
 static void reset_editor_after_reload(GameState *state,
                                       EditorState *editor_state,
                                       WatchList *watches,
@@ -997,6 +1010,7 @@ static void reset_editor_after_reload(GameState *state,
     undo_history_clear(undo_history);
     undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
                            baseline_description);
+    progression_clear_level_deltas(&state->progression);
     *editor_state = (EditorState){.top_mode = EDITOR_TOP_SCENE,
                                   .selected_entity_id = -1,
                                   .sub_mode = EDITOR_SUB_BROWSE,

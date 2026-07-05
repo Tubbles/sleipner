@@ -436,6 +436,87 @@ static const char *fixture_item_transition = "[[blueprint]]\n"
                                              "blueprint = \"item_checker\"\n"
                                              "pos = [80, 110]\n";
 
+/* Two-level fixture for the S6.15b/D33 entity delta layer: same field/
+ * door/interior/exit_door shape as fixture_transition (same positions and
+ * sizes, so the proven walk-into-trigger geometry carries over), plus a
+ * "chest" entity in "field" whose interact rule sets an INSTANCE attr
+ * (`opened`, not a global flag -- two-level scoping makes the instance
+ * AttrSet itself the delta) and, in the same interact, soft-destroys
+ * itself (`active = false`), folding the "destroyed entity stays inactive"
+ * check into the same round trip. */
+static const char *fixture_entity_delta = "[[blueprint]]\n"
+                                          "name = \"player\"\n"
+                                          "texture = \"player.png\"\n"
+                                          "src = [0, 0, 32, 32]\n"
+                                          "collision_offset = [0, 0]\n"
+                                          "collision_size = [16, 16]\n"
+                                          "behavior = \"player\"\n"
+                                          "speed = 80\n"
+                                          "\n"
+                                          "[[blueprint]]\n"
+                                          "name = \"door\"\n"
+                                          "texture = \"rock.png\"\n"
+                                          "src = [0, 0, 16, 16]\n"
+                                          "collision_offset = [0, 0]\n"
+                                          "collision_size = [32, 32]\n"
+                                          "solid = false\n"
+                                          "\n"
+                                          "[[blueprint.rule]]\n"
+                                          "trigger = \"enter\"\n"
+                                          "actions = [\"transition:interior,80,60\"]\n"
+                                          "\n"
+                                          "[[blueprint]]\n"
+                                          "name = \"exit_door\"\n"
+                                          "texture = \"rock.png\"\n"
+                                          "src = [0, 0, 16, 16]\n"
+                                          "collision_offset = [0, 0]\n"
+                                          "collision_size = [32, 32]\n"
+                                          "solid = false\n"
+                                          "\n"
+                                          "[[blueprint.rule]]\n"
+                                          "trigger = \"enter\"\n"
+                                          "actions = [\"transition:field,100,100\"]\n"
+                                          "\n"
+                                          "[[blueprint]]\n"
+                                          "name = \"chest\"\n"
+                                          "texture = \"rock.png\"\n"
+                                          "src = [0, 0, 16, 16]\n"
+                                          "collision_offset = [0, 0]\n"
+                                          "collision_size = [16, 16]\n"
+                                          "solid = false\n"
+                                          "\n"
+                                          "[[blueprint.rule]]\n"
+                                          "trigger = \"interact\"\n"
+                                          "actions = [\"set_attr:opened,true\", \"set_attr:active,false\"]\n"
+                                          "\n"
+                                          "[[level]]\n"
+                                          "name = \"field\"\n"
+                                          "size = [320, 240]\n"
+                                          "\n"
+                                          "[[level.entity]]\n"
+                                          "blueprint = \"player\"\n"
+                                          "pos = [100, 100]\n"
+                                          "\n"
+                                          "[[level.entity]]\n"
+                                          "blueprint = \"door\"\n"
+                                          "pos = [200, 100]\n"
+                                          "\n"
+                                          "[[level.entity]]\n"
+                                          "blueprint = \"chest\"\n"
+                                          "pos = [150, 150]\n"
+                                          "\n"
+                                          "[[level]]\n"
+                                          "name = \"interior\"\n"
+                                          "size = [160, 120]\n"
+                                          "\n"
+                                          "[[level.entity]]\n"
+                                          "blueprint = \"player\"\n"
+                                          "pos = [80, 60]\n"
+                                          "\n"
+                                          "[[level.entity]]\n"
+                                          "blueprint = \"exit_door\"\n"
+                                          "pos = [80, 110]\n";
+
 void test_integration_load_gamedata(void)
 {
     TestGame game;
@@ -1760,6 +1841,151 @@ void test_integration_item_survives_transition(void)
     /* item_checker's on_spawn rule (conditions = ["has_item:key"]) only
      * sets "key_present" if the item survived -- see the fixture comment. */
     TEST_ASSERT_TRUE(flag_get(&game.state.progression.flags, "key_present"));
+
+    test_game_teardown(&game);
+}
+
+/* S6.15b, D33: the per-level entity delta layer is the in-memory half of
+ * D27/D33's deferred persistence -- leaving a level captures its entities'
+ * position/attrs/active into progression_arena keyed by level name and
+ * id; returning re-applies them onto the freshly re-parsed level. Opening
+ * the chest sets an INSTANCE attr (not a global flag -- two-level scoping
+ * makes the instance AttrSet itself the delta, see progression.h), and the
+ * same interact soft-destroys the chest, folding the "destroyed entity
+ * stays inactive" check into this same round trip. Driven black-box
+ * through the real interact/movement/transition path, mirroring
+ * test_integration_progression_survives_transition. Verified to fail (the
+ * chest resets to authored closed/active) against a temporary revert of
+ * run_transition_swap's progression_capture_level_delta/
+ * progression_apply_level_delta calls before writing the feature. */
+void test_integration_level_state_persists_across_transition(void)
+{
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_entity_delta));
+
+    Entity *chest = test_find_entity_by_blueprint(&game.state, "chest");
+    TEST_ASSERT_NOT_NULL(chest);
+    (void)walk_player_to(&game, 10.0F, chest->position, 300);
+
+    InputState interact = {0};
+    input_state_press_gp_button(&interact, GAMEPAD_BUTTON_RIGHT_FACE_DOWN);
+    test_advance_frame(&game, interact);
+
+    chest = test_find_entity_by_blueprint(&game.state, "chest");
+    TEST_ASSERT_NOT_NULL(chest);
+    TEST_ASSERT_TRUE(attr_get_bool(&chest->attrs, "opened", false));
+    TEST_ASSERT_FALSE(attr_get_bool(&chest->attrs, "active", true));
+
+    Entity *door = test_find_entity_by_blueprint(&game.state, "door");
+    TEST_ASSERT_NOT_NULL(door);
+    Vector2 door_position = door->position;
+    int max_iterations = 300;
+    int iteration = 0;
+    while (iteration < max_iterations && strcmp(game.state.gamedata.current_level.name.ptr, "field") == 0) {
+        const Entity *player = game_get_player_const(&game.state);
+        float delta_x = door_position.x - player->position.x;
+        float delta_y = door_position.y - player->position.y;
+        InputState step = {0};
+        input_state_set_gp_axis(&step, GAMEPAD_AXIS_LEFT_X, delta_x > 0.0F ? 1.0F : -1.0F);
+        input_state_set_gp_axis(&step, GAMEPAD_AXIS_LEFT_Y, delta_y > 0.0F ? 1.0F : -1.0F);
+        test_advance_frame(&game, step);
+        iteration++;
+    }
+    TEST_ASSERT_TRUE_MESSAGE(iteration < max_iterations, "transition to 'interior' should fire within 300 frames");
+    TEST_ASSERT_EQUAL_STRING("interior", game.state.gamedata.current_level.name.ptr);
+
+    Entity *exit_door = test_find_entity_by_blueprint(&game.state, "exit_door");
+    TEST_ASSERT_NOT_NULL(exit_door);
+    Vector2 exit_position = exit_door->position;
+    iteration = 0;
+    while (iteration < max_iterations && strcmp(game.state.gamedata.current_level.name.ptr, "interior") == 0) {
+        const Entity *player = game_get_player_const(&game.state);
+        float delta_x = exit_position.x - player->position.x;
+        float delta_y = exit_position.y - player->position.y;
+        InputState step = {0};
+        input_state_set_gp_axis(&step, GAMEPAD_AXIS_LEFT_X, delta_x > 0.0F ? 1.0F : -1.0F);
+        input_state_set_gp_axis(&step, GAMEPAD_AXIS_LEFT_Y, delta_y > 0.0F ? 1.0F : -1.0F);
+        test_advance_frame(&game, step);
+        iteration++;
+    }
+    TEST_ASSERT_TRUE_MESSAGE(iteration < max_iterations, "transition back to 'field' should fire within 300 frames");
+    TEST_ASSERT_EQUAL_STRING("field", game.state.gamedata.current_level.name.ptr);
+
+    chest = test_find_entity_by_blueprint(&game.state, "chest");
+    TEST_ASSERT_NOT_NULL(chest);
+    TEST_ASSERT_TRUE(attr_get_bool(&chest->attrs, "opened", false));
+    TEST_ASSERT_FALSE(attr_get_bool(&chest->attrs, "active", true));
+
+    test_game_teardown(&game);
+}
+
+/* S6.15b, D33: guards the ordering decision in run_transition_swap between
+ * progression_apply_level_delta and the door's own spawn-position write --
+ * the door's declared spawn point must always win over a stale captured
+ * position. Leaving "interior" through exit_door captures the interior
+ * player entity's delta near exit_door's position (80, 110) -- NOT
+ * interior's own spawn point (80, 60), since that's wherever the player
+ * physically stood the instant the "enter" trigger fired. Re-entering
+ * "interior" a second time through the "field" door must not leave the
+ * player at that stale captured position. */
+void test_integration_player_keeps_spawn_coords(void)
+{
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_transition));
+
+    InputState right = {0};
+    input_state_set_gp_axis(&right, GAMEPAD_AXIS_LEFT_X, 1.0F);
+    int max_iterations = 300;
+    int iteration = 0;
+    while (iteration < max_iterations && strcmp(game.state.gamedata.current_level.name.ptr, "field") == 0) {
+        test_advance_frame(&game, right);
+        iteration++;
+    }
+    TEST_ASSERT_TRUE_MESSAGE(iteration < max_iterations, "transition to 'interior' should fire within 300 frames");
+    TEST_ASSERT_EQUAL_STRING("interior", game.state.gamedata.current_level.name.ptr);
+
+    Entity *exit_door = test_find_entity_by_blueprint(&game.state, "exit_door");
+    TEST_ASSERT_NOT_NULL(exit_door);
+    Vector2 exit_position = exit_door->position;
+    iteration = 0;
+    while (iteration < max_iterations && strcmp(game.state.gamedata.current_level.name.ptr, "interior") == 0) {
+        const Entity *player = game_get_player_const(&game.state);
+        float delta_x = exit_position.x - player->position.x;
+        float delta_y = exit_position.y - player->position.y;
+        InputState step = {0};
+        input_state_set_gp_axis(&step, GAMEPAD_AXIS_LEFT_X, delta_x > 0.0F ? 1.0F : -1.0F);
+        input_state_set_gp_axis(&step, GAMEPAD_AXIS_LEFT_Y, delta_y > 0.0F ? 1.0F : -1.0F);
+        test_advance_frame(&game, step);
+        iteration++;
+    }
+    TEST_ASSERT_TRUE_MESSAGE(iteration < max_iterations, "transition back to 'field' should fire within 300 frames");
+    TEST_ASSERT_EQUAL_STRING("field", game.state.gamedata.current_level.name.ptr);
+
+    Entity *door = test_find_entity_by_blueprint(&game.state, "door");
+    TEST_ASSERT_NOT_NULL(door);
+    Vector2 door_position = door->position;
+    iteration = 0;
+    while (iteration < max_iterations && strcmp(game.state.gamedata.current_level.name.ptr, "field") == 0) {
+        const Entity *player = game_get_player_const(&game.state);
+        float delta_x = door_position.x - player->position.x;
+        float delta_y = door_position.y - player->position.y;
+        InputState step = {0};
+        input_state_set_gp_axis(&step, GAMEPAD_AXIS_LEFT_X, delta_x > 0.0F ? 1.0F : -1.0F);
+        input_state_set_gp_axis(&step, GAMEPAD_AXIS_LEFT_Y, delta_y > 0.0F ? 1.0F : -1.0F);
+        test_advance_frame(&game, step);
+        iteration++;
+    }
+    TEST_ASSERT_TRUE_MESSAGE(iteration < max_iterations,
+                             "second transition to 'interior' should fire within 300 frames");
+    TEST_ASSERT_EQUAL_STRING("interior", game.state.gamedata.current_level.name.ptr);
+
+    InputState idle = {0};
+    test_advance_frame(&game, idle);
+
+    const Entity *player = game_get_player_const(&game.state);
+    TEST_ASSERT_NOT_NULL(player);
+    TEST_ASSERT_FLOAT_WITHIN(0.5F, 80.0F, player->position.x);
+    TEST_ASSERT_FLOAT_WITHIN(0.5F, 60.0F, player->position.y);
 
     test_game_teardown(&game);
 }

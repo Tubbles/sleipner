@@ -20,6 +20,7 @@
 #include "map.h"
 #include "menu.h"
 #include "preferences.h"
+#include "progression.h"
 #include "rule.h"
 #include "settings.h"
 #include "str.h"
@@ -452,16 +453,28 @@ void run_active_frame(Diag *diag,
     apply_effect_queue(diag, state, editor_state);
 }
 
-/* THE SWAP: the fully-black-midpoint body of a level transition -- load
- * the target level, position the player at the requested spawn point,
- * snap the camera, pre-seed overlap tracking so enter triggers don't
- * refire at the spawn, and push a fresh undo baseline. Runs from
- * handle_transition exactly once per transition, on the frame
- * transition_fade_tick reports do_swap. Unchanged from the pre-S6.14
- * instant-swap body other than being extracted into its own function. */
+/* THE SWAP: the fully-black-midpoint body of a level transition -- capture
+ * the level being LEFT's entity delta (S6.15b, D33: position/attrs/active,
+ * see progression.h), load the target level, re-apply that target level's
+ * OWN previously-captured delta (if any) onto its freshly-parsed entities,
+ * position the player at the requested spawn point, snap the camera,
+ * pre-seed overlap tracking so enter triggers don't refire at the spawn,
+ * and push a fresh undo baseline. Runs from handle_transition exactly once
+ * per transition, on the frame transition_fade_tick reports do_swap.
+ *
+ * Ordering of the delta apply vs. the player spawn-position write below is
+ * a deliberate choice, not an oversight: progression_apply_level_delta runs
+ * first and may overwrite the player entity's position with whatever was
+ * captured the last time this level was left, but the unconditional
+ * `player->position = (Vector2){spawn_x, spawn_y}` a few lines down always
+ * runs after it and wins -- the door's declared spawn point must take
+ * precedence over a stale delta, so apply deliberately does not
+ * special-case the player's entity id. */
 static void run_transition_swap(Diag *diag, GameState *state, FrameContext *ctx)
 {
     undo_history_clear(ctx->undo_history);
+    Allocator progression_alloc = allocator_arena(&state->progression_arena);
+    progression_capture_level_delta(diag, &state->progression, &progression_alloc, &state->gamedata.current_level);
     float spawn_x = state->transition.x;
     float spawn_y = state->transition.y;
     SCRATCH_SCOPE(&state->scratch_arena);
@@ -472,6 +485,8 @@ static void run_transition_swap(Diag *diag, GameState *state, FrameContext *ctx)
     if (ctx->level_loader_fn) {
         (void)ctx->level_loader_fn(diag, state, level_name.ptr, ctx->level_loader_user_data);
     }
+    Allocator gamedata_alloc = allocator_arena(&state->gamedata_arena);
+    progression_apply_level_delta(diag, &state->progression, &state->gamedata.current_level, &gamedata_alloc);
     Entity *player = game_get_player(state);
     if (player) {
         player->position = (Vector2){spawn_x, spawn_y};

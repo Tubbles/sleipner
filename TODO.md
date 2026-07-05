@@ -343,6 +343,29 @@ predicate rows and MOVE reparenting).
   decision (defer the reload until the fade finishes, cancel/reset the
   fade on reload, or re-validate the pending transition against the
   freshly-loaded gamedata) before fixing.
+- **Spawned entities (`spawn:`, S6.6) don't persist across
+  transitions (S6.15b, D33).** The per-level entity delta
+  layer (`progression_capture_level_delta`/`_apply_level_delta`,
+  `progression.c`) keys each `EntityDelta` on `Entity.id`, assigned by
+  `Level.next_entity_id` in TOML parse order -- stable for AUTHORED
+  entities across a reparse, but a runtime-spawned entity's id is only
+  valid for that session. `level_find_entity_by_id` simply won't find it
+  again after the level reloads, so a spawned entity's captured delta
+  is silently dropped on apply. Would need spawned entities to carry
+  a stable cross-session identity (e.g. a blueprint+spawn-site key)
+  before they could round-trip a transition too.
+- **Hot-reload clearing the entity delta store isn't integration
+  tested (S6.15b, D33).** `progression_clear_level_deltas` is called
+  from `main.c`'s `reset_editor_after_reload`, the shared hook both
+  `poll_hot_reload` and `menu_dispatch_restore` funnel through --
+  but `test_trigger_hot_reload` (`test_helpers.c`) bypasses that
+  function entirely and drives `game_load_gamedata` directly, the
+  same way it already skips `undo_history_clear` for the same reason
+  (the mtime polling/disk read that trigger it in production are I/O
+  plumbing already excluded from headless tests). No test currently
+  proves a captured delta is dropped on hot-reload; would need
+  `reset_editor_after_reload` (or equivalent) reachable from test
+  infrastructure.
 
 ## Input system future work
 
