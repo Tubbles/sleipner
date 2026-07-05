@@ -40,6 +40,13 @@ void test_defaults_have_data_dir_set(void)
     TEST_ASSERT_TRUE(prefs.data_dir.len > 0);
 }
 
+void test_defaults_have_unattenuated_volumes(void)
+{
+    TEST_ASSERT_EQUAL_FLOAT(1.0F, prefs.master_volume);
+    TEST_ASSERT_EQUAL_FLOAT(1.0F, prefs.music_volume);
+    TEST_ASSERT_EQUAL_FLOAT(1.0F, prefs.sfx_volume);
+}
+
 void test_load_missing_file_keeps_defaults(void)
 {
     /* tmp_path is guaranteed not to exist (tearDown deletes it). */
@@ -111,6 +118,88 @@ void test_save_then_load_round_trip(void)
     str_free(&reloaded.data_dir);
 }
 
+void test_save_then_load_round_trip_volumes(void)
+{
+    prefs.master_volume = 0.6F;
+    prefs.music_volume = 0.4F;
+    prefs.sfx_volume = 0.8F;
+
+    TEST_ASSERT_TRUE(preferences_save(&prefs, &err, tmp_path));
+
+    Preferences reloaded = {0};
+    preferences_init_defaults(&reloaded, test_heap_alloc);
+    TEST_ASSERT_TRUE(preferences_load(&reloaded, &err, tmp_path));
+    TEST_ASSERT_EQUAL_FLOAT(0.6F, reloaded.master_volume);
+    TEST_ASSERT_EQUAL_FLOAT(0.4F, reloaded.music_volume);
+    TEST_ASSERT_EQUAL_FLOAT(0.8F, reloaded.sfx_volume);
+    str_free(&reloaded.data_dir);
+}
+
+void test_load_missing_volume_fields_default_to_one(void)
+{
+    FILE *file = fopen(tmp_path, "we");
+    TEST_ASSERT_NOT_NULL(file);
+    fprintf(file, "[paths]\ndata_dir = \"/custom/\"\n");
+    fclose(file);
+
+    TEST_ASSERT_TRUE(preferences_load(&prefs, &err, tmp_path));
+    TEST_ASSERT_EQUAL_FLOAT(1.0F, prefs.master_volume);
+    TEST_ASSERT_EQUAL_FLOAT(1.0F, prefs.music_volume);
+    TEST_ASSERT_EQUAL_FLOAT(1.0F, prefs.sfx_volume);
+}
+
+void test_load_clamps_out_of_range_volumes(void)
+{
+    FILE *file = fopen(tmp_path, "we");
+    TEST_ASSERT_NOT_NULL(file);
+    fprintf(file, "[audio]\nmaster_volume = 2.0\nmusic_volume = -1.0\nsfx_volume = 1\n");
+    fclose(file);
+
+    TEST_ASSERT_TRUE(preferences_load(&prefs, &err, tmp_path));
+    TEST_ASSERT_EQUAL_FLOAT(1.0F, prefs.master_volume);
+    TEST_ASSERT_EQUAL_FLOAT(0.0F, prefs.music_volume);
+    TEST_ASSERT_EQUAL_FLOAT(1.0F, prefs.sfx_volume);
+}
+
+void test_effective_music_volume_multiplies_master_and_channel(void)
+{
+    prefs.master_volume = 0.5F;
+    prefs.music_volume = 0.5F;
+    TEST_ASSERT_EQUAL_FLOAT(0.25F, preferences_effective_music_volume(&prefs));
+}
+
+void test_effective_sfx_volume_multiplies_master_and_channel(void)
+{
+    prefs.master_volume = 0.5F;
+    prefs.sfx_volume = 0.4F;
+    TEST_ASSERT_EQUAL_FLOAT(0.2F, preferences_effective_sfx_volume(&prefs));
+}
+
+void test_effective_volume_clamps_when_inputs_exceed_range(void)
+{
+    /* Values outside [0,1] should not occur via the Settings UI or a
+     * clean preferences_load, but the helper defends anyway (e.g. a
+     * hand-edited preferences.toml that bypassed the load-time clamp
+     * via a future code path). */
+    prefs.master_volume = 2.0F;
+    prefs.music_volume = 2.0F;
+    TEST_ASSERT_EQUAL_FLOAT(1.0F, preferences_effective_music_volume(&prefs));
+}
+
+void test_effective_volume_zero_edge(void)
+{
+    prefs.master_volume = 0.0F;
+    prefs.music_volume = 1.0F;
+    TEST_ASSERT_EQUAL_FLOAT(0.0F, preferences_effective_music_volume(&prefs));
+}
+
+void test_effective_volume_one_edge(void)
+{
+    prefs.master_volume = 1.0F;
+    prefs.sfx_volume = 1.0F;
+    TEST_ASSERT_EQUAL_FLOAT(1.0F, preferences_effective_sfx_volume(&prefs));
+}
+
 void test_save_to_unwritable_path_fails(void)
 {
     /* /proc is read-only on Linux; opening for write fails. */
@@ -122,12 +211,21 @@ int main(void)
 {
     UNITY_BEGIN();
     RUN_TEST(test_defaults_have_data_dir_set);
+    RUN_TEST(test_defaults_have_unattenuated_volumes);
     RUN_TEST(test_load_missing_file_keeps_defaults);
     RUN_TEST(test_load_overrides_data_dir);
     RUN_TEST(test_load_appends_trailing_slash_when_missing);
     RUN_TEST(test_load_keeps_default_when_field_absent);
     RUN_TEST(test_load_propagates_parse_error);
     RUN_TEST(test_save_then_load_round_trip);
+    RUN_TEST(test_save_then_load_round_trip_volumes);
+    RUN_TEST(test_load_missing_volume_fields_default_to_one);
+    RUN_TEST(test_load_clamps_out_of_range_volumes);
+    RUN_TEST(test_effective_music_volume_multiplies_master_and_channel);
+    RUN_TEST(test_effective_sfx_volume_multiplies_master_and_channel);
+    RUN_TEST(test_effective_volume_clamps_when_inputs_exceed_range);
+    RUN_TEST(test_effective_volume_zero_edge);
+    RUN_TEST(test_effective_volume_one_edge);
     RUN_TEST(test_save_to_unwritable_path_fails);
     return UNITY_END();
 }

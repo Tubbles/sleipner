@@ -116,7 +116,7 @@ int sfx_alias_pool_next_slot(SfxAliasPool *pool)
     return slot;
 }
 
-void sfx_alias_pool_play(SfxAliasPool *pool, Sound sound)
+void sfx_alias_pool_play(SfxAliasPool *pool, Sound sound, float volume)
 {
     SfxAliasSlot *entry = &pool->slots[sfx_alias_pool_next_slot(pool)];
     if (entry->in_use) {
@@ -125,5 +125,6 @@ void sfx_alias_pool_play(SfxAliasPool *pool, Sound sound)
     }
     entry->alias = LoadSoundAlias(sound);
     entry->in_use = true;
+    SetSoundVolume(entry->alias, volume);
     PlaySound(entry->alias);
 }

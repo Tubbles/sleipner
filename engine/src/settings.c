@@ -421,8 +421,26 @@ static void enter_detail_axis(SettingsState *settings, InputAxis axis)
     settings->detail_scroll = 0;
 }
 
-/* General tab: one row in v1, "Data directory: <value>". */
-#define GENERAL_TOTAL_ROWS 1
+/* General tab rows: Data directory (opens the path-edit screen on
+ * CONFIRM) plus three volume sliders (NAV_LEFT/RIGHT to adjust, D32/
+ * F31, S6.13a). */
+typedef enum {
+    GENERAL_ROW_DATA_DIR,
+    GENERAL_ROW_MASTER_VOLUME,
+    GENERAL_ROW_MUSIC_VOLUME,
+    GENERAL_ROW_SFX_VOLUME,
+    GENERAL_ROW_COUNT,
+} GeneralRow;
+
+#define GENERAL_TOTAL_ROWS GENERAL_ROW_COUNT
+
+/* NAV_LEFT/RIGHT step size for a volume row, clamped to
+ * [PREFERENCES_VOLUME_MIN, PREFERENCES_VOLUME_MAX]. */
+#define GENERAL_VOLUME_STEP 0.1F
+
+/* Percentage display scale for a volume row's rendered value
+ * ("Master volume:   80%"). */
+#define GENERAL_VOLUME_PERCENT_SCALE 100.0F
 
 #define PATH_EDIT_VISIBLE_ROWS 12
 
@@ -965,28 +983,65 @@ static void handle_path_edit_input(SettingsState *settings,
     }
 }
 
+/* Volume row -> the Preferences field it adjusts, or nullptr for the
+ * data_dir row (which has no LEFT/RIGHT behavior). */
+static float *general_volume_slot(GeneralRow general_index, Preferences *preferences)
+{
+    switch (general_index) {
+    case GENERAL_ROW_MASTER_VOLUME:
+        return &preferences->master_volume;
+    case GENERAL_ROW_MUSIC_VOLUME:
+        return &preferences->music_volume;
+    case GENERAL_ROW_SFX_VOLUME:
+        return &preferences->sfx_volume;
+    case GENERAL_ROW_DATA_DIR:
+    case GENERAL_ROW_COUNT:
+        break;
+    }
+    return nullptr;
+}
+
+static void handle_general_volume_adjust(SettingsState *settings,
+                                         const InputState *input,
+                                         const BindingStore *store,
+                                         Preferences *preferences)
+{
+    if (preferences == nullptr) {
+        return;
+    }
+    float *volume = general_volume_slot((GeneralRow)settings->general_index, preferences);
+    if (volume == nullptr) {
+        return;
+    }
+    if (input_pressed(input, store, ACTION_NAV_LEFT)) {
+        *volume = fmaxf(PREFERENCES_VOLUME_MIN, *volume - GENERAL_VOLUME_STEP);
+        settings->save_preferences_requested = true;
+    }
+    if (input_pressed(input, store, ACTION_NAV_RIGHT)) {
+        *volume = fminf(PREFERENCES_VOLUME_MAX, *volume + GENERAL_VOLUME_STEP);
+        settings->save_preferences_requested = true;
+    }
+}
+
 static void handle_general_tab_input(SettingsState *settings,
                                      const InputState *input,
                                      const BindingStore *store,
-                                     const Preferences *preferences,
+                                     Preferences *preferences,
                                      bool *close_requested)
 {
     if (input_pressed(input, store, ACTION_NAV_UP) && settings->general_index > 0) {
         settings->general_index--;
     }
-    /* NAV_DOWN clamp is structured for future rows; today GENERAL_TOTAL_ROWS == 1
-     * makes the bounds check trivially false. Lint correctly notes the
-     * degeneracy; suppressing it keeps the parameterized shape. */
-    // NOLINTNEXTLINE(misc-redundant-expression)
     if (input_pressed(input, store, ACTION_NAV_DOWN) && settings->general_index < GENERAL_TOTAL_ROWS - 1) {
         settings->general_index++;
     }
+    handle_general_volume_adjust(settings, input, store, preferences);
     if (input_pressed(input, store, ACTION_CANCEL)) {
         *close_requested = true;
         return;
     }
     if (input_pressed(input, store, ACTION_CONFIRM)) {
-        if (settings->general_index == 0) {
+        if (settings->general_index == GENERAL_ROW_DATA_DIR) {
             path_edit_enter_screen(settings, preferences);
         }
     }
@@ -1403,21 +1458,55 @@ static void render_input_tab_body(const SettingsState *settings, const BindingSt
     }
 }
 
+static void format_volume_row(const char *label, float value, char *out, size_t cap)
+{
+    int percent = (int)lroundf(value * GENERAL_VOLUME_PERCENT_SCALE);
+    (void)snprintf(out, cap, "%-16s %d%%", label, percent);
+}
+
+static void general_row_label(const Preferences *preferences, GeneralRow row, char *out, size_t cap)
+{
+    switch (row) {
+    case GENERAL_ROW_DATA_DIR: {
+        const char *value =
+            (preferences != nullptr && preferences->data_dir.ptr != nullptr) ? preferences->data_dir.ptr : "(unknown)";
+        (void)snprintf(out, cap, "Data directory:  %s", value);
+        return;
+    }
+    case GENERAL_ROW_MASTER_VOLUME:
+        format_volume_row("Master volume:",
+                          preferences != nullptr ? preferences->master_volume : PREFERENCES_VOLUME_DEFAULT, out, cap);
+        return;
+    case GENERAL_ROW_MUSIC_VOLUME:
+        format_volume_row(
+            "Music volume:", preferences != nullptr ? preferences->music_volume : PREFERENCES_VOLUME_DEFAULT, out, cap);
+        return;
+    case GENERAL_ROW_SFX_VOLUME:
+        format_volume_row("SFX volume:", preferences != nullptr ? preferences->sfx_volume : PREFERENCES_VOLUME_DEFAULT,
+                          out, cap);
+        return;
+    case GENERAL_ROW_COUNT:
+        break;
+    }
+    out[0] = '\0';
+}
+
 static void
 render_general_tab_body(const SettingsState *settings, const Preferences *preferences, Rectangle screen, int row_y)
 {
-    char buf[ROW_BUF_CAP];
-    const char *value =
-        (preferences != nullptr && preferences->data_dir.ptr != nullptr) ? preferences->data_dir.ptr : "(unknown)";
-    (void)snprintf(buf, sizeof(buf), "Data directory:  %s", value);
-    bool selected = (settings->general_index == 0);
-    draw_text(settings, buf, LIST_LEFT_PAD, row_y, color_for_row(selected, false));
+    for (int row = 0; row < GENERAL_ROW_COUNT; row++) {
+        char buf[ROW_BUF_CAP];
+        general_row_label(preferences, (GeneralRow)row, buf, sizeof(buf));
+        bool selected = (settings->general_index == row);
+        draw_text(settings, buf, LIST_LEFT_PAD, row_y, color_for_row(selected, false));
+        row_y += LIST_LINE_HEIGHT;
+    }
     if (settings->toast_text) {
         int inner = (int)screen.width - LIST_LEFT_PAD - LIST_RIGHT_PAD;
         Vector2 measured =
             MeasureTextEx(settings->font, settings->toast_text, (float)SETTINGS_FONT_SIZE, LIST_LETTER_SPACING);
         int toast_x = LIST_LEFT_PAD + ((inner - (int)measured.x) / 2);
-        draw_text(settings, settings->toast_text, toast_x, row_y + (LIST_LINE_HEIGHT * 2), color_for_row(false, false));
+        draw_text(settings, settings->toast_text, toast_x, row_y + LIST_LINE_HEIGHT, color_for_row(false, false));
     }
 }
 

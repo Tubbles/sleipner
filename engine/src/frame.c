@@ -19,6 +19,7 @@
 #include "level.h"
 #include "map.h"
 #include "menu.h"
+#include "preferences.h"
 #include "rule.h"
 #include "settings.h"
 #include "str.h"
@@ -224,7 +225,7 @@ static void apply_sound_effects(Diag *diag, GameState *state, const vec_sound_ef
                       request->name.ptr);
             continue;
         }
-        sfx_alias_pool_play(&state->audio.sfx_aliases, *sound);
+        sfx_alias_pool_play(&state->audio.sfx_aliases, *sound, preferences_effective_sfx_volume(&state->preferences));
     }
 }
 

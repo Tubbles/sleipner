@@ -56,10 +56,12 @@ void audio_shutdown(AudioState *audio);
  * without an audio device (see audio_test.c). */
 [[nodiscard]] int sfx_alias_pool_next_slot(SfxAliasPool *pool);
 
-/* Plays `sound` through the alias cap in `pool`: evicts (stops + unloads)
- * whatever alias currently occupies the claimed slot, loads a fresh alias
- * of `sound`, and plays it. Requires an initialized audio device --
- * callers only reach this after a registry hit, and the registry is only
- * populated by main.c's production asset-loading path, so this never
- * fires from a headless test. */
-void sfx_alias_pool_play(SfxAliasPool *pool, Sound sound);
+/* Plays `sound` through the alias cap in `pool` at `volume` (typically
+ * preferences_effective_sfx_volume(&state->preferences), D32/F31,
+ * S6.13a): evicts (stops + unloads) whatever alias currently occupies
+ * the claimed slot, loads a fresh alias of `sound`, sets its volume,
+ * and plays it. Requires an initialized audio device -- callers only
+ * reach this after a registry hit, and the registry is only populated
+ * by main.c's production asset-loading path, so this never fires from
+ * a headless test. */
+void sfx_alias_pool_play(SfxAliasPool *pool, Sound sound, float volume);

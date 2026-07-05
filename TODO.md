@@ -386,12 +386,6 @@ d890de8 through 3641352).
   the filename into the helper. If per-file overrides are wanted
   later (separate `gamedata_dir`, `keybindings_dir`, `trace_dir`),
   that's where to start.
-- **General tab `NAV_DOWN` clamp is dead code.**
-  `handle_general_tab_input` in `engine/src/settings.c` has
-  `general_index < GENERAL_TOTAL_ROWS - 1` which is always false
-  with `GENERAL_TOTAL_ROWS == 1`. Currently NOLINTNEXTLINE'd; the
-  suppression goes away naturally when the second General row
-  lands.
 - **Desktop `trace.log` path migrated.** Pre-refactor the desktop
   trace lived at cwd; post-refactor it resolves to
   `<data_dir>/trace.log` (so `data/trace.log` by default). Anyone

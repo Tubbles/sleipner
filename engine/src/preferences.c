@@ -6,6 +6,7 @@
 #include "toml.h"
 
 #include <errno.h>
+#include <math.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -20,10 +21,18 @@
 #define DEFAULT_DATA_DIR "data/"
 #endif
 
+static float clamp_volume(float value)
+{
+    return fmaxf(PREFERENCES_VOLUME_MIN, fminf(PREFERENCES_VOLUME_MAX, value));
+}
+
 void preferences_init_defaults(Preferences *prefs, Allocator alloc)
 {
     prefs->data_dir = str_new(alloc);
     (void)str_append_cstr(&prefs->data_dir, DEFAULT_DATA_DIR);
+    prefs->master_volume = PREFERENCES_VOLUME_DEFAULT;
+    prefs->music_volume = PREFERENCES_VOLUME_DEFAULT;
+    prefs->sfx_volume = PREFERENCES_VOLUME_DEFAULT;
 }
 
 /* Apply a parsed string field into a Str, freeing the parser-owned
@@ -39,6 +48,24 @@ static bool apply_string_field(Str *out, toml_datum_t parsed)
     bool appended = str_append_cstr(out, parsed.u.s);
     free(parsed.u.s); /* tomlc99 returns malloc'd strings; we own them now */
     return appended;
+}
+
+/* Read an optional float field `key` from `table`, trying the double
+ * representation then the int one (TOML `1` parses as an int datum,
+ * not a double one -- same fallback order input_func_toml.c's
+ * parse_scale uses). Returns `fallback` when the field is absent, so
+ * a missing [audio] table or field keeps whatever prefs already held. */
+static float parse_optional_float(toml_table_t *table, const char *key, float fallback)
+{
+    toml_datum_t as_double = toml_double_in(table, key);
+    if (as_double.ok) {
+        return (float)as_double.u.d;
+    }
+    toml_datum_t as_int = toml_int_in(table, key);
+    if (as_int.ok) {
+        return (float)as_int.u.i;
+    }
+    return fallback;
 }
 
 bool preferences_load(Preferences *prefs, ErrorState *err, const char *path)
@@ -72,6 +99,12 @@ bool preferences_load(Preferences *prefs, ErrorState *err, const char *path)
             return false;
         }
     }
+    toml_table_t *audio = toml_table_in(root, "audio");
+    if (audio != nullptr) {
+        prefs->master_volume = clamp_volume(parse_optional_float(audio, "master_volume", prefs->master_volume));
+        prefs->music_volume = clamp_volume(parse_optional_float(audio, "music_volume", prefs->music_volume));
+        prefs->sfx_volume = clamp_volume(parse_optional_float(audio, "sfx_volume", prefs->sfx_volume));
+    }
     toml_free(root);
     /* Mirrors path_edit_commit in settings.c: hand-edited preferences.toml
      * files without a trailing slash must still compose correctly with
@@ -93,8 +126,13 @@ bool preferences_save(const Preferences *prefs, ErrorState *err, const char *pat
      * unescaped. data_dir paths are filesystem paths under user control;
      * the path picker keeps them ASCII-only and the TOML form here uses
      * a single-line basic string, so a forward slash is the only path
-     * separator we ever emit. */
-    int written = fprintf(file, "[paths]\ndata_dir = \"%s\"\n", prefs->data_dir.ptr ? prefs->data_dir.ptr : "");
+     * separator we ever emit. Volumes use %g, the same float-to-TOML
+     * format toml_emitter.c already uses for gamedata floats. */
+    int written = fprintf(file,
+                          "[paths]\ndata_dir = \"%s\"\n\n[audio]\nmaster_volume = %g\nmusic_volume = %g\nsfx_volume = "
+                          "%g\n",
+                          prefs->data_dir.ptr ? prefs->data_dir.ptr : "", (double)prefs->master_volume,
+                          (double)prefs->music_volume, (double)prefs->sfx_volume);
     int close_rc = fclose(file);
     if (written < 0) {
         error_set(err, "fprintf(%s): write failed", path);
@@ -105,4 +143,14 @@ bool preferences_save(const Preferences *prefs, ErrorState *err, const char *pat
         return false;
     }
     return true;
+}
+
+float preferences_effective_music_volume(const Preferences *prefs)
+{
+    return clamp_volume(prefs->master_volume * prefs->music_volume);
+}
+
+float preferences_effective_sfx_volume(const Preferences *prefs)
+{
+    return clamp_volume(prefs->master_volume * prefs->sfx_volume);
 }

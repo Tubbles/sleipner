@@ -1421,6 +1421,11 @@ int main(void)
     while (!WindowShouldClose() && !quit_requested) {
         float delta_time = GetFrameTime();
 
+        /* Master/music volume prefs (S6.13a, D32/F31) apply here every
+         * frame rather than only on change: cheap, and a Settings-tab
+         * adjustment made during this iteration's frame_update takes
+         * effect on the very next frame. */
+        SetMusicVolume(bgm, preferences_effective_music_volume(&state->preferences));
         UpdateMusicStream(bgm);
 
         /* Hot-reload: poll mtime and reload if gamedata changed */

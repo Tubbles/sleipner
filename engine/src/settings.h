@@ -21,7 +21,8 @@
  * own body and selection cursor.
  *
  *   Input tab    : the keybinding LIST → DETAIL → CAPTURE flow.
- *   General tab  : non-binding settings (currently just Data directory).
+ *   General tab  : non-binding settings -- Data directory, plus Master/
+ *                  Music/SFX volume rows (NAV_LEFT/RIGHT to adjust).
  *
  * Detail and Capture screens are reachable only from the Input tab.
  * Path-edit reachable only from the General tab. */
@@ -196,10 +197,12 @@ void settings_close(SettingsState *settings);
 [[nodiscard]] bool settings_is_open(const SettingsState *settings);
 
 /* Run one frame of input. Mutates the BindingStore via the input_func
- * mutation API and Preferences via str_clear+append on data_dir. Sets
- * settings->save_requested or save_preferences_requested when the
- * caller should persist the corresponding store to disk. Toggles
- * `*close_requested` if the user pressed cancel from the LIST screen. */
+ * mutation API and Preferences via str_clear+append on data_dir, or via
+ * direct assignment to master_volume/music_volume/sfx_volume from the
+ * General tab's volume rows. Sets settings->save_requested or
+ * save_preferences_requested when the caller should persist the
+ * corresponding store to disk. Toggles `*close_requested` if the user
+ * pressed cancel from the LIST screen. */
 void settings_handle_input(SettingsState *settings,
                            const InputState *input,
                            BindingStore *store,

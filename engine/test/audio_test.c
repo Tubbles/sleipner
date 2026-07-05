@@ -19,6 +19,7 @@ FAKE_VOID_FUNC(UnloadSound, Sound);
 FAKE_VOID_FUNC(UnloadSoundAlias, Sound);
 FAKE_VOID_FUNC(PlaySound, Sound);
 FAKE_VOID_FUNC(StopSound, Sound);
+FAKE_VOID_FUNC(SetSoundVolume, Sound, float);
 
 void setUp(void) {}
 void tearDown(void) {}
