@@ -53,6 +53,7 @@ add_unit_test(save_screen_test)
 add_executable(engine_tests
     main_test.c
     test_helpers.c
+    assets_test.c
     blueprint_test.c
     game_test.c
     integration_test.c
@@ -69,5 +70,5 @@ add_executable(engine_tests
 target_compile_definitions(engine_tests PRIVATE _GNU_SOURCE
     GAMEDATA_FIXTURE_PATH="${CMAKE_SOURCE_DIR}/data/gamedata.toml")
 target_include_directories(engine_tests SYSTEM PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../vendor/fff)
-target_link_libraries(engine_tests PRIVATE engine unity m)
+target_link_libraries(engine_tests PRIVATE engine sleipner_assets unity m)
 add_test(NAME engine_tests COMMAND engine_tests)

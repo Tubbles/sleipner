@@ -1,38 +1,9 @@
 #include "blur.h"
 
+#include "assets.h"
 #include "raylib.h"
 
 #include <stddef.h>
-
-/* GLSL ES 1.0 — required by the Android raylib codepath; desktop GL
- * accepts it too. Single shader, axis chosen via the `direction` uniform
- * so a horizontal pass uses (1,0) and a vertical pass uses (0,1).
- *
- * 9-tap discrete Gaussian, sigma ≈ 1.8. Soft enough to obscure scene
- * detail at the menu's distance, sharp enough to keep two passes from
- * smearing into a flat colour. Weights sum to 1.0. */
-static const char *const blur_fragment_shader =
-    "#version 100\n"
-    "precision mediump float;\n"
-    "varying vec2 fragTexCoord;\n"
-    "varying vec4 fragColor;\n"
-    "uniform sampler2D texture0;\n"
-    "uniform vec2 texelSize;\n"
-    "uniform vec2 direction;\n"
-    "void main() {\n"
-    "    vec2 offset = texelSize * direction;\n"
-    "    vec3 sum = vec3(0.0);\n"
-    "    sum += texture2D(texture0, fragTexCoord - 4.0 * offset).rgb * 0.0162162162;\n"
-    "    sum += texture2D(texture0, fragTexCoord - 3.0 * offset).rgb * 0.0540540541;\n"
-    "    sum += texture2D(texture0, fragTexCoord - 2.0 * offset).rgb * 0.1216216216;\n"
-    "    sum += texture2D(texture0, fragTexCoord - 1.0 * offset).rgb * 0.1945945946;\n"
-    "    sum += texture2D(texture0, fragTexCoord                ).rgb * 0.2270270270;\n"
-    "    sum += texture2D(texture0, fragTexCoord + 1.0 * offset).rgb * 0.1945945946;\n"
-    "    sum += texture2D(texture0, fragTexCoord + 2.0 * offset).rgb * 0.1216216216;\n"
-    "    sum += texture2D(texture0, fragTexCoord + 3.0 * offset).rgb * 0.0540540541;\n"
-    "    sum += texture2D(texture0, fragTexCoord + 4.0 * offset).rgb * 0.0162162162;\n"
-    "    gl_FragColor = vec4(sum, 1.0) * fragColor;\n"
-    "}\n";
 
 void blur_init(BlurPipeline *blur, int width, int height)
 {
@@ -40,7 +11,7 @@ void blur_init(BlurPipeline *blur, int width, int height)
     if (!IsWindowReady()) {
         return;
     }
-    blur->shader = LoadShaderFromMemory(NULL, blur_fragment_shader);
+    blur->shader = LoadShaderFromMemory(NULL, (const char *)ASSET(blur_fs).data);
     blur->direction_loc = GetShaderLocation(blur->shader, "direction");
     blur->texel_loc = GetShaderLocation(blur->shader, "texelSize");
     blur->ping = LoadRenderTexture(width, height);

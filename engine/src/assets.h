@@ -44,5 +44,8 @@ DECLARE_ASSET(nudge_orb_ttf);
 DECLARE_ASSET(cardboardcrown_ttf);
 DECLARE_ASSET(royalfibre_ttf);
 
+/* Shaders */
+DECLARE_ASSET(blur_fs);
+
 /* Input mappings */
 DECLARE_ASSET(gamecontrollerdb_txt);

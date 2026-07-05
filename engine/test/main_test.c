@@ -4,6 +4,9 @@
 void setUp(void) {}
 void tearDown(void) {}
 
+/* assets_test.c */
+void test_asset_blur_fs_is_embedded_glsl(void);
+
 /* blueprint_test.c */
 void test_blueprint_load_single(void);
 void test_blueprint_load_multiple(void);
@@ -266,6 +269,8 @@ int main(void)
 {
     test_helpers_init();
     UNITY_BEGIN();
+
+    RUN_TEST(test_asset_blur_fs_is_embedded_glsl);
 
     RUN_TEST(test_blueprint_load_single);
     RUN_TEST(test_blueprint_load_multiple);

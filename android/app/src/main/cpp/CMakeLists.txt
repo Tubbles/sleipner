@@ -47,7 +47,8 @@ target_link_libraries(sleipner PRIVATE
     m
 )
 
-embed_all_assets(sleipner ${PROJECT_ROOT})
+embed_all_assets(${PROJECT_ROOT})
+target_link_libraries(sleipner PRIVATE sleipner_assets)
 
 include(${PROJECT_ROOT}/cmake/GitVersion.cmake)
 target_compile_definitions(sleipner PRIVATE SLEIPNER_VERSION="${SLEIPNER_GIT_VERSION}")

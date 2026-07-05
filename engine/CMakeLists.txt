@@ -48,7 +48,8 @@ endif()
 include(${CMAKE_SOURCE_DIR}/cmake/GitVersion.cmake)
 target_compile_definitions(sleipner PRIVATE SLEIPNER_VERSION="${SLEIPNER_GIT_VERSION}")
 
-embed_all_assets(sleipner ${CMAKE_SOURCE_DIR})
+embed_all_assets(${CMAKE_SOURCE_DIR})
+target_link_libraries(sleipner PRIVATE sleipner_assets)
 
 if(NOT CMAKE_CROSSCOMPILING)
     add_subdirectory(test)

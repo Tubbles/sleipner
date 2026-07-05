@@ -423,15 +423,6 @@ Carried over from the pause-overlay menu landing:
   `game_bounds`/the render texture, set `menu->blur_captured = false`
   (and the settings sibling), then call `blur_resize`. Function kept
   for that future.
-- **Engine-lib text assets can't use `embed_asset()`.** The blur
-  shader source had to live as a C string literal in `blur.c` because
-  `embed_*_start` symbols are only resolved on the `sleipner`
-  executable target via `embed_all_assets`, and `engine_tests` does
-  not provide them. Adding more shaders or GLSL fragments to engine
-  code will keep hitting this. Options: provide stub symbols on the
-  test target, restructure `embed_all_assets` to apply to any target
-  that links the engine lib, or formalise inline C strings as the
-  engine-lib-internal convention for text assets and document it.
 
 ## Possible action items
 
