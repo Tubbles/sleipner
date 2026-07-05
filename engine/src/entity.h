@@ -66,6 +66,13 @@ typedef struct {
      * hitbox_active_timer to a positive value. */
     float iframe_timer;
     float hitbox_active_timer;
+    /* Countdown for the knockback impulse below (S6.10c, D26), same
+     * runtime-only footing as iframe_timer/hitbox_active_timer above --
+     * NOT emitted to TOML, decremented every frame by the knockback tick
+     * pass (game.c) alongside tick_combat_timers. Starts at 0 (inert) via
+     * entity_init's memset; entity_apply_knockback sets it to
+     * KNOCKBACK_SECONDS on a landed hit. */
+    float knockback_timer;
 
     /* Vectors (8 bytes each) */
     Vector2 position;
@@ -80,6 +87,12 @@ typedef struct {
      * the attack hitbox in front of the entity while hitbox_active_timer
      * is live (see ENTITY_HITBOX_REACH below). */
     Vector2 facing;
+    /* Initial knockback velocity in px/s (S6.10c, D26): set by
+     * entity_apply_knockback alongside knockback_timer above, decays
+     * linearly to zero as knockback_timer counts down -- see the
+     * knockback tick pass (game.c) for the per-frame integration. Zeroed
+     * by entity_init's memset. */
+    Vector2 knockback_velocity;
 
     /* Bools (1 byte each, packed at end) */
     bool flip;
@@ -159,6 +172,26 @@ CollisionShape entity_hurtbox_region(const Entity *entity, const AttrSet *defaul
  * hit again doesn't re-fire defeat. */
 [[nodiscard]] bool
 entity_apply_damage(Entity *target, const AttrSet *target_defaults, float raw_damage, Allocator *alloc);
+
+/* How long a knockback impulse takes to decay to zero (S6.10c, D26).
+ * entity_apply_knockback front-loads the whole displacement into an
+ * initial knockback_velocity sized so integrating its linear decay to 0
+ * over this many seconds covers exactly the requested distance -- see the
+ * knockback tick pass (game.c) for the per-frame integration. */
+#define KNOCKBACK_SECONDS 0.15F
+
+/* Apply a knockback impulse to target (S6.10c, D26): sets
+ * target->knockback_velocity/knockback_timer so target travels `distance`
+ * pixels directly away from from_position, decaying to a stop over
+ * KNOCKBACK_SECONDS (see the knockback tick pass, game.c, for how the two
+ * fields are consumed frame to frame). Direction is
+ * normalize(target->position - from_position); if target and
+ * from_position coincide (zero-length direction), falls back to
+ * target->facing so the push still has a defined direction instead of
+ * dividing by zero. distance <= 0 (the common case: attacker has no
+ * `knockback` attr) is a no-op -- knockback_velocity/knockback_timer are
+ * left untouched. */
+void entity_apply_knockback(Entity *target, Vector2 from_position, float distance);
 
 /* Find an entity by tag within the same composition tree as source.
  * Handles implicit tags: "self", "parent", "root".

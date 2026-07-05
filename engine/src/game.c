@@ -879,7 +879,10 @@ static void tick_combat_timers(Level *level, float delta_time)
  * event when a rule-driven health write crosses zero; gating on "old
  * health was > 0" (not just "new health <= 0") keeps an already-defeated
  * entity that gets hit again (once its i-frames lapse) from re-firing
- * defeat every subsequent hit. */
+ * defeat every subsequent hit. A landed hit also calls entity_apply_knockback
+ * (S6.10c, D26) with the attacker's `knockback` attr (default 0, a no-op) --
+ * the resulting push is resolved against solids by the knockback tick pass
+ * below, alongside detect_contact_damage's own knockback calls. */
 static void detect_melee_damage(GameState *state, Level *level, Allocator *alloc, vec_trigger_event *out_events)
 {
     Entity *entities = level->entities.data;
@@ -893,6 +896,8 @@ static void detect_melee_damage(GameState *state, Level *level, Allocator *alloc
         CollisionShape hitbox =
             entity_hitbox_region(&entities[attacker_index], attacker_defaults, &hitbox_prim_storage);
         float damage = attr_get_scoped_float(&entities[attacker_index].attrs, attacker_defaults, "damage", 0.0F);
+        float knockback_distance =
+            attr_get_scoped_float(&entities[attacker_index].attrs, attacker_defaults, "knockback", 0.0F);
 
         for (int target_index = 0; target_index < entity_count; target_index++) {
             if (target_index == attacker_index) {
@@ -915,12 +920,99 @@ static void detect_melee_damage(GameState *state, Level *level, Allocator *alloc
             if (!entity_apply_damage(&entities[target_index], target_defaults, damage, alloc)) {
                 continue;
             }
+            entity_apply_knockback(&entities[target_index], entities[attacker_index].position, knockback_distance);
             float new_health = attr_get_scoped_float(&entities[target_index].attrs, target_defaults, "health", 0.0F);
             if (old_health > 0.0F && new_health <= 0.0F) {
                 (void)vec_trigger_event_push(out_events,
                                              (TriggerEvent){.type = TRIGGER_DEFEAT, .entity_index = target_index});
             }
         }
+    }
+}
+
+/* Contact damage pass (S6.10c, D26): every entity A with a truthy
+ * contact_damage attr damages every OTHER active entity T (that has a
+ * `health` attr) whose COLLISION region -- the physical body, not a
+ * hitbox/hurtbox -- it overlaps, through the same entity_apply_damage/
+ * entity_apply_knockback path detect_melee_damage above uses, so the
+ * damage formula, i-frames, and defeat wiring all apply identically.
+ * i-frames de-dupe repeated per-frame contact the same way they de-dupe
+ * repeated melee hits -- no separate "already hit this frame" bookkeeping.
+ * Melee (hitbox) and contact (body) are distinct damage sources; an
+ * entity could in principle have both live at once, but a target's
+ * i-frames still collapse that to at most one applied hit per window. */
+static void detect_contact_damage(GameState *state, Level *level, Allocator *alloc, vec_trigger_event *out_events)
+{
+    Entity *entities = level->entities.data;
+    int entity_count = level->entities.count;
+    for (int attacker_index = 0; attacker_index < entity_count; attacker_index++) {
+        const AttrSet *attacker_defaults = entity_resolve_defaults(state, entities[attacker_index].id);
+        if (!attr_get_scoped_bool(&entities[attacker_index].attrs, attacker_defaults, "contact_damage", false)) {
+            continue;
+        }
+        CollisionPrimitive attacker_prim_storage;
+        CollisionShape attacker_shape =
+            entity_collision_region(&entities[attacker_index], attacker_defaults, &attacker_prim_storage);
+        float damage = attr_get_scoped_float(&entities[attacker_index].attrs, attacker_defaults, "damage", 0.0F);
+        float knockback_distance =
+            attr_get_scoped_float(&entities[attacker_index].attrs, attacker_defaults, "knockback", 0.0F);
+
+        for (int target_index = 0; target_index < entity_count; target_index++) {
+            if (target_index == attacker_index) {
+                continue;
+            }
+            const AttrSet *target_defaults = entity_resolve_defaults(state, entities[target_index].id);
+            if (!attr_get_scoped(&entities[target_index].attrs, target_defaults, "health") ||
+                !attr_get_scoped_bool(&entities[target_index].attrs, target_defaults, "active", true)) {
+                continue;
+            }
+            CollisionPrimitive target_prim_storage;
+            CollisionShape target_shape =
+                entity_collision_region(&entities[target_index], target_defaults, &target_prim_storage);
+            bool overlapping = composite_overlap(&attacker_shape, entities[attacker_index].position, 0.0F,
+                                                 &target_shape, entities[target_index].position, 0.0F);
+            if (!overlapping) {
+                continue;
+            }
+            float old_health = attr_get_scoped_float(&entities[target_index].attrs, target_defaults, "health", 0.0F);
+            if (!entity_apply_damage(&entities[target_index], target_defaults, damage, alloc)) {
+                continue;
+            }
+            entity_apply_knockback(&entities[target_index], entities[attacker_index].position, knockback_distance);
+            float new_health = attr_get_scoped_float(&entities[target_index].attrs, target_defaults, "health", 0.0F);
+            if (old_health > 0.0F && new_health <= 0.0F) {
+                (void)vec_trigger_event_push(out_events,
+                                             (TriggerEvent){.type = TRIGGER_DEFEAT, .entity_index = target_index});
+            }
+        }
+    }
+}
+
+/* Knockback tick/apply pass (S6.10c, D26): every entity with a live
+ * knockback_timer (set by entity_apply_knockback from a landed melee or
+ * contact hit) moves by its current decaying step, then is resolved
+ * against solids by resolve_entity_obstacles -- the same push-out every
+ * other mover in this file uses -- so a knockback can't shove a target
+ * through a wall. knockback_velocity is the FULL initial velocity
+ * entity_apply_knockback computed for a linear decay to zero over
+ * KNOCKBACK_SECONDS; scaling it by the remaining-time fraction
+ * (knockback_timer / KNOCKBACK_SECONDS) before each step reproduces that
+ * decay frame by frame. A knockback_timer of 0 (never hit, or hit by an
+ * attacker with no/zero `knockback` attr) is a no-op -- existing movement
+ * is unaffected. */
+static void tick_knockback(GameState *state, float delta_time)
+{
+    Level *level = &state->gamedata.current_level;
+    for (int index = 0; index < level->entities.count; index++) {
+        Entity *entity = &level->entities.data[index];
+        if (entity->knockback_timer <= 0.0F) {
+            continue;
+        }
+        float fraction = entity->knockback_timer / KNOCKBACK_SECONDS;
+        entity->position.x += entity->knockback_velocity.x * fraction * delta_time;
+        entity->position.y += entity->knockback_velocity.y * fraction * delta_time;
+        entity->knockback_timer = fmaxf(0.0F, entity->knockback_timer - delta_time);
+        resolve_entity_obstacles(state, index);
     }
 }
 
@@ -1052,11 +1144,17 @@ void game_update(Diag *diag, GameState *state, InputState input, float delta_tim
 
         collect_trigger_events(diag->debug, state, &input, &trigger_events);
 
-        /* Melee damage pass (S6.10a, D26) -- must run before the
-         * trigger_events.count check below, since a defeat it detects
-         * needs to feed into THIS frame's rules_evaluate_batch. */
+        /* Melee + contact damage passes (S6.10a/c, D26) -- must run before
+         * the trigger_events.count check below, since a defeat either pass
+         * detects needs to feed into THIS frame's rules_evaluate_batch. */
         Allocator combat_alloc = allocator_arena(&state->gamedata_arena);
         detect_melee_damage(state, &state->gamedata.current_level, &combat_alloc, &trigger_events);
+        detect_contact_damage(state, &state->gamedata.current_level, &combat_alloc, &trigger_events);
+
+        /* Knockback tick/apply pass (S6.10c, D26) -- after both damage
+         * passes above so a hit landed THIS frame starts moving THIS
+         * frame too, not one frame later. */
+        tick_knockback(state, delta_time);
 
         if (trigger_events.count > 0) {
             Allocator rule_alloc = allocator_arena(&state->gamedata_arena);

@@ -128,6 +128,10 @@ void test_integration_defeat_fires_once(void);
 void test_integration_attack_hits_enemy_in_front(void);
 void test_integration_attack_misses_out_of_arc(void);
 void test_integration_attack_requires_press(void);
+void test_integration_knockback_pushes_target_away(void);
+void test_integration_knockback_respects_wall(void);
+void test_integration_contact_damage_hurts_on_touch(void);
+void test_integration_no_contact_damage_without_attr(void);
 
 /* toml_emitter_test.c */
 void test_toml_emit_blueprints(void);
@@ -376,6 +380,10 @@ int main(void)
     RUN_TEST(test_integration_chase_within_aggro_moves_toward_player);
     RUN_TEST(test_integration_chase_outside_aggro_idle);
     RUN_TEST(test_integration_chase_respects_collision);
+    RUN_TEST(test_integration_knockback_pushes_target_away);
+    RUN_TEST(test_integration_knockback_respects_wall);
+    RUN_TEST(test_integration_contact_damage_hurts_on_touch);
+    RUN_TEST(test_integration_no_contact_damage_without_attr);
 
     RUN_TEST(test_integration_sprite_offset_edit_updates_entity_live);
     RUN_TEST(test_integration_sprite_offset_edit_emitted_to_toml);

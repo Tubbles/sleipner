@@ -5611,3 +5611,273 @@ void test_integration_attack_requires_press(void)
 
     test_game_teardown(&game);
 }
+
+/* ---- Integration: S6.10c knockback + contact damage (D26). Knockback
+ * reuses combat_fixture_gamedata's shape (hitbox_active_timer set
+ * directly as scenario setup, same as the S6.10a tests) but with distinct
+ * attacker/target positions -- S6.10a co-located its pairs on purpose to
+ * keep the hitbox/hurtbox overlap math trivial, but a well-defined
+ * attacker->target direction is the whole point here. attacker's hitbox
+ * (32x32, offset 0) spans its own position to position+32 on both axes;
+ * target's collision box (16x16, offset 0) at (110,100) sits entirely
+ * inside that span, so the two overlap immediately without any movement. */
+static const char *knockback_fixture_gamedata = "[[blueprint]]\n"
+                                                "name = \"attacker\"\n"
+                                                "texture = \"t.png\"\n"
+                                                "src = [0, 0, 16, 16]\n"
+                                                "hitbox_offset_x = 0\n"
+                                                "hitbox_offset_y = 0\n"
+                                                "hitbox_w = 32\n"
+                                                "hitbox_h = 32\n"
+                                                "damage = 5\n"
+                                                "knockback = 40\n"
+                                                "\n"
+                                                "[[blueprint]]\n"
+                                                "name = \"target\"\n"
+                                                "texture = \"t.png\"\n"
+                                                "src = [0, 0, 16, 16]\n"
+                                                "collision_offset = [0, 0]\n"
+                                                "collision_size = [16, 16]\n"
+                                                "health = [20, 20]\n"
+                                                "defense = 0\n"
+                                                "\n"
+                                                "[[level]]\n"
+                                                "name = \"test\"\n"
+                                                "size = [320, 240]\n"
+                                                "\n"
+                                                "[[level.entity]]\n"
+                                                "blueprint = \"attacker\"\n"
+                                                "pos = [100, 100]\n"
+                                                "\n"
+                                                "[[level.entity]]\n"
+                                                "blueprint = \"target\"\n"
+                                                "pos = [110, 100]\n";
+
+/* A landed hit sets target->knockback_timer/knockback_velocity
+ * (entity_apply_knockback) pointed straight along attacker->target
+ * (+x here, since attacker sits at x=100 and target at x=110); the
+ * knockback tick pass (game.c) then walks that impulse to a stop over
+ * KNOCKBACK_SECONDS (0.15s). 20 frames at 1/60s is about 0.33s, well past
+ * the decay window, so the read below is the impulse's final resting
+ * position, not a mid-flight snapshot. Verified this test fails (target.x
+ * unchanged) with entity_apply_knockback's body temporarily no-op'd. */
+void test_integration_knockback_pushes_target_away(void)
+{
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, knockback_fixture_gamedata));
+
+    Entity *attacker = test_find_entity_by_blueprint(&game.state, "attacker");
+    TEST_ASSERT_NOT_NULL(attacker);
+    attacker->hitbox_active_timer = 1.0F;
+
+    const Entity *target_before = test_find_entity_by_blueprint(&game.state, "target");
+    TEST_ASSERT_NOT_NULL(target_before);
+    Vector2 start = target_before->position;
+
+    InputState idle = {0};
+    test_advance_frames(&game, idle, 20);
+
+    const Entity *target = test_find_entity_by_blueprint(&game.state, "target");
+    TEST_ASSERT_NOT_NULL(target);
+    TEST_ASSERT_TRUE(target->position.x - start.x > 5.0F);
+    TEST_ASSERT_TRUE(fabsf(target->position.y - start.y) < 1.0F);
+
+    test_game_teardown(&game);
+}
+
+/* Same attacker/target pair as above, plus a solid wall directly behind
+ * the target (away from the attacker, i.e. further along +x): the wall's
+ * left edge sits just 2px past the target's resting right edge, so an
+ * unresolved 40px knockback would tunnel the target well past it, but
+ * resolve_entity_obstacles (called every knockback tick, same as every
+ * other mover in game.c) must stop the target right at the wall instead.
+ * Verified this test fails (target's collision box ends up well past the
+ * wall's left edge) with the knockback tick pass's resolve_entity_obstacles
+ * call temporarily removed. */
+static const char *knockback_wall_fixture_gamedata = "[[blueprint]]\n"
+                                                     "name = \"attacker\"\n"
+                                                     "texture = \"t.png\"\n"
+                                                     "src = [0, 0, 16, 16]\n"
+                                                     "hitbox_offset_x = 0\n"
+                                                     "hitbox_offset_y = 0\n"
+                                                     "hitbox_w = 32\n"
+                                                     "hitbox_h = 32\n"
+                                                     "damage = 5\n"
+                                                     "knockback = 40\n"
+                                                     "\n"
+                                                     "[[blueprint]]\n"
+                                                     "name = \"target\"\n"
+                                                     "texture = \"t.png\"\n"
+                                                     "src = [0, 0, 16, 16]\n"
+                                                     "collision_offset = [0, 0]\n"
+                                                     "collision_size = [16, 16]\n"
+                                                     "health = [20, 20]\n"
+                                                     "defense = 0\n"
+                                                     "\n"
+                                                     "[[blueprint]]\n"
+                                                     "name = \"wall\"\n"
+                                                     "texture = \"t.png\"\n"
+                                                     "src = [0, 0, 16, 48]\n"
+                                                     "collision_offset = [0, 0]\n"
+                                                     "collision_size = [16, 48]\n"
+                                                     "solid = true\n"
+                                                     "\n"
+                                                     "[[level]]\n"
+                                                     "name = \"test\"\n"
+                                                     "size = [320, 240]\n"
+                                                     "\n"
+                                                     "[[level.entity]]\n"
+                                                     "blueprint = \"attacker\"\n"
+                                                     "pos = [100, 100]\n"
+                                                     "\n"
+                                                     "[[level.entity]]\n"
+                                                     "blueprint = \"target\"\n"
+                                                     "pos = [110, 100]\n"
+                                                     "\n"
+                                                     "[[level.entity]]\n"
+                                                     "blueprint = \"wall\"\n"
+                                                     "pos = [128, 84]\n";
+
+void test_integration_knockback_respects_wall(void)
+{
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, knockback_wall_fixture_gamedata));
+
+    Entity *attacker = test_find_entity_by_blueprint(&game.state, "attacker");
+    TEST_ASSERT_NOT_NULL(attacker);
+    attacker->hitbox_active_timer = 1.0F;
+
+    InputState idle = {0};
+    test_advance_frames(&game, idle, 20);
+
+    Entity *target = test_find_entity_by_blueprint(&game.state, "target");
+    const Entity *wall = test_find_entity_by_blueprint(&game.state, "wall");
+    TEST_ASSERT_NOT_NULL(target);
+    TEST_ASSERT_NOT_NULL(wall);
+
+    Rectangle target_col = test_entity_collision_rect(&game.state, target);
+    Rectangle wall_col = test_entity_collision_rect(&game.state, wall);
+    TEST_ASSERT_TRUE(target_col.x + target_col.width <= wall_col.x + 0.1F);
+
+    test_game_teardown(&game);
+}
+
+/* ---- Integration: S6.10c contact damage (D26). Two independent
+ * hazard/victim pairs 200px apart, mirroring combat_fixture_gamedata's
+ * layout above: (100,100) pairs a contact_damage hazard with
+ * victim_touched to prove contact damage lands and respects i-frames;
+ * (300,100) pairs a plain solid (no contact_damage attr) with victim_safe
+ * to prove ordinary solids don't hurt anything they overlap. Both hazard
+ * and victim share the exact same collision rect (offset [0,0], size
+ * [16,16]) at the exact same position, so the body-vs-body overlap
+ * detect_contact_damage tests is trivially true without any movement. */
+static const char *contact_damage_fixture_gamedata = "[[blueprint]]\n"
+                                                     "name = \"hazard\"\n"
+                                                     "texture = \"t.png\"\n"
+                                                     "src = [0, 0, 16, 16]\n"
+                                                     "collision_offset = [0, 0]\n"
+                                                     "collision_size = [16, 16]\n"
+                                                     "contact_damage = true\n"
+                                                     "damage = 3\n"
+                                                     "\n"
+                                                     "[[blueprint]]\n"
+                                                     "name = \"innocent_wall\"\n"
+                                                     "texture = \"t.png\"\n"
+                                                     "src = [0, 0, 16, 16]\n"
+                                                     "collision_offset = [0, 0]\n"
+                                                     "collision_size = [16, 16]\n"
+                                                     "solid = true\n"
+                                                     "\n"
+                                                     "[[blueprint]]\n"
+                                                     "name = \"victim_touched\"\n"
+                                                     "texture = \"t.png\"\n"
+                                                     "src = [0, 0, 16, 16]\n"
+                                                     "collision_offset = [0, 0]\n"
+                                                     "collision_size = [16, 16]\n"
+                                                     "health = [10, 10]\n"
+                                                     "defense = 0\n"
+                                                     "\n"
+                                                     "[[blueprint]]\n"
+                                                     "name = \"victim_safe\"\n"
+                                                     "texture = \"t.png\"\n"
+                                                     "src = [0, 0, 16, 16]\n"
+                                                     "collision_offset = [0, 0]\n"
+                                                     "collision_size = [16, 16]\n"
+                                                     "health = [10, 10]\n"
+                                                     "defense = 0\n"
+                                                     "\n"
+                                                     "[[level]]\n"
+                                                     "name = \"test\"\n"
+                                                     "size = [320, 240]\n"
+                                                     "\n"
+                                                     "[[level.entity]]\n"
+                                                     "blueprint = \"hazard\"\n"
+                                                     "pos = [100, 100]\n"
+                                                     "\n"
+                                                     "[[level.entity]]\n"
+                                                     "blueprint = \"victim_touched\"\n"
+                                                     "pos = [100, 100]\n"
+                                                     "\n"
+                                                     "[[level.entity]]\n"
+                                                     "blueprint = \"innocent_wall\"\n"
+                                                     "pos = [300, 100]\n"
+                                                     "\n"
+                                                     "[[level.entity]]\n"
+                                                     "blueprint = \"victim_safe\"\n"
+                                                     "pos = [300, 100]\n";
+
+/* Same three-phase timing as test_integration_iframes_block_repeat_damage
+ * above (1 frame, then 10 more inside the i-frame window, then 60 more
+ * past it), proving detect_contact_damage's per-hit behavior matches
+ * detect_melee_damage's exactly: max(1, 3-0) = 3 dealt per landed hit,
+ * i-frames block the repeat while the hazard and victim stay overlapped
+ * every single frame (no hitbox timer to expire -- contact_damage is a
+ * static attr, so the source is live for the whole test). Verified this
+ * test fails (health stays 10) with detect_contact_damage temporarily
+ * no-op'd. */
+void test_integration_contact_damage_hurts_on_touch(void)
+{
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, contact_damage_fixture_gamedata));
+
+    InputState idle = {0};
+    test_advance_frame(&game, idle);
+
+    const Entity *victim = test_find_entity_by_blueprint(&game.state, "victim_touched");
+    TEST_ASSERT_NOT_NULL(victim);
+    /* max(1, 3 - 0) = 3 dealt -> 10 - 3 = 7 */
+    TEST_ASSERT_EQUAL_INT(7, (int)attr_get_scoped_float(&victim->attrs, nullptr, "health", -1.0F));
+
+    /* Still well inside the default 0.8s i-frame window -- health must not
+     * drop again even though the hazard and victim stay overlapped every
+     * frame. */
+    test_advance_frames(&game, idle, 10);
+    TEST_ASSERT_EQUAL_INT(7, (int)attr_get_scoped_float(&victim->attrs, nullptr, "health", -1.0F));
+
+    /* Comfortably past the i-frame window -- contact is still live, so a
+     * second hit must land. */
+    test_advance_frames(&game, idle, 60);
+    TEST_ASSERT_EQUAL_INT(4, (int)attr_get_scoped_float(&victim->attrs, nullptr, "health", -1.0F));
+
+    test_game_teardown(&game);
+}
+
+/* innocent_wall has no contact_damage attr (just solid = true), so
+ * detect_contact_damage's own gate must skip it entirely even though it
+ * overlaps victim_safe for the whole test -- guards against a regression
+ * where every solid entity accidentally hurts whatever it touches. */
+void test_integration_no_contact_damage_without_attr(void)
+{
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, contact_damage_fixture_gamedata));
+
+    InputState idle = {0};
+    test_advance_frames(&game, idle, 30);
+
+    const Entity *victim_safe = test_find_entity_by_blueprint(&game.state, "victim_safe");
+    TEST_ASSERT_NOT_NULL(victim_safe);
+    const AttrSet *defaults = entity_resolve_defaults(&game.state, victim_safe->id);
+    TEST_ASSERT_EQUAL_INT(10, (int)attr_get_scoped_float(&victim_safe->attrs, defaults, "health", -1.0F));
+
+    test_game_teardown(&game);
+}

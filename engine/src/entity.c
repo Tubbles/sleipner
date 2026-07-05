@@ -10,6 +10,7 @@ VEC_IMPL(entity, Entity)
 
 #include "raylib.h"
 
+#include <math.h>
 #include <string.h>
 
 bool entity_init(Entity *entity, EntitySpec spec, Vector2 position, Allocator *alloc)
@@ -161,6 +162,29 @@ bool entity_apply_damage(Entity *target, const AttrSet *target_defaults, float r
     target->iframe_timer =
         attr_get_scoped_float(&target->attrs, target_defaults, "iframes", ENTITY_DEFAULT_IFRAME_SECONDS);
     return true;
+}
+
+/* Below this length (px), target->position and from_position are treated
+ * as coincident -- entity_apply_knockback falls back to target->facing
+ * rather than normalizing a near-zero vector. Same rationale/magnitude as
+ * game.c's CHASE_STEER_EPSILON. */
+#define KNOCKBACK_DIRECTION_EPSILON 0.01F
+
+void entity_apply_knockback(Entity *target, Vector2 from_position, float distance)
+{
+    if (distance <= 0.0F) {
+        return;
+    }
+    float delta_x = target->position.x - from_position.x;
+    float delta_y = target->position.y - from_position.y;
+    float length = sqrtf((delta_x * delta_x) + (delta_y * delta_y));
+    Vector2 direction = target->facing;
+    if (length > KNOCKBACK_DIRECTION_EPSILON) {
+        direction = (Vector2){delta_x / length, delta_y / length};
+    }
+    float speed = (2.0F * distance) / KNOCKBACK_SECONDS;
+    target->knockback_velocity = (Vector2){direction.x * speed, direction.y * speed};
+    target->knockback_timer = KNOCKBACK_SECONDS;
 }
 
 static int find_entity_index(const Entity *entity, const Entity *entities, int entity_count)
