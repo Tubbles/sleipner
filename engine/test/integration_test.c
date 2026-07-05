@@ -208,6 +208,81 @@ static const char *fixture_transition = "[[blueprint]]\n"
                                         "blueprint = \"exit_door\"\n"
                                         "pos = [80, 110]\n";
 
+/* Fixture for per-level music crossfade (S6.13b, D32): three levels,
+ * "field" (music theme_a.mp3) -> "interior" (music theme_b.mp3, a
+ * DIFFERENT track -- crossfade should start) -> "interior2" (music
+ * theme_b.mp3 too, the SAME track as "interior" -- crossfade should NOT
+ * restart even though the level itself changes). Player at (100,100),
+ * door_to_interior at (200,100); interior's player at (80,60),
+ * door_to_interior2 at (80,110). */
+static const char *fixture_music_transition = "[[blueprint]]\n"
+                                              "name = \"player\"\n"
+                                              "texture = \"player.png\"\n"
+                                              "src = [0, 0, 32, 32]\n"
+                                              "collision_offset = [0, 0]\n"
+                                              "collision_size = [16, 16]\n"
+                                              "behavior = \"player\"\n"
+                                              "speed = 80\n"
+                                              "\n"
+                                              "[[blueprint]]\n"
+                                              "name = \"door_to_interior\"\n"
+                                              "texture = \"rock.png\"\n"
+                                              "src = [0, 0, 16, 16]\n"
+                                              "collision_offset = [0, 0]\n"
+                                              "collision_size = [32, 32]\n"
+                                              "solid = false\n"
+                                              "\n"
+                                              "[[blueprint.rule]]\n"
+                                              "trigger = \"enter\"\n"
+                                              "actions = [\"transition:interior,80,60\"]\n"
+                                              "\n"
+                                              "[[blueprint]]\n"
+                                              "name = \"door_to_interior2\"\n"
+                                              "texture = \"rock.png\"\n"
+                                              "src = [0, 0, 16, 16]\n"
+                                              "collision_offset = [0, 0]\n"
+                                              "collision_size = [32, 32]\n"
+                                              "solid = false\n"
+                                              "\n"
+                                              "[[blueprint.rule]]\n"
+                                              "trigger = \"enter\"\n"
+                                              "actions = [\"transition:interior2,40,40\"]\n"
+                                              "\n"
+                                              "[[level]]\n"
+                                              "name = \"field\"\n"
+                                              "music = \"theme_a.mp3\"\n"
+                                              "size = [320, 240]\n"
+                                              "\n"
+                                              "[[level.entity]]\n"
+                                              "blueprint = \"player\"\n"
+                                              "pos = [100, 100]\n"
+                                              "\n"
+                                              "[[level.entity]]\n"
+                                              "blueprint = \"door_to_interior\"\n"
+                                              "pos = [200, 100]\n"
+                                              "\n"
+                                              "[[level]]\n"
+                                              "name = \"interior\"\n"
+                                              "music = \"theme_b.mp3\"\n"
+                                              "size = [160, 120]\n"
+                                              "\n"
+                                              "[[level.entity]]\n"
+                                              "blueprint = \"player\"\n"
+                                              "pos = [80, 60]\n"
+                                              "\n"
+                                              "[[level.entity]]\n"
+                                              "blueprint = \"door_to_interior2\"\n"
+                                              "pos = [80, 110]\n"
+                                              "\n"
+                                              "[[level]]\n"
+                                              "name = \"interior2\"\n"
+                                              "music = \"theme_b.mp3\"\n"
+                                              "size = [100, 100]\n"
+                                              "\n"
+                                              "[[level.entity]]\n"
+                                              "blueprint = \"player\"\n"
+                                              "pos = [40, 40]\n";
+
 /* Fixture for give_item/remove_item/has_item (S6.8a, D25). Player at
  * (50,50); item_giver/item_remover/item_checker sit 100px apart on the
  * same row so INTERACT_RANGE (24px) never overlaps two at once. Each
@@ -1188,6 +1263,98 @@ void test_integration_transition_changes_level(void)
     TEST_ASSERT_NOT_NULL(player);
     TEST_ASSERT_FLOAT_WITHIN(0.5F, 80.0F, player->position.x);
     TEST_ASSERT_FLOAT_WITHIN(0.5F, 60.0F, player->position.y);
+
+    test_game_teardown(&game);
+}
+
+/* S6.13b, D32: loading a level sets its music_name as the current track
+ * with no crossfade -- there is nothing playing yet to fade from. Driven
+ * through the real load path (test_game_setup -> game_load_gamedata). */
+void test_integration_level_load_sets_music_with_no_crossfade(void)
+{
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_music_transition));
+
+    TEST_ASSERT_EQUAL_STRING("theme_a.mp3", game.state.music.current_track_name);
+    TEST_ASSERT_EQUAL_STRING("", game.state.music.outgoing_track_name);
+    TEST_ASSERT_EQUAL_FLOAT(0.0F, game.state.music.crossfade_timer);
+
+    test_game_teardown(&game);
+}
+
+/* S6.13b, D32: transitioning into a level whose music_name differs from
+ * the current track starts a 1.0s linear crossfade -- the old track
+ * becomes "outgoing" at a fresh full timer, the new track becomes
+ * "current". Driven through the real enter-trigger -> transition:interior
+ * path (frame_update + handle_transition), the same mechanism
+ * test_integration_transition_changes_level exercises -- not a direct
+ * game_load_gamedata/level_activate call. */
+void test_integration_transition_to_different_track_starts_crossfade(void)
+{
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_music_transition));
+
+    InputState input = {0};
+    input_state_set_gp_axis(&input, GAMEPAD_AXIS_LEFT_X, 1.0F);
+    int max_iterations = 200;
+    int iteration = 0;
+    while (iteration < max_iterations && strcmp(game.state.gamedata.current_level.name.ptr, "field") == 0) {
+        test_advance_frame(&game, input);
+        iteration++;
+    }
+    TEST_ASSERT_TRUE_MESSAGE(iteration < max_iterations, "transition to 'interior' should fire within 200 frames");
+    TEST_ASSERT_EQUAL_STRING("interior", game.state.gamedata.current_level.name.ptr);
+
+    TEST_ASSERT_EQUAL_STRING("theme_b.mp3", game.state.music.current_track_name);
+    TEST_ASSERT_EQUAL_STRING("theme_a.mp3", game.state.music.outgoing_track_name);
+    TEST_ASSERT_EQUAL_FLOAT(MUSIC_CROSSFADE_SECONDS, game.state.music.crossfade_timer);
+
+    test_game_teardown(&game);
+}
+
+/* S6.13b, D32: once the crossfade above finishes (ticked past
+ * MUSIC_CROSSFADE_SECONDS at 1/60s per frame -- 61 frames is enough) and
+ * the player then walks into a SECOND level that names the SAME track
+ * ("interior2", also theme_b.mp3), no new crossfade starts -- the track
+ * NAME, not the level identity, drives the decision. */
+void test_integration_transition_to_same_track_does_not_restart_crossfade(void)
+{
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_music_transition));
+
+    InputState right = {0};
+    input_state_set_gp_axis(&right, GAMEPAD_AXIS_LEFT_X, 1.0F);
+    int max_iterations = 200;
+    int iteration = 0;
+    while (iteration < max_iterations && strcmp(game.state.gamedata.current_level.name.ptr, "field") == 0) {
+        test_advance_frame(&game, right);
+        iteration++;
+    }
+    TEST_ASSERT_TRUE_MESSAGE(iteration < max_iterations, "transition to 'interior' should fire within 200 frames");
+
+    InputState idle = {0};
+    for (int frame = 0; frame < 61; frame++) {
+        test_advance_frame(&game, idle);
+    }
+    TEST_ASSERT_EQUAL_FLOAT(0.0F, game.state.music.crossfade_timer);
+    TEST_ASSERT_EQUAL_STRING("", game.state.music.outgoing_track_name);
+    TEST_ASSERT_EQUAL_STRING("theme_b.mp3", game.state.music.current_track_name);
+
+    /* interior's player is at (80,60), door_to_interior2 at (80,110) --
+     * walk down (+y). */
+    InputState down = {0};
+    input_state_set_gp_axis(&down, GAMEPAD_AXIS_LEFT_Y, 1.0F);
+    iteration = 0;
+    while (iteration < max_iterations && strcmp(game.state.gamedata.current_level.name.ptr, "interior") == 0) {
+        test_advance_frame(&game, down);
+        iteration++;
+    }
+    TEST_ASSERT_TRUE_MESSAGE(iteration < max_iterations, "transition to 'interior2' should fire within 200 frames");
+    TEST_ASSERT_EQUAL_STRING("interior2", game.state.gamedata.current_level.name.ptr);
+
+    TEST_ASSERT_EQUAL_STRING("theme_b.mp3", game.state.music.current_track_name);
+    TEST_ASSERT_EQUAL_STRING("", game.state.music.outgoing_track_name);
+    TEST_ASSERT_EQUAL_FLOAT(0.0F, game.state.music.crossfade_timer);
 
     test_game_teardown(&game);
 }

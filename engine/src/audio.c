@@ -6,12 +6,14 @@
 
 #include <math.h>
 #include <stddef.h>
+#include <string.h>
 
 /* strv_hash (strv.h) is the shared FNV-1a hash for every Strv-keyed
  * MAP_DECL -- see rule.h's map_strv_int (S6.8a) for the other one; every
  * other MAP_DECL keys on int and reuses map_hash_int/map_eq_int from
  * map.h. */
 MAP_IMPL(strv_sound, Strv, Sound, strv_hash, strv_eq)
+MAP_IMPL(strv_music, Strv, Music, strv_hash, strv_eq)
 
 #define SAMPLE_RATE 44100
 #define SAMPLE_MAX 32767.0F
@@ -127,4 +129,47 @@ void sfx_alias_pool_play(SfxAliasPool *pool, Sound sound, float volume)
     entry->in_use = true;
     SetSoundVolume(entry->alias, volume);
     PlaySound(entry->alias);
+}
+
+MusicCrossfadeGain music_crossfade_gain(float timer, float total)
+{
+    if (timer <= 0.0F || total <= 0.0F) {
+        return (MusicCrossfadeGain){.outgoing_gain = 0.0F, .incoming_gain = 1.0F};
+    }
+    float clamped_timer = timer > total ? total : timer;
+    float outgoing_gain = clamped_timer / total;
+    return (MusicCrossfadeGain){.outgoing_gain = outgoing_gain, .incoming_gain = 1.0F - outgoing_gain};
+}
+
+/* Fixed-size name copy, always null-terminated -- same idiom main.c uses
+ * for TextureEntry.filename/FontPreviewEntry.name. */
+static void music_track_name_copy(char destination[MUSIC_TRACK_NAME_LEN], const char *source)
+{
+    strncpy(destination, source, MUSIC_TRACK_NAME_LEN - 1);
+    destination[MUSIC_TRACK_NAME_LEN - 1] = '\0';
+}
+
+void music_on_level_changed(MusicState *music, const char *new_track_name)
+{
+    const char *safe_new_name = new_track_name ? new_track_name : "";
+    if (strncmp(music->current_track_name, safe_new_name, MUSIC_TRACK_NAME_LEN) == 0) {
+        return;
+    }
+    if (music->current_track_name[0] != '\0') {
+        music_track_name_copy(music->outgoing_track_name, music->current_track_name);
+        music->crossfade_timer = MUSIC_CROSSFADE_SECONDS;
+    }
+    music_track_name_copy(music->current_track_name, safe_new_name);
+}
+
+void music_state_tick(MusicState *music, float delta_time)
+{
+    if (music->crossfade_timer <= 0.0F) {
+        return;
+    }
+    music->crossfade_timer -= delta_time;
+    if (music->crossfade_timer <= 0.0F) {
+        music->crossfade_timer = 0.0F;
+        music->outgoing_track_name[0] = '\0';
+    }
 }

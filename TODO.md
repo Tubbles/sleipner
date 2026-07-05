@@ -122,7 +122,22 @@ predicate rows and MOVE reparenting).
   arbitrary string into `music` via the word builder (`editor/level.c`
   `enter_level_detail_string_edit`); the master plan (S5.2, S6.13) always
   intended a fuzzy-finder over an embedded music-name registry once that
-  registry exists. Revisit when S6.13 (audio polish) lands.
+  registry exists. The registry now exists as of S6.13b (`map_strv_music`
+  on `AssetRegistry.music`, `audio.h`/`game.h`, populated by `main.c`'s
+  `music_registry_add`), so this is now actionable: swap the free-text
+  word builder for a fuzzy-finder over the registry keys, mirroring the
+  Atlas-mode texture picker. Blocked only on the registry having more than
+  one entry to pick from (currently just `bgm.mp3`), which is content, not
+  engine work.
+- **Spatial SFX falloff** — deferred out of S6.13b (D32) as explicitly out
+  of scope for the per-level-music slice. `sfx_alias_pool_play`
+  (`audio.h`/`.c`) currently plays every `play_sound:` at a flat
+  `preferences_effective_sfx_volume` with no positional attenuation. A
+  spatial pass would scale (and potentially pan) that volume by distance
+  from the player/camera to the sound's source entity, which means routing
+  a source position through `SoundEffectRequest` (`effect.h`) and the
+  `apply_sound_effects` call site (`frame.c`). See DESIGN.md § "Audio
+  Design" ("Spatial sound — volume based on distance to entity?").
 - **DESIGN.md's "Editor Controls (Draft)" table is stale for multi-select
   and grid-snap (DESIGN.md:121-122).** S5.7 (D38) implemented multi-select-
   add as L1+CONFIRM / Ctrl+Enter and the grid-snap toggle as L1+Up /

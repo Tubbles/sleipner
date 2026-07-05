@@ -5,6 +5,7 @@
 #include "arena.h"
 #include "atlas.h"
 #include "attribute.h"
+#include "audio.h"
 #include "blueprint.h"
 #include "collision.h"
 #include "debug.h"
@@ -269,6 +270,7 @@ bool game_load_gamedata(Diag *diag, GameState *state, GamedataParams params)
             }
         }
         game_snap_camera(state);
+        music_on_level_changed(&state->music, state->gamedata.current_level.music_name.ptr);
     } else {
         error_wrap(diag->error, "game_load_gamedata");
     }
@@ -304,7 +306,11 @@ bool level_activate(Diag *diag, GameState *state, Strv target_name)
     state->gamedata.current_level = state->gamedata.other_levels.data[other_index];
     state->gamedata.other_levels.data[other_index] = swap_temp;
 
-    return setup_current_level_runtime(diag, state);
+    if (!setup_current_level_runtime(diag, state)) {
+        return false;
+    }
+    music_on_level_changed(&state->music, state->gamedata.current_level.music_name.ptr);
+    return true;
 }
 
 Entity *game_get_player(GameState *state)
@@ -1410,6 +1416,7 @@ void game_update(Diag *diag, GameState *state, InputState input, float delta_tim
 {
     state->frame++;
     state->elapsed += delta_time;
+    music_state_tick(&state->music, delta_time);
 
     if (!state->editor_mode) {
         for (int index = 0; index < state->gamedata.current_level.entities.count; index++) {

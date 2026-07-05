@@ -61,6 +61,10 @@ typedef struct {
      * for the full lifecycle/lookup contract. Same persistent, below-
      * gamedata_base lifetime as textures/font_cache above. */
     map_strv_sound sounds;
+    /* Embedded music registry (S6.13b, D32) -- see audio.h's
+     * MAP_DECL(strv_music, ...) for the full lifecycle/lookup contract.
+     * Same persistent, below-gamedata_base lifetime as sounds above. */
+    map_strv_music music;
 } AssetRegistry;
 
 /* --- CameraEffect: runtime pan/shake state started by the camera_pan/
@@ -125,6 +129,12 @@ typedef struct {
     ErrorState error;
     DebugState debug;
     AudioState audio;
+    /* Per-level music crossfade state (S6.13b, D32) -- see audio.h's
+     * MusicState doc comment for the full design. Runtime session state,
+     * not gamedata: not undo-snapshotted, updated by music_on_level_changed
+     * (game_load_gamedata below and level_activate) and ticked every frame
+     * by game_update. */
+    MusicState music;
     /* Runtime session state, not gamedata: seeded once from wall-clock time
      * in game_init and never undo-snapshotted or persisted (see random.h,
      * D21). */

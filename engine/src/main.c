@@ -180,6 +180,20 @@ static void sfx_registry_add(GameState *state, const char *name, EmbeddedAsset a
     (void)map_strv_sound_set(&state->assets.sounds, strv_from_cstr(name), sound);
 }
 
+/* Music registry (S6.13b, D32) -- mirrors sfx_registry_add's lifetime and
+ * lookup-by-filename convention. `name` is the key Level.music_name (a
+ * level's `music = "bgm.mp3"` TOML field, level.h) references. Requires
+ * an initialized audio device, same as sfx_registry_add -- audio_init has
+ * already run by the time main() calls load_persistent_assets. */
+static void music_registry_add(GameState *state, const char *name, EmbeddedAsset asset, Allocator *alloc)
+{
+    state->assets.music.alloc = *alloc;
+    Music music = LoadMusicStreamFromMemory(".mp3", asset.data, asset.size);
+    music.looping = true;
+    debug_log(&state->debug, "music: '%s' valid=%d", name, IsMusicValid(music));
+    (void)map_strv_music_set(&state->assets.music, strv_from_cstr(name), music);
+}
+
 static int count_connected_gamepads(void)
 {
     int count = 0;
@@ -485,6 +499,8 @@ static void load_persistent_assets(GameState *state)
     sfx_registry_add(state, "pickup.wav", ASSET(pickup_wav), &gamedata_alloc);
     sfx_registry_add(state, "hit.wav", ASSET(hit_wav), &gamedata_alloc);
 
+    music_registry_add(state, "bgm.mp3", ASSET(bgm_mp3), &gamedata_alloc);
+
     font_preview_add(state, "Earth Illusion", ASSET(earth_illusion_ttf), &gamedata_alloc);
     font_preview_add(state, "Golden Apple", ASSET(golden_apple_ttf), &gamedata_alloc);
     font_preview_add(state, "MenuCard", ASSET(menucard_ttf), &gamedata_alloc);
@@ -562,6 +578,76 @@ static void unload_sfx_registry(GameState *state)
             UnloadSound(state->assets.sounds.entries[index].value);
         }
     }
+}
+
+/* map_strv_music has no generic iterator (see map.h) -- walk the open-
+ * addressing entries array directly, mirrors unload_sfx_registry above. */
+static void unload_music_registry(GameState *state)
+{
+    for (int index = 0; index < state->assets.music.capacity; index++) {
+        if (state->assets.music.entries[index].state == MAP_ENTRY_OCCUPIED) {
+            UnloadMusicStream(state->assets.music.entries[index].value);
+        }
+    }
+}
+
+/* Looks up `track_name` in the music registry and, if found, ensures it is
+ * playing, sets its volume to gain * the master*music channel volume
+ * (preferences_effective_music_volume, S6.13a), and pumps its stream
+ * buffer. An empty name or a registry miss is logged and skipped -- no
+ * stream, no crash (S6.13b, D32) -- mirrors apply_sound_effects' registry-
+ * miss handling (frame.c). */
+static void music_stream_apply(GameState *state, const char *track_name, float gain)
+{
+    if (!track_name || track_name[0] == '\0') {
+        return;
+    }
+    const Music *registered = map_strv_music_get(&state->assets.music, strv_from_cstr(track_name));
+    if (!registered) {
+        debug_log(&state->debug, "music: '%s' not found in registry", track_name);
+        return;
+    }
+    Music stream = *registered;
+    if (!IsMusicStreamPlaying(stream)) {
+        PlayMusicStream(stream);
+    }
+    SetMusicVolume(stream, gain * preferences_effective_music_volume(&state->preferences));
+    UpdateMusicStream(stream);
+}
+
+/* Stops any registry stream that is neither the current nor the outgoing
+ * (fading) track named on state->music -- catches the track that just
+ * finished crossfading out this frame (music_state_tick, game.c, clears
+ * outgoing_track_name once the timer reaches 0) as well as any track
+ * abandoned by an earlier transition. Walks the open-addressing entries
+ * directly, same reason as unload_music_registry above. */
+static void music_streams_stop_stale(GameState *state)
+{
+    for (int index = 0; index < state->assets.music.capacity; index++) {
+        if (state->assets.music.entries[index].state != MAP_ENTRY_OCCUPIED) {
+            continue;
+        }
+        Strv key = state->assets.music.entries[index].key;
+        bool is_current = strv_eq(key, strv_from_cstr(state->music.current_track_name));
+        bool is_outgoing = strv_eq(key, strv_from_cstr(state->music.outgoing_track_name));
+        Music stream = state->assets.music.entries[index].value;
+        if (!is_current && !is_outgoing && IsMusicStreamPlaying(stream)) {
+            StopMusicStream(stream);
+        }
+    }
+}
+
+/* Drives the registry-backed music streams from state->music (S6.13b,
+ * D32): stops anything stale, then ensures the current track (and, mid-
+ * crossfade, the outgoing track) are playing at their crossfade gain.
+ * Replaces the single global `bgm` stream this slice removes -- see the
+ * main() game loop below. */
+static void music_streams_update(GameState *state)
+{
+    music_streams_stop_stale(state);
+    MusicCrossfadeGain gain = music_crossfade_gain(state->music.crossfade_timer, MUSIC_CROSSFADE_SECONDS);
+    music_stream_apply(state, state->music.current_track_name, gain.incoming_gain);
+    music_stream_apply(state, state->music.outgoing_track_name, gain.outgoing_gain);
 }
 
 /* Fonts held here (font_previews entries, ui_font) are non-owning
@@ -1291,13 +1377,6 @@ int main(void)
     audio_init(&state->audio);
     debug_log(&state->debug, "audio_init done");
 
-    debug_log(&state->debug, "loading bgm");
-    EmbeddedAsset bgm_asset = ASSET(bgm_mp3);
-    Music bgm = LoadMusicStreamFromMemory(".mp3", bgm_asset.data, bgm_asset.size);
-    bgm.looping = true;
-    PlayMusicStream(bgm);
-    debug_log(&state->debug, "bgm loaded");
-
     /* Render target at game resolution for pixel-perfect scaling */
     RectU32 game_bounds = {(uint32_t)state->screen_width / PIXEL_SCALE, (uint32_t)state->screen_height / PIXEL_SCALE};
     debug_log(&state->debug, "loading render texture %ux%u", game_bounds.width, game_bounds.height);
@@ -1421,13 +1500,6 @@ int main(void)
     while (!WindowShouldClose() && !quit_requested) {
         float delta_time = GetFrameTime();
 
-        /* Master/music volume prefs (S6.13a, D32/F31) apply here every
-         * frame rather than only on change: cheap, and a Settings-tab
-         * adjustment made during this iteration's frame_update takes
-         * effect on the very next frame. */
-        SetMusicVolume(bgm, preferences_effective_music_volume(&state->preferences));
-        UpdateMusicStream(bgm);
-
         /* Hot-reload: poll mtime and reload if gamedata changed */
         if (state->frame % HOT_RELOAD_POLL_FRAMES == 0) {
             handle_hot_reload(diag, state, &editor_state, &watches, &undo_history);
@@ -1441,6 +1513,13 @@ int main(void)
         frame_update(diag, state, &frame_ctx, input, delta_time);
 
         handle_transition(diag, state, &frame_ctx);
+
+        /* Per-level music crossfade (S6.13b, D32): reads state->music,
+         * ticked by game_update inside frame_update above and possibly
+         * just restarted by handle_transition's game_load_gamedata call,
+         * so this reflects both a same-frame tick and a same-frame
+         * transition correctly. */
+        music_streams_update(state);
 
         render_frame(state, (RenderParams){
                                 .target = target,
@@ -1464,10 +1543,10 @@ int main(void)
     settings_cleanup(&settings);
     menu_cleanup(&menu);
     undo_history_free(&undo_history);
-    UnloadMusicStream(bgm);
     UnloadRenderTexture(target);
     unload_textures(state);
     unload_sfx_registry(state);
+    unload_music_registry(state);
     font_preview_cleanup(state);
     font_cache_cleanup(&state->assets.font_cache);
     game_free(diag, state);
