@@ -68,6 +68,7 @@ static const CodeName keyboard_codes[] = {
     {KEY_E, "E", "E"},
     {KEY_G, "G", "G"},
     {KEY_H, "H", "H"},
+    {KEY_J, "J", "J"},
     {KEY_P, "P", "P"},
     {KEY_Q, "Q", "Q"},
     {KEY_S, "S", "S"},
@@ -635,6 +636,7 @@ static const DefaultAtom default_wb_keyboard_mode[]  = { K(KEY_DELETE),    ATOM_
 static const DefaultAtom default_keyboard_backspace[] = { K(KEY_BACKSPACE), ATOM_END, GB(GAMEPAD_BUTTON_RIGHT_FACE_UP),   ATOM_END, ALTS_END };
 
 static const DefaultAtom default_interact[] = { K(KEY_SPACE), ATOM_END, GB(GAMEPAD_BUTTON_RIGHT_FACE_DOWN), ATOM_END, ALTS_END };
+static const DefaultAtom default_attack[]   = { K(KEY_J),     ATOM_END, GB(GAMEPAD_BUTTON_RIGHT_FACE_LEFT), ATOM_END, ALTS_END };
 
 static const DefaultAtom default_menu_toggle[]         = { K(KEY_F3), ATOM_END, GB(GAMEPAD_BUTTON_MIDDLE_LEFT), ATOM_END, ALTS_END };
 static const DefaultAtom default_font_preview_toggle[] = { K(KEY_F4), ATOM_END, GB(GAMEPAD_BUTTON_RIGHT_THUMB), ATOM_END, ALTS_END };
@@ -718,6 +720,7 @@ static const DefaultAtom *const default_action_atoms[ACTION_COUNT] = {
     [ACTION_WB_KEYBOARD_MODE] = default_wb_keyboard_mode,
     [ACTION_KEYBOARD_BACKSPACE] = default_keyboard_backspace,
     [ACTION_INTERACT] = default_interact,
+    [ACTION_ATTACK] = default_attack,
     [ACTION_MENU_TOGGLE] = default_menu_toggle,
     [ACTION_FONT_PREVIEW_TOGGLE] = default_font_preview_toggle,
     [ACTION_QUIT] = default_quit,
@@ -984,6 +987,7 @@ static const char *const action_toml_names[ACTION_COUNT] = {
     [ACTION_WB_KEYBOARD_MODE] = "WB_KEYBOARD_MODE",
     [ACTION_KEYBOARD_BACKSPACE] = "KEYBOARD_BACKSPACE",
     [ACTION_INTERACT] = "INTERACT",
+    [ACTION_ATTACK] = "ATTACK",
     [ACTION_MENU_TOGGLE] = "MENU_TOGGLE",
     [ACTION_FONT_PREVIEW_TOGGLE] = "FONT_PREVIEW_TOGGLE",
     [ACTION_QUIT] = "QUIT",

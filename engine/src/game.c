@@ -340,10 +340,13 @@ static void update_player(Entity *player,
         if (fabsf(move.x) > fabsf(move.y)) {
             player->anim_row = ANIM_WALK_SIDE;
             player->flip = move.x < 0.0F;
+            player->facing = (Vector2){move.x < 0.0F ? -1.0F : 1.0F, 0.0F};
         } else if (move.y > 0.0F) {
             player->anim_row = ANIM_WALK_DOWN;
+            player->facing = (Vector2){0.0F, 1.0F};
         } else {
             player->anim_row = ANIM_WALK_UP;
+            player->facing = (Vector2){0.0F, -1.0F};
         }
     }
 
@@ -438,6 +441,33 @@ static void behavior_static(BehaviorContext *context)
     (void)context;
 }
 
+/* How long a fresh ACTION_ATTACK press keeps the player's hitbox active
+ * (S6.10b, D26). Chosen as a short swing window, well under
+ * ENTITY_DEFAULT_IFRAME_SECONDS so a single swing can't double-hit a
+ * target through its own i-frames. */
+#define ATTACK_ACTIVE_SECONDS 0.15F
+
+/* Player attack activation (S6.10b, D26): a fresh ACTION_ATTACK press
+ * starts a timed melee swing by setting hitbox_active_timer, gated on
+ * "not already mid-attack" so holding/mashing the button can't restart
+ * the window every frame -- the next press only takes effect once
+ * tick_combat_timers (game_update) has ticked hitbox_active_timer back
+ * down to 0. The attack's direction is read live from player->facing
+ * wherever the hitbox is built (entity_hitbox_region) rather than
+ * captured into a separate field -- movement during the active window is
+ * allowed (no movement lock in v1), so the hitbox simply tracks whatever
+ * direction the player is currently facing. */
+static void update_player_attack(Entity *player, const InputState *input, const BindingStore *bindings)
+{
+    if (player->hitbox_active_timer > 0.0F) {
+        return;
+    }
+    if (!input_pressed(input, bindings, ACTION_ATTACK)) {
+        return;
+    }
+    player->hitbox_active_timer = ATTACK_ACTIVE_SECONDS;
+}
+
 static void behavior_player(BehaviorContext *context)
 {
     GameState *state = context->state;
@@ -448,6 +478,7 @@ static void behavior_player(BehaviorContext *context)
                           (uint32_t)state->gamedata.current_level.height};
     update_player(player, player_defaults, &routed_input, context->bindings, context->delta_time, level_size);
     resolve_entity_obstacles(state, context->entity_index);
+    update_player_attack(player, &routed_input, context->bindings);
 }
 
 /* Sets moving/anim_row/flip/frame_timer/frame_index from a per-frame move

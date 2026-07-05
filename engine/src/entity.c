@@ -23,6 +23,7 @@ bool entity_init(Entity *entity, EntitySpec spec, Vector2 position, Allocator *a
 
     entity->position = position;
     entity->texture = spec.texture;
+    entity->facing = (Vector2){0.0F, 1.0F}; /* default down (S6.10b, D26) */
 
     entity->parent_index = -1;
     return true;
@@ -78,16 +79,24 @@ Rectangle entity_collision_rect(const Entity *entity, const AttrSet *defaults)
 
 /* One-rect fallback shape for hitbox_offset_x/y + hitbox_w/h attrs (S6.10a,
  * D26), same math as entity_collision_rect_prim above -- offset is the
- * rect's center relative to entity->position. */
+ * rect's center relative to entity->position. While the hitbox is active
+ * (S6.10b), the center is further shifted by ENTITY_HITBOX_REACH along
+ * entity->facing so the hitbox lands in front of the entity. */
 static CollisionPrimitive entity_hitbox_rect_prim(const Entity *entity, const AttrSet *defaults)
 {
     float offset_x = attr_get_scoped_float(&entity->attrs, defaults, "hitbox_offset_x", 0.0F);
     float offset_y = attr_get_scoped_float(&entity->attrs, defaults, "hitbox_offset_y", 0.0F);
     float width = attr_get_scoped_float(&entity->attrs, defaults, "hitbox_w", 0.0F);
     float height = attr_get_scoped_float(&entity->attrs, defaults, "hitbox_h", 0.0F);
+    float reach_x = 0.0F;
+    float reach_y = 0.0F;
+    if (entity->hitbox_active_timer > 0.0F) {
+        reach_x = entity->facing.x * ENTITY_HITBOX_REACH;
+        reach_y = entity->facing.y * ENTITY_HITBOX_REACH;
+    }
     return (CollisionPrimitive){
         .kind = COLLIDER_RECT,
-        .offset = {offset_x + (width / 2.0F), offset_y + (height / 2.0F)},
+        .offset = {offset_x + (width / 2.0F) + reach_x, offset_y + (height / 2.0F) + reach_y},
         .angle_offset = 0.0F,
         .rect = {.half_w = width / 2.0F, .half_h = height / 2.0F},
     };

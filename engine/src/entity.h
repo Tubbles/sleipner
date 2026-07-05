@@ -70,6 +70,16 @@ typedef struct {
     /* Vectors (8 bytes each) */
     Vector2 position;
     Vector2 offset;
+    /* Facing direction (S6.10b, D26): unit cardinal vector this entity is
+     * currently oriented toward. Same runtime-only footing as
+     * patrol_phase above -- zeroed by entity_init's memset, then
+     * explicitly set to {0, 1} (down) so an attack fired before any
+     * movement still has a defined direction. behavior_player (game.c)
+     * updates it to the cardinal unit vector of the current movement
+     * whenever the player moves; entity_hitbox_region reads it to place
+     * the attack hitbox in front of the entity while hitbox_active_timer
+     * is live (see ENTITY_HITBOX_REACH below). */
+    Vector2 facing;
 
     /* Bools (1 byte each, packed at end) */
     bool flip;
@@ -102,12 +112,23 @@ CollisionShape entity_trigger_region(const Entity *entity, const AttrSet *defaul
  * collision_offset/size are reflected immediately. */
 Rectangle entity_collision_rect(const Entity *entity, const AttrSet *defaults);
 
-/* Build the hitbox region for an entity (S6.10a, D26/D28): entity->hitbox
+/* Reach (px) the one-rect hitbox fallback shifts its center along
+ * entity->facing while entity->hitbox_active_timer > 0 (S6.10b, D26) --
+ * on top of the plain hitbox_offset_x/y attrs, so an active attack's
+ * hitbox sits in front of the entity instead of centered on it. Inactive
+ * (hitbox_active_timer <= 0) callers see the plain attrs-derived offset,
+ * unchanged from before this feature landed. Only applied to the
+ * attr-derived fallback, not an authored entity->hitbox composite (no
+ * [[blueprint.hitbox]] TOML authoring exists yet -- see TODO.md). */
+#define ENTITY_HITBOX_REACH 8.0F
+
+/* Build the hitbox region for an entity (S6.10a/b, D26/D28): entity->hitbox
  * if an authored composite is present, otherwise a one-rect shape derived
  * from the hitbox_offset_x/y and hitbox_w/h attrs (scoped lookup, default
  * 0 -- an entity with none of these authored has an inert, zero-size
- * hitbox). prim_storage has the same caller-owned-scratch-space lifetime
- * rule as entity_collision_region's. */
+ * hitbox), shifted by ENTITY_HITBOX_REACH along entity->facing while the
+ * hitbox is active. prim_storage has the same caller-owned-scratch-space
+ * lifetime rule as entity_collision_region's. */
 CollisionShape entity_hitbox_region(const Entity *entity, const AttrSet *defaults, CollisionPrimitive *prim_storage);
 
 /* Build the hurtbox region for an entity (S6.10a, D26/D28): entity->hurtbox

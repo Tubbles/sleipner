@@ -90,6 +90,7 @@ typedef enum {
 
     /* Gameplay */
     ACTION_INTERACT,
+    ACTION_ATTACK,
 
     /* Global */
     ACTION_MENU_TOGGLE,

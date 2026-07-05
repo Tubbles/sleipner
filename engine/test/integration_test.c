@@ -5473,3 +5473,141 @@ void test_integration_defeat_fires_once(void)
 
     test_game_teardown(&game);
 }
+
+/* ---- Integration: S6.10b ACTION_ATTACK input + directional melee hitbox
+ * (Entity.facing, ATTACK_ACTIVE_SECONDS, ENTITY_HITBOX_REACH). Unlike
+ * S6.10a's combat_fixture_gamedata above (hitbox_active_timer set
+ * directly as scenario setup), these tests drive the real input layer:
+ * one frame of held left-stick movement establishes player->facing (the
+ * same mechanic update_player already uses for anim_row/flip), and a
+ * fresh ACTION_ATTACK press in that same frame activates the hitbox --
+ * update_player runs before update_player_attack inside behavior_player,
+ * so the freshly-set facing is what the attack reads. S6.10a's unmodified
+ * detect_melee_damage then applies (or doesn't apply) damage depending on
+ * whether a given target sits inside the hitbox's facing-shifted rect.
+ * hero's hitbox and both enemies' collision boxes are authored with a
+ * centered offset (offset = -half_size) so their rects sit exactly on the
+ * entity position before any reach shift, keeping the geometry exact:
+ * hero at (160,120) facing left after one frame lands its hitbox center
+ * at roughly (150.7,120) (ENTITY_HITBOX_REACH = 8px short of a full
+ * frame of drift) -- enemy_front at (152,120) is well inside that box
+ * (32x32 half-extents on both sides), enemy_behind at (200,120) is 40px
+ * further right and well outside it. */
+static const char *attack_fixture_gamedata = "[[blueprint]]\n"
+                                             "name = \"hero\"\n"
+                                             "texture = \"hero.png\"\n"
+                                             "src = [0, 0, 32, 32]\n"
+                                             "collision_offset = [-8, -8]\n"
+                                             "collision_size = [16, 16]\n"
+                                             "behavior = \"player\"\n"
+                                             "speed = 80\n"
+                                             "hitbox_offset_x = -16\n"
+                                             "hitbox_offset_y = -16\n"
+                                             "hitbox_w = 32\n"
+                                             "hitbox_h = 32\n"
+                                             "damage = 5\n"
+                                             "\n"
+                                             "[[blueprint]]\n"
+                                             "name = \"enemy_front\"\n"
+                                             "texture = \"enemy.png\"\n"
+                                             "src = [0, 0, 32, 32]\n"
+                                             "collision_offset = [-16, -16]\n"
+                                             "collision_size = [32, 32]\n"
+                                             "health = [10, 10]\n"
+                                             "defense = 0\n"
+                                             "\n"
+                                             "[[blueprint]]\n"
+                                             "name = \"enemy_behind\"\n"
+                                             "texture = \"enemy.png\"\n"
+                                             "src = [0, 0, 32, 32]\n"
+                                             "collision_offset = [-16, -16]\n"
+                                             "collision_size = [32, 32]\n"
+                                             "health = [10, 10]\n"
+                                             "defense = 0\n"
+                                             "\n"
+                                             "[[level]]\n"
+                                             "name = \"test\"\n"
+                                             "size = [320, 240]\n"
+                                             "\n"
+                                             "[[level.entity]]\n"
+                                             "blueprint = \"hero\"\n"
+                                             "pos = [160, 120]\n"
+                                             "\n"
+                                             "[[level.entity]]\n"
+                                             "blueprint = \"enemy_front\"\n"
+                                             "pos = [152, 120]\n"
+                                             "\n"
+                                             "[[level.entity]]\n"
+                                             "blueprint = \"enemy_behind\"\n"
+                                             "pos = [200, 120]\n";
+
+/* Facing LEFT (held one frame via the left stick) plus a fresh
+ * ACTION_ATTACK press (gamepad west face / GAMEPAD_BUTTON_RIGHT_FACE_LEFT),
+ * both in the same frame. enemy_front sits 8px to the hero's left, inside
+ * the hitbox's facing-shifted reach -- max(1, 5-0) = 5 dealt, 10 -> 5.
+ * Verified this test fails (health stays 10) with update_player_attack's
+ * body temporarily no-op'd, i.e. ACTION_ATTACK never activating the
+ * hitbox. */
+void test_integration_attack_hits_enemy_in_front(void)
+{
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, attack_fixture_gamedata));
+
+    InputState input = {0};
+    input_state_set_gp_axis(&input, GAMEPAD_AXIS_LEFT_X, -1.0F);
+    input_state_press_gp_button(&input, GAMEPAD_BUTTON_RIGHT_FACE_LEFT);
+    test_advance_frame(&game, input);
+
+    const Entity *enemy_front = test_find_entity_by_blueprint(&game.state, "enemy_front");
+    TEST_ASSERT_NOT_NULL(enemy_front);
+    TEST_ASSERT_EQUAL_INT(5, (int)attr_get_scoped_float(&enemy_front->attrs, nullptr, "health", -1.0F));
+
+    test_game_teardown(&game);
+}
+
+/* Same frame, same attack as above -- enemy_behind sits 40px to the
+ * hero's RIGHT, opposite the LEFT facing the attack swings into, so the
+ * shifted hitbox never reaches it. Health must stay at its starting 10.
+ * Never hit, so "health" was never written onto the instance attrs by
+ * entity_apply_damage -- read through entity_resolve_defaults so the
+ * scoped lookup falls back to the blueprint's authored [10, 10]. */
+void test_integration_attack_misses_out_of_arc(void)
+{
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, attack_fixture_gamedata));
+
+    InputState input = {0};
+    input_state_set_gp_axis(&input, GAMEPAD_AXIS_LEFT_X, -1.0F);
+    input_state_press_gp_button(&input, GAMEPAD_BUTTON_RIGHT_FACE_LEFT);
+    test_advance_frame(&game, input);
+
+    const Entity *enemy_behind = test_find_entity_by_blueprint(&game.state, "enemy_behind");
+    TEST_ASSERT_NOT_NULL(enemy_behind);
+    const AttrSet *defaults = entity_resolve_defaults(&game.state, enemy_behind->id);
+    TEST_ASSERT_EQUAL_INT(10, (int)attr_get_scoped_float(&enemy_behind->attrs, defaults, "health", -1.0F));
+
+    test_game_teardown(&game);
+}
+
+/* Same LEFT-facing movement, no ACTION_ATTACK press: hitbox_active_timer
+ * never leaves 0, so detect_melee_damage's own gate (S6.10a) skips the
+ * hero entirely -- enemy_front, sitting exactly where the two tests
+ * above land a swing, must take no damage at all. Same
+ * entity_resolve_defaults rationale as the miss test above: never hit,
+ * so "health" only resolves through the blueprint default. */
+void test_integration_attack_requires_press(void)
+{
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, attack_fixture_gamedata));
+
+    InputState input = {0};
+    input_state_set_gp_axis(&input, GAMEPAD_AXIS_LEFT_X, -1.0F);
+    test_advance_frames(&game, input, 5);
+
+    const Entity *enemy_front = test_find_entity_by_blueprint(&game.state, "enemy_front");
+    TEST_ASSERT_NOT_NULL(enemy_front);
+    const AttrSet *defaults = entity_resolve_defaults(&game.state, enemy_front->id);
+    TEST_ASSERT_EQUAL_INT(10, (int)attr_get_scoped_float(&enemy_front->attrs, defaults, "health", -1.0F));
+
+    test_game_teardown(&game);
+}
