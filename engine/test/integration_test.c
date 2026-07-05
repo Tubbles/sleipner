@@ -13,6 +13,7 @@
 #include "level.h"
 #include "menu.h"
 #include "rule.h"
+#include "save_screen.h"
 #include "strv.h"
 #include "test_helpers.h"
 #include "undo.h"
@@ -2049,8 +2050,9 @@ void test_integration_inventory_screen_open_close_freezes_world(void)
     test_advance_frame(&game, open_menu);
     TEST_ASSERT_TRUE(game.menu.open);
 
-    /* Walk to INVENTORY: RESUME, SAVE, RESTORE, INVENTORY -- 3 down-presses. */
-    for (int step = 0; step < 3; step++) {
+    /* Walk to INVENTORY: RESUME, SAVE, RESTORE, SAVE_GAME, LOAD_GAME,
+     * INVENTORY -- 5 down-presses. */
+    for (int step = 0; step < 5; step++) {
         InputState down = {0};
         input_state_press_key(&down, KEY_DOWN);
         test_advance_frame(&game, down);
@@ -2083,6 +2085,149 @@ void test_integration_inventory_screen_open_close_freezes_world(void)
     TEST_ASSERT_TRUE(game.menu.open);
 
     test_game_teardown(&game);
+}
+
+/* S6.15d2, D33: the pause-menu Save Game / Load Game entries open a modal
+ * slot-picker overlay (mirrors the Inventory overlay's world-freeze shape
+ * proven above) that writes/reads save_N.toml through S6.15d1's
+ * save_write/save_load. Drives the full round trip through the real
+ * menu/input path: F3 -> down to SAVE GAME -> confirm opens the picker
+ * (world frozen, proven the same way the Inventory test above proves it)
+ * -> down once to slot index 1 -> confirm writes save_2.toml and resumes
+ * play with the picker and pause menu both closed. The live state is then
+ * mutated directly (an extra "key", the player moved away) before F3 ->
+ * down to LOAD GAME -> confirm -> down once to the same slot -> confirm,
+ * which must read save_2.toml back and overwrite the mutation.
+ * XDG_DATA_HOME is redirected to a temp directory for the test's duration,
+ * the same env-var-override convention save_test.c's own autosave test and
+ * platform_paths_test.c already use, so platform_saves_dir (called from
+ * frame.c's open_save_screen / handle_save_screen_confirm) never touches
+ * the developer's real saves directory.
+ *
+ * Verified to fail (save_2.toml never appears on disk, and the mutated
+ * item count/position survive the "Load Game" confirm) against a
+ * temporary stub of handle_save_screen_confirm's save_write/save_load
+ * calls (frame.c) that skips straight to save_screen_close without
+ * calling either. */
+void test_integration_save_screen_save_and_load_round_trip_via_menu(void)
+{
+    const char *original_xdg_data_home = getenv("XDG_DATA_HOME");
+    char original_xdg_data_home_copy[256] = {0};
+    bool had_original_xdg_data_home = original_xdg_data_home != nullptr;
+    if (had_original_xdg_data_home) {
+        (void)snprintf(original_xdg_data_home_copy, sizeof(original_xdg_data_home_copy), "%s", original_xdg_data_home);
+    }
+    char xdg_data_home[128];
+    (void)snprintf(xdg_data_home, sizeof(xdg_data_home), "/tmp/sleipner_save_screen_test_%d_xdg", (int)getpid());
+    TEST_ASSERT_EQUAL_INT(0, setenv("XDG_DATA_HOME", xdg_data_home, 1));
+
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_items));
+
+    Entity *giver = test_find_entity_by_blueprint(&game.state, "item_giver");
+    TEST_ASSERT_NOT_NULL(giver);
+    (void)walk_player_to(&game, 10.0F, giver->position, 300);
+    InputState give = {0};
+    input_state_press_gp_button(&give, GAMEPAD_BUTTON_RIGHT_FACE_DOWN);
+    test_advance_frame(&game, give);
+    TEST_ASSERT_TRUE(item_has(&game.state.progression.items, "key"));
+    TEST_ASSERT_EQUAL_INT(1, item_count(&game.state.progression.items, "key"));
+
+    Vector2 saved_player_position = game_get_player_const(&game.state)->position;
+
+    /* Open menu -> walk to SAVE GAME: RESUME, SAVE, RESTORE, SAVE_GAME --
+     * 3 down-presses -> confirm opens the picker in SAVE mode. */
+    InputState open_menu = {0};
+    input_state_press_key(&open_menu, KEY_F3);
+    test_advance_frame(&game, open_menu);
+    TEST_ASSERT_TRUE(game.menu.open);
+    for (int step = 0; step < 3; step++) {
+        InputState down = {0};
+        input_state_press_key(&down, KEY_DOWN);
+        test_advance_frame(&game, down);
+    }
+    TEST_ASSERT_EQUAL_INT(MENU_ENTRY_SAVE_GAME, game.menu.selected);
+
+    InputState confirm = {0};
+    input_state_press_key(&confirm, KEY_ENTER);
+    test_advance_frame(&game, confirm);
+    TEST_ASSERT_TRUE(save_screen_is_open(&game.save_screen));
+    TEST_ASSERT_EQUAL_INT(SAVE_SCREEN_MODE_SAVE, game.save_screen.mode);
+    TEST_ASSERT_FALSE(game.menu.open);
+
+    /* World-freeze proof, mirrors the Inventory overlay's own proof above:
+     * held movement input must not move the player while the picker is
+     * open. */
+    InputState hold_right = {0};
+    input_state_hold_key(&hold_right, KEY_RIGHT);
+    test_advance_frames(&game, hold_right, 20);
+    const Entity *frozen_player = game_get_player_const(&game.state);
+    TEST_ASSERT_EQUAL_FLOAT(saved_player_position.x, frozen_player->position.x);
+    TEST_ASSERT_EQUAL_FLOAT(saved_player_position.y, frozen_player->position.y);
+
+    /* Navigate to slot index 1 ("SLOT 2") and confirm -- writes
+     * save_2.toml and resumes play (picker AND pause menu both closed). */
+    InputState screen_down = {0};
+    input_state_press_key(&screen_down, KEY_DOWN);
+    test_advance_frame(&game, screen_down);
+    test_advance_frame(&game, confirm);
+
+    TEST_ASSERT_FALSE(save_screen_is_open(&game.save_screen));
+    TEST_ASSERT_FALSE(game.menu.open);
+
+    char save_path[256];
+    (void)snprintf(save_path, sizeof(save_path), "%s/sleipner/saves/save_2.toml", xdg_data_home);
+    TEST_ASSERT_TRUE_MESSAGE(FileExists(save_path), "Save Game should have written save_2.toml to disk");
+
+    /* Mutate the live state directly so the load half proves a real
+     * restore, not a coincidence: double the item count and move the
+     * player away from where it was saved. */
+    Allocator progression_alloc = allocator_arena(&game.state.progression_arena);
+    item_give(&game.diag, &progression_alloc, &game.state.progression.items, "key");
+    TEST_ASSERT_EQUAL_INT(2, item_count(&game.state.progression.items, "key"));
+    Entity *player = game_get_player(&game.state);
+    TEST_ASSERT_NOT_NULL(player);
+    player->position = (Vector2){0.0F, 0.0F};
+
+    /* Open menu -> walk to LOAD GAME (4 down-presses) -> confirm opens the
+     * picker in LOAD mode -> down once to the same slot -> confirm. */
+    test_advance_frame(&game, open_menu);
+    for (int step = 0; step < 4; step++) {
+        InputState down = {0};
+        input_state_press_key(&down, KEY_DOWN);
+        test_advance_frame(&game, down);
+    }
+    TEST_ASSERT_EQUAL_INT(MENU_ENTRY_LOAD_GAME, game.menu.selected);
+
+    test_advance_frame(&game, confirm);
+    TEST_ASSERT_TRUE(save_screen_is_open(&game.save_screen));
+    TEST_ASSERT_EQUAL_INT(SAVE_SCREEN_MODE_LOAD, game.save_screen.mode);
+
+    test_advance_frame(&game, screen_down);
+    test_advance_frame(&game, confirm);
+
+    TEST_ASSERT_FALSE(save_screen_is_open(&game.save_screen));
+    TEST_ASSERT_FALSE(game.menu.open);
+    TEST_ASSERT_EQUAL_INT(1, item_count(&game.state.progression.items, "key"));
+    const Entity *restored_player = game_get_player_const(&game.state);
+    TEST_ASSERT_FLOAT_WITHIN(0.5F, saved_player_position.x, restored_player->position.x);
+    TEST_ASSERT_FLOAT_WITHIN(0.5F, saved_player_position.y, restored_player->position.y);
+
+    test_game_teardown(&game);
+
+    if (had_original_xdg_data_home) {
+        (void)setenv("XDG_DATA_HOME", original_xdg_data_home_copy, 1);
+    } else {
+        (void)unsetenv("XDG_DATA_HOME");
+    }
+    (void)remove(save_path);
+    char saves_dir[192];
+    (void)snprintf(saves_dir, sizeof(saves_dir), "%s/sleipner/saves", xdg_data_home);
+    (void)rmdir(saves_dir);
+    char sleipner_dir[160];
+    (void)snprintf(sleipner_dir, sizeof(sleipner_dir), "%s/sleipner", xdg_data_home);
+    (void)rmdir(sleipner_dir);
+    (void)rmdir(xdg_data_home);
 }
 
 /* Bug: "after panning around in editor for a little while, the player's
@@ -4413,10 +4558,10 @@ void test_integration_menu_navigation_and_quit(void)
     TEST_ASSERT_TRUE(game.menu.open);
     TEST_ASSERT_EQUAL_INT(MENU_ENTRY_RESUME, game.menu.selected);
 
-    /* Walk to QUIT. The menu has seven entries: RESUME, SAVE, RESTORE,
-     * INVENTORY, SETTINGS, TOGGLE_DEBUG_OVERLAY, QUIT — 6 down-presses
-     * from RESUME. One tap per frame. */
-    for (int step = 0; step < 6; step++) {
+    /* Walk to QUIT. The menu has nine entries: RESUME, SAVE, RESTORE,
+     * SAVE_GAME, LOAD_GAME, INVENTORY, SETTINGS, TOGGLE_DEBUG_OVERLAY,
+     * QUIT — 8 down-presses from RESUME. One tap per frame. */
+    for (int step = 0; step < 8; step++) {
         InputState down = {0};
         input_state_press_key(&down, KEY_DOWN);
         test_advance_frame(&game, down);
@@ -4511,13 +4656,13 @@ void test_integration_settings_tab_switch(void)
     TestGame game;
     TEST_ASSERT_TRUE(test_game_setup(&game, fixture_gamedata));
 
-    /* Open menu (F3) → walk to SETTINGS (4 down-presses from RESUME) → confirm. */
+    /* Open menu (F3) → walk to SETTINGS (6 down-presses from RESUME) → confirm. */
     InputState menu_open = {0};
     input_state_press_key(&menu_open, KEY_F3);
     test_advance_frame(&game, menu_open);
     TEST_ASSERT_TRUE(game.menu.open);
 
-    for (int step = 0; step < 4; step++) {
+    for (int step = 0; step < 6; step++) {
         InputState down = {0};
         input_state_press_key(&down, KEY_DOWN);
         test_advance_frame(&game, down);
@@ -4569,11 +4714,11 @@ void test_integration_settings_path_edit_commit(void)
     TestGame game;
     TEST_ASSERT_TRUE(test_game_setup(&game, fixture_gamedata));
 
-    /* Open menu → SETTINGS (4 down-presses) → confirm. */
+    /* Open menu → SETTINGS (6 down-presses) → confirm. */
     InputState menu_open = {0};
     input_state_press_key(&menu_open, KEY_F3);
     test_advance_frame(&game, menu_open);
-    for (int step = 0; step < 4; step++) {
+    for (int step = 0; step < 6; step++) {
         InputState down = {0};
         input_state_press_key(&down, KEY_DOWN);
         test_advance_frame(&game, down);
@@ -4644,7 +4789,7 @@ void test_integration_settings_path_edit_parent_lists_contents(void)
     InputState menu_open = {0};
     input_state_press_key(&menu_open, KEY_F3);
     test_advance_frame(&game, menu_open);
-    for (int step = 0; step < 4; step++) {
+    for (int step = 0; step < 6; step++) {
         InputState down = {0};
         input_state_press_key(&down, KEY_DOWN);
         test_advance_frame(&game, down);
@@ -4692,7 +4837,7 @@ void test_integration_settings_path_edit_drive_select_round_trip(void)
     InputState menu_open = {0};
     input_state_press_key(&menu_open, KEY_F3);
     test_advance_frame(&game, menu_open);
-    for (int step = 0; step < 4; step++) {
+    for (int step = 0; step < 6; step++) {
         InputState down = {0};
         input_state_press_key(&down, KEY_DOWN);
         test_advance_frame(&game, down);
@@ -4753,7 +4898,7 @@ void test_integration_settings_path_edit_commit_normalizes_separators(void)
     InputState menu_open = {0};
     input_state_press_key(&menu_open, KEY_F3);
     test_advance_frame(&game, menu_open);
-    for (int step = 0; step < 4; step++) {
+    for (int step = 0; step < 6; step++) {
         InputState down = {0};
         input_state_press_key(&down, KEY_DOWN);
         test_advance_frame(&game, down);
@@ -4933,7 +5078,7 @@ void test_integration_settings_path_edit_buffer_row_enters_keyboard_mode(void)
     InputState menu_open = {0};
     input_state_press_key(&menu_open, KEY_F3);
     test_advance_frame(&game, menu_open);
-    for (int step = 0; step < 4; step++) {
+    for (int step = 0; step < 6; step++) {
         InputState down = {0};
         input_state_press_key(&down, KEY_DOWN);
         test_advance_frame(&game, down);

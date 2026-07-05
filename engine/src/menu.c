@@ -27,6 +27,10 @@ static const char *entry_label(MenuEntry entry)
         return "SAVE";
     case MENU_ENTRY_RESTORE:
         return "RESTORE";
+    case MENU_ENTRY_SAVE_GAME:
+        return "SAVE GAME";
+    case MENU_ENTRY_LOAD_GAME:
+        return "LOAD GAME";
     case MENU_ENTRY_INVENTORY:
         return "INVENTORY";
     case MENU_ENTRY_SETTINGS:
@@ -50,6 +54,10 @@ static MenuAction action_for_entry(MenuEntry entry)
         return MENU_ACTION_SAVE;
     case MENU_ENTRY_RESTORE:
         return MENU_ACTION_RESTORE;
+    case MENU_ENTRY_SAVE_GAME:
+        return MENU_ACTION_OPEN_SAVE_MENU;
+    case MENU_ENTRY_LOAD_GAME:
+        return MENU_ACTION_OPEN_LOAD_MENU;
     case MENU_ENTRY_INVENTORY:
         return MENU_ACTION_OPEN_INVENTORY;
     case MENU_ENTRY_SETTINGS:

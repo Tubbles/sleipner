@@ -13,6 +13,7 @@
 #include "menu.h"
 #include "raylib.h"
 #include "rect.h"
+#include "save_screen.h"
 #include "str.h"
 #include "strv.h"
 #include "toml_emitter.h"
@@ -233,6 +234,7 @@ bool test_game_setup_with_level(TestGame *out, const char *toml_string, const ch
     menu_init(&out->menu);
     settings_init(&out->settings);
     inventory_screen_init(&out->inventory);
+    save_screen_init(&out->save_screen);
     out->editor_state = (EditorState){.top_mode = EDITOR_TOP_SCENE,
                                       .selected_entity_id = -1,
                                       .sub_mode = EDITOR_SUB_BROWSE,
@@ -254,6 +256,7 @@ bool test_game_setup_with_level(TestGame *out, const char *toml_string, const ch
         .menu = &out->menu,
         .settings = &out->settings,
         .inventory = &out->inventory,
+        .save_screen = &out->save_screen,
         .font_preview_enabled = &out->font_preview_enabled,
         .quit_requested = &out->quit_requested,
         .save_fn = nullptr,
@@ -272,6 +275,7 @@ void test_game_teardown(TestGame *game)
     menu_cleanup(&game->menu);
     settings_cleanup(&game->settings);
     inventory_screen_cleanup(&game->inventory);
+    save_screen_cleanup(&game->save_screen);
     game_free(&game->diag, &game->state);
 }
 

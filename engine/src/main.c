@@ -67,6 +67,7 @@ const char *__lsan_default_suppressions(void)
 #include "render.h"
 #include "rule.h"
 #include "save.h"
+#include "save_screen.h"
 #include "str.h"
 #include "strv.h"
 #include "tileset.h"
@@ -1053,24 +1054,26 @@ typedef struct {
     bool is_dirty;
     EditorState editor_state;
     const WatchList *watches;
-    /* menu, settings, inventory, and blur are mutable: render_frame lazily
-     * calls blur_capture the first frame any overlay is open and flips
-     * the corresponding blur_captured flag. */
+    /* menu, settings, inventory, save_screen, and blur are mutable:
+     * render_frame lazily calls blur_capture the first frame any overlay
+     * is open and flips the corresponding blur_captured flag. */
     MenuState *menu;
     SettingsState *settings;
     InventoryScreen *inventory;
+    SaveScreen *save_screen;
     BlurPipeline *blur;
 } RenderParams;
 
 /* Capture the current scene into the blur pipeline if any overlay is
- * open and none has captured yet. Sets the captured flag on all three
+ * open and none has captured yet. Sets the captured flag on all four
  * so a single capture serves all of them (which share the backdrop). */
 static void capture_overlay_blur_if_needed(RenderParams params)
 {
     bool menu_open = params.menu->open;
     bool settings_open = params.settings && params.settings->open;
     bool inventory_open = params.inventory && params.inventory->open;
-    if (!menu_open && !settings_open && !inventory_open) {
+    bool save_screen_open_flag = params.save_screen && params.save_screen->open;
+    if (!menu_open && !settings_open && !inventory_open && !save_screen_open_flag) {
         return;
     }
     if (params.menu->blur_captured) {
@@ -1082,6 +1085,9 @@ static void capture_overlay_blur_if_needed(RenderParams params)
     if (params.inventory && params.inventory->blur_captured) {
         return;
     }
+    if (params.save_screen && params.save_screen->blur_captured) {
+        return;
+    }
     blur_capture(params.blur, params.target.texture);
     params.menu->blur_captured = true;
     if (params.settings) {
@@ -1089,6 +1095,9 @@ static void capture_overlay_blur_if_needed(RenderParams params)
     }
     if (params.inventory) {
         params.inventory->blur_captured = true;
+    }
+    if (params.save_screen) {
+        params.save_screen->blur_captured = true;
     }
 }
 
@@ -1286,6 +1295,10 @@ static void render_frame(GameState *state, RenderParams params)
         inventory_screen_render(params.inventory, state->assets.ui_font, params.blur, state->screen_width,
                                 state->screen_height);
     }
+    if (params.save_screen && params.save_screen->open) {
+        save_screen_render(params.save_screen, state->assets.ui_font, params.blur, state->screen_width,
+                           state->screen_height);
+    }
     EndDrawing();
 }
 
@@ -1453,6 +1466,12 @@ int main(void)
     InventoryScreen inventory = {0};
     inventory_screen_init(&inventory);
 
+    /* Save/Load Game slot picker (S6.15d2, D33) shares the same blur
+     * backdrop and has no dedicated font either, same reasoning as
+     * InventoryScreen above. */
+    SaveScreen save_screen = {0};
+    save_screen_init(&save_screen);
+
     BlurPipeline blur = {0};
     blur_init(&blur, (int)game_bounds.width, (int)game_bounds.height);
     bool quit_requested = false;
@@ -1465,6 +1484,7 @@ int main(void)
         .menu = &menu,
         .settings = &settings,
         .inventory = &inventory,
+        .save_screen = &save_screen,
         .font_preview_enabled = &font_preview_enabled,
         .quit_requested = &quit_requested,
         .save_fn = menu_dispatch_save,
@@ -1511,6 +1531,7 @@ int main(void)
                                 .menu = &menu,
                                 .settings = &settings,
                                 .inventory = &inventory,
+                                .save_screen = &save_screen,
                                 .blur = &blur,
                             });
     }
@@ -1528,6 +1549,7 @@ int main(void)
     }
 
     blur_cleanup(&blur);
+    save_screen_cleanup(&save_screen);
     inventory_screen_cleanup(&inventory);
     settings_cleanup(&settings);
     menu_cleanup(&menu);

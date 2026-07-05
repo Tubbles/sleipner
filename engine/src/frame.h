@@ -7,6 +7,7 @@
 #include "inventory_screen.h"
 #include "menu.h"
 #include "raylib.h"
+#include "save_screen.h"
 #include "settings.h"
 #include "undo.h"
 
@@ -73,6 +74,7 @@ typedef struct {
     MenuState *menu;
     SettingsState *settings;
     InventoryScreen *inventory;
+    SaveScreen *save_screen;
     bool *quit_requested;
     MenuSaveFn save_fn;
     MenuRestoreFn restore_fn;
@@ -82,7 +84,10 @@ typedef struct {
  * pure state transitions; SAVE / RESTORE go through ctx.save_fn /
  * ctx.restore_fn (each may be nullptr); OPEN_SETTINGS hands control
  * to the Settings overlay; OPEN_INVENTORY hands control to the
- * Inventory overlay, snapshotting state->progression.items. */
+ * Inventory overlay, snapshotting state->progression.items;
+ * OPEN_SAVE_MENU / OPEN_LOAD_MENU (S6.15d2, D33) hand control to the
+ * Save/Load slot-picker overlay, resolving the platform saves
+ * directory and scanning which slots exist before opening it. */
 void dispatch_menu_action(MenuDispatchCtx ctx, MenuAction action);
 
 /* Editor-or-play step + simulation step. Does NOT call
@@ -122,6 +127,7 @@ typedef struct {
     MenuState *menu;
     SettingsState *settings;
     InventoryScreen *inventory;
+    SaveScreen *save_screen;
     bool *font_preview_enabled;
     bool *quit_requested;
     MenuSaveFn save_fn;

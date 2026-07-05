@@ -58,6 +58,7 @@ set(ENGINE_SOURCE_FILES
     render.c
     rule.c
     save.c
+    save_screen.c
     settings.c
     shape.c
     str.c

@@ -14,6 +14,7 @@
 #include "menu.h"
 #include "raylib.h"
 #include "rule.h"
+#include "save_screen.h"
 #include "settings.h"
 #include "undo.h"
 
@@ -54,6 +55,7 @@ typedef struct {
     MenuState menu;
     SettingsState settings;
     InventoryScreen inventory;
+    SaveScreen save_screen;
     EditorState editor_state;
     Camera2D editor_camera;
     WatchList watches;

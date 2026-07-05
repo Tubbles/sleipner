@@ -19,9 +19,12 @@
 #include "level.h"
 #include "map.h"
 #include "menu.h"
+#include "platform_paths.h"
 #include "preferences.h"
 #include "progression.h"
 #include "rule.h"
+#include "save.h"
+#include "save_screen.h"
 #include "settings.h"
 #include "str.h"
 #include "strv.h"
@@ -52,6 +55,29 @@ void toggle_menu_open(MenuState *menu)
     }
 }
 
+/* Resolve the platform saves directory and open ctx.save_screen in
+ * `mode`, scanning which slots/autosave exist so the renderer can mark
+ * them. A resolution failure (no writable saves dir -- headless test
+ * environments with no HOME/XDG_DATA_HOME, matching save_autosave's own
+ * headless-safe contract) logs and leaves the screen closed rather than
+ * opening it against a garbage path; the pause menu simply stays open in
+ * that case. */
+static void open_save_screen(MenuDispatchCtx ctx, SaveScreenMode mode)
+{
+    if (!ctx.save_screen) {
+        return;
+    }
+    SCRATCH_SCOPE(&ctx.state->scratch_arena);
+    Allocator scratch_alloc = allocator_arena(&ctx.state->scratch_arena);
+    Str saves_dir = {0};
+    if (!platform_saves_dir(&saves_dir, scratch_alloc, ctx.diag->error)) {
+        debug_log(ctx.diag->debug, "open save screen: %s", error_get(ctx.diag->error));
+        error_clear(ctx.diag->error);
+        return;
+    }
+    save_screen_open(ctx.save_screen, mode, str_to_strv(saves_dir), scratch_alloc);
+}
+
 void dispatch_menu_action(MenuDispatchCtx ctx, MenuAction action)
 {
     switch (action) {
@@ -68,6 +94,14 @@ void dispatch_menu_action(MenuDispatchCtx ctx, MenuAction action)
         if (ctx.restore_fn) {
             ctx.restore_fn(ctx.diag, ctx.state, ctx.editor_state, ctx.watches, ctx.undo_history);
         }
+        menu_close(ctx.menu);
+        break;
+    case MENU_ACTION_OPEN_SAVE_MENU:
+        open_save_screen(ctx, SAVE_SCREEN_MODE_SAVE);
+        menu_close(ctx.menu);
+        break;
+    case MENU_ACTION_OPEN_LOAD_MENU:
+        open_save_screen(ctx, SAVE_SCREEN_MODE_LOAD);
         menu_close(ctx.menu);
         break;
     case MENU_ACTION_OPEN_INVENTORY:
@@ -607,6 +641,88 @@ static void run_inventory_frame(GameState *state, FrameContext *ctx, InputState 
     }
 }
 
+/* Show a toast (mirrors main.c's menu_dispatch_save's toast pattern) and
+ * leave the save screen open -- used for every non-success outcome below
+ * (resolution failure, write/load failure, confirm on an empty LOAD
+ * slot) so the player can pick a different slot or cancel out instead of
+ * being bounced back to the pause menu. */
+static void show_save_screen_toast(EditorState *editor_state, const char *message)
+{
+    editor_state->toast_text = strv_from_cstr(message);
+    editor_state->toast_timer = TOAST_DURATION;
+}
+
+/* Resolve the actual save path for a confirmed slot and dispatch to
+ * S6.15d1's save_write (SAVE mode) or save_load (LOAD mode). A confirm
+ * on an empty LOAD slot is a no-op-with-toast, never reaching save_load.
+ * On success the screen closes straight back to active play -- unlike
+ * CANCEL, which returns to the pause menu (see run_save_screen_frame) --
+ * matching D33's spec that confirming Save/Load resumes gameplay. A
+ * failed directory resolution, a failed save_write/save_load, or the
+ * empty-slot case all leave the screen open with a toast instead of
+ * closing it, since a load failure in particular must never look like a
+ * silent no-op. */
+static void handle_save_screen_confirm(Diag *diag, GameState *state, FrameContext *ctx, int confirmed_slot)
+{
+    SaveScreen *screen = ctx->save_screen;
+    bool is_save = screen->mode == SAVE_SCREEN_MODE_SAVE;
+    if (!is_save && !save_screen_entry_exists(screen, confirmed_slot)) {
+        show_save_screen_toast(ctx->editor_state, "Empty");
+        return;
+    }
+
+    SCRATCH_SCOPE(&state->scratch_arena);
+    Allocator scratch_alloc = allocator_arena(&state->scratch_arena);
+    Str saves_dir = {0};
+    if (!platform_saves_dir(&saves_dir, scratch_alloc, diag->error) ||
+        !platform_ensure_saves_dir(saves_dir.ptr, diag->error)) {
+        debug_log(diag->debug, "save screen: %s", error_get(diag->error));
+        error_clear(diag->error);
+        show_save_screen_toast(ctx->editor_state, is_save ? "Save failed" : "Load failed");
+        return;
+    }
+
+    Str path = save_screen_entry_is_autosave(confirmed_slot)
+                   ? save_screen_autosave_path(str_to_strv(saves_dir), scratch_alloc)
+                   : save_screen_slot_path(str_to_strv(saves_dir), confirmed_slot, scratch_alloc);
+
+    bool dispatch_ok = is_save ? save_write(diag, state, path.ptr)
+                               : save_load(diag, state, path.ptr, ctx->level_loader_fn, ctx->level_loader_user_data,
+                                           ctx->undo_history);
+    if (!dispatch_ok) {
+        debug_log(diag->debug, "save screen: %s", error_get(diag->error));
+        error_clear(diag->error);
+        show_save_screen_toast(ctx->editor_state, is_save ? "Save failed" : "Load failed");
+        return;
+    }
+
+    show_save_screen_toast(ctx->editor_state, is_save ? "Saved" : "Loaded");
+    save_screen_close(screen);
+}
+
+/* Modal save/load slot-picker frame (S6.15d2, D33): mirrors
+ * run_inventory_frame's world-freeze shape above -- the world is frozen
+ * while the screen is open. CANCEL returns to the pause menu (same as
+ * inventory/settings); a successful CONFIRM instead resolves straight to
+ * active play via handle_save_screen_confirm's save_screen_close, never
+ * reopening the menu. */
+static void run_save_screen_frame(Diag *diag, GameState *state, FrameContext *ctx, InputState input)
+{
+    bool close_requested = false;
+    int confirmed_slot = -1;
+    save_screen_handle_input(ctx->save_screen, &input, &state->bindings, &close_requested, &confirmed_slot);
+
+    if (confirmed_slot >= 0) {
+        handle_save_screen_confirm(diag, state, ctx, confirmed_slot);
+    }
+    if (close_requested) {
+        save_screen_close(ctx->save_screen);
+        if (ctx->menu) {
+            menu_open(ctx->menu);
+        }
+    }
+}
+
 /* Modal dialogue frame (S6.7c, D24): the world is frozen -- game_update is
  * never called -- while a dialogue is open, mirroring frame_update's
  * settings-open branch above. Ticks the typewriter reveal by delta_time
@@ -632,6 +748,11 @@ void frame_update(Diag *diag, GameState *state, FrameContext *ctx, InputState in
 
     if (ctx->inventory && inventory_screen_is_open(ctx->inventory)) {
         run_inventory_frame(state, ctx, input);
+        return;
+    }
+
+    if (ctx->save_screen && save_screen_is_open(ctx->save_screen)) {
+        run_save_screen_frame(diag, state, ctx, input);
         return;
     }
 
@@ -664,6 +785,7 @@ void frame_update(Diag *diag, GameState *state, FrameContext *ctx, InputState in
             .menu = ctx->menu,
             .settings = ctx->settings,
             .inventory = ctx->inventory,
+            .save_screen = ctx->save_screen,
             .quit_requested = ctx->quit_requested,
             .save_fn = ctx->save_fn,
             .restore_fn = ctx->restore_fn,
