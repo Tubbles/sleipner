@@ -16,6 +16,7 @@ static Diag test_diag = {&test_err, &test_dbg};
 
 #include "toml.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -824,6 +825,262 @@ void test_integration_collide_fires_on_overlap(void)
     InputState idle = {0};
     test_advance_frame(&game, idle);
     TEST_ASSERT_TRUE(flag_get(&game.state.progression.flags, "rock_hit"));
+
+    test_game_teardown(&game);
+}
+
+/* ---- Integration: S6.7a explicit rule VM frame stack stress tests ----
+ *
+ * These lock in exact equivalence between the old recursive
+ * execute_for_each_node/execute_call_node/execute_action_nodes chain and the
+ * new explicit ExecFrame stack (rule.c) at the deepest nestings the DSL
+ * supports. All assertions are on observable game state (entity attrs,
+ * flags, a $variable-built string trail) -- never on VM internals. */
+
+static bool entity_is_blueprint(const Entity *entity, const char *blueprint_name)
+{
+    size_t name_len = strlen(blueprint_name);
+    return entity->blueprint_name.len == name_len && strncmp(entity->blueprint_name.ptr, blueprint_name, name_len) == 0;
+}
+
+void test_integration_nested_bind_for_each_repeat_order_and_scope(void)
+{
+    /* repeat(2) { if [always true] { for_each bind=outer (2 matches) {
+     *   for_each bind=inner (3 matches) { ... } } } else { <never> } }
+     *
+     * Entity counts are asymmetric (2 outer, 3 inner) so a bug that swaps
+     * the outer/inner roles (e.g. a corrupted LocalScope.outer chain) would
+     * show up as a wrong total rather than an accidentally-matching
+     * symmetric one.
+     *
+     * Two signals are checked:
+     *  - a global string "trail" built via repeated $variable self-
+     *    substitution (set_var:global.trail,$trail-X -- the dash forces the
+     *    variable-name scan in resolve_arg to stop at "trail" instead of
+     *    swallowing the marker letter into the name), which proves the
+     *    exact structural visiting order: the if branch is entered once
+     *    per repeat pass, each outer match starts before its inner loop,
+     *    and all of one outer's inner matches finish before the next outer
+     *    starts.
+     *  - per-entity hit counts written through the "outer"/"inner" bind
+     *    names, proving those names resolve to the correct, distinct
+     *    entities throughout -- not a stale or cross-contaminated scope. */
+    static const char *gamedata =
+        "[[blueprint]]\n"
+        "name = \"owner\"\n"
+        "texture = \"t.png\"\n"
+        "src = [0, 0, 16, 16]\n"
+        "visit_count = 0\n"
+        "\n"
+        "[[blueprint.rule]]\n"
+        "trigger = \"on_spawn\"\n"
+        "actions = [{ repeat = \"2\", do = [{ if = [\"not_flag:never_set\"], then = "
+        "[\"set_var:global.trail,$trail-E\", { for_each = \"entities\", bind = \"outer\", conditions = "
+        "[\"attr:is_outer\"], do = [\"set_var:global.trail,$trail-O\", { for_each = \"entities\", bind = "
+        "\"inner\", conditions = [\"attr:is_inner\"], do = [\"set_var:global.trail,$trail-L\", "
+        "\"add_attr:outer.outer_hits,1\", \"add_attr:inner.inner_hits,1\", \"add_attr:self.visit_count,1\"] }] }], "
+        "else = [\"set_flag:took_wrong_branch\"] }] }]\n"
+        "\n"
+        "[[blueprint]]\n"
+        "name = \"outer_entity\"\n"
+        "texture = \"t.png\"\n"
+        "src = [0, 0, 16, 16]\n"
+        "is_outer = true\n"
+        "outer_hits = 0\n"
+        "\n"
+        "[[blueprint]]\n"
+        "name = \"inner_entity\"\n"
+        "texture = \"t.png\"\n"
+        "src = [0, 0, 16, 16]\n"
+        "is_inner = true\n"
+        "inner_hits = 0\n"
+        "\n"
+        "[[level]]\n"
+        "name = \"test\"\n"
+        "size = [320, 240]\n"
+        "\n"
+        "[[level.entity]]\n"
+        "blueprint = \"owner\"\n"
+        "pos = [10, 10]\n"
+        "\n"
+        "[[level.entity]]\n"
+        "blueprint = \"outer_entity\"\n"
+        "pos = [20, 10]\n"
+        "\n"
+        "[[level.entity]]\n"
+        "blueprint = \"outer_entity\"\n"
+        "pos = [30, 10]\n"
+        "\n"
+        "[[level.entity]]\n"
+        "blueprint = \"inner_entity\"\n"
+        "pos = [40, 10]\n"
+        "\n"
+        "[[level.entity]]\n"
+        "blueprint = \"inner_entity\"\n"
+        "pos = [50, 10]\n"
+        "\n"
+        "[[level.entity]]\n"
+        "blueprint = \"inner_entity\"\n"
+        "pos = [60, 10]\n";
+
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, gamedata));
+
+    TEST_ASSERT_FALSE(flag_get(&game.state.progression.flags, "took_wrong_branch"));
+
+    const Attribute *trail = attr_get(&game.state.progression.vars, "trail");
+    TEST_ASSERT_NOT_NULL(trail);
+    TEST_ASSERT_EQUAL_INT(ATTR_STRING, trail->type);
+    static const char *expected_pass = "-E-O-L-L-L-O-L-L-L";
+    char expected_trail[64];
+    (void)snprintf(expected_trail, sizeof(expected_trail), "%s%s", expected_pass, expected_pass);
+    TEST_ASSERT_EQUAL_STRING(expected_trail, trail->value.str.ptr);
+
+    const Entity *owner = test_find_entity_by_blueprint(&game.state, "owner");
+    TEST_ASSERT_NOT_NULL(owner);
+    TEST_ASSERT_EQUAL_INT(12, (int)attr_get_scoped_float(&owner->attrs, nullptr, "visit_count", 0.0F));
+
+    int outer_seen = 0;
+    int inner_seen = 0;
+    for (int index = 0; index < game.state.gamedata.current_level.entities.count; index++) {
+        const Entity *entity = &game.state.gamedata.current_level.entities.data[index];
+        if (entity_is_blueprint(entity, "outer_entity")) {
+            TEST_ASSERT_EQUAL_INT(6, (int)attr_get_scoped_float(&entity->attrs, nullptr, "outer_hits", 0.0F));
+            outer_seen++;
+        } else if (entity_is_blueprint(entity, "inner_entity")) {
+            TEST_ASSERT_EQUAL_INT(4, (int)attr_get_scoped_float(&entity->attrs, nullptr, "inner_hits", 0.0F));
+            inner_seen++;
+        }
+    }
+    TEST_ASSERT_EQUAL_INT(2, outer_seen);
+    TEST_ASSERT_EQUAL_INT(3, inner_seen);
+
+    test_game_teardown(&game);
+}
+
+void test_integration_subroutine_for_each_pool_switch_and_scope(void)
+{
+    /* The rule's own for_each (bind="target", 2 matches) calls a
+     * subroutine on each match; the subroutine has its own for_each
+     * (bind="victim", 3 matches) that references BOTH its own bind
+     * ("victim") and the caller's bind ("target") in the same action.
+     * Proves the subroutine's action_pool switch (CALL) and the
+     * LocalScope chain both survive intact across the call boundary and
+     * through an additional for_each nested inside the called subroutine.
+     * Counts are asymmetric (2 vs 3) so a target/victim mix-up would show
+     * up as a wrong total. */
+    static const char *gamedata =
+        "[[subroutine]]\n"
+        "name = \"tag_all_victims\"\n"
+        "actions = [{ for_each = \"entities\", bind = \"victim\", conditions = [\"attr:is_victim\"], do = "
+        "[\"add_attr:victim.tagged_by_target,1\", \"add_attr:target.tag_rounds,1\"] }]\n"
+        "\n"
+        "[[blueprint]]\n"
+        "name = \"owner\"\n"
+        "texture = \"t.png\"\n"
+        "src = [0, 0, 16, 16]\n"
+        "\n"
+        "[[blueprint.rule]]\n"
+        "trigger = \"on_spawn\"\n"
+        "actions = [{ for_each = \"entities\", bind = \"target\", conditions = [\"attr:is_target\"], do = "
+        "[\"call:tag_all_victims\"] }]\n"
+        "\n"
+        "[[blueprint]]\n"
+        "name = \"target_entity\"\n"
+        "texture = \"t.png\"\n"
+        "src = [0, 0, 16, 16]\n"
+        "is_target = true\n"
+        "tag_rounds = 0\n"
+        "\n"
+        "[[blueprint]]\n"
+        "name = \"victim_entity\"\n"
+        "texture = \"t.png\"\n"
+        "src = [0, 0, 16, 16]\n"
+        "is_victim = true\n"
+        "tagged_by_target = 0\n"
+        "\n"
+        "[[level]]\n"
+        "name = \"test\"\n"
+        "size = [320, 240]\n"
+        "\n"
+        "[[level.entity]]\n"
+        "blueprint = \"owner\"\n"
+        "pos = [10, 10]\n"
+        "\n"
+        "[[level.entity]]\n"
+        "blueprint = \"target_entity\"\n"
+        "pos = [20, 10]\n"
+        "\n"
+        "[[level.entity]]\n"
+        "blueprint = \"target_entity\"\n"
+        "pos = [30, 10]\n"
+        "\n"
+        "[[level.entity]]\n"
+        "blueprint = \"victim_entity\"\n"
+        "pos = [40, 10]\n"
+        "\n"
+        "[[level.entity]]\n"
+        "blueprint = \"victim_entity\"\n"
+        "pos = [50, 10]\n"
+        "\n"
+        "[[level.entity]]\n"
+        "blueprint = \"victim_entity\"\n"
+        "pos = [60, 10]\n";
+
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, gamedata));
+
+    int target_seen = 0;
+    int victim_seen = 0;
+    for (int index = 0; index < game.state.gamedata.current_level.entities.count; index++) {
+        const Entity *entity = &game.state.gamedata.current_level.entities.data[index];
+        if (entity_is_blueprint(entity, "target_entity")) {
+            TEST_ASSERT_EQUAL_INT(3, (int)attr_get_scoped_float(&entity->attrs, nullptr, "tag_rounds", 0.0F));
+            target_seen++;
+        } else if (entity_is_blueprint(entity, "victim_entity")) {
+            TEST_ASSERT_EQUAL_INT(2, (int)attr_get_scoped_float(&entity->attrs, nullptr, "tagged_by_target", 0.0F));
+            victim_seen++;
+        }
+    }
+    TEST_ASSERT_EQUAL_INT(2, target_seen);
+    TEST_ASSERT_EQUAL_INT(3, victim_seen);
+
+    test_game_teardown(&game);
+}
+
+void test_integration_repeat_preserves_execution_order(void)
+{
+    /* repeat(3) over a two-action body must run the six actions in exact
+     * order: A,B,A,B,A,B -- not e.g. A,A,A,B,B,B (which a frame that
+     * mis-handled the re-loop boundary between passes could produce).
+     * Verified with the same $variable self-substitution trail trick as
+     * the nested for_each test above, applied to a case with none of that
+     * test's for_each/bind machinery -- isolating repeat's own ordering. */
+    static const char *gamedata = "[[blueprint]]\n"
+                                  "name = \"sequencer\"\n"
+                                  "texture = \"t.png\"\n"
+                                  "src = [0, 0, 16, 16]\n"
+                                  "\n"
+                                  "[[blueprint.rule]]\n"
+                                  "trigger = \"on_spawn\"\n"
+                                  "actions = [{ repeat = \"3\", do = [\"set_var:global.trail,$trail-A\", "
+                                  "\"set_var:global.trail,$trail-B\"] }]\n"
+                                  "\n"
+                                  "[[level]]\n"
+                                  "name = \"test\"\n"
+                                  "size = [320, 240]\n"
+                                  "\n"
+                                  "[[level.entity]]\n"
+                                  "blueprint = \"sequencer\"\n"
+                                  "pos = [10, 10]\n";
+
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, gamedata));
+
+    const Attribute *trail = attr_get(&game.state.progression.vars, "trail");
+    TEST_ASSERT_NOT_NULL(trail);
+    TEST_ASSERT_EQUAL_INT(ATTR_STRING, trail->type);
+    TEST_ASSERT_EQUAL_STRING("-A-B-A-B-A-B", trail->value.str.ptr);
 
     test_game_teardown(&game);
 }

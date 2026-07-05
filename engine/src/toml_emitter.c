@@ -295,8 +295,7 @@ emit_action_node_inline(char *buffer, int capacity, int offset, const vec_action
  * child (if/repeat/for_each nested inside another) emits as a nested inline
  * table instead of being dropped. */
 // NOLINTBEGIN(misc-no-recursion) -- mutually recursive; bounded by control-flow
-// nesting depth in authored gamedata (small, finite), same rationale as the
-// executor's action_node_execute recursion (rule.c).
+// nesting depth in authored gamedata (small, finite).
 static int emit_child_nodes_inline_array(
     char *buffer, int capacity, int offset, const vec_action_node *pool, const vec_int *indices)
 {

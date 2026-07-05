@@ -23,6 +23,9 @@
 
 #define MAX_PARSE_CF_STACK 64
 #define GLOBAL_VAR_PREFIX "global."
+/* Depth of the rule VM's explicit execution frame stack (ExecFrame, below) --
+ * one entry per active control-flow nesting level (if_else branch, repeat
+ * body, for_each body, call), not per pending simple action. */
 #define MAX_EXEC_STACK 512
 #define RADIX_DECIMAL 10
 
@@ -1447,29 +1450,84 @@ static bool execute_set_var_action(Diag *diag, Allocator *alloc, const ActionNod
     return attr_set_string(var_alloc, target_vars, (AttrStringPair){.name = var_name, .value = resolved_value});
 }
 
-/* Resolves each index in `indices` against `pool` and pushes the resulting
- * node pointers onto exec_stack. Safe to hold these ActionNode pointers past
- * this call because the pool is read-only at runtime — all pushes happen at
- * parse time. */
-static bool push_branch_nodes(
-    Diag *diag, const vec_action_node *pool, const ActionNode **exec_stack, int *stack_top, const vec_int *indices)
+/* --- Explicit rule VM execution stack (S6.7a, D24) ---
+ *
+ * IF_ELSE, REPEAT, FOR_EACH and CALL all run on one explicit stack of
+ * ExecFrame instead of recursing through the C call stack (the old
+ * execute_for_each_node/execute_call_node/execute_action_nodes chain
+ * this replaces). Each frame is one control-flow construct's in-progress
+ * state: which node indices remain to run and how far through them the
+ * frame has gotten. That makes the full state of an in-progress execution
+ * -- including a for_each's current iteration and bound scope -- plain
+ * data on the C stack of the single top-level action_node_execute call,
+ * rather than spread across nested C stack frames. That plain-data shape
+ * is the prerequisite D24's suspendable continuations need. */
+
+typedef enum {
+    EXEC_FRAME_SEQUENCE, /* plain ordered child list: rule/subroutine roots, an if_else branch, or a call's
+                          * subroutine roots */
+    EXEC_FRAME_REPEAT,   /* re-runs `indices` repeat_remaining more times, looping child_cursor back to 0 between
+                          * passes */
+    EXEC_FRAME_FOR_EACH, /* re-runs `indices` once per matching entity, rebinding for_each_entity_index/
+                          * for_each_scope between passes */
+} ExecFrameKind;
+
+/* `context.action_pool` is carried here as a raw vec_action_node* -- a CALL
+ * frame's pool switch is just a different pointer value. That is enough to
+ * execute correctly today because the pool is read-only at runtime, but a
+ * raw pointer can't be serialized into a save-state; S6.7b (real suspension)
+ * will need to replace it with a subroutine index (-1 = main tree) so a
+ * frame is snapshotable on its own. */
+typedef struct ExecFrame {
+    /* Fields ordered largest-alignment-first (pointers and the LocalScope/
+     * ActionContext aggregates) then the plain ints, per
+     * clang-analyzer-optin.performance.Padding -- purely a layout concern,
+     * doesn't affect any of the grouping/ownership notes below. */
+    const vec_int *indices;          /* child node indices, resolved against context.action_pool */
+    const ActionNode *for_each_node; /* EXEC_FRAME_FOR_EACH only: owning node -- re-read for its conditions/bind
+                                      * name every iteration */
+    LocalScope for_each_scope;       /* EXEC_FRAME_FOR_EACH only: bind-mode LocalScope entry, owned by this frame.
+                                      * Its address is stable for the frame's lifetime (frame_stack is a fixed
+                                      * array that never reallocates -- see "Vec growth and pointer stability" in
+                                      * CLAUDE.md), so nested frames' context.scope can safely point into it and
+                                      * outlive any number of sibling iterations. */
+    ActionContext context;           /* context this frame's children execute under -- a per-frame copy, so
+                                      * pushing/popping a frame can never perturb a parent frame's context,
+                                      * mirroring how each recursive call used to own its own local
+                                      * context/iter_ctx/sub_ctx */
+    ExecFrameKind kind;
+    int child_cursor;     /* index into `indices` of the next child to run -- the "(node_index, child_position)"
+                           * cursor D24 needs */
+    int node_index;       /* index in context.action_pool of the control-flow node this frame is the body of; -1 for a
+                           * frame with no single owning node (a rule/subroutine root list, or a node passed directly
+                           * to action_node_execute rather than reached via a parent frame's `indices`) */
+    int repeat_remaining; /* EXEC_FRAME_REPEAT only: full passes over `indices` still to run, including the
+                           * current one */
+    int for_each_entity_index; /* EXEC_FRAME_FOR_EACH only: view index currently bound; -1 before the first match
+                                * is found */
+} ExecFrame;
+
+static bool push_frame(Diag *diag, ExecFrame *frame_stack, int *frame_top, ExecFrame frame)
 {
-    if (!pool) {
-        error_set(diag->error, "push_branch_nodes: control flow node reached with no context.action_pool set");
+    if (*frame_top >= MAX_EXEC_STACK) {
+        error_set(diag->error, "action execution stack overflow");
         return false;
     }
-    for (int push_index = indices->count - 1; push_index >= 0; push_index--) {
-        if (*stack_top >= MAX_EXEC_STACK) {
-            error_set(diag->error, "action execution stack overflow");
-            return false;
-        }
-        exec_stack[(*stack_top)++] = &pool->data[indices->data[push_index]];
-    }
+    frame_stack[(*frame_top)++] = frame;
     return true;
 }
 
+static bool require_action_pool(Diag *diag, const vec_action_node *pool)
+{
+    if (pool) {
+        return true;
+    }
+    error_set(diag->error, "push_branch_nodes: control flow node reached with no context.action_pool set");
+    return false;
+}
+
 static bool expand_if_else_node(
-    Diag *diag, const ActionNode *node, ActionContext context, const ActionNode **exec_stack, int *stack_top)
+    Diag *diag, const ActionNode *node, int node_index, ActionContext context, ExecFrame *frame_stack, int *frame_top)
 {
     ConditionContext cond_ctx = {
         .entity = context.entity,
@@ -1481,23 +1539,36 @@ static bool expand_if_else_node(
         .global_vars = context.global_vars,
     };
     bool condition_met = conditions_evaluate(node->conditions.data, node->conditions.count, cond_ctx);
-    const vec_int *branch = condition_met ? &node->children : &node->else_children;
-    return push_branch_nodes(diag, context.action_pool, exec_stack, stack_top, branch);
+    if (!require_action_pool(diag, context.action_pool)) {
+        return false;
+    }
+    ExecFrame frame = {
+        .kind = EXEC_FRAME_SEQUENCE,
+        .indices = condition_met ? &node->children : &node->else_children,
+        .node_index = node_index,
+        .context = context,
+    };
+    return push_frame(diag, frame_stack, frame_top, frame);
 }
 
 static bool expand_repeat_node(
-    Diag *diag, const ActionNode *node, const vec_action_node *pool, const ActionNode **exec_stack, int *stack_top)
+    Diag *diag, const ActionNode *node, int node_index, ActionContext context, ExecFrame *frame_stack, int *frame_top)
 {
+    if (!require_action_pool(diag, context.action_pool)) {
+        return false;
+    }
     int repeat_count = (int)strtol(node->argument.ptr, nullptr, RADIX_DECIMAL);
     if (repeat_count <= 0) {
         repeat_count = 1;
     }
-    for (int repeat_index = 0; repeat_index < repeat_count; repeat_index++) {
-        if (!push_branch_nodes(diag, pool, exec_stack, stack_top, &node->children)) {
-            return false;
-        }
-    }
-    return true;
+    ExecFrame frame = {
+        .kind = EXEC_FRAME_REPEAT,
+        .indices = &node->children,
+        .node_index = node_index,
+        .context = context,
+        .repeat_remaining = repeat_count,
+    };
+    return push_frame(diag, frame_stack, frame_top, frame);
 }
 
 static bool execute_create_timer_action(Diag *diag, const ActionNode *node, ActionContext context, bool periodic)
@@ -1645,59 +1716,79 @@ static bool dispatch_simple_action(Diag *diag, Allocator *alloc, const ActionNod
     }
 }
 
-/* Forward declarations — execute_from_stack, execute_action_nodes and
- * execute_for_each_node/execute_call_node are mutually recursive. */
-static bool execute_action_nodes(Diag *diag, Allocator *alloc, const vec_int *node_indices, ActionContext context);
-static bool
-execute_from_stack(Diag *diag, Allocator *alloc, ActionContext context, const ActionNode **exec_stack, int stack_top);
-
-// NOLINTBEGIN(misc-no-recursion) -- mutually recursive; bounded by for_each nesting depth
-static bool execute_for_each_node(Diag *diag, Allocator *alloc, const ActionNode *node, ActionContext context)
+/* Advances a FOR_EACH frame to the next entity matching its filters (active
+ * + node conditions), starting just after for_each_entity_index. On success,
+ * rebinds context (simple mode: entity/entity_index; bind mode: scope) and
+ * resets child_cursor so the frame's children run again for the new entity.
+ * Returns false once no candidate remains, meaning the caller must pop the
+ * frame. Only ever called with `frame` already at its final, stable address
+ * in a frame_stack array -- see expand_for_each_node's own comment on why
+ * that matters for for_each_scope's self-reference. */
+static bool advance_for_each_frame(ExecFrame *frame)
 {
-    bool has_bind = node->second_argument.len > 0;
-    for (int entity_index = 0; entity_index < context.view_count; entity_index++) {
-        if (!attr_get_scoped_bool(&context.views[entity_index].entity->attrs, context.views[entity_index].defaults,
-                                  "active", true)) {
+    bool has_bind = frame->for_each_node->second_argument.len > 0;
+    for (int candidate = frame->for_each_entity_index + 1; candidate < frame->context.view_count; candidate++) {
+        const EntityView *view = &frame->context.views[candidate];
+        if (!attr_get_scoped_bool(&view->entity->attrs, view->defaults, "active", true)) {
             continue;
         }
         ConditionContext cond_ctx = {
-            .entity = context.views[entity_index].entity,
-            .entity_index = entity_index,
-            .views = context.views,
-            .view_count = context.view_count,
-            .flags = context.flags,
-            .local_vars = context.local_vars,
-            .global_vars = context.global_vars,
+            .entity = view->entity,
+            .entity_index = candidate,
+            .views = frame->context.views,
+            .view_count = frame->context.view_count,
+            .flags = frame->context.flags,
+            .local_vars = frame->context.local_vars,
+            .global_vars = frame->context.global_vars,
         };
-        if (!conditions_evaluate(node->conditions.data, node->conditions.count, cond_ctx)) {
+        if (!conditions_evaluate(frame->for_each_node->conditions.data, frame->for_each_node->conditions.count,
+                                 cond_ctx)) {
             continue;
         }
+        frame->for_each_entity_index = candidate;
         if (has_bind) {
-            /* Bind mode: self = rule owner; iterated entity accessible via bind name */
-            LocalScope iter_scope = {
-                .bind_name = node->second_argument,
-                .entity_index = entity_index,
-                .outer = context.scope,
-            };
-            ActionContext iter_ctx = context;
-            iter_ctx.scope = &iter_scope;
-            if (!execute_action_nodes(diag, alloc, &node->children, iter_ctx)) {
-                return false;
-            }
+            frame->for_each_scope.entity_index = candidate;
+            frame->context.scope = &frame->for_each_scope;
         } else {
-            /* Simple mode: self = iterated entity */
-            ActionContext iter_ctx = context;
-            iter_ctx.entity = context.views[entity_index].entity;
-            iter_ctx.entity_index = entity_index;
-            if (!execute_action_nodes(diag, alloc, &node->children, iter_ctx)) {
-                return false;
-            }
+            frame->context.entity = view->entity;
+            frame->context.entity_index = candidate;
         }
+        frame->child_cursor = 0;
+        return true;
     }
-    return true;
+    return false;
 }
 
-static bool execute_call_node(Diag *diag, Allocator *alloc, const ActionNode *node, ActionContext context)
+static bool expand_for_each_node(
+    Diag *diag, const ActionNode *node, int node_index, ActionContext context, ExecFrame *frame_stack, int *frame_top)
+{
+    ExecFrame frame = {
+        .kind = EXEC_FRAME_FOR_EACH,
+        .indices = &node->children,
+        .node_index = node_index,
+        .context = context,
+        .for_each_node = node,
+        .for_each_entity_index = -1,
+        .for_each_scope = {.bind_name = node->second_argument, .entity_index = -1, .outer = context.scope},
+    };
+    if (!push_frame(diag, frame_stack, frame_top, frame)) {
+        return false;
+    }
+    /* Operate on the pushed copy's own stable slot from here on: frame_stack
+     * never reallocates, but the local `frame` above goes out of scope when
+     * this function returns, so for_each_scope's self-reference
+     * (context.scope -> &for_each_scope, set by advance_for_each_frame)
+     * would otherwise dangle if it were established before the copy. */
+    ExecFrame *pushed = &frame_stack[*frame_top - 1];
+    if (!advance_for_each_frame(pushed)) {
+        (*frame_top)--; /* no matching entities: zero iterations, same as today's for-loop finding no matches */
+        return true;
+    }
+    return require_action_pool(diag, context.action_pool);
+}
+
+static bool
+expand_call_node(Diag *diag, const ActionNode *node, ActionContext context, ExecFrame *frame_stack, int *frame_top)
 {
     if (context.call_depth >= MAX_CALL_DEPTH) {
         error_set(diag->error, "call: max depth %d exceeded", MAX_CALL_DEPTH);
@@ -1709,62 +1800,98 @@ static bool execute_call_node(Diag *diag, Allocator *alloc, const ActionNode *no
     }
     for (int sub_index = 0; sub_index < context.subroutines->count; sub_index++) {
         const Subroutine *sub = &context.subroutines->data[sub_index];
-        if (strcmp(sub->name.ptr, node->argument.ptr) == 0) {
-            ActionContext sub_ctx = context;
-            sub_ctx.call_depth++;
-            sub_ctx.action_pool = &sub->action_tree.nodes;
-            return execute_action_nodes(diag, alloc, &sub->action_tree.roots, sub_ctx);
+        if (strcmp(sub->name.ptr, node->argument.ptr) != 0) {
+            continue;
         }
+        ActionContext sub_ctx = context;
+        sub_ctx.call_depth++;
+        sub_ctx.action_pool = &sub->action_tree.nodes;
+        ExecFrame frame = {
+            .kind = EXEC_FRAME_SEQUENCE,
+            .indices = &sub->action_tree.roots,
+            .node_index = -1,
+            .context = sub_ctx,
+        };
+        return push_frame(diag, frame_stack, frame_top, frame);
     }
     debug_log(diag->debug, "call: subroutine '%s' not found", node->argument.ptr);
     return true;
 }
 
-static bool
-execute_from_stack(Diag *diag, Allocator *alloc, ActionContext context, const ActionNode **exec_stack, int stack_top)
+/* Dispatches `node`: a simple action runs immediately, a control-flow node
+ * pushes a new frame for its children. Used both for a frame's own children
+ * (run_frame_stack, below) and for action_node_execute's top-level node.
+ * `node_index` is node's index in context.action_pool if known, or -1 if
+ * `node` was supplied directly rather than reached via a parent frame's
+ * `indices` (see ExecFrame.node_index). */
+static bool dispatch_or_expand_node(Diag *diag,
+                                    Allocator *alloc,
+                                    const ActionNode *node,
+                                    int node_index,
+                                    ActionContext context,
+                                    ExecFrame *frame_stack,
+                                    int *frame_top)
 {
-    while (stack_top > 0) {
-        const ActionNode *current = exec_stack[--stack_top];
-        if (current->type == ACTION_IF_ELSE) {
-            if (!expand_if_else_node(diag, current, context, exec_stack, &stack_top)) {
-                return false;
+    switch (node->type) {
+    case ACTION_IF_ELSE:
+        return expand_if_else_node(diag, node, node_index, context, frame_stack, frame_top);
+    case ACTION_REPEAT:
+        return expand_repeat_node(diag, node, node_index, context, frame_stack, frame_top);
+    case ACTION_FOR_EACH:
+        return expand_for_each_node(diag, node, node_index, context, frame_stack, frame_top);
+    case ACTION_CALL:
+        return expand_call_node(diag, node, context, frame_stack, frame_top);
+    default:
+        return dispatch_simple_action(diag, alloc, node, context);
+    }
+}
+
+static bool frame_has_more_children(const ExecFrame *frame)
+{
+    return frame->child_cursor < frame->indices->count;
+}
+
+/* Runs every frame on `frame_stack` to completion: pops exhausted SEQUENCE
+ * frames, loops REPEAT frames back to child_cursor 0 while passes remain,
+ * and re-binds FOR_EACH frames to their next matching entity, until the
+ * stack empties or an action reports failure. A failure aborts the whole
+ * execution immediately -- every pending frame, at every nesting level, is
+ * abandoned -- matching the original recursive implementation, where a
+ * `return false` unwound every enclosing C call. */
+static bool run_frame_stack(Diag *diag, Allocator *alloc, ExecFrame *frame_stack, int frame_top)
+{
+    while (frame_top > 0) {
+        ExecFrame *frame = &frame_stack[frame_top - 1];
+        if (!frame_has_more_children(frame)) {
+            if (frame->kind == EXEC_FRAME_REPEAT && frame->repeat_remaining > 1) {
+                frame->repeat_remaining--;
+                frame->child_cursor = 0;
+                continue;
             }
-        } else if (current->type == ACTION_REPEAT) {
-            if (!expand_repeat_node(diag, current, context.action_pool, exec_stack, &stack_top)) {
-                return false;
+            if (frame->kind == EXEC_FRAME_FOR_EACH && advance_for_each_frame(frame)) {
+                continue;
             }
-        } else if (current->type == ACTION_FOR_EACH) {
-            if (!execute_for_each_node(diag, alloc, current, context)) {
-                return false;
-            }
-        } else if (current->type == ACTION_CALL) {
-            if (!execute_call_node(diag, alloc, current, context)) {
-                return false;
-            }
-        } else if (!dispatch_simple_action(diag, alloc, current, context)) {
+            frame_top--;
+            continue;
+        }
+        int child_index = frame->indices->data[frame->child_cursor++];
+        const ActionNode *child = &frame->context.action_pool->data[child_index];
+        ActionContext child_context = frame->context;
+        if (!dispatch_or_expand_node(diag, alloc, child, child_index, child_context, frame_stack, &frame_top)) {
             return false;
         }
     }
     return true;
 }
 
-static bool execute_action_nodes(Diag *diag, Allocator *alloc, const vec_int *node_indices, ActionContext context)
-{
-    const ActionNode *exec_stack[MAX_EXEC_STACK];
-    int stack_top = 0;
-    if (!push_branch_nodes(diag, context.action_pool, exec_stack, &stack_top, node_indices)) {
-        return false;
-    }
-    return execute_from_stack(diag, alloc, context, exec_stack, stack_top);
-}
-// NOLINTEND(misc-no-recursion)
-
 bool action_node_execute(Diag *diag, Allocator *alloc, const ActionNode *node, ActionContext context)
 {
-    const ActionNode *exec_stack[MAX_EXEC_STACK];
-    int stack_top = 0;
-    exec_stack[stack_top++] = node;
-    return execute_from_stack(diag, alloc, context, exec_stack, stack_top);
+    ExecFrame frame_stack[MAX_EXEC_STACK];
+    int frame_top = 0;
+    if (!dispatch_or_expand_node(diag, alloc, node, -1, context, frame_stack, &frame_top)) {
+        return false;
+    }
+    return run_frame_stack(diag, alloc, frame_stack, frame_top);
 }
 
 /* ---- Evaluation loop ---- */

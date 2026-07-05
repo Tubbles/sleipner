@@ -93,7 +93,9 @@ typedef enum {
     ACTION_FOR_EACH,
 } ActionType;
 
-/* --- Local variable scope chain (C stack frames — no arena allocation) --- */
+/* --- Local variable scope chain (owned by an ExecFrame on the rule VM's
+ * fixed-size execution frame stack, rule.c -- still a plain C-stack array,
+ * no arena allocation) --- */
 typedef struct LocalScope {
     Str bind_name;                  /* the bound name, e.g. "enemy" */
     int entity_index;               /* which entity is bound */

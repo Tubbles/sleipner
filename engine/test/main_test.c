@@ -187,6 +187,9 @@ void test_integration_timer_destroy_cancels(void);
 void test_integration_on_destroy_fires(void);
 void test_integration_defeat_fires_when_health_drops_to_zero(void);
 void test_integration_collide_fires_on_overlap(void);
+void test_integration_nested_bind_for_each_repeat_order_and_scope(void);
+void test_integration_subroutine_for_each_pool_switch_and_scope(void);
+void test_integration_repeat_preserves_execution_order(void);
 
 int main(void)
 {
@@ -318,6 +321,9 @@ int main(void)
     RUN_TEST(test_integration_on_destroy_fires);
     RUN_TEST(test_integration_defeat_fires_when_health_drops_to_zero);
     RUN_TEST(test_integration_collide_fires_on_overlap);
+    RUN_TEST(test_integration_nested_bind_for_each_repeat_order_and_scope);
+    RUN_TEST(test_integration_subroutine_for_each_pool_switch_and_scope);
+    RUN_TEST(test_integration_repeat_preserves_execution_order);
 
     RUN_TEST(test_integration_sprite_offset_edit_updates_entity_live);
     RUN_TEST(test_integration_sprite_offset_edit_emitted_to_toml);

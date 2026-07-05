@@ -772,6 +772,10 @@ void test_action_fire_event_queues(void)
     };
     TEST_ASSERT_TRUE(action_node_execute(&test_diag, &test_heap_alloc, &action, context));
     TEST_ASSERT_EQUAL_INT(1, queue.count);
+    /* Assert the backing buffer explicitly: this file #includes rule.c, whose
+     * now-larger action_node_execute the analyzer can't inline, so it can't see
+     * vec_trigger_event_push set queue.data. */
+    TEST_ASSERT_NOT_NULL(queue.data);
     TEST_ASSERT_EQUAL_INT(TRIGGER_EVENT, queue.data[0].type);
     TEST_ASSERT_EQUAL_STRING("boss_defeated", queue.data[0].argument.ptr);
     str_free(&action.argument);
