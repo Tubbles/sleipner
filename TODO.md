@@ -212,6 +212,26 @@ predicate rows and MOVE reparenting).
   treatment (parse + emit + deep-copy on instantiate)
   `blueprint.c`/`level.c`/`toml_emitter.c` already give `collision_region`.
 
+## Combat follow-ups
+
+- **`behavior_projectile` does not resolve obstacles or destroy on wall
+  hit (S6.10d).** A projectile flies straight through solid geometry
+  instead of stopping or vanishing at a wall -- explicitly deferred as
+  optional polish per D26. Would need a `resolve_entity_obstacles`-style
+  solid check in `behavior_projectile` (`game.c`) that soft-destroys the
+  projectile (sets `active` false) on the first solid it touches, rather
+  than pushing it back out like a walking mover.
+- **`detect_melee_damage`'s attacker loop has no `active` gate (S6.10a).**
+  Discovered while adding `destroy_on_hit` to `detect_contact_damage`
+  (S6.10d), which needed the equivalent gate (`entity_can_deal_contact_damage`)
+  to stop a soft-destroyed projectile from resuming contact damage once
+  the target's i-frames lapse. `detect_melee_damage` (`game.c`) has the
+  same gap on its attacker side: an entity destroyed (`ACTION_DESTROY` or
+  otherwise) while `hitbox_active_timer > 0` keeps landing melee hits for
+  the rest of that window. Low impact today (the window is
+  `ATTACK_ACTIVE_SECONDS` = 0.15s), but the same one-line fix
+  `detect_contact_damage` got would close it.
+
 ## Audio / SFX follow-ups
 
 - **`map_strv_sound` has no generic iterator.** `unload_sfx_registry`

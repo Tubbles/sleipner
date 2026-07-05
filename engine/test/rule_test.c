@@ -34,7 +34,7 @@ FAKE_VALUE_FUNC(toml_table_t *, toml_table_at, const toml_array_t *, int);
 FAKE_VALUE_FUNC(bool, effect_queue_push_sound, EffectQueue *, Strv);
 FAKE_VALUE_FUNC(bool, effect_queue_push_camera_pan, EffectQueue *, Vector2, float);
 FAKE_VALUE_FUNC(bool, effect_queue_push_camera_shake, EffectQueue *, CameraShakeRequest);
-FAKE_VALUE_FUNC(bool, effect_queue_push_spawn, EffectQueue *, Strv, Vector2);
+FAKE_VALUE_FUNC(bool, effect_queue_push_spawn, EffectQueue *, SpawnRequest);
 FAKE_VALUE_FUNC(bool, effect_queue_push_toast, EffectQueue *, Strv);
 
 #include "test_heap_alloc.h"

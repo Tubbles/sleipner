@@ -132,6 +132,10 @@ void test_integration_knockback_pushes_target_away(void);
 void test_integration_knockback_respects_wall(void);
 void test_integration_contact_damage_hurts_on_touch(void);
 void test_integration_no_contact_damage_without_attr(void);
+void test_integration_projectile_flies_and_hits(void);
+void test_integration_projectile_destroyed_on_hit(void);
+void test_integration_projectile_misses(void);
+void test_integration_projectile_expires(void);
 
 /* toml_emitter_test.c */
 void test_toml_emit_blueprints(void);
@@ -384,6 +388,10 @@ int main(void)
     RUN_TEST(test_integration_knockback_respects_wall);
     RUN_TEST(test_integration_contact_damage_hurts_on_touch);
     RUN_TEST(test_integration_no_contact_damage_without_attr);
+    RUN_TEST(test_integration_projectile_flies_and_hits);
+    RUN_TEST(test_integration_projectile_destroyed_on_hit);
+    RUN_TEST(test_integration_projectile_misses);
+    RUN_TEST(test_integration_projectile_expires);
 
     RUN_TEST(test_integration_sprite_offset_edit_updates_entity_live);
     RUN_TEST(test_integration_sprite_offset_edit_emitted_to_toml);

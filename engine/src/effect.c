@@ -45,9 +45,8 @@ bool effect_queue_push_camera_shake(EffectQueue *queue, CameraShakeRequest reque
     return vec_camera_shake_request_push(&queue->camera_shakes, request);
 }
 
-bool effect_queue_push_spawn(EffectQueue *queue, Strv blueprint, Vector2 position)
+bool effect_queue_push_spawn(EffectQueue *queue, SpawnRequest request)
 {
-    SpawnRequest request = {.blueprint = blueprint, .x = position.x, .y = position.y};
     return vec_spawn_request_push(&queue->spawns, request);
 }
 

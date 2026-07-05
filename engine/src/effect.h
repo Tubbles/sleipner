@@ -69,6 +69,14 @@ typedef struct {
     Strv blueprint;
     float x;
     float y;
+    /* Direction the spawned entity (or entities -- see apply_spawn_effects,
+     * frame.c) should be oriented in immediately after spawning (S6.10d,
+     * D26): copied from the spawning entity's own `facing` at the point
+     * ACTION_SPAWN fires (execute_spawn_action, rule.c). Harmless for a
+     * non-directional spawn (a static prop just gets a facing nobody
+     * reads); essential for a projectile blueprint using the `projectile`
+     * behavior, which moves along entity->facing every frame. */
+    Vector2 facing;
 } SpawnRequest;
 
 VEC_DECL(spawn_request, SpawnRequest)
@@ -105,9 +113,15 @@ void effect_queue_clear(EffectQueue *queue);
 
 /* Push helpers, one per request type. `name`/`blueprint`/`text` fields must
  * satisfy the string-lifetime rule documented above. Each returns false
- * only if the backing vec push failed to allocate. */
+ * only if the backing vec push failed to allocate. effect_queue_push_spawn
+ * takes the whole SpawnRequest by value (rather than separate blueprint/
+ * position/facing parameters) for the same reason effect_queue_push_
+ * camera_shake takes a whole CameraShakeRequest: two adjacent Vector2
+ * parameters (position, facing) would be an easily-swappable pair by
+ * clang-tidy's bugprone-easily-swappable-parameters, since both share the
+ * exact same type. */
 [[nodiscard]] bool effect_queue_push_sound(EffectQueue *queue, Strv name);
 [[nodiscard]] bool effect_queue_push_camera_pan(EffectQueue *queue, Vector2 target, float duration);
 [[nodiscard]] bool effect_queue_push_camera_shake(EffectQueue *queue, CameraShakeRequest request);
-[[nodiscard]] bool effect_queue_push_spawn(EffectQueue *queue, Strv blueprint, Vector2 position);
+[[nodiscard]] bool effect_queue_push_spawn(EffectQueue *queue, SpawnRequest request);
 [[nodiscard]] bool effect_queue_push_toast(EffectQueue *queue, Strv text);

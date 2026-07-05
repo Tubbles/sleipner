@@ -599,12 +599,66 @@ static void behavior_chase(BehaviorContext *context)
     resolve_entity_obstacles(state, context->entity_index);
 }
 
+/* Default speed (px/s) and lifetime (s) a `projectile` entity falls back to
+ * when its blueprint authors no `speed`/`projectile_lifetime` attr. */
+#define PROJECTILE_DEFAULT_SPEED 200.0F
+#define PROJECTILE_DEFAULT_LIFETIME_SECONDS 2.0F
+
+/* Straight-line mover for spawn-based ranged attacks (S6.10d, D26): moves
+ * `facing * speed * delta_time` every frame -- no steering, no
+ * resolve_entity_obstacles, so a projectile flies straight through solid
+ * geometry rather than stopping at (or vanishing on) a wall; see TODO.md
+ * for that deferred polish. Damage is NOT this function's job -- a
+ * projectile blueprint authors contact_damage/damage/destroy_on_hit and
+ * rides the existing detect_contact_damage pass (S6.10c) unchanged.
+ *
+ * Lifetime: entity->projectile_lifetime_timer (runtime-only, same footing
+ * as patrol_phase/iframe_timer -- entity_init's memset zeroes it, never
+ * emitted to TOML) counts down from the scoped `projectile_lifetime` attr.
+ * A freshly spawned entity has no per-instance init hook, so the timer
+ * being exactly 0 doubles as "never initialized yet": the very first
+ * update seeds it from the attr, every later update just decrements. This
+ * is safe because the same frame the timer reaches 0 also soft-destroys
+ * the entity (active = false) -- the active check at the top of this
+ * function short-circuits every later call before the seed branch could
+ * ever misfire on a genuinely-expired timer.
+ *
+ * Soft-destroyed entities (active = false, set here on lifetime expiry, or
+ * by detect_contact_damage's destroy_on_hit) must stop moving -- unlike
+ * the hitbox/hurtbox/contact-damage passes, game_update's per-entity
+ * behavior dispatch loop (below) has no active gate of its own, so every
+ * behavior that can leave an entity soft-destroyed must self-check. */
+static void behavior_projectile(BehaviorContext *context)
+{
+    GameState *state = context->state;
+    Entity *entity = &state->gamedata.current_level.entities.data[context->entity_index];
+    const AttrSet *defaults = entity_resolve_defaults(state, entity->id);
+    if (!attr_get_scoped_bool(&entity->attrs, defaults, "active", true)) {
+        return;
+    }
+
+    if (entity->projectile_lifetime_timer <= 0.0F) {
+        entity->projectile_lifetime_timer =
+            attr_get_scoped_float(&entity->attrs, defaults, "projectile_lifetime", PROJECTILE_DEFAULT_LIFETIME_SECONDS);
+    }
+
+    float speed = attr_get_scoped_float(&entity->attrs, defaults, "speed", PROJECTILE_DEFAULT_SPEED);
+    entity->position.x += entity->facing.x * speed * context->delta_time;
+    entity->position.y += entity->facing.y * speed * context->delta_time;
+
+    entity->projectile_lifetime_timer -= context->delta_time;
+    if (entity->projectile_lifetime_timer <= 0.0F) {
+        Allocator alloc = allocator_arena(&state->gamedata_arena);
+        (void)attr_set_bool(&alloc, &entity->attrs, "active", false);
+    }
+}
+
 static const struct {
     const char *name;
     BehaviorUpdateFn fn;
 } behavior_table[] = {
-    {"static", behavior_static}, {"player", behavior_player}, {"npc_patrol", behavior_npc_patrol},
-    {"chase", behavior_chase},   {nullptr, nullptr},
+    {"static", behavior_static}, {"player", behavior_player},         {"npc_patrol", behavior_npc_patrol},
+    {"chase", behavior_chase},   {"projectile", behavior_projectile}, {nullptr, nullptr},
 };
 
 /* Falls back to the static (no-op) behavior for a null or unrecognized
@@ -940,14 +994,30 @@ static void detect_melee_damage(GameState *state, Level *level, Allocator *alloc
  * repeated melee hits -- no separate "already hit this frame" bookkeeping.
  * Melee (hitbox) and contact (body) are distinct damage sources; an
  * entity could in principle have both live at once, but a target's
- * i-frames still collapse that to at most one applied hit per window. */
+ * i-frames still collapse that to at most one applied hit per window.
+ *
+ * destroy_on_hit (S6.10d, D26): if A also has a truthy destroy_on_hit
+ * attr, a landed hit soft-destroys A (active = false) instead of leaving
+ * it to keep hurting whatever it touches -- a projectile blueprint authors
+ * this so it vanishes on impact rather than phasing through its target.
+ * entity_can_deal_contact_damage's active check (absent before this
+ * feature) is what makes that stick: without it, a "destroyed" attacker
+ * sitting on top of its target would resume dealing damage the moment the
+ * target's i-frames lapse, since nothing else in this loop reads the
+ * attacker's own active state. */
+static bool entity_can_deal_contact_damage(const Entity *entity, const AttrSet *defaults)
+{
+    return attr_get_scoped_bool(&entity->attrs, defaults, "active", true) &&
+           attr_get_scoped_bool(&entity->attrs, defaults, "contact_damage", false);
+}
+
 static void detect_contact_damage(GameState *state, Level *level, Allocator *alloc, vec_trigger_event *out_events)
 {
     Entity *entities = level->entities.data;
     int entity_count = level->entities.count;
     for (int attacker_index = 0; attacker_index < entity_count; attacker_index++) {
         const AttrSet *attacker_defaults = entity_resolve_defaults(state, entities[attacker_index].id);
-        if (!attr_get_scoped_bool(&entities[attacker_index].attrs, attacker_defaults, "contact_damage", false)) {
+        if (!entity_can_deal_contact_damage(&entities[attacker_index], attacker_defaults)) {
             continue;
         }
         CollisionPrimitive attacker_prim_storage;
@@ -983,6 +1053,10 @@ static void detect_contact_damage(GameState *state, Level *level, Allocator *all
             if (old_health > 0.0F && new_health <= 0.0F) {
                 (void)vec_trigger_event_push(out_events,
                                              (TriggerEvent){.type = TRIGGER_DEFEAT, .entity_index = target_index});
+            }
+            if (attr_get_scoped_bool(&entities[attacker_index].attrs, attacker_defaults, "destroy_on_hit", false)) {
+                (void)attr_set_bool(alloc, &entities[attacker_index].attrs, "active", false);
+                break;
             }
         }
     }

@@ -73,6 +73,16 @@ typedef struct {
      * entity_init's memset; entity_apply_knockback sets it to
      * KNOCKBACK_SECONDS on a landed hit. */
     float knockback_timer;
+    /* Countdown for the `projectile` behavior's self-destruct (S6.10d,
+     * D26), same runtime-only footing as knockback_timer above -- NOT
+     * emitted to TOML, starts at 0 (inert) via entity_init's memset.
+     * behavior_projectile (game.c) treats "still exactly 0" as "never
+     * seeded yet" and initializes it from the scoped `projectile_lifetime`
+     * attr on the entity's first update, then decrements every later
+     * frame; reaching 0 again soft-destroys the entity (`active` attr set
+     * false), so a projectile fired into empty space eventually
+     * disappears instead of flying forever. */
+    float projectile_lifetime_timer;
 
     /* Vectors (8 bytes each) */
     Vector2 position;

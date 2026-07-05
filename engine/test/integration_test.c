@@ -5881,3 +5881,231 @@ void test_integration_no_contact_damage_without_attr(void)
 
     test_game_teardown(&game);
 }
+
+/* ---- Integration: S6.10d projectile behavior + spawn-based ranged
+ * attacks (D26), completing S6.10. The "player" blueprint is the shooter:
+ * its own on_spawn rule is "wait:0.5, spawn:projectile,200,200" -- the
+ * ACTION_SPAWN handler's context.entity is therefore the player itself
+ * (rule.c's execute_spawn_action), so the spawned projectile inherits
+ * whatever direction the player was last facing when the wait elapsed
+ * (S6.10d's facing-inheriting spawn). Only behavior_player ever updates
+ * entity->facing (S6.10b), so every test below drives a few frames of
+ * real left-stick movement first to establish it before going idle for
+ * the rest of the 0.5s wait. "target" sits 100px to the right of the
+ * fixed spawn point (300,200 vs the spawn's 200,200), so only a
+ * rightward-facing shot can ever reach it. */
+static const char *projectile_fixture_gamedata = "[[blueprint]]\n"
+                                                 "name = \"player\"\n"
+                                                 "texture = \"player.png\"\n"
+                                                 "src = [0, 0, 32, 32]\n"
+                                                 "collision_offset = [0, 0]\n"
+                                                 "collision_size = [16, 16]\n"
+                                                 "behavior = \"player\"\n"
+                                                 "speed = 80\n"
+                                                 "\n"
+                                                 "[[blueprint.rule]]\n"
+                                                 "trigger = \"on_spawn\"\n"
+                                                 "actions = [\"wait:0.5\", \"spawn:projectile,200,200\"]\n"
+                                                 "\n"
+                                                 "[[blueprint]]\n"
+                                                 "name = \"target\"\n"
+                                                 "texture = \"rock.png\"\n"
+                                                 "src = [0, 0, 16, 16]\n"
+                                                 "collision_offset = [0, 0]\n"
+                                                 "collision_size = [16, 16]\n"
+                                                 "health = [20, 20]\n"
+                                                 "defense = 0\n"
+                                                 "\n"
+                                                 "[[blueprint]]\n"
+                                                 "name = \"projectile\"\n"
+                                                 "texture = \"rock.png\"\n"
+                                                 "src = [0, 0, 16, 16]\n"
+                                                 "collision_offset = [0, 0]\n"
+                                                 "collision_size = [16, 16]\n"
+                                                 "behavior = \"projectile\"\n"
+                                                 "contact_damage = true\n"
+                                                 "damage = 5\n"
+                                                 "destroy_on_hit = true\n"
+                                                 "speed = 300\n"
+                                                 "projectile_lifetime = 0.5\n"
+                                                 "\n"
+                                                 "[[level]]\n"
+                                                 "name = \"test\"\n"
+                                                 "size = [400, 400]\n"
+                                                 "\n"
+                                                 "[[level.entity]]\n"
+                                                 "blueprint = \"player\"\n"
+                                                 "pos = [200, 200]\n"
+                                                 "\n"
+                                                 "[[level.entity]]\n"
+                                                 "blueprint = \"target\"\n"
+                                                 "pos = [300, 200]\n";
+
+/* Drives `facing_axis` on the left stick for 10 frames -- enough for
+ * update_player (S6.10b) to set the player's entity->facing to a cardinal
+ * unit vector -- then idles until either the "projectile" blueprint entity
+ * appears (spawned by the player's own on_spawn rule once its 0.5s wait
+ * elapses, S6.10d) or max_frames elapses. Returns the projectile, or
+ * nullptr if it never spawned. Vector2 (not two adjacent floats) avoids
+ * bugprone-easily-swappable-parameters, same rationale as walk_player_to's
+ * own parameter-ordering comment above. */
+static Entity *drive_facing_and_wait_for_projectile(TestGame *game, Vector2 facing_axis, int max_frames)
+{
+    InputState face = {0};
+    input_state_set_gp_axis(&face, GAMEPAD_AXIS_LEFT_X, facing_axis.x);
+    input_state_set_gp_axis(&face, GAMEPAD_AXIS_LEFT_Y, facing_axis.y);
+    test_advance_frames(game, face, 10);
+
+    InputState idle = {0};
+    for (int frame = 0; frame < max_frames; frame++) {
+        test_advance_frame(game, idle);
+        Entity *projectile = test_find_entity_by_blueprint(&game->state, "projectile");
+        if (projectile) {
+            return projectile;
+        }
+    }
+    return nullptr;
+}
+
+/* Faces the shooter right (toward the target, 100px away), waits for the
+ * spawn, and asserts two things a no-op behavior_projectile would fail:
+ * the projectile's x position increases over a few more frames (straight-
+ * line movement along entity->facing), and the target's health eventually
+ * drops (the projectile reaches it and lands a contact-damage hit through
+ * the existing S6.10c pass). Verified to fail (no movement, no hit) with
+ * behavior_projectile's body temporarily replaced by an early return. */
+void test_integration_projectile_flies_and_hits(void)
+{
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, projectile_fixture_gamedata));
+
+    Entity *projectile = drive_facing_and_wait_for_projectile(&game, (Vector2){1.0F, 0.0F}, 40);
+    TEST_ASSERT_NOT_NULL_MESSAGE(projectile, "projectile never spawned");
+    float spawn_x = projectile->position.x;
+
+    InputState idle = {0};
+    test_advance_frames(&game, idle, 5);
+    projectile = test_find_entity_by_blueprint(&game.state, "projectile");
+    TEST_ASSERT_NOT_NULL(projectile);
+    TEST_ASSERT_TRUE_MESSAGE(projectile->position.x > spawn_x, "projectile did not move in its facing direction");
+
+    const Entity *target = test_find_entity_by_blueprint(&game.state, "target");
+    TEST_ASSERT_NOT_NULL(target);
+    const AttrSet *target_defaults = entity_resolve_defaults(&game.state, target->id);
+
+    bool hit = false;
+    for (int frame = 0; frame < 60; frame++) {
+        test_advance_frame(&game, idle);
+        target = test_find_entity_by_blueprint(&game.state, "target");
+        if (attr_get_scoped_float(&target->attrs, target_defaults, "health", 20.0F) < 20.0F) {
+            hit = true;
+            break;
+        }
+    }
+    TEST_ASSERT_TRUE_MESSAGE(hit, "projectile never reached the target");
+    /* max(1, 5 - 0) = 5 dealt -> 20 - 5 = 15 */
+    TEST_ASSERT_EQUAL_INT(15, (int)attr_get_scoped_float(&target->attrs, target_defaults, "health", -1.0F));
+
+    test_game_teardown(&game);
+}
+
+/* Same setup as the flies-and-hits test above, but continues well past the
+ * default 0.8s (48-frame) i-frame window after the hit lands. Asserts the
+ * projectile itself is inactive (destroy_on_hit soft-destroyed it) AND
+ * that the target's health stays put -- if destroy_on_hit only set the
+ * flag without detect_contact_damage's attacker-side active gate (game.c)
+ * also honoring it, a projectile parked on top of the target would resume
+ * dealing damage the instant i-frames lapse. */
+void test_integration_projectile_destroyed_on_hit(void)
+{
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, projectile_fixture_gamedata));
+
+    Entity *projectile = drive_facing_and_wait_for_projectile(&game, (Vector2){1.0F, 0.0F}, 40);
+    TEST_ASSERT_NOT_NULL_MESSAGE(projectile, "projectile never spawned");
+
+    const Entity *target = test_find_entity_by_blueprint(&game.state, "target");
+    TEST_ASSERT_NOT_NULL(target);
+    const AttrSet *target_defaults = entity_resolve_defaults(&game.state, target->id);
+
+    InputState idle = {0};
+    bool hit = false;
+    for (int frame = 0; frame < 60; frame++) {
+        test_advance_frame(&game, idle);
+        target = test_find_entity_by_blueprint(&game.state, "target");
+        if (attr_get_scoped_float(&target->attrs, target_defaults, "health", 20.0F) < 20.0F) {
+            hit = true;
+            break;
+        }
+    }
+    TEST_ASSERT_TRUE_MESSAGE(hit, "projectile never reached the target");
+    float health_after_hit = attr_get_scoped_float(&target->attrs, target_defaults, "health", -1.0F);
+
+    projectile = test_find_entity_by_blueprint(&game.state, "projectile");
+    TEST_ASSERT_NOT_NULL(projectile);
+    const AttrSet *projectile_defaults = entity_resolve_defaults(&game.state, projectile->id);
+    TEST_ASSERT_FALSE_MESSAGE(attr_get_scoped_bool(&projectile->attrs, projectile_defaults, "active", true),
+                              "destroy_on_hit did not soft-destroy the projectile");
+
+    test_advance_frames(&game, idle, 60);
+    target = test_find_entity_by_blueprint(&game.state, "target");
+    TEST_ASSERT_EQUAL_FLOAT(health_after_hit, attr_get_scoped_float(&target->attrs, target_defaults, "health", -1.0F));
+
+    test_game_teardown(&game);
+}
+
+/* Firing AWAY from the target (left stick left, facing = (-1, 0)) sends
+ * the projectile from (200,200) off to the left -- the target's
+ * collision box (300..316, 200..216) is never in its path, at any frame
+ * count, so its health must never move off the blueprint's default 20. */
+void test_integration_projectile_misses(void)
+{
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, projectile_fixture_gamedata));
+
+    Entity *projectile = drive_facing_and_wait_for_projectile(&game, (Vector2){-1.0F, 0.0F}, 40);
+    TEST_ASSERT_NOT_NULL_MESSAGE(projectile, "projectile never spawned");
+
+    const Entity *target = test_find_entity_by_blueprint(&game.state, "target");
+    TEST_ASSERT_NOT_NULL(target);
+    const AttrSet *target_defaults = entity_resolve_defaults(&game.state, target->id);
+
+    InputState idle = {0};
+    test_advance_frames(&game, idle, 90);
+    target = test_find_entity_by_blueprint(&game.state, "target");
+    TEST_ASSERT_EQUAL_INT(20, (int)attr_get_scoped_float(&target->attrs, target_defaults, "health", -1.0F));
+
+    test_game_teardown(&game);
+}
+
+/* Fired into empty space (facing left, same as the miss test above, but
+ * asserted on the projectile's own state instead of the target's): past
+ * the fixture's 0.5s (30-frame) projectile_lifetime counted from the
+ * projectile's own first update, it must have soft-destroyed itself
+ * (active = false) and then stayed frozen in place on every later frame --
+ * not just flagged inactive while still sliding along under some other
+ * code path. */
+void test_integration_projectile_expires(void)
+{
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, projectile_fixture_gamedata));
+
+    Entity *projectile = drive_facing_and_wait_for_projectile(&game, (Vector2){-1.0F, 0.0F}, 40);
+    TEST_ASSERT_NOT_NULL_MESSAGE(projectile, "projectile never spawned");
+
+    InputState idle = {0};
+    test_advance_frames(&game, idle, 45);
+    projectile = test_find_entity_by_blueprint(&game.state, "projectile");
+    TEST_ASSERT_NOT_NULL(projectile);
+    const AttrSet *projectile_defaults = entity_resolve_defaults(&game.state, projectile->id);
+    TEST_ASSERT_FALSE_MESSAGE(attr_get_scoped_bool(&projectile->attrs, projectile_defaults, "active", true),
+                              "projectile did not expire after its lifetime elapsed");
+
+    float position_after_expiry = projectile->position.x;
+    test_advance_frames(&game, idle, 20);
+    projectile = test_find_entity_by_blueprint(&game.state, "projectile");
+    TEST_ASSERT_NOT_NULL(projectile);
+    TEST_ASSERT_EQUAL_FLOAT(position_after_expiry, projectile->position.x);
+
+    test_game_teardown(&game);
+}

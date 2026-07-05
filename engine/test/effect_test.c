@@ -77,17 +77,20 @@ void test_effect_queue_push_camera_shake_stores_magnitude_and_duration(void)
     free_all(&queue);
 }
 
-void test_effect_queue_push_spawn_stores_blueprint_and_position(void)
+void test_effect_queue_push_spawn_stores_blueprint_position_and_facing(void)
 {
     EffectQueue queue;
     effect_queue_init(&queue, test_heap_alloc);
 
-    TEST_ASSERT_TRUE(effect_queue_push_spawn(&queue, strv_from_cstr("goblin"), (Vector2){12.0F, 34.0F}));
+    TEST_ASSERT_TRUE(effect_queue_push_spawn(
+        &queue, (SpawnRequest){.blueprint = strv_from_cstr("goblin"), .x = 12.0F, .y = 34.0F, .facing = {1.0F, 0.0F}}));
 
     TEST_ASSERT_EQUAL_INT(1, queue.spawns.count);
     TEST_ASSERT_TRUE(strv_eq_cstr(queue.spawns.data[0].blueprint, "goblin"));
     TEST_ASSERT_EQUAL_FLOAT(12.0F, queue.spawns.data[0].x);
     TEST_ASSERT_EQUAL_FLOAT(34.0F, queue.spawns.data[0].y);
+    TEST_ASSERT_EQUAL_FLOAT(1.0F, queue.spawns.data[0].facing.x);
+    TEST_ASSERT_EQUAL_FLOAT(0.0F, queue.spawns.data[0].facing.y);
 
     free_all(&queue);
 }
@@ -113,7 +116,7 @@ void test_effect_queue_clear_resets_counts_and_allows_reuse(void)
     TEST_ASSERT_TRUE(effect_queue_push_sound(&queue, strv_from_cstr("a")));
     TEST_ASSERT_TRUE(effect_queue_push_camera_pan(&queue, (Vector2){0.0F, 0.0F}, 1.0F));
     TEST_ASSERT_TRUE(effect_queue_push_camera_shake(&queue, (CameraShakeRequest){.magnitude = 1.0F, .duration = 1.0F}));
-    TEST_ASSERT_TRUE(effect_queue_push_spawn(&queue, strv_from_cstr("b"), (Vector2){0.0F, 0.0F}));
+    TEST_ASSERT_TRUE(effect_queue_push_spawn(&queue, (SpawnRequest){.blueprint = strv_from_cstr("b")}));
     TEST_ASSERT_TRUE(effect_queue_push_toast(&queue, strv_from_cstr("c")));
 
     int capacity_before = queue.sounds.capacity;
@@ -148,7 +151,7 @@ void test_effect_queue_clear_empties_all_five_after_full_push(void)
     TEST_ASSERT_TRUE(effect_queue_push_sound(&queue, strv_from_cstr("a")));
     TEST_ASSERT_TRUE(effect_queue_push_camera_pan(&queue, (Vector2){0.0F, 0.0F}, 1.0F));
     TEST_ASSERT_TRUE(effect_queue_push_camera_shake(&queue, (CameraShakeRequest){.magnitude = 1.0F, .duration = 1.0F}));
-    TEST_ASSERT_TRUE(effect_queue_push_spawn(&queue, strv_from_cstr("b"), (Vector2){0.0F, 0.0F}));
+    TEST_ASSERT_TRUE(effect_queue_push_spawn(&queue, (SpawnRequest){.blueprint = strv_from_cstr("b")}));
     TEST_ASSERT_TRUE(effect_queue_push_toast(&queue, strv_from_cstr("c")));
 
     effect_queue_clear(&queue);
@@ -170,7 +173,7 @@ int main(void)
     RUN_TEST(test_effect_queue_push_sound_stores_name);
     RUN_TEST(test_effect_queue_push_camera_pan_stores_target_and_duration);
     RUN_TEST(test_effect_queue_push_camera_shake_stores_magnitude_and_duration);
-    RUN_TEST(test_effect_queue_push_spawn_stores_blueprint_and_position);
+    RUN_TEST(test_effect_queue_push_spawn_stores_blueprint_position_and_facing);
     RUN_TEST(test_effect_queue_push_toast_stores_text);
     RUN_TEST(test_effect_queue_clear_resets_counts_and_allows_reuse);
     RUN_TEST(test_effect_queue_clear_empties_all_five_after_full_push);

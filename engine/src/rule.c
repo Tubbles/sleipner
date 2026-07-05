@@ -1502,7 +1502,18 @@ static bool execute_spawn_action(Diag *diag, Allocator *alloc, const ActionNode 
         blueprint_name = str_to_strv(resolved_name);
     }
 
-    if (!effect_queue_push_spawn(context.effects, blueprint_name, position)) {
+    /* facing = context.entity->facing (S6.10d, D26): the spawner's current
+     * orientation, so a spawned projectile (or any other directional
+     * entity) inherits the direction it was fired in -- see
+     * apply_spawn_effects (frame.c) for where this lands on the new
+     * entity/entities. */
+    SpawnRequest request = {
+        .blueprint = blueprint_name,
+        .x = position.x,
+        .y = position.y,
+        .facing = context.entity->facing,
+    };
+    if (!effect_queue_push_spawn(context.effects, request)) {
         error_set(diag->error, "spawn: allocation failed");
         return false;
     }

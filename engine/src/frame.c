@@ -286,11 +286,22 @@ static int apply_spawn_effects(Diag *diag, GameState *state, const vec_spawn_req
             continue;
         }
         Vector2 position = {request->x, request->y};
+        int count_before = state->gamedata.current_level.entities.count;
         if (!level_spawn_entity(diag, &state->gamedata.current_level, blueprint, position, &state->gamedata.blueprints,
                                 texture_registry_lookup, state, &alloc)) {
             debug_log(diag->debug, "effect: spawn '%s': %s", blueprint_name, error_get(diag->error));
             error_clear(diag->error);
             continue;
+        }
+        /* Every entity level_spawn_entity just created for THIS request --
+         * the root plus any composite children -- inherits the spawner's
+         * facing (S6.10d, D26). Re-derived from the count delta rather
+         * than assumed to be exactly one entity: a blueprint with
+         * [[blueprint.child]] entries spawns a whole subtree in one
+         * level_spawn_entity call. */
+        int count_after = state->gamedata.current_level.entities.count;
+        for (int spawned_index = count_before; spawned_index < count_after; spawned_index++) {
+            state->gamedata.current_level.entities.data[spawned_index].facing = request->facing;
         }
         spawned_count++;
     }
