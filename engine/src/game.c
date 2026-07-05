@@ -88,6 +88,25 @@ const AttrSet *entity_resolve_defaults(const GameState *state, int entity_id)
     return blueprint ? &blueprint->attrs : nullptr;
 }
 
+/* Builds one EntityView per current_level entity into scratch_arena --
+ * the same array shape both rules_evaluate_batch and (S6.7b, D24)
+ * rules_resume_continuations iterate. Factored out so the resume pass and
+ * the trigger-driven batch in game_update share one build instead of
+ * each rebuilding it. */
+static EntityView *build_entity_views(GameState *state, int *out_count)
+{
+    int count = state->gamedata.current_level.entities.count;
+    EntityView *views = arena_alloc(&state->scratch_arena, sizeof(EntityView) * (size_t)count);
+    for (int index = 0; index < count; index++) {
+        views[index] = (EntityView){
+            .entity = &state->gamedata.current_level.entities.data[index],
+            .defaults = entity_resolve_defaults(state, state->gamedata.current_level.entities.data[index].id),
+        };
+    }
+    *out_count = count;
+    return views;
+}
+
 static int find_player_entity(const GameState *state)
 {
     const Level *level = &state->gamedata.current_level;
@@ -119,6 +138,12 @@ static int find_player_entity(const GameState *state)
     state->gamedata.entity_blueprints = map_int_str_new(gamedata_alloc);
     state->gamedata.prev_player_overlaps = vec_bool_new(gamedata_alloc);
     state->gamedata.prev_solid_collisions = vec_bool_new(gamedata_alloc);
+    /* A continuation's entity id / node indices are only meaningful
+     * against the level they were captured from (S6.7b, D24) -- drop
+     * every pending wait whenever the runtime is rebuilt for a
+     * (possibly different) current level, the same way rule_table itself
+     * is rebuilt from scratch above rather than carried over. */
+    state->gamedata.continuations = vec_rule_continuation_new(gamedata_alloc);
 
     for (int index = 0; index < state->gamedata.current_level.entities.count; index++) {
         const Entity *entity = &state->gamedata.current_level.entities.data[index];
@@ -165,6 +190,7 @@ bool game_load_gamedata(Diag *diag, GameState *state, GamedataParams params)
     Allocator gamedata_alloc_early = allocator_arena(&state->gamedata_arena);
     state->gamedata.rule_table = map_entity_ruleset_new(gamedata_alloc_early);
     state->gamedata.entity_blueprints = map_int_str_new(gamedata_alloc_early);
+    state->gamedata.continuations = vec_rule_continuation_new(gamedata_alloc_early);
     if (!root) {
         error_set(diag->error, "toml_parse: %s", errbuf);
         error_wrap(diag->error, "game_load_gamedata");
@@ -214,14 +240,8 @@ bool game_load_gamedata(Diag *diag, GameState *state, GamedataParams params)
         {
             SCRATCH_SCOPE(&state->scratch_arena);
             Allocator scratch_alloc = allocator_arena(&state->scratch_arena);
-            int spawn_count = state->gamedata.current_level.entities.count;
-            EntityView *spawn_views = arena_alloc(&state->scratch_arena, sizeof(EntityView) * (size_t)spawn_count);
-            for (int index = 0; index < spawn_count; index++) {
-                spawn_views[index] = (EntityView){
-                    .entity = &state->gamedata.current_level.entities.data[index],
-                    .defaults = entity_resolve_defaults(state, state->gamedata.current_level.entities.data[index].id),
-                };
-            }
+            int spawn_count = 0;
+            EntityView *spawn_views = build_entity_views(state, &spawn_count);
             vec_trigger_event spawn_events = vec_trigger_event_new(scratch_alloc);
             for (int index = 0; index < spawn_count; index++) {
                 (void)vec_trigger_event_push(&spawn_events,
@@ -232,7 +252,8 @@ bool game_load_gamedata(Diag *diag, GameState *state, GamedataParams params)
                 rules_evaluate_batch(diag, &gamedata_alloc, spawn_views, spawn_count, spawn_events.data,
                                      spawn_events.count, &state->progression.flags, &state->progression.vars,
                                      &progression_alloc, &state->gamedata.rule_table, &state->gamedata.subroutines,
-                                     &state->gamedata.timers, &scratch_alloc, &state->transition, &state->effects);
+                                     &state->gamedata.timers, &scratch_alloc, &state->transition, &state->effects,
+                                     &state->gamedata.continuations);
             }
         }
         game_snap_camera(state);
@@ -658,6 +679,24 @@ void game_update(Diag *diag, GameState *state, InputState input, float delta_tim
         Allocator scratch_alloc = allocator_arena(&state->scratch_arena);
         vec_trigger_event trigger_events = vec_trigger_event_new(scratch_alloc);
 
+        int view_count = 0;
+        EntityView *views = build_entity_views(state, &view_count);
+
+        /* Resume due `wait:` continuations (S6.7b, D24) before any normal
+         * trigger detection/evaluation this frame -- a resumed action's
+         * fire_event/destroy feeds into trigger_events below, joining
+         * this frame's own cascade the same way rules_evaluate_batch's
+         * internal cascade already handles events from freshly-triggered
+         * rules. */
+        if (state->gamedata.continuations.count > 0) {
+            Allocator rule_alloc = allocator_arena(&state->gamedata_arena);
+            Allocator progression_alloc = allocator_arena(&state->progression_arena);
+            rules_resume_continuations(diag, &rule_alloc, views, view_count, &trigger_events, &state->progression.flags,
+                                       &state->progression.vars, &progression_alloc, &state->gamedata.rule_table,
+                                       &state->gamedata.subroutines, &state->gamedata.timers, &state->transition,
+                                       &state->effects, &state->gamedata.continuations, delta_time);
+        }
+
         /* Detect new solid-entity overlaps and fire collide events on both parties */
         detect_solid_collisions(state, &state->gamedata.current_level, &state->gamedata.prev_solid_collisions,
                                 &trigger_events);
@@ -688,20 +727,12 @@ void game_update(Diag *diag, GameState *state, InputState input, float delta_tim
         collect_trigger_events(diag->debug, state, &input, &trigger_events);
 
         if (trigger_events.count > 0) {
-            int update_count = state->gamedata.current_level.entities.count;
-            EntityView *update_views = arena_alloc(&state->scratch_arena, sizeof(EntityView) * (size_t)update_count);
-            for (int index = 0; index < update_count; index++) {
-                update_views[index] = (EntityView){
-                    .entity = &state->gamedata.current_level.entities.data[index],
-                    .defaults = entity_resolve_defaults(state, state->gamedata.current_level.entities.data[index].id),
-                };
-            }
             Allocator rule_alloc = allocator_arena(&state->gamedata_arena);
             Allocator progression_alloc = allocator_arena(&state->progression_arena);
-            rules_evaluate_batch(diag, &rule_alloc, update_views, update_count, trigger_events.data,
-                                 trigger_events.count, &state->progression.flags, &state->progression.vars,
-                                 &progression_alloc, &state->gamedata.rule_table, &state->gamedata.subroutines,
-                                 &state->gamedata.timers, &scratch_alloc, &state->transition, &state->effects);
+            rules_evaluate_batch(diag, &rule_alloc, views, view_count, trigger_events.data, trigger_events.count,
+                                 &state->progression.flags, &state->progression.vars, &progression_alloc,
+                                 &state->gamedata.rule_table, &state->gamedata.subroutines, &state->gamedata.timers,
+                                 &scratch_alloc, &state->transition, &state->effects, &state->gamedata.continuations);
         }
     }
 }

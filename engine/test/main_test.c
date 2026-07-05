@@ -190,6 +190,11 @@ void test_integration_collide_fires_on_overlap(void);
 void test_integration_nested_bind_for_each_repeat_order_and_scope(void);
 void test_integration_subroutine_for_each_pool_switch_and_scope(void);
 void test_integration_repeat_preserves_execution_order(void);
+void test_integration_wait_delays_subsequent_actions(void);
+void test_integration_wait_inside_if_else(void);
+void test_integration_wait_inside_for_each(void);
+void test_integration_two_entities_wait_independently(void);
+void test_integration_wait_entity_destroyed_drops_continuation(void);
 
 int main(void)
 {
@@ -324,6 +329,11 @@ int main(void)
     RUN_TEST(test_integration_nested_bind_for_each_repeat_order_and_scope);
     RUN_TEST(test_integration_subroutine_for_each_pool_switch_and_scope);
     RUN_TEST(test_integration_repeat_preserves_execution_order);
+    RUN_TEST(test_integration_wait_delays_subsequent_actions);
+    RUN_TEST(test_integration_wait_inside_if_else);
+    RUN_TEST(test_integration_wait_inside_for_each);
+    RUN_TEST(test_integration_two_entities_wait_independently);
+    RUN_TEST(test_integration_wait_entity_destroyed_drops_continuation);
 
     RUN_TEST(test_integration_sprite_offset_edit_updates_entity_live);
     RUN_TEST(test_integration_sprite_offset_edit_emitted_to_toml);

@@ -146,10 +146,24 @@ predicate rows and MOVE reparenting).
   `execute_spawn_action`, `rule.c`) break from this: they validate every
   numeric token via `parse_strict_float` and `error_set` on garbage, since a
   bad pan/shake duration or spawn position should fail loudly rather than
-  silently pan/shake for zero seconds or spawn at the origin. The VM is now
-  inconsistent on this axis (three actions strict, the rest permissive) —
+  silently pan/shake for zero seconds or spawn at the origin. S6.7b's `wait:`
+  (`handle_wait_action`, `rule.c`) joins the strict group too. The VM is now
+  inconsistent on this axis (four actions strict, the rest permissive) —
   worth a shared pass to pick one behavior and apply it everywhere, whichever
   direction that goes.
+- **A `for_each` suspended mid-wait resumes its scan by raw view index, not
+  by re-deriving "who hasn't been visited yet."** `ExecFrameSnapshot.
+  for_each_entity_index` (`rule.h`, S6.7b) records the view-array index the
+  scan had reached at suspend time; `restore_exec_frame` (`rule.c`) trusts
+  it as-is when the frame's own bound entity (`bound_entity_id`) is still
+  found. If an entity is spawned or destroyed while a `for_each` containing
+  a `wait` is suspended, the resumed scan can skip a newly-inserted match or
+  (harmlessly) re-scan past a removed one, since spawns/destroys don't
+  reorder the array today but nothing guarantees that stays true. Not
+  reachable by any current spawn path (`spawn:` is drain-phase, entities
+  only append) and not covered by a test; worth a scan-by-id rewrite if a
+  future feature spawns/removes entities while a suspended `for_each` is in
+  flight.
 - **Editor Place path never resizes the overlap/solid edge vecs after
   spawning.** `handle_place_input` (`frame.c`) hand-patches `entity_blueprints`
   and `rule_table` for the newly-placed entity but, unlike S6.6's spawn path

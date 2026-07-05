@@ -4073,3 +4073,277 @@ void test_integration_settings_path_edit_buffer_row_enters_keyboard_mode(void)
 
     test_game_teardown(&game);
 }
+
+/* ---- Integration: `wait:` + suspendable rule continuations (S6.7b, D24) ----
+ *
+ * Every test here drives real frames through game_update (via
+ * test_advance_frame(s)) and asserts only on observable game state
+ * (flags, attrs) -- never on continuation/ExecFrame internals. Frame
+ * counts are chosen with a several-frame margin away from the exact
+ * wait-duration boundary so float rounding in the per-frame delta_time
+ * subtraction can never flip an assertion. */
+
+void test_integration_wait_delays_subsequent_actions(void)
+{
+    /* on_spawn: set_flag:a fires immediately; wait:0.5 (30 frames @
+     * 1/60s) defers set_flag:b until roughly half a second of frames
+     * has elapsed. */
+    static const char *gamedata = "[[blueprint]]\n"
+                                  "name = \"waiter\"\n"
+                                  "texture = \"t.png\"\n"
+                                  "src = [0, 0, 16, 16]\n"
+                                  "\n"
+                                  "[[blueprint.rule]]\n"
+                                  "trigger = \"on_spawn\"\n"
+                                  "actions = [\"set_flag:a\", \"wait:0.5\", \"set_flag:b\"]\n"
+                                  "\n"
+                                  "[[level]]\n"
+                                  "name = \"test\"\n"
+                                  "size = [320, 240]\n"
+                                  "\n"
+                                  "[[level.entity]]\n"
+                                  "blueprint = \"waiter\"\n"
+                                  "pos = [10, 10]\n";
+
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, gamedata));
+
+    TEST_ASSERT_TRUE(flag_get(&game.state.progression.flags, "a"));
+    TEST_ASSERT_FALSE(flag_get(&game.state.progression.flags, "b"));
+
+    InputState idle = {0};
+    test_advance_frames(&game, idle, 20); /* 0.333s -- well short of 0.5s */
+    TEST_ASSERT_FALSE(flag_get(&game.state.progression.flags, "b"));
+
+    test_advance_frames(&game, idle, 20); /* 40 frames total = 0.667s -- well past 0.5s */
+    TEST_ASSERT_TRUE(flag_get(&game.state.progression.flags, "b"));
+
+    test_game_teardown(&game);
+}
+
+void test_integration_wait_inside_if_else(void)
+{
+    /* The if-condition is always true (not_flag:never_set), so the
+     * `then` branch's wait:0.2 (12 frames) must delay post_then, while
+     * post_else (the untaken branch) must never fire at all. */
+    static const char *gamedata = "[[blueprint]]\n"
+                                  "name = \"waiter\"\n"
+                                  "texture = \"t.png\"\n"
+                                  "src = [0, 0, 16, 16]\n"
+                                  "\n"
+                                  "[[blueprint.rule]]\n"
+                                  "trigger = \"on_spawn\"\n"
+                                  "actions = [{ if = [\"not_flag:never_set\"], then = [\"set_flag:pre\", \"wait:0.2\", "
+                                  "\"set_flag:post_then\"], else = [\"set_flag:post_else\"] }]\n"
+                                  "\n"
+                                  "[[level]]\n"
+                                  "name = \"test\"\n"
+                                  "size = [320, 240]\n"
+                                  "\n"
+                                  "[[level.entity]]\n"
+                                  "blueprint = \"waiter\"\n"
+                                  "pos = [10, 10]\n";
+
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, gamedata));
+
+    TEST_ASSERT_TRUE(flag_get(&game.state.progression.flags, "pre"));
+    TEST_ASSERT_FALSE(flag_get(&game.state.progression.flags, "post_then"));
+    TEST_ASSERT_FALSE(flag_get(&game.state.progression.flags, "post_else"));
+
+    InputState idle = {0};
+    test_advance_frames(&game, idle, 6); /* 0.1s -- well short of 0.2s */
+    TEST_ASSERT_FALSE(flag_get(&game.state.progression.flags, "post_then"));
+    TEST_ASSERT_FALSE(flag_get(&game.state.progression.flags, "post_else"));
+
+    test_advance_frames(&game, idle, 14); /* 20 frames total = 0.333s -- well past 0.2s */
+    TEST_ASSERT_TRUE(flag_get(&game.state.progression.flags, "post_then"));
+    TEST_ASSERT_FALSE(flag_get(&game.state.progression.flags, "post_else"));
+
+    test_game_teardown(&game);
+}
+
+static int sum_target_hit_counts(GameState *state)
+{
+    int total = 0;
+    for (int index = 0; index < state->gamedata.current_level.entities.count; index++) {
+        const Entity *entity = &state->gamedata.current_level.entities.data[index];
+        /* is_target/hit_count start as blueprint-only defaults -- never
+         * copied onto the instance attrs -- so a scoped lookup (falling
+         * back from instance to blueprint) is required, not a plain
+         * attr_get, which would only ever see the instance override
+         * add_attr writes once an entity has actually been hit. */
+        const AttrSet *defaults = entity_resolve_defaults(state, entity->id);
+        if (attr_get_scoped_bool(&entity->attrs, defaults, "is_target", false)) {
+            total += attr_get_scoped_int(&entity->attrs, defaults, "hit_count", 0);
+        }
+    }
+    return total;
+}
+
+void test_integration_wait_inside_for_each(void)
+{
+    /* A single for_each (bind="target", 3 matches) whose body increments
+     * the bound entity's hit_count then waits 0.2s (12 frames) staggers
+     * one hit per ~12 frames -- proving the for_each's bound entity and
+     * scan cursor survive suspend/resume rather than restarting or
+     * losing the loop. */
+    static const char *gamedata =
+        "[[blueprint]]\n"
+        "name = \"owner\"\n"
+        "texture = \"t.png\"\n"
+        "src = [0, 0, 16, 16]\n"
+        "\n"
+        "[[blueprint.rule]]\n"
+        "trigger = \"on_spawn\"\n"
+        "actions = [{ for_each = \"entities\", bind = \"target\", conditions = [\"attr:is_target\"], do = "
+        "[\"add_attr:target.hit_count,1\", \"wait:0.2\"] }]\n"
+        "\n"
+        "[[blueprint]]\n"
+        "name = \"target_entity\"\n"
+        "texture = \"t.png\"\n"
+        "src = [0, 0, 16, 16]\n"
+        "is_target = true\n"
+        "hit_count = 0\n"
+        "\n"
+        "[[level]]\n"
+        "name = \"test\"\n"
+        "size = [320, 240]\n"
+        "\n"
+        "[[level.entity]]\n"
+        "blueprint = \"owner\"\n"
+        "pos = [10, 10]\n"
+        "\n"
+        "[[level.entity]]\n"
+        "blueprint = \"target_entity\"\n"
+        "pos = [20, 10]\n"
+        "\n"
+        "[[level.entity]]\n"
+        "blueprint = \"target_entity\"\n"
+        "pos = [30, 10]\n"
+        "\n"
+        "[[level.entity]]\n"
+        "blueprint = \"target_entity\"\n"
+        "pos = [40, 10]\n";
+
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, gamedata));
+
+    /* First iteration runs synchronously before the first suspend. */
+    TEST_ASSERT_EQUAL_INT(1, sum_target_hit_counts(&game.state));
+
+    InputState idle = {0};
+    test_advance_frames(&game, idle, 4); /* well short of the 12-frame wait */
+    TEST_ASSERT_EQUAL_INT(1, sum_target_hit_counts(&game.state));
+
+    test_advance_frames(&game, idle, 12); /* 16 total -- past the first wait, short of the second (due ~24) */
+    TEST_ASSERT_EQUAL_INT(2, sum_target_hit_counts(&game.state));
+
+    test_advance_frames(&game, idle, 12); /* 28 total -- past the second wait (due ~24) */
+    TEST_ASSERT_EQUAL_INT(3, sum_target_hit_counts(&game.state));
+
+    test_game_teardown(&game);
+}
+
+void test_integration_two_entities_wait_independently(void)
+{
+    /* Two entities each start their own on_spawn wait of a different
+     * duration; each must complete only at its own time, proving
+     * continuations resolve independently by entity id/rule index
+     * rather than sharing or crossing state. */
+    static const char *gamedata = "[[blueprint]]\n"
+                                  "name = \"waiter_short\"\n"
+                                  "texture = \"t.png\"\n"
+                                  "src = [0, 0, 16, 16]\n"
+                                  "\n"
+                                  "[[blueprint.rule]]\n"
+                                  "trigger = \"on_spawn\"\n"
+                                  "actions = [\"wait:0.1\", \"set_flag:short_done\"]\n"
+                                  "\n"
+                                  "[[blueprint]]\n"
+                                  "name = \"waiter_long\"\n"
+                                  "texture = \"t.png\"\n"
+                                  "src = [0, 0, 16, 16]\n"
+                                  "\n"
+                                  "[[blueprint.rule]]\n"
+                                  "trigger = \"on_spawn\"\n"
+                                  "actions = [\"wait:0.3\", \"set_flag:long_done\"]\n"
+                                  "\n"
+                                  "[[level]]\n"
+                                  "name = \"test\"\n"
+                                  "size = [320, 240]\n"
+                                  "\n"
+                                  "[[level.entity]]\n"
+                                  "blueprint = \"waiter_short\"\n"
+                                  "pos = [10, 10]\n"
+                                  "\n"
+                                  "[[level.entity]]\n"
+                                  "blueprint = \"waiter_long\"\n"
+                                  "pos = [20, 10]\n";
+
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, gamedata));
+
+    TEST_ASSERT_FALSE(flag_get(&game.state.progression.flags, "short_done"));
+    TEST_ASSERT_FALSE(flag_get(&game.state.progression.flags, "long_done"));
+
+    InputState idle = {0};
+    test_advance_frames(&game, idle, 3); /* 0.05s -- short of both waits (6 and 18 frames) */
+    TEST_ASSERT_FALSE(flag_get(&game.state.progression.flags, "short_done"));
+    TEST_ASSERT_FALSE(flag_get(&game.state.progression.flags, "long_done"));
+
+    test_advance_frames(&game, idle, 7); /* 10 total -- past the short wait (6), short of the long one (18) */
+    TEST_ASSERT_TRUE(flag_get(&game.state.progression.flags, "short_done"));
+    TEST_ASSERT_FALSE(flag_get(&game.state.progression.flags, "long_done"));
+
+    test_advance_frames(&game, idle, 12); /* 22 total -- past the long wait (18) */
+    TEST_ASSERT_TRUE(flag_get(&game.state.progression.flags, "short_done"));
+    TEST_ASSERT_TRUE(flag_get(&game.state.progression.flags, "long_done"));
+
+    test_game_teardown(&game);
+}
+
+void test_integration_wait_entity_destroyed_drops_continuation(void)
+{
+    /* Two independent on_spawn rules on the same entity: one waits
+     * briefly then destroys it, the other waits much longer and would
+     * set a flag -- but only if the entity is still there when it
+     * wakes. Must not crash, and the post-wait flag must never fire. */
+    static const char *gamedata = "[[blueprint]]\n"
+                                  "name = \"doomed\"\n"
+                                  "texture = \"t.png\"\n"
+                                  "src = [0, 0, 16, 16]\n"
+                                  "\n"
+                                  "[[blueprint.rule]]\n"
+                                  "trigger = \"on_spawn\"\n"
+                                  "actions = [\"wait:0.5\", \"set_flag:after_wait\"]\n"
+                                  "\n"
+                                  "[[blueprint.rule]]\n"
+                                  "trigger = \"on_spawn\"\n"
+                                  "actions = [\"wait:0.1\", \"destroy\"]\n"
+                                  "\n"
+                                  "[[level]]\n"
+                                  "name = \"test\"\n"
+                                  "size = [320, 240]\n"
+                                  "\n"
+                                  "[[level.entity]]\n"
+                                  "blueprint = \"doomed\"\n"
+                                  "pos = [10, 10]\n";
+
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, gamedata));
+
+    TEST_ASSERT_FALSE(flag_get(&game.state.progression.flags, "after_wait"));
+
+    InputState idle = {0};
+    test_advance_frames(&game, idle, 10); /* past the 6-frame destroy wait, short of the 30-frame long wait */
+    const Entity *doomed = test_find_entity_by_blueprint(&game.state, "doomed");
+    TEST_ASSERT_NOT_NULL(doomed);
+    TEST_ASSERT_FALSE(attr_get_bool(&doomed->attrs, "active", true));
+    TEST_ASSERT_FALSE(flag_get(&game.state.progression.flags, "after_wait"));
+
+    test_advance_frames(&game, idle, 24); /* 34 total -- well past the long wait's 30-frame due point */
+    TEST_ASSERT_FALSE(flag_get(&game.state.progression.flags, "after_wait"));
+
+    test_game_teardown(&game);
+}

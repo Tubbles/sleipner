@@ -18,6 +18,17 @@ typedef struct {
     map_int_str entity_blueprints;
     vec_subroutine subroutines;
     vec_timer timers;
+    /* Suspended `wait:`/(S6.7c) `dialogue:` rule executions (S6.7b, D24).
+     * Lives here (not GameState) so it rides gamedata_arena and is wiped
+     * by the same arena_restore(gamedata_base) that clears rule_table on
+     * every hot-reload/level-load/level-switch -- a continuation must
+     * never survive past one of those, since entity ids and node pools
+     * are only stable within a single load. game_load_gamedata and
+     * setup_current_level_runtime (game.c) both explicitly reset this
+     * vec, matching how they already reset rule_table/entity_blueprints:
+     * the arena rewind alone does not zero this struct's own count/data
+     * fields, only the bytes it used to point at. */
+    vec_rule_continuation continuations;
     /* Tile id -> texture+src map shared by every level's tiles_ground/
      * tiles_overlay layers (D36). Indexed by tile id — see tileset.h. */
     vec_tileset_entry tileset;

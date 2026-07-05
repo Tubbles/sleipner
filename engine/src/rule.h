@@ -158,6 +158,97 @@ VEC_DECL(subroutine, Subroutine)
 /* Maps entity ID (int) to the entity's rule set (vec_rule shallow copy). */
 MAP_DECL(entity_ruleset, int, vec_rule)
 
+/* --- Suspendable rule continuations (S6.7b, D24) ---
+ *
+ * `wait:` (and, later, blocking `dialogue:`, S6.7c) needs to suspend a
+ * rule's in-progress ExecFrame stack (rule.c) across frame boundaries and
+ * resume it later. A continuation must never hold a raw pointer into
+ * anything volatile: the entity array can reallocate (S6.6 spawn) and
+ * per-batch scratch is gone by the next frame. So everything here is a
+ * stable reference (entity id, node/pool index) re-resolved at resume
+ * time, never a live pointer.
+ *
+ * ExecFrameKind is declared here (not file-local to rule.c, unlike S6.7a)
+ * because ExecFrameSnapshot needs to name it. */
+typedef enum {
+    EXEC_FRAME_SEQUENCE, /* plain ordered child list: rule/subroutine roots, an if_else branch, or a call's
+                          * subroutine roots */
+    EXEC_FRAME_REPEAT,   /* re-runs `indices` repeat_remaining more times, looping child_cursor back to 0 between
+                          * passes */
+    EXEC_FRAME_FOR_EACH, /* re-runs `indices` once per matching entity, rebinding for_each_entity_index/
+                          * for_each_scope between passes */
+} ExecFrameKind;
+
+/* One frame of a suspended ExecFrame stack, snapshotted as pool/node
+ * indices instead of pointers. `pool_id` is -1 for the rule's own
+ * action_tree, or an index into GamedataState.subroutines otherwise --
+ * this is what lets a CALL frame be snapshotted at all (S6.7a's raw
+ * vec_action_node* pointer could not be). `node_index` is -1 for a frame
+ * that runs a root list directly (the rule's own roots when pool_id==-1,
+ * or that subroutine's roots when pool_id>=0) rather than a control-flow
+ * node's children -- mirroring ExecFrame.node_index in rule.c.
+ * `else_branch` only means something when the resolved node is
+ * ACTION_IF_ELSE: which branch's children this frame is mid-way through
+ * (the condition is not re-evaluated at resume -- doing so could diverge
+ * from the branch actually taken). `for_each_entity_index`/
+ * `bound_entity_id` are EXEC_FRAME_FOR_EACH-only: the raw view-index scan
+ * cursor (best-effort restart point -- the view array may have shifted by
+ * resume time) and the stable id of the entity actually bound (used to
+ * re-resolve the correct view at resume; the continuation is dropped if
+ * that entity is gone). */
+typedef struct {
+    int pool_id;
+    int node_index;
+    int child_cursor;
+    ExecFrameKind kind;
+    bool else_branch;
+    int repeat_remaining;
+    int for_each_entity_index;
+    int bound_entity_id;
+    /* ActionContext.call_depth as of this frame's push, so the
+     * MAX_CALL_DEPTH recursion guard stays correct across a resume
+     * (e.g. a subroutine that waits, then calls another subroutine after
+     * waking) instead of resetting to 0. */
+    int call_depth;
+} ExecFrameSnapshot;
+
+VEC_DECL(exec_frame_snapshot, ExecFrameSnapshot)
+
+/* What wakes a suspended continuation. WAKE_DIALOGUE_CLOSED is reserved
+ * for S6.7c (blocking `dialogue:`) -- no action produces it yet; only
+ * WAKE_TIMER is ticked by rules_resume_continuations today. */
+typedef enum {
+    WAKE_TIMER,
+    WAKE_DIALOGUE_CLOSED,
+} WakeKind;
+
+typedef struct {
+    WakeKind kind;
+    float remaining; /* WAKE_TIMER only: seconds until due, ticked by rules_resume_continuations */
+} Wake;
+
+/* A suspended rule execution. `entity_id`/`rule_index` identify the RULE
+ * OWNER (re-resolved via map_entity_ruleset_get(rule_table, entity_id)
+ * ->data[rule_index] at resume) -- not necessarily the entity bound at
+ * the moment of suspension, which may be some other entity reached
+ * through a for_each (see ExecFrameSnapshot.bound_entity_id for that).
+ * `frames` is the live ExecFrame stack at suspend time, bottom (the
+ * rule's root sequence) to top (the frame executing the wait), so
+ * resuming replays it in the same order roots/for_each/call frames were
+ * originally pushed. `local_vars` is a plain value copy: its backing
+ * vec_attribute entries already live in the gamedata allocator (see
+ * evaluate_entity_rules), so copying the AttrSet header is a complete,
+ * safe snapshot -- nothing here is scratch- or stack-backed. */
+typedef struct {
+    int entity_id;
+    int rule_index;
+    vec_exec_frame_snapshot frames;
+    AttrSet local_vars;
+    Wake wake;
+} RuleContinuation;
+
+VEC_DECL(rule_continuation, RuleContinuation)
+
 /* --- FlagSet (global boolean flags) --- */
 typedef struct {
     Str name;
@@ -258,13 +349,33 @@ typedef struct {
      * rewinds everything else here. `local_vars` stays on the caller's
      * `alloc` (see action_node_execute / rules_evaluate_batch). */
     Allocator *progression_alloc;
-    const LocalScope *scope;            /* entity binding chain — walked by resolve_target */
-    const vec_subroutine *subroutines;  /* read-only subroutine table */
-    vec_timer *timers;                  /* mutable timer list for create_timer/destroy_timer */
-    TransitionRequest *transition;      /* written by transition action */
-    EffectQueue *effects;               /* effect channel -- not yet written by any action (S6.2 scaffold) */
+    const LocalScope *scope;           /* entity binding chain — walked by resolve_target */
+    const vec_subroutine *subroutines; /* read-only subroutine table */
+    vec_timer *timers;                 /* mutable timer list for create_timer/destroy_timer */
+    TransitionRequest *transition;     /* written by transition action */
+    EffectQueue *effects;              /* effect channel -- not yet written by any action (S6.2 scaffold) */
+    /* Sink for ACTION_WAIT (S6.7b, D24): when execution suspends, the
+     * snapshot is pushed here. nullptr is tolerated (a wait silently
+     * no-ops, logged, like the effects/transition nullptr fallbacks
+     * above) so callers that never suspend (most direct
+     * action_node_execute test callers) don't need to wire it up. */
+    vec_rule_continuation *continuations;
     int call_depth;                     /* recursion guard for call: */
     const vec_action_node *action_pool; /* pool the current tree's children/else_children indices resolve against */
+    /* Which pool `action_pool` is: -1 for the rule's own action_tree,
+     * else an index into GamedataState.subroutines. Kept in lockstep with
+     * action_pool everywhere it changes (evaluate_entity_rules,
+     * expand_call_node, rules_resume_continuations) so a continuation
+     * snapshot can record a serializable reference instead of the raw
+     * action_pool pointer. */
+    int pool_id;
+    /* Rule identity this execution belongs to -- constant across
+     * for_each/call/if_else rebinding (only for_each rebinds `entity`/
+     * `entity_index`/`scope` above). Used solely to fill in
+     * RuleContinuation.entity_id/rule_index if a wait suspends;
+     * unrelated to which entity is currently bound for simple actions. */
+    int rule_owner_entity_id;
+    int rule_index;
 } ActionContext;
 
 [[nodiscard]] bool action_node_execute(Diag *diag, Allocator *alloc, const ActionNode *node, ActionContext context);
@@ -291,4 +402,38 @@ void rules_evaluate_batch(Diag *diag,
                           vec_timer *timers,
                           Allocator *scratch_alloc,
                           TransitionRequest *transition,
-                          EffectQueue *effects);
+                          EffectQueue *effects,
+                          vec_rule_continuation *continuations);
+
+/* --- Continuation resume pass (S6.7b, D24) ---
+ * Must run before normal trigger detection/evaluation each frame: ticks
+ * every WAKE_TIMER continuation's `remaining` down by delta_time, and for
+ * each one that becomes due, re-resolves its entity by id (dropping the
+ * continuation silently if it's gone), rebuilds its ExecFrame stack from
+ * the snapshot, and resumes execution. A continuation that completes runs
+ * its rule's remaining sibling roots (still per-root isolated, see
+ * execute_rule_roots in rule.c); one that suspends again (another wait)
+ * is replaced by the fresh snapshot. `views`/`view_count` must be built
+ * the same way the caller builds them for rules_evaluate_batch (same
+ * frame, same entity array) -- see game.c's build_entity_views.
+ * `event_queue` receives any events a resumed action fires (fire_event,
+ * destroy, defeat); the caller should feed these into the same frame's
+ * own trigger cascade, mirroring how rules_evaluate_batch's internal
+ * cascade already handles events fired by normally-triggered rules. No
+ * scratch allocator is needed here -- nothing but `continuations` itself
+ * (via `alloc`) ever grows. */
+void rules_resume_continuations(Diag *diag,
+                                Allocator *alloc,
+                                EntityView *views,
+                                int view_count,
+                                vec_trigger_event *event_queue,
+                                FlagSet *flags,
+                                AttrSet *global_vars,
+                                Allocator *progression_alloc,
+                                map_entity_ruleset *rule_table,
+                                const vec_subroutine *subroutines,
+                                vec_timer *timers,
+                                TransitionRequest *transition,
+                                EffectQueue *effects,
+                                vec_rule_continuation *continuations,
+                                float delta_time);

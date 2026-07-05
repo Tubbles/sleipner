@@ -36,6 +36,8 @@ VEC_IMPL(rule, Rule)
 VEC_IMPL(trigger_event, TriggerEvent)
 VEC_IMPL(subroutine, Subroutine)
 VEC_IMPL(timer, Timer)
+VEC_IMPL(exec_frame_snapshot, ExecFrameSnapshot)
+VEC_IMPL(rule_continuation, RuleContinuation)
 MAP_IMPL(entity_ruleset, int, vec_rule, map_hash_int, map_eq_int)
 
 /* ---- FlagSet ---- */
@@ -1463,21 +1465,14 @@ static bool execute_set_var_action(Diag *diag, Allocator *alloc, const ActionNod
  * rather than spread across nested C stack frames. That plain-data shape
  * is the prerequisite D24's suspendable continuations need. */
 
-typedef enum {
-    EXEC_FRAME_SEQUENCE, /* plain ordered child list: rule/subroutine roots, an if_else branch, or a call's
-                          * subroutine roots */
-    EXEC_FRAME_REPEAT,   /* re-runs `indices` repeat_remaining more times, looping child_cursor back to 0 between
-                          * passes */
-    EXEC_FRAME_FOR_EACH, /* re-runs `indices` once per matching entity, rebinding for_each_entity_index/
-                          * for_each_scope between passes */
-} ExecFrameKind;
-
-/* `context.action_pool` is carried here as a raw vec_action_node* -- a CALL
- * frame's pool switch is just a different pointer value. That is enough to
- * execute correctly today because the pool is read-only at runtime, but a
- * raw pointer can't be serialized into a save-state; S6.7b (real suspension)
- * will need to replace it with a subroutine index (-1 = main tree) so a
- * frame is snapshotable on its own. */
+/* ExecFrameKind lives in rule.h now (S6.7b, D24): ExecFrameSnapshot there
+ * needs to name it, and GamedataState needs ExecFrameSnapshot.
+ *
+ * `context.action_pool` is still carried as a raw vec_action_node* -- a CALL
+ * frame's pool switch is just a different pointer value, valid because the
+ * pool is read-only at runtime. `context.pool_id` (also new in S6.7b) is
+ * the serializable twin kept in lockstep with it: -1 for the rule's own
+ * tree, else a subroutine index -- see ActionContext's doc comment. */
 typedef struct ExecFrame {
     /* Fields ordered largest-alignment-first (pointers and the LocalScope/
      * ActionContext aggregates) then the plain ints, per
@@ -1806,6 +1801,7 @@ expand_call_node(Diag *diag, const ActionNode *node, ActionContext context, Exec
         ActionContext sub_ctx = context;
         sub_ctx.call_depth++;
         sub_ctx.action_pool = &sub->action_tree.nodes;
+        sub_ctx.pool_id = sub_index;
         ExecFrame frame = {
             .kind = EXEC_FRAME_SEQUENCE,
             .indices = &sub->action_tree.roots,
@@ -1818,31 +1814,150 @@ expand_call_node(Diag *diag, const ActionNode *node, ActionContext context, Exec
     return true;
 }
 
+/* --- Suspend (S6.7b, D24) ---
+ *
+ * ExecResult is the tri-state run_frame_stack/dispatch_or_expand_node
+ * report internally: EXEC_ERROR is 0 so every existing bool-returning
+ * caller (action_node_execute, and every test that does
+ * `TEST_ASSERT_TRUE(action_node_execute(...))`) keeps working unchanged --
+ * 0 is falsy, both EXEC_COMPLETE and EXEC_SUSPENDED are truthy. No
+ * existing test exercises `wait:`, so none of them can observe the
+ * COMPLETE/SUSPENDED distinction; only the new rule-root-sequence runner
+ * (execute_rule_roots, below) and the resume pass care about it. */
+typedef enum {
+    EXEC_ERROR = 0,
+    EXEC_COMPLETE,
+    EXEC_SUSPENDED,
+} ExecResult;
+
+static int find_view_by_entity_id(int entity_id, const EntityView *views, int view_count)
+{
+    for (int index = 0; index < view_count; index++) {
+        if (views[index].entity->id == entity_id) {
+            return index;
+        }
+    }
+    return -1;
+}
+
+/* Pure ExecFrame -> ExecFrameSnapshot mapping: pool_id/node_index/
+ * child_cursor/kind/repeat_remaining copy straight across; else_branch
+ * and the two for_each fields need a lookup. `else_branch` only means
+ * something for an ACTION_IF_ELSE frame -- read the node it belongs to
+ * (not needed for a root-list frame, node_index -1) to tell whether
+ * `indices` is currently pointing at `children` or `else_children`,
+ * since the condition must NOT be re-evaluated at resume (it could
+ * diverge from the branch actually taken). */
+static void snapshot_exec_frame(const ExecFrame *frame, ExecFrameSnapshot *out)
+{
+    *out = (ExecFrameSnapshot){
+        .pool_id = frame->context.pool_id,
+        .node_index = frame->node_index,
+        .child_cursor = frame->child_cursor,
+        .kind = frame->kind,
+        .repeat_remaining = frame->repeat_remaining,
+        .for_each_entity_index = frame->for_each_entity_index,
+        .bound_entity_id = -1,
+        .call_depth = frame->context.call_depth,
+    };
+    if (frame->kind == EXEC_FRAME_FOR_EACH && frame->for_each_entity_index >= 0) {
+        out->bound_entity_id = frame->context.views[frame->for_each_entity_index].entity->id;
+    }
+    if (frame->node_index >= 0) {
+        const ActionNode *node = &frame->context.action_pool->data[frame->node_index];
+        if (node->type == ACTION_IF_ELSE) {
+            out->else_branch = frame->indices == &node->else_children;
+        }
+    }
+}
+
+static bool build_continuation_snapshot(Allocator *alloc,
+                                        const ExecFrame *frame_stack,
+                                        int frame_top,
+                                        vec_exec_frame_snapshot *out_frames)
+{
+    *out_frames = vec_exec_frame_snapshot_new(*alloc);
+    for (int index = 0; index < frame_top; index++) {
+        ExecFrameSnapshot snapshot;
+        snapshot_exec_frame(&frame_stack[index], &snapshot);
+        if (!vec_exec_frame_snapshot_push(out_frames, snapshot)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/* ACTION_WAIT: parses the duration, snapshots the CURRENT live frame
+ * stack (frame_stack[0..frame_top)) -- at this point the top frame's
+ * child_cursor already points past the wait node, exactly the position
+ * resuming should continue from, so no special marker is needed -- and
+ * pushes a RuleContinuation. context.rule_owner_entity_id/rule_index
+ * identify the rule regardless of how deep inside for_each/call frames
+ * the wait is nested (those rebind context.entity, never these two). */
+static ExecResult handle_wait_action(Diag *diag,
+                                     Allocator *alloc,
+                                     const ActionNode *node,
+                                     ActionContext context,
+                                     const ExecFrame *frame_stack,
+                                     int frame_top)
+{
+    float duration = 0.0F;
+    if (!parse_strict_float(node->argument.ptr, &duration)) {
+        error_set(diag->error, "wait: invalid duration '%s'", node->argument.ptr);
+        return EXEC_ERROR;
+    }
+    if (!context.continuations) {
+        debug_log(diag->debug, "wait: no continuation storage -- skipping wait");
+        return EXEC_COMPLETE;
+    }
+    RuleContinuation continuation = {
+        .entity_id = context.rule_owner_entity_id,
+        .rule_index = context.rule_index,
+        .local_vars = context.local_vars ? *context.local_vars : (AttrSet){0},
+        .wake = {.kind = WAKE_TIMER, .remaining = duration},
+    };
+    if (!build_continuation_snapshot(alloc, frame_stack, frame_top, &continuation.frames)) {
+        error_set(diag->error, "wait: allocation failed snapshotting the execution frame stack");
+        return EXEC_ERROR;
+    }
+    context.continuations->alloc = *alloc;
+    if (!vec_rule_continuation_push(context.continuations, continuation)) {
+        error_set(diag->error, "wait: allocation failed pushing continuation");
+        return EXEC_ERROR;
+    }
+    return EXEC_SUSPENDED;
+}
+
 /* Dispatches `node`: a simple action runs immediately, a control-flow node
- * pushes a new frame for its children. Used both for a frame's own children
- * (run_frame_stack, below) and for action_node_execute's top-level node.
- * `node_index` is node's index in context.action_pool if known, or -1 if
- * `node` was supplied directly rather than reached via a parent frame's
- * `indices` (see ExecFrame.node_index). */
-static bool dispatch_or_expand_node(Diag *diag,
-                                    Allocator *alloc,
-                                    const ActionNode *node,
-                                    int node_index,
-                                    ActionContext context,
-                                    ExecFrame *frame_stack,
-                                    int *frame_top)
+ * pushes a new frame for its children, ACTION_WAIT suspends. Used both for
+ * a frame's own children (run_frame_stack, below) and for
+ * action_node_execute's top-level node. `node_index` is node's index in
+ * context.action_pool if known, or -1 if `node` was supplied directly
+ * rather than reached via a parent frame's `indices` (see
+ * ExecFrame.node_index). */
+static ExecResult dispatch_or_expand_node(Diag *diag,
+                                          Allocator *alloc,
+                                          const ActionNode *node,
+                                          int node_index,
+                                          ActionContext context,
+                                          ExecFrame *frame_stack,
+                                          int *frame_top)
 {
     switch (node->type) {
     case ACTION_IF_ELSE:
-        return expand_if_else_node(diag, node, node_index, context, frame_stack, frame_top);
+        return expand_if_else_node(diag, node, node_index, context, frame_stack, frame_top) ? EXEC_COMPLETE
+                                                                                            : EXEC_ERROR;
     case ACTION_REPEAT:
-        return expand_repeat_node(diag, node, node_index, context, frame_stack, frame_top);
+        return expand_repeat_node(diag, node, node_index, context, frame_stack, frame_top) ? EXEC_COMPLETE : EXEC_ERROR;
     case ACTION_FOR_EACH:
-        return expand_for_each_node(diag, node, node_index, context, frame_stack, frame_top);
+        return expand_for_each_node(diag, node, node_index, context, frame_stack, frame_top) ? EXEC_COMPLETE
+                                                                                             : EXEC_ERROR;
     case ACTION_CALL:
-        return expand_call_node(diag, node, context, frame_stack, frame_top);
+        return expand_call_node(diag, node, context, frame_stack, frame_top) ? EXEC_COMPLETE : EXEC_ERROR;
+    case ACTION_WAIT:
+        return handle_wait_action(diag, alloc, node, context, frame_stack, *frame_top);
     default:
-        return dispatch_simple_action(diag, alloc, node, context);
+        return dispatch_simple_action(diag, alloc, node, context) ? EXEC_COMPLETE : EXEC_ERROR;
     }
 }
 
@@ -1851,17 +1966,29 @@ static bool frame_has_more_children(const ExecFrame *frame)
     return frame->child_cursor < frame->indices->count;
 }
 
-/* Runs every frame on `frame_stack` to completion: pops exhausted SEQUENCE
- * frames, loops REPEAT frames back to child_cursor 0 while passes remain,
- * and re-binds FOR_EACH frames to their next matching entity, until the
- * stack empties or an action reports failure. A failure aborts the whole
- * execution immediately -- every pending frame, at every nesting level, is
- * abandoned -- matching the original recursive implementation, where a
- * `return false` unwound every enclosing C call. */
-static bool run_frame_stack(Diag *diag, Allocator *alloc, ExecFrame *frame_stack, int frame_top)
+/* Runs every frame on `frame_stack` until the stack unwinds to exactly
+ * `boundary` frames and has nothing left to do, or a wait suspends.
+ * `boundary` is how far an ERROR unwinds before this function stops
+ * treating it as fatal and keeps going: boundary=0 (action_node_execute's
+ * single-node entry point) means an error anywhere drains the whole
+ * stack and is reported -- the original all-or-nothing semantics.
+ * boundary=1 (execute_rule_roots, below) means an error unwinds back down
+ * to exactly the bottom frame (the rule's root sequence) and CONTINUES
+ * with that frame's next child -- i.e. a failure anywhere inside root K,
+ * however deeply nested, aborts only root K, matching S6.7a's per-root
+ * error isolation (a root's failure never aborted sibling roots, each of
+ * which used to run via its own fully separate action_node_execute call
+ * with frame_top starting fresh at 0; unwinding to boundary=1 here
+ * reproduces exactly that, but within one shared stack so a wait can
+ * still suspend the remaining roots). A suspend leaves frame_stack/
+ * frame_top exactly as they were at the point of suspension -- the
+ * caller does not need them again, the continuation was already pushed
+ * inside handle_wait_action. */
+static ExecResult run_frame_stack(Diag *diag, Allocator *alloc, ExecFrame *frame_stack, int *frame_top, int boundary)
 {
-    while (frame_top > 0) {
-        ExecFrame *frame = &frame_stack[frame_top - 1];
+    bool had_error = false;
+    while (*frame_top > 0) {
+        ExecFrame *frame = &frame_stack[*frame_top - 1];
         if (!frame_has_more_children(frame)) {
             if (frame->kind == EXEC_FRAME_REPEAT && frame->repeat_remaining > 1) {
                 frame->repeat_remaining--;
@@ -1871,27 +1998,285 @@ static bool run_frame_stack(Diag *diag, Allocator *alloc, ExecFrame *frame_stack
             if (frame->kind == EXEC_FRAME_FOR_EACH && advance_for_each_frame(frame)) {
                 continue;
             }
-            frame_top--;
+            (*frame_top)--;
             continue;
         }
         int child_index = frame->indices->data[frame->child_cursor++];
         const ActionNode *child = &frame->context.action_pool->data[child_index];
         ActionContext child_context = frame->context;
-        if (!dispatch_or_expand_node(diag, alloc, child, child_index, child_context, frame_stack, &frame_top)) {
-            return false;
+        ExecResult child_result =
+            dispatch_or_expand_node(diag, alloc, child, child_index, child_context, frame_stack, frame_top);
+        if (child_result == EXEC_SUSPENDED) {
+            return EXEC_SUSPENDED;
+        }
+        if (child_result == EXEC_ERROR) {
+            had_error = true;
+            *frame_top = boundary;
         }
     }
-    return true;
+    if (had_error && boundary == 0) {
+        return EXEC_ERROR;
+    }
+    return EXEC_COMPLETE;
+}
+
+/* Runs an entire rule's roots as one ordered sequence sharing a single
+ * frame stack (rather than S6.7a's one-action_node_execute-call-per-root
+ * loop), so a wait deep inside root K correctly suspends roots K+1.. --
+ * they are simply the bottom frame's not-yet-run children, captured by
+ * its own child_cursor in the continuation snapshot like any other frame.
+ * boundary=1 preserves S6.7a's per-root error isolation -- see
+ * run_frame_stack's doc comment. */
+static ExecResult execute_rule_roots(Diag *diag, Allocator *alloc, const Rule *rule, ActionContext context)
+{
+    ExecFrame frame_stack[MAX_EXEC_STACK];
+    frame_stack[0] = (ExecFrame){
+        .kind = EXEC_FRAME_SEQUENCE,
+        .indices = &rule->action_tree.roots,
+        .node_index = -1,
+        .context = context,
+    };
+    int frame_top = 1;
+    return run_frame_stack(diag, alloc, frame_stack, &frame_top, 1);
 }
 
 bool action_node_execute(Diag *diag, Allocator *alloc, const ActionNode *node, ActionContext context)
 {
     ExecFrame frame_stack[MAX_EXEC_STACK];
     int frame_top = 0;
-    if (!dispatch_or_expand_node(diag, alloc, node, -1, context, frame_stack, &frame_top)) {
+    ExecResult result = dispatch_or_expand_node(diag, alloc, node, -1, context, frame_stack, &frame_top);
+    if (result != EXEC_SUSPENDED && result != EXEC_ERROR) {
+        result = run_frame_stack(diag, alloc, frame_stack, &frame_top, 0);
+    }
+    return result != EXEC_ERROR;
+}
+
+/* --- Resume (S6.7b, D24) ---
+ *
+ * Re-derives the pool a snapshot frame resolves against: -1 means the
+ * rule's own action_tree, otherwise a subroutine index. Node pools never
+ * change shape at runtime -- only at load/hot-reload, which drops every
+ * continuation first (see GamedataState.continuations) -- so an index
+ * captured at suspend time is always still valid to re-dereference. */
+static bool resolve_snapshot_pool(const ExecFrameSnapshot *snapshot,
+                                  const Rule *rule,
+                                  const vec_subroutine *subroutines,
+                                  const vec_action_node **out_pool,
+                                  const vec_int **out_roots)
+{
+    if (snapshot->pool_id < 0) {
+        *out_pool = &rule->action_tree.nodes;
+        *out_roots = &rule->action_tree.roots;
+        return true;
+    }
+    if (!subroutines || snapshot->pool_id >= subroutines->count) {
         return false;
     }
-    return run_frame_stack(diag, alloc, frame_stack, frame_top);
+    *out_pool = &subroutines->data[snapshot->pool_id].action_tree.nodes;
+    *out_roots = &subroutines->data[snapshot->pool_id].action_tree.roots;
+    return true;
+}
+
+/* Rebuilds one live ExecFrame directly into its final stack slot
+ * (`stable_slot`, always `&frame_stack[k]` -- never reallocated, mirroring
+ * expand_for_each_node's own "operate on the pushed copy's stable slot"
+ * pattern) from its snapshot. `ambient` is the ActionContext accumulated
+ * from parent frames so far; this frame's own action_pool/pool_id are set
+ * on it before use, and any FOR_EACH rebinding this frame performs is
+ * written back into `*ambient` so the NEXT frame up inherits it --
+ * exactly how a live for_each frame's rebound `.context` flows into its
+ * children via `ActionContext child_context = frame->context;` in
+ * run_frame_stack. Returns false only when a FOR_EACH frame's bound
+ * entity no longer exists -- the caller drops the whole continuation. */
+static bool restore_exec_frame(const ExecFrameSnapshot *snapshot,
+                               const Rule *rule,
+                               const vec_subroutine *subroutines,
+                               ActionContext *ambient,
+                               ExecFrame *stable_slot)
+{
+    const vec_action_node *pool = nullptr;
+    const vec_int *roots = nullptr;
+    if (!resolve_snapshot_pool(snapshot, rule, subroutines, &pool, &roots)) {
+        return false;
+    }
+    ambient->action_pool = pool;
+    ambient->pool_id = snapshot->pool_id;
+    ambient->call_depth = snapshot->call_depth;
+
+    *stable_slot = (ExecFrame){
+        .kind = snapshot->kind,
+        .node_index = snapshot->node_index,
+        .child_cursor = snapshot->child_cursor,
+        .repeat_remaining = snapshot->repeat_remaining,
+        .for_each_entity_index = snapshot->for_each_entity_index,
+        .context = *ambient,
+    };
+
+    const ActionNode *node = snapshot->node_index >= 0 ? &pool->data[snapshot->node_index] : nullptr;
+    if (!node) {
+        stable_slot->indices = roots;
+    } else if (node->type == ACTION_IF_ELSE) {
+        stable_slot->indices = snapshot->else_branch ? &node->else_children : &node->children;
+    } else {
+        stable_slot->indices = &node->children;
+    }
+
+    if (snapshot->kind != EXEC_FRAME_FOR_EACH) {
+        *ambient = stable_slot->context;
+        return true;
+    }
+    /* A FOR_EACH frame's node_index is always >= 0 by construction --
+     * expand_for_each_node only ever pushes one from a real node
+     * dispatch, never as a root list -- but the snapshot is plain data,
+     * so guard explicitly rather than trust that invariant across the
+     * serialize/restore boundary. */
+    if (!node) {
+        return false;
+    }
+
+    stable_slot->for_each_node = node;
+    int bound_view = find_view_by_entity_id(snapshot->bound_entity_id, ambient->views, ambient->view_count);
+    if (bound_view < 0) {
+        return false;
+    }
+    bool has_bind = node->second_argument.len > 0;
+    stable_slot->for_each_scope = (LocalScope){
+        .bind_name = node->second_argument,
+        .entity_index = has_bind ? bound_view : -1,
+        .outer = ambient->scope,
+    };
+    if (has_bind) {
+        stable_slot->context.scope = &stable_slot->for_each_scope;
+    } else {
+        stable_slot->context.entity = ambient->views[bound_view].entity;
+        stable_slot->context.entity_index = bound_view;
+    }
+    *ambient = stable_slot->context;
+    return true;
+}
+
+/* Replays a continuation's whole frame stack (bottom to top, i.e. in the
+ * same order the original push_frame calls built it) into `frame_stack`,
+ * then resumes execution with the same boundary=1 root-sequence isolation
+ * execute_rule_roots uses -- the bottom frame here is always that same
+ * rule-root sequence. Returns EXEC_ERROR (caller drops the continuation)
+ * if any frame fails to restore, most commonly a FOR_EACH-bound entity
+ * that no longer exists. */
+static ExecResult resume_one_continuation(Diag *diag,
+                                          Allocator *alloc,
+                                          const RuleContinuation *continuation,
+                                          const Rule *rule,
+                                          ActionContext base_context,
+                                          ExecFrame *frame_stack,
+                                          int *out_frame_top)
+{
+    ActionContext ambient = base_context;
+    int frame_top = 0;
+    for (int index = 0; index < continuation->frames.count; index++) {
+        if (!restore_exec_frame(&continuation->frames.data[index], rule, base_context.subroutines, &ambient,
+                                &frame_stack[frame_top])) {
+            return EXEC_ERROR;
+        }
+        frame_top++;
+    }
+    *out_frame_top = frame_top;
+    return run_frame_stack(diag, alloc, frame_stack, out_frame_top, 1);
+}
+
+static void remove_continuation_at(vec_rule_continuation *continuations, int index)
+{
+    continuations->data[index] = continuations->data[continuations->count - 1];
+    continuations->count--;
+}
+
+void rules_resume_continuations(Diag *diag,
+                                Allocator *alloc,
+                                EntityView *views,
+                                int view_count,
+                                vec_trigger_event *event_queue,
+                                FlagSet *flags,
+                                AttrSet *global_vars,
+                                Allocator *progression_alloc,
+                                map_entity_ruleset *rule_table,
+                                const vec_subroutine *subroutines,
+                                vec_timer *timers,
+                                TransitionRequest *transition,
+                                EffectQueue *effects,
+                                vec_rule_continuation *continuations,
+                                float delta_time)
+{
+    int initial_count = continuations->count;
+    for (int index = initial_count - 1; index >= 0; index--) {
+        RuleContinuation *live = &continuations->data[index];
+        if (live->wake.kind != WAKE_TIMER) {
+            continue; /* WAKE_DIALOGUE_CLOSED: no producer yet (S6.7c) */
+        }
+        live->wake.remaining -= delta_time;
+        if (live->wake.remaining > 0.0F) {
+            continue;
+        }
+
+        /* Value copy: the resume below may push a NEW continuation onto
+         * this very vec (another wait) and reallocate its backing array,
+         * so no pointer into `continuations` may survive across it (see
+         * CLAUDE.md "Vec growth and pointer stability"). */
+        RuleContinuation due = *live;
+        remove_continuation_at(continuations, index);
+
+        int entity_view = find_view_by_entity_id(due.entity_id, views, view_count);
+        /* An inactive entity (destroyed while its wait was pending) must
+         * drop the continuation exactly like a genuinely-gone one --
+         * normal (non-continuation) rule evaluation already skips
+         * inactive entities the same way (rules_evaluate_batch's
+         * "active" check above), so a suspended rule shouldn't get a
+         * free pass to keep running just because it started before the
+         * entity was destroyed. */
+        bool entity_alive = entity_view >= 0 && attr_get_scoped_bool(&views[entity_view].entity->attrs,
+                                                                     views[entity_view].defaults, "active", true);
+        const vec_rule *ruleset = entity_alive ? map_entity_ruleset_get(rule_table, due.entity_id) : nullptr;
+        const Rule *rule = (ruleset && due.rule_index >= 0 && due.rule_index < ruleset->count)
+                               ? &ruleset->data[due.rule_index]
+                               : nullptr;
+        if (!entity_alive || !rule) {
+            debug_log(diag->debug, "wait: entity %d rule %d gone at wake -- dropping continuation", due.entity_id,
+                      due.rule_index);
+            continue;
+        }
+
+        ActionContext base_context = {
+            .entity = views[entity_view].entity,
+            .entity_index = entity_view,
+            .views = views,
+            .view_count = view_count,
+            .flags = flags,
+            .event_queue = event_queue,
+            .local_vars = &due.local_vars,
+            .global_vars = global_vars,
+            .progression_alloc = progression_alloc,
+            .subroutines = subroutines,
+            .timers = timers,
+            .transition = transition,
+            .effects = effects,
+            .continuations = continuations,
+            .pool_id = -1,
+            .action_pool = &rule->action_tree.nodes,
+            .rule_owner_entity_id = due.entity_id,
+            .rule_index = due.rule_index,
+        };
+        ExecFrame frame_stack[MAX_EXEC_STACK];
+        int frame_top = 0;
+        /* On EXEC_COMPLETE, the rule's remaining sibling roots have
+         * already run: resume_one_continuation's run_frame_stack call
+         * keeps frame_stack[0] (the rule's root sequence, restored at
+         * whatever child_cursor the wait left it at) on the stack and
+         * only stops once it drains completely, so root K+1.. execute as
+         * part of this same call -- no separate step needed here. */
+        ExecResult result = resume_one_continuation(diag, alloc, &due, rule, base_context, frame_stack, &frame_top);
+        if (result == EXEC_SUSPENDED) {
+            continue;
+        }
+        attr_set_free(alloc, &due.local_vars);
+    }
 }
 
 /* ---- Evaluation loop ---- */
@@ -1925,7 +2310,8 @@ static void evaluate_entity_rules(Diag *diag,
                                   const vec_subroutine *subroutines,
                                   vec_timer *timers,
                                   TransitionRequest *transition,
-                                  EffectQueue *effects)
+                                  EffectQueue *effects,
+                                  vec_rule_continuation *continuations)
 {
     const vec_rule *ruleset = map_entity_ruleset_get(rule_table, entity->id);
     if (!ruleset) {
@@ -1960,7 +2346,11 @@ static void evaluate_entity_rules(Diag *diag,
             .timers = timers,
             .transition = transition,
             .effects = effects,
+            .continuations = continuations,
             .action_pool = &rule->action_tree.nodes,
+            .pool_id = -1,
+            .rule_owner_entity_id = entity->id,
+            .rule_index = rule_index,
         };
         debug_log(diag->debug, "Rule triggered for entity %d (type: %s), rule %d", entity_index,
                   entity->blueprint_name.ptr, rule_index);
@@ -1971,11 +2361,10 @@ static void evaluate_entity_rules(Diag *diag,
         }
         debug_log(diag->debug, "Executing actions for rule %d on entity %d (type: %s)", rule_index, entity_index,
                   entity->blueprint_name.ptr);
-        for (int root_index = 0; root_index < rule->action_tree.roots.count; root_index++) {
-            int node_index = rule->action_tree.roots.data[root_index];
-            (void)action_node_execute(diag, alloc, &rule->action_tree.nodes.data[node_index], act_ctx);
+        ExecResult result = execute_rule_roots(diag, alloc, rule, act_ctx);
+        if (result != EXEC_SUSPENDED) {
+            attr_set_free(alloc, &local_vars);
         }
-        attr_set_free(alloc, &local_vars);
     }
 }
 
@@ -1993,7 +2382,8 @@ void rules_evaluate_batch(Diag *diag,
                           vec_timer *timers,
                           Allocator *scratch_alloc,
                           TransitionRequest *transition,
-                          EffectQueue *effects)
+                          EffectQueue *effects,
+                          vec_rule_continuation *continuations)
 {
     vec_trigger_event pending_events = vec_trigger_event_new(*scratch_alloc);
     for (int event_index = 0; event_index < event_count; event_index++) {
@@ -2022,7 +2412,7 @@ void rules_evaluate_batch(Diag *diag,
             }
             evaluate_entity_rules(diag, alloc, entity, entity_index, views, view_count, flags, global_vars,
                                   progression_alloc, &pending_events, &next_events, rule_table, subroutines, timers,
-                                  transition, effects);
+                                  transition, effects, continuations);
         }
 
         pending_events = next_events;
