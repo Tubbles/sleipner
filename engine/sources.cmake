@@ -40,6 +40,7 @@ set(ENGINE_SOURCE_FILES
     font_cache.c
     frame.c
     game.c
+    hud.c
     input.c
     input_func.c
     input_func_toml.c

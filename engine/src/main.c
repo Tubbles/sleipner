@@ -50,6 +50,7 @@ const char *__lsan_default_suppressions(void)
 #include "frame.h"
 #include "settings.h"
 #include "game.h"
+#include "hud.h"
 #include "input.h"
 #include "input_func.h"
 #include "keyboard_widget.h"
@@ -377,6 +378,26 @@ static void draw_debug_collision_boxes(const GameState *state, const Level *leve
         Vector2 pos = level->entities.data[index].position;
         DrawRectangle((int)pos.x - 1, (int)pos.y - 1, 3, 3, WHITE);
     }
+}
+
+/* HUD hearts (S6.12a, D34), play-mode only: reads the player's health in
+ * halves and draws the placeholder heart row. `max_health` prefers the
+ * player's scoped `max_health` attr (set from an authored blueprint
+ * `health = [current, max]` pair, see blueprint.c's parse_health) and
+ * falls back to the blueprint's own default `health` attr -- the
+ * un-damaged value a fresh instance starts at -- for a blueprint that
+ * never authored a max_health at all. */
+static void draw_player_hud(const GameState *state)
+{
+    const Entity *player = game_get_player_const(state);
+    if (!player) {
+        return;
+    }
+    const AttrSet *player_defaults = entity_resolve_defaults(state, player->id);
+    float current_health = attr_get_scoped_float(&player->attrs, player_defaults, "health", 0.0F);
+    float blueprint_default_health = attr_get_float(player_defaults, "health", current_health);
+    float max_health = attr_get_scoped_float(&player->attrs, player_defaults, "max_health", blueprint_default_health);
+    hud_draw_hearts(hud_compute_hearts((HudPlayerHealth){.current = current_health, .max = max_health}));
 }
 
 static void draw_debug_info(GameState *state, RectU32 game_bounds)
@@ -1162,6 +1183,9 @@ static void render_frame(GameState *state, RenderParams params)
     DrawTexturePro(params.target.texture,
                    (Rectangle){0, 0, (float)params.game_bounds.width, -(float)params.game_bounds.height}, upscale_dest,
                    (Vector2){0, 0}, 0.0F, WHITE);
+    if (!state->editor_mode) {
+        draw_player_hud(state);
+    }
     if (state->debug_enabled) {
         draw_debug_info(state, params.game_bounds);
     }

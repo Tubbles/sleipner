@@ -275,6 +275,30 @@ predicate rows and MOVE reparenting).
   `data/gamedata.toml`. Also moot in practice today since no enemy
   blueprint exists yet to defeat the player at all.
 
+## HUD follow-ups
+
+- **Player blueprint has no `health`/`max_health` attrs (S6.12a, D34).**
+  `data/gamedata.toml`'s "player" blueprint authors no `health` field at
+  all today (the only `health = [100, 100]` in the file belongs to the
+  unrelated "tree" blueprint). `hud_compute_hearts` correctly renders
+  zero hearts when both values are 0 -- not a code bug -- but it means
+  the new HUD hearts row is invisible in an actual play session until
+  the player blueprint gains a `health = [current, max]` pair. Picking
+  that starting/max value is a game-balance decision (interacts with
+  existing `damage`/`defense`/`iframes` tuning), not made as part of
+  S6.12a; needs a decision, then a `data/gamedata.toml` edit through the
+  Syncthing sync procedure (CLAUDE.md's "Gamedata Sync Workflow").
+- **No heart sprite asset (S6.12a, D34).** `hud_draw_hearts`
+  (`engine/src/hud.c`) draws placeholder rectangles (filled/half-filled/
+  outlined squares). A real heart sprite would replace `draw_heart`'s
+  raylib calls with a texture draw once art exists -- no change needed
+  to the pure `hud_compute_hearts`/`hud_heart_screen_position` layer.
+- **Inventory pause-menu screen and minimap not started (S6.12b+,
+  D34).** S6.12a only covers the hearts row. The pause-menu inventory
+  grid (gamepad-navigable, per DESIGN.md's Inventory & Items open
+  questions and the "Inventory core and pickup toast" bullet above) and
+  a minimap/map screen are separate, deferred slices.
+
 ## Audio / SFX follow-ups
 
 - **`map_strv_sound` has no generic iterator.** `unload_sfx_registry`
