@@ -246,10 +246,34 @@ predicate rows and MOVE reparenting).
   to stop a soft-destroyed projectile from resuming contact damage once
   the target's i-frames lapse. `detect_melee_damage` (`game.c`) has the
   same gap on its attacker side: an entity destroyed (`ACTION_DESTROY` or
-  otherwise) while `hitbox_active_timer > 0` keeps landing melee hits for
-  the rest of that window. Low impact today (the window is
-  `ATTACK_ACTIVE_SECONDS` = 0.15s), but the same one-line fix
-  `detect_contact_damage` got would close it.
+  otherwise) while `entity_hitbox_is_active` says its hitbox is live keeps
+  landing melee hits for the rest of that window. Low impact today (the
+  window is `attack_state_timer`'s duration -- typically the attacker's
+  `attack` clip length, or `ATTACK_STATE_DEFAULT_SECONDS` = 0.15s with no
+  such clip, per S6.11b/D31), but the same one-line fix `detect_contact_damage`
+  got would close it.
+- **`draw_entities_depth_sorted`/`draw_entity`/`draw_animated_entity`
+  (`main.c`) don't gate on the `active` attr at all.** Discovered while
+  adding the death state (S6.11b, D31): a soft-destroyed entity (defeat
+  with no `death` clip, an expired projectile, `destroy_on_hit`, etc.)
+  keeps rendering every frame even though nothing updates its
+  collision/damage/rules anymore -- harmless for a fast-moving expired
+  projectile that's easy to miss, more visible for a defeated enemy that
+  should vanish. `entity_is_active`/`entity_is_visible` (`entity.c`)
+  already exist and are unit-tested, but nothing in `main.c`'s render path
+  calls either one yet -- wiring one into the depth-sort draw loop would
+  close this.
+- **Player has no `hurt`/`death` clip (S6.11b, D31).** `assets/sprites/player.png`
+  row 9 has a candidate collapse sequence (stand -> stumble -> fully down,
+  4 frames) but only ONE row -- no side/up variants the way the walk (rows
+  3-5) and new attack (rows 6-8) clips have. Authoring it as-is via the
+  existing `anim_row_offset_for_direction` scheme would read past the
+  bottom of the sheet (rows 10/11) for side/up facing. Needs either
+  direction-variant art drawn for `hurt`/`death`, or a per-clip opt-out of
+  the direction row offset (e.g. a clip flag meaning "always row as
+  authored, ignore direction") before this can be wired into
+  `data/gamedata.toml`. Also moot in practice today since no enemy
+  blueprint exists yet to defeat the player at all.
 
 ## Audio / SFX follow-ups
 

@@ -8,6 +8,8 @@ sprite_offset = [16, 16]
 behavior = "player"
 speed = 80
 solid = true
+attack_hit_frame_start = 1
+attack_hit_frame_end = 2
 
 [[blueprint.animation]]
 state = "walk"
@@ -20,6 +22,12 @@ state = "idle"
 row = 3
 frames = 1
 speed = 0
+
+[[blueprint.animation]]
+state = "attack"
+row = 6
+frames = 4
+speed = 10
 
 [[blueprint]]
 name = "tree"

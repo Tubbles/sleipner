@@ -466,31 +466,58 @@ static void behavior_static(BehaviorContext *context)
     (void)context;
 }
 
-/* How long a fresh ACTION_ATTACK press keeps the player's hitbox active
- * (S6.10b, D26). Chosen as a short swing window, well under
- * ENTITY_DEFAULT_IFRAME_SECONDS so a single swing can't double-hit a
- * target through its own i-frames. */
-#define ATTACK_ACTIVE_SECONDS 0.15F
-
-/* Player attack activation (S6.10b, D26): a fresh ACTION_ATTACK press
- * starts a timed melee swing by setting hitbox_active_timer, gated on
- * "not already mid-attack" so holding/mashing the button can't restart
- * the window every frame -- the next press only takes effect once
- * tick_combat_timers (game_update) has ticked hitbox_active_timer back
- * down to 0. The attack's direction is read live from player->facing
- * wherever the hitbox is built (entity_hitbox_region) rather than
- * captured into a separate field -- movement during the active window is
- * allowed (no movement lock in v1), so the hitbox simply tracks whatever
- * direction the player is currently facing. */
-static void update_player_attack(Entity *player, const InputState *input, const BindingStore *bindings)
+/* Seconds a clip plays for one full cycle (frames / speed), or
+ * fallback_seconds if the clip is absent or malformed (no frames, or a
+ * non-positive speed -- an "idle"-style clip authoring that can't drive a
+ * timed state). Shared by update_player_attack's attack_state_timer,
+ * begin_hurt_state's hurt_state_timer, and begin_death_state's
+ * death_state_timer below (S6.11b, D31) -- all three derive a combat
+ * timer's length from a blueprint-authored clip the same way. */
+static float anim_clip_duration(const AnimClip *clip, float fallback_seconds)
 {
-    if (player->hitbox_active_timer > 0.0F) {
+    if (!clip || clip->frames <= 0 || clip->speed <= 0.0F) {
+        return fallback_seconds;
+    }
+    return (float)clip->frames / clip->speed;
+}
+
+/* Fallback attack_state_timer length (S6.10b/S6.11b, D26/D31) when the
+ * attacker's blueprint authors no `attack` clip -- a short swing window,
+ * well under ENTITY_DEFAULT_IFRAME_SECONDS so a single swing can't
+ * double-hit a target through its own i-frames. A blueprint that DOES
+ * author an `attack` clip uses that clip's own frames/speed duration
+ * instead (see update_player_attack), so a longer/shorter clip naturally
+ * lengthens/shortens the swing. */
+#define ATTACK_STATE_DEFAULT_SECONDS 0.15F
+
+/* Player attack activation (S6.10b/S6.11b, D26/D31): a fresh ACTION_ATTACK
+ * press starts a timed attack STATE by setting attack_state_timer to the
+ * attacker's `attack` clip duration (or ATTACK_STATE_DEFAULT_SECONDS with
+ * no such clip) and resetting the animation to frame 0, gated on "not
+ * already mid-attack" so holding/mashing the button can't restart the
+ * window every frame -- the next press only takes effect once
+ * tick_combat_timers (game_update) has ticked attack_state_timer back down
+ * to 0. Which frames of that window actually deal damage is
+ * entity_hitbox_is_active's job (entity.c), driven by frame_index as the
+ * clip plays (advance_entity_animation, below). The attack's direction is
+ * read live from player->facing wherever the hitbox is built
+ * (entity_hitbox_region) rather than captured into a separate field --
+ * movement during the active window is allowed (no movement lock in v1),
+ * so the hitbox simply tracks whatever direction the player is currently
+ * facing. */
+static void
+update_player_attack(Entity *player, const Blueprint *blueprint, const InputState *input, const BindingStore *bindings)
+{
+    if (player->attack_state_timer > 0.0F) {
         return;
     }
     if (!input_pressed(input, bindings, ACTION_ATTACK)) {
         return;
     }
-    player->hitbox_active_timer = ATTACK_ACTIVE_SECONDS;
+    const AnimClip *attack_clip = blueprint ? blueprint_find_anim_clip(blueprint, "attack") : nullptr;
+    player->attack_state_timer = anim_clip_duration(attack_clip, ATTACK_STATE_DEFAULT_SECONDS);
+    player->frame_index = 0;
+    player->frame_timer = 0.0F;
 }
 
 static void behavior_player(BehaviorContext *context)
@@ -503,7 +530,8 @@ static void behavior_player(BehaviorContext *context)
                           (uint32_t)state->gamedata.current_level.height};
     update_player(player, player_defaults, &routed_input, context->bindings, context->delta_time, level_size);
     resolve_entity_obstacles(state, context->entity_index);
-    update_player_attack(player, &routed_input, context->bindings);
+    const Blueprint *player_blueprint = entity_resolve_blueprint(state, player->id);
+    update_player_attack(player, player_blueprint, &routed_input, context->bindings);
     Allocator anim_alloc = allocator_arena(&state->gamedata_arena);
     update_entity_anim_attrs(&anim_alloc, player);
 }
@@ -922,47 +950,133 @@ detect_solid_collisions(const GameState *state, Level *level, vec_bool *prev_col
     }
 }
 
-/* Decrements the per-entity combat timers (S6.10a, D26) by delta_time,
- * clamped at 0 so they never go negative: iframe_timer (invincibility
- * window after a hit) and hitbox_active_timer (how much longer this
- * entity's own hitbox stays live -- set by the S6.10b attack activator,
- * just honored here). Runs once per frame for every entity in the level,
- * mirroring update_child_positions' "for each entity, mutate" shape. */
+/* Decrements the per-entity combat timers (S6.10a/S6.11b, D26/D31) by
+ * delta_time, clamped at 0 so they never go negative: iframe_timer
+ * (invincibility window after a hit), attack_state_timer (how much longer
+ * this entity's `state` resolves to "attack" -- set by the S6.10b attack
+ * activator, just honored here), and hurt_state_timer (how much longer it
+ * resolves to "hurt" -- set by begin_hurt_state below). Runs once per
+ * frame for every entity in the level, mirroring update_child_positions'
+ * "for each entity, mutate" shape. death_state_timer is ticked separately
+ * by tick_death_state, since it also needs to soft-destroy the entity once
+ * it reaches 0 (an Allocator this function doesn't otherwise need). */
 static void tick_combat_timers(Level *level, float delta_time)
 {
     for (int index = 0; index < level->entities.count; index++) {
         Entity *entity = &level->entities.data[index];
         entity->iframe_timer = fmaxf(0.0F, entity->iframe_timer - delta_time);
-        entity->hitbox_active_timer = fmaxf(0.0F, entity->hitbox_active_timer - delta_time);
+        entity->attack_state_timer = fmaxf(0.0F, entity->attack_state_timer - delta_time);
+        entity->hurt_state_timer = fmaxf(0.0F, entity->hurt_state_timer - delta_time);
     }
 }
 
-/* One-hit-per-frame melee resolution (S6.10a, D26): every entity A with a
- * live hitbox_active_timer damages every OTHER active entity T (that has a
- * `health` attr) whose hurtbox its hitbox overlaps. entity_apply_damage
- * itself rejects a T still inside its own i-frame window, so a T hit by
- * several overlapping hitboxes in the same frame is only damaged once --
- * the iframe_timer set on the first hit blocks the rest with no separate
- * "already hit this frame" bookkeeping needed. A hit that drops health
- * from > 0 to <= 0 pushes TRIGGER_DEFEAT into out_events so it fires in
- * this same frame's rules_evaluate_batch, mirroring how
- * execute_set_attr_action/execute_add_attr_action (rule.c) push the same
- * event when a rule-driven health write crosses zero; gating on "old
- * health was > 0" (not just "new health <= 0") keeps an already-defeated
- * entity that gets hit again (once its i-frames lapse) from re-firing
- * defeat every subsequent hit. A landed hit also calls entity_apply_knockback
- * (S6.10c, D26) with the attacker's `knockback` attr (default 0, a no-op) --
- * the resulting push is resolved against solids by the knockback tick pass
- * below, alongside detect_contact_damage's own knockback calls. */
+/* Ticks death_state_timer down for every `dying` entity and soft-destroys
+ * it (`active` attr false) once the timer reaches (or starts at) 0 -- see
+ * begin_death_state below for how `dying`/death_state_timer get set. A
+ * `death`-clip entity has a positive timer at first (so this decrements it
+ * across several frames, letting the clip play out before deactivating);
+ * a clip-less entity's timer is already 0 the frame it starts dying, so
+ * this deactivates it the very next time tick_death_state runs -- one
+ * frame after `dying` was set, NOT the same frame. That one-frame
+ * deferral is deliberate, not an oversight: this pass runs at the top of
+ * game_update, before this frame's own detect_melee_damage/detect_contact_
+ * damage (which is what sets `dying` for a freshly-defeated entity) and
+ * rules_evaluate_batch (rule.c). rules_evaluate_batch skips inactive
+ * entities entirely, so deactivating synchronously in the same frame
+ * TRIGGER_DEFEAT is pushed would make the target invisible to its own
+ * `defeat` rule before that rule ever runs. Re-setting `active` to false
+ * every frame once already false is a harmless no-op (attr_set_bool
+ * overwrites the existing bool value in place, no arena growth). */
+static void tick_death_state(Level *level, Allocator *alloc, float delta_time)
+{
+    for (int index = 0; index < level->entities.count; index++) {
+        Entity *entity = &level->entities.data[index];
+        if (!entity->dying) {
+            continue;
+        }
+        if (entity->death_state_timer > 0.0F) {
+            entity->death_state_timer = fmaxf(0.0F, entity->death_state_timer - delta_time);
+        }
+        if (entity->death_state_timer <= 0.0F) {
+            (void)attr_set_bool(alloc, &entity->attrs, "active", false);
+        }
+    }
+}
+
+/* Fallback hurt_state_timer length (S6.11b, D31) when the target's
+ * blueprint authors no `hurt` clip -- a short flinch, comfortably shorter
+ * than ENTITY_DEFAULT_IFRAME_SECONDS so the hurt pose clears well before
+ * the target can be hit again. */
+#define HURT_STATE_DEFAULT_SECONDS 0.3F
+
+/* Starts target's hurt state (S6.11b, D31): called right after a landed
+ * entity_apply_damage from both detect_melee_damage and
+ * detect_contact_damage below, so any source of combat damage (melee or
+ * contact/projectile) triggers the same hurt animation. Duration comes
+ * from the target's own `hurt` clip (frames/speed), or
+ * HURT_STATE_DEFAULT_SECONDS if it has none. */
+static void begin_hurt_state(GameState *state, Entity *target)
+{
+    const Blueprint *blueprint = entity_resolve_blueprint(state, target->id);
+    const AnimClip *hurt_clip = blueprint ? blueprint_find_anim_clip(blueprint, "hurt") : nullptr;
+    target->hurt_state_timer = anim_clip_duration(hurt_clip, HURT_STATE_DEFAULT_SECONDS);
+}
+
+/* Starts target's terminal death state (S6.11b, D31): called from
+ * detect_melee_damage/detect_contact_damage at the exact point they push
+ * TRIGGER_DEFEAT (health just crossed from > 0 to <= 0). Sets `dying`
+ * (permanent -- see resolve_effective_anim_state's priority order below)
+ * and, if the target's blueprint authors a `death` clip, resets its
+ * animation to frame 0 and starts death_state_timer at that clip's
+ * duration. With no `death` clip, death_state_timer is left at its
+ * entity_init default of 0 -- tick_death_state (above) is what actually
+ * soft-destroys the entity in EITHER case, not this function: it must NOT
+ * happen synchronously here, in the same frame TRIGGER_DEFEAT is pushed,
+ * because rules_evaluate_batch (rule.c) skips inactive entities, and this
+ * runs before that same frame's rule evaluation gets a chance to fire the
+ * target's own `defeat` rule. */
+static void begin_death_state(GameState *state, Entity *target)
+{
+    target->dying = true;
+    const Blueprint *blueprint = entity_resolve_blueprint(state, target->id);
+    const AnimClip *death_clip = blueprint ? blueprint_find_anim_clip(blueprint, "death") : nullptr;
+    if (!death_clip) {
+        return;
+    }
+    target->death_state_timer = anim_clip_duration(death_clip, 0.0F);
+    target->frame_index = 0;
+    target->frame_timer = 0.0F;
+}
+
+/* One-hit-per-frame melee resolution (S6.10a/S6.11b, D26/D31): every
+ * entity A whose hitbox entity_hitbox_is_active says is currently live
+ * damages every OTHER active entity T (that has a `health` attr) whose
+ * hurtbox its hitbox overlaps. entity_apply_damage itself rejects a T
+ * still inside its own i-frame window, so a T hit by several overlapping
+ * hitboxes in the same frame is only damaged once -- the iframe_timer set
+ * on the first hit blocks the rest with no separate "already hit this
+ * frame" bookkeeping needed. A landed hit also starts T's hurt state
+ * (begin_hurt_state) and, if it drops health from > 0 to <= 0, both
+ * starts T's death state (begin_death_state) and pushes TRIGGER_DEFEAT
+ * into out_events so it fires in this same frame's rules_evaluate_batch,
+ * mirroring how execute_set_attr_action/execute_add_attr_action (rule.c)
+ * push the same event when a rule-driven health write crosses zero;
+ * gating on "old health was > 0" (not just "new health <= 0") keeps an
+ * already-defeated entity that gets hit again (once its i-frames lapse)
+ * from re-firing defeat every subsequent hit. A landed hit also calls
+ * entity_apply_knockback (S6.10c, D26) with the attacker's `knockback`
+ * attr (default 0, a no-op) -- the resulting push is resolved against
+ * solids by the knockback tick pass below, alongside detect_contact_
+ * damage's own knockback calls. */
 static void detect_melee_damage(GameState *state, Level *level, Allocator *alloc, vec_trigger_event *out_events)
 {
     Entity *entities = level->entities.data;
     int entity_count = level->entities.count;
     for (int attacker_index = 0; attacker_index < entity_count; attacker_index++) {
-        if (entities[attacker_index].hitbox_active_timer <= 0.0F) {
+        const AttrSet *attacker_defaults = entity_resolve_defaults(state, entities[attacker_index].id);
+        if (!entity_hitbox_is_active(&entities[attacker_index], attacker_defaults)) {
             continue;
         }
-        const AttrSet *attacker_defaults = entity_resolve_defaults(state, entities[attacker_index].id);
         CollisionPrimitive hitbox_prim_storage;
         CollisionShape hitbox =
             entity_hitbox_region(&entities[attacker_index], attacker_defaults, &hitbox_prim_storage);
@@ -991,9 +1105,11 @@ static void detect_melee_damage(GameState *state, Level *level, Allocator *alloc
             if (!entity_apply_damage(&entities[target_index], target_defaults, damage, alloc)) {
                 continue;
             }
+            begin_hurt_state(state, &entities[target_index]);
             entity_apply_knockback(&entities[target_index], entities[attacker_index].position, knockback_distance);
             float new_health = attr_get_scoped_float(&entities[target_index].attrs, target_defaults, "health", 0.0F);
             if (old_health > 0.0F && new_health <= 0.0F) {
+                begin_death_state(state, &entities[target_index]);
                 (void)vec_trigger_event_push(out_events,
                                              (TriggerEvent){.type = TRIGGER_DEFEAT, .entity_index = target_index});
             }
@@ -1006,12 +1122,13 @@ static void detect_melee_damage(GameState *state, Level *level, Allocator *alloc
  * `health` attr) whose COLLISION region -- the physical body, not a
  * hitbox/hurtbox -- it overlaps, through the same entity_apply_damage/
  * entity_apply_knockback path detect_melee_damage above uses, so the
- * damage formula, i-frames, and defeat wiring all apply identically.
- * i-frames de-dupe repeated per-frame contact the same way they de-dupe
- * repeated melee hits -- no separate "already hit this frame" bookkeeping.
- * Melee (hitbox) and contact (body) are distinct damage sources; an
- * entity could in principle have both live at once, but a target's
- * i-frames still collapse that to at most one applied hit per window.
+ * damage formula, i-frames, hurt/death state (S6.11b, D31), and defeat
+ * wiring all apply identically. i-frames de-dupe repeated per-frame
+ * contact the same way they de-dupe repeated melee hits -- no separate
+ * "already hit this frame" bookkeeping. Melee (hitbox) and contact (body)
+ * are distinct damage sources; an entity could in principle have both
+ * live at once, but a target's i-frames still collapse that to at most
+ * one applied hit per window.
  *
  * destroy_on_hit (S6.10d, D26): if A also has a truthy destroy_on_hit
  * attr, a landed hit soft-destroys A (active = false) instead of leaving
@@ -1065,9 +1182,11 @@ static void detect_contact_damage(GameState *state, Level *level, Allocator *all
             if (!entity_apply_damage(&entities[target_index], target_defaults, damage, alloc)) {
                 continue;
             }
+            begin_hurt_state(state, &entities[target_index]);
             entity_apply_knockback(&entities[target_index], entities[attacker_index].position, knockback_distance);
             float new_health = attr_get_scoped_float(&entities[target_index].attrs, target_defaults, "health", 0.0F);
             if (old_health > 0.0F && new_health <= 0.0F) {
+                begin_death_state(state, &entities[target_index]);
                 (void)vec_trigger_event_push(out_events,
                                              (TriggerEvent){.type = TRIGGER_DEFEAT, .entity_index = target_index});
             }
@@ -1142,14 +1261,15 @@ collect_trigger_events(DebugState *dbg, GameState *state, const InputState *inpu
     }
 }
 
-/* --- Generic animation state machine (S6.11a, D31) ---
+/* --- Generic animation state machine (S6.11a/S6.11b, D31) ---
  *
  * Replaces the player's old hardcoded ANIM_WALK_DOWN/SIDE/UP row constants
  * and the per-behavior frame-cycling code above: any entity whose blueprint
  * authors [[blueprint.animation]] clips now animates through this single
  * pass, keyed off the built-in `state`/`direction` attrs the behaviors
- * above set via update_entity_anim_attrs. Attack-frame hitbox timing and
- * hurt/death triggering are S6.11b. */
+ * above set via update_entity_anim_attrs, overridden by
+ * resolve_effective_anim_state below whenever a combat state (attack/hurt/
+ * death) is live. */
 
 /* Fallback state/direction for an entity with neither attr authored (no
  * behavior has run for it yet, or its behavior never sets them) --
@@ -1213,17 +1333,51 @@ static void advance_entity_frame(Entity *entity, const AnimClip *clip, float del
     }
 }
 
-/* One entity's animation tick: resolve its blueprint's clip for the current
- * `state` attr (default "idle"), derive anim_row from the clip's row plus
- * the `direction` attr's (default "down") row offset, set flip for a
- * left-facing side clip, and advance the frame. A no-op for any entity
- * whose blueprint authors no [[blueprint.animation]] clips at all -- it
- * keeps rendering through the static get_source_rect path (main.c). Takes
- * the already-dereferenced Entity* (the caller's own loop variable) rather
- * than re-deriving from an index -- safe because the behavior that just ran
- * only ever mutates the entity's own attrs/collision vecs, never the level's
- * entities array itself, the same assumption behavior_player already relies
- * on when it keeps using `player` after resolve_entity_obstacles. */
+/* Overrides a behavior's walk/idle `state` with whichever transient combat
+ * state is currently live (S6.11b, D31), highest priority first: `death`
+ * (dying is terminal -- once set it always wins, unlike the timers below
+ * which only override while positive), then `hurt` (hurt_state_timer > 0),
+ * then `attack` (attack_state_timer > 0). Falls through to
+ * behavior_state (whatever update_entity_anim_attrs/animate_walking_entity
+ * last wrote) once none of the combat timers are live. */
+static const char *resolve_effective_anim_state(const Entity *entity, const char *behavior_state)
+{
+    if (entity->dying) {
+        return "death";
+    }
+    if (entity->hurt_state_timer > 0.0F) {
+        return "hurt";
+    }
+    if (entity->attack_state_timer > 0.0F) {
+        return "attack";
+    }
+    return behavior_state;
+}
+
+/* One entity's animation tick: resolve the effective `state` (the
+ * behavior-set `state` attr, default "idle", overridden by
+ * resolve_effective_anim_state whenever a combat state is live) and use
+ * it -- NOT the raw behavior-set state -- as the clip lookup key. The
+ * effective state is deliberately NOT written back onto the entity's
+ * `state` attr: that attr is the behaviors' own read/write channel
+ * (update_entity_anim_attrs sets it from movement every frame this pass
+ * reads it back from), and an entity with no behavior driving it (e.g. a
+ * static combat target) would otherwise never overwrite a stale "hurt"/
+ * "attack"/"death" value this pass wrote on some earlier frame -- the
+ * combat state would "stick" forever once entered, since nothing else
+ * ever resets `state` back to idle for such an entity. Callers that need
+ * to observe the effective combat state (tests included) read the
+ * entity's own `dying`/`hurt_state_timer`/`attack_state_timer` fields
+ * directly, the same way existing tests already read `moving`/
+ * `frame_index` directly rather than through an attr. A no-op for any
+ * entity whose blueprint authors no [[blueprint.animation]] clips at all
+ * -- it keeps rendering through the static get_source_rect path (main.c).
+ * Takes the already-dereferenced Entity* (the caller's own loop variable)
+ * rather than re-deriving from an index -- safe because the behavior that
+ * just ran only ever mutates the entity's own attrs/collision vecs, never
+ * the level's entities array itself, the same assumption behavior_player
+ * already relies on when it keeps using `player` after
+ * resolve_entity_obstacles. */
 static void advance_entity_animation(GameState *state, Entity *entity, float delta_time)
 {
     const Blueprint *blueprint = entity_resolve_blueprint(state, entity->id);
@@ -1231,16 +1385,18 @@ static void advance_entity_animation(GameState *state, Entity *entity, float del
         return;
     }
 
-    const char *state_name = attr_get_scoped_string(&entity->attrs, &blueprint->attrs, "state");
-    if (!state_name) {
-        state_name = ANIM_STATE_DEFAULT;
+    const char *behavior_state = attr_get_scoped_string(&entity->attrs, &blueprint->attrs, "state");
+    if (!behavior_state) {
+        behavior_state = ANIM_STATE_DEFAULT;
     }
+    const char *effective_state = resolve_effective_anim_state(entity, behavior_state);
+
     const char *direction = attr_get_scoped_string(&entity->attrs, &blueprint->attrs, "direction");
     if (!direction) {
         direction = ANIM_DIRECTION_DEFAULT;
     }
 
-    const AnimClip *clip = find_entity_anim_clip(blueprint, state_name);
+    const AnimClip *clip = find_entity_anim_clip(blueprint, effective_state);
     if (!clip) {
         return;
     }
@@ -1289,11 +1445,17 @@ void game_update(Diag *diag, GameState *state, InputState input, float delta_tim
         int view_count = 0;
         EntityView *views = build_entity_views(state, &view_count);
 
-        /* Combat timer tick (S6.10a, D26) -- decrement before this frame's
-         * melee pass below reads them, so a timer set by scenario setup
-         * or the S6.10b attack activator is honored as active THIS frame,
-         * not the frame after. */
+        /* Combat timer tick (S6.10a/S6.11b, D26/D31) -- decrement before
+         * this frame's melee pass below reads them, so a timer set by
+         * scenario setup or the S6.10b attack activator is honored as
+         * active THIS frame, not the frame after. combat_alloc is declared
+         * here (rather than just above detect_melee_damage/
+         * detect_contact_damage further down) so tick_death_state can also
+         * use it to soft-destroy an entity whose death animation just
+         * finished. */
+        Allocator combat_alloc = allocator_arena(&state->gamedata_arena);
         tick_combat_timers(&state->gamedata.current_level, delta_time);
+        tick_death_state(&state->gamedata.current_level, &combat_alloc, delta_time);
 
         /* Resume due `wait:`/`dialogue:` continuations (S6.7b/c, D24)
          * before any normal trigger detection/evaluation this frame -- a
@@ -1347,7 +1509,6 @@ void game_update(Diag *diag, GameState *state, InputState input, float delta_tim
         /* Melee + contact damage passes (S6.10a/c, D26) -- must run before
          * the trigger_events.count check below, since a defeat either pass
          * detects needs to feed into THIS frame's rules_evaluate_batch. */
-        Allocator combat_alloc = allocator_arena(&state->gamedata_arena);
         detect_melee_damage(state, &state->gamedata.current_level, &combat_alloc, &trigger_events);
         detect_contact_damage(state, &state->gamedata.current_level, &combat_alloc, &trigger_events);
 

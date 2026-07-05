@@ -5296,7 +5296,7 @@ void test_integration_chase_respects_collision(void)
 
 /* ---- Integration: S6.10a combat damage core (hitbox/hurtbox, i-frames,
  * defeat). ACTION_ATTACK itself is S6.10b -- these tests activate a
- * hitbox directly by setting hitbox_active_timer as scenario setup (like
+ * hitbox directly by setting attack_state_timer as scenario setup (like
  * placing an entity), then drive real frames and assert only on
  * observable attrs (health, a defeat-triggered flag, position). */
 
@@ -5383,11 +5383,11 @@ void test_integration_damage_formula(void)
 
     Entity *attacker = test_find_entity_by_blueprint(&game.state, "attacker");
     TEST_ASSERT_NOT_NULL(attacker);
-    attacker->hitbox_active_timer = 1.0F;
+    attacker->attack_state_timer = 1.0F;
 
     Entity *tanky_attacker = &game.state.gamedata.current_level.entities.data[2];
     TEST_ASSERT_EQUAL_STRING("attacker", tanky_attacker->blueprint_name.ptr);
-    tanky_attacker->hitbox_active_timer = 1.0F;
+    tanky_attacker->attack_state_timer = 1.0F;
 
     InputState idle = {0};
     test_advance_frame(&game, idle);
@@ -5419,7 +5419,7 @@ void test_integration_iframes_block_repeat_damage(void)
     /* Comfortably longer than the whole test (about 1.2s of frames below)
      * so the hitbox never goes inactive on its own -- only i-frames are
      * under test here. */
-    attacker->hitbox_active_timer = 10.0F;
+    attacker->attack_state_timer = 10.0F;
 
     InputState idle = {0};
     test_advance_frame(&game, idle);
@@ -5450,10 +5450,19 @@ void test_integration_defeat_fires_once(void)
     Entity *fragile_attacker = &game.state.gamedata.current_level.entities.data[4];
     TEST_ASSERT_EQUAL_STRING("attacker", fragile_attacker->blueprint_name.ptr);
     /* Stays active well past the whole test, same rationale as the
-     * i-frames test above -- keeps hitting the (now-defeated)
-     * fragile_target every frame once its own i-frames lapse, so the test
-     * can prove defeat still only fires once even under repeat hits. */
-    fragile_attacker->hitbox_active_timer = 10.0F;
+     * i-frames test above. fragile_target has no `death` clip, so once it
+     * is defeated below, begin_death_state (S6.11b, D31) marks it `dying`
+     * and tick_death_state soft-destroys it (`active` false) starting the
+     * VERY NEXT frame -- deliberately not the same frame defeat fires, so
+     * this test's own `defeat` rule still gets to run first (rules_
+     * evaluate_batch, rule.c, skips inactive entities). So the 60-frame
+     * run below now also relies on detect_melee_damage's own `active`
+     * filter (not just the old_health > 0 gate) to keep defeat_count from
+     * re-firing once fragile_target goes inactive. Either guard alone
+     * would hold this invariant; exercising both is a strictly stronger
+     * check than before S6.11b landed. See test_integration_death_state_
+     * on_defeat for a dedicated check of the active-flag timing itself. */
+    fragile_attacker->attack_state_timer = 10.0F;
 
     InputState idle = {0};
     test_advance_frame(&game, idle);
@@ -5464,10 +5473,9 @@ void test_integration_defeat_fires_once(void)
     TEST_ASSERT_EQUAL_INT(-2, (int)attr_get_scoped_float(&fragile_target->attrs, nullptr, "health", 1.0F));
     TEST_ASSERT_EQUAL_INT(1, (int)attr_get_scoped_float(&fragile_target->attrs, nullptr, "defeat_count", 0.0F));
 
-    /* Run well past the i-frame window (so the attacker's hitbox lands on
-     * the target again) and confirm defeat_count stays at exactly 1 --
-     * the old_health > 0 gate must block a re-fire on an already-defeated
-     * entity taking further hits. */
+    /* Run well past the i-frame window (so the attacker's hitbox would
+     * otherwise land on the target again) and confirm defeat_count stays
+     * at exactly 1. */
     test_advance_frames(&game, idle, 60);
     TEST_ASSERT_EQUAL_INT(1, (int)attr_get_scoped_float(&fragile_target->attrs, nullptr, "defeat_count", 0.0F));
 
@@ -5476,7 +5484,7 @@ void test_integration_defeat_fires_once(void)
 
 /* ---- Integration: S6.10b ACTION_ATTACK input + directional melee hitbox
  * (Entity.facing, ATTACK_ACTIVE_SECONDS, ENTITY_HITBOX_REACH). Unlike
- * S6.10a's combat_fixture_gamedata above (hitbox_active_timer set
+ * S6.10a's combat_fixture_gamedata above (attack_state_timer set
  * directly as scenario setup), these tests drive the real input layer:
  * one frame of held left-stick movement establishes player->facing (the
  * same mechanic update_player already uses for anim_row/flip), and a
@@ -5589,7 +5597,7 @@ void test_integration_attack_misses_out_of_arc(void)
     test_game_teardown(&game);
 }
 
-/* Same LEFT-facing movement, no ACTION_ATTACK press: hitbox_active_timer
+/* Same LEFT-facing movement, no ACTION_ATTACK press: attack_state_timer
  * never leaves 0, so detect_melee_damage's own gate (S6.10a) skips the
  * hero entirely -- enemy_front, sitting exactly where the two tests
  * above land a swing, must take no damage at all. Same
@@ -5613,7 +5621,7 @@ void test_integration_attack_requires_press(void)
 }
 
 /* ---- Integration: S6.10c knockback + contact damage (D26). Knockback
- * reuses combat_fixture_gamedata's shape (hitbox_active_timer set
+ * reuses combat_fixture_gamedata's shape (attack_state_timer set
  * directly as scenario setup, same as the S6.10a tests) but with distinct
  * attacker/target positions -- S6.10a co-located its pairs on purpose to
  * keep the hitbox/hurtbox overlap math trivial, but a well-defined
@@ -5668,7 +5676,7 @@ void test_integration_knockback_pushes_target_away(void)
 
     Entity *attacker = test_find_entity_by_blueprint(&game.state, "attacker");
     TEST_ASSERT_NOT_NULL(attacker);
-    attacker->hitbox_active_timer = 1.0F;
+    attacker->attack_state_timer = 1.0F;
 
     const Entity *target_before = test_find_entity_by_blueprint(&game.state, "target");
     TEST_ASSERT_NOT_NULL(target_before);
@@ -5745,7 +5753,7 @@ void test_integration_knockback_respects_wall(void)
 
     Entity *attacker = test_find_entity_by_blueprint(&game.state, "attacker");
     TEST_ASSERT_NOT_NULL(attacker);
-    attacker->hitbox_active_timer = 1.0F;
+    attacker->attack_state_timer = 1.0F;
 
     InputState idle = {0};
     test_advance_frames(&game, idle, 20);
@@ -6252,6 +6260,332 @@ void test_integration_anim_state_switch(void)
     TEST_ASSERT_EQUAL_STRING("idle", attr_get_string(&player->attrs, "state"));
     TEST_ASSERT_FALSE(player->moving);
     TEST_ASSERT_EQUAL_INT(0, player->frame_index);
+
+    test_game_teardown(&game);
+}
+
+/* ---- Integration: S6.11b/D31 combat animation integration, completing
+ * S6.11 -- the attack clip's own frame_index now drives the hitbox's
+ * active window (replacing the fixed ATTACK_STATE_DEFAULT_SECONDS-only
+ * gate), and damage/defeat drive hurt/death animation states with
+ * priority over walk/idle (resolve_effective_anim_state, game.c). */
+
+/* Same hero/enemy_front geometry as attack_fixture_gamedata above (hero at
+ * (160,120), collision/hitbox centered on position, enemy_front 8px to the
+ * hero's left once ENTITY_HITBOX_REACH shifts a LEFT-facing swing) --
+ * see that fixture's own comment for the exact overlap math, unaffected by
+ * this test's one extra frame of drift from the press-frame's movement.
+ * hero's `attack` clip (frames = 3, speed = 6) plays over frames/speed =
+ * 0.5s = 30 frames at the fixed 1/60s test delta_time, wrapping frame_index
+ * every 10 of those frames (frame_timer accumulates delta_time * speed =
+ * 0.1 per frame, wrapping at 1.0): frame_index == 0 for frames 1-9 (1-
+ * indexed from the press), == 1 for frames 10-19, == 2 for frames 20-29,
+ * back to 0 (and attack_state_timer back to 0, ending the attack) at frame
+ * 30. `attack_hit_frame_start`/`_end` = [1, 1] means only frame_index == 1
+ * -- a 10-frame window, comfortably shorter than the target's default
+ * 48-frame i-frame window -- has an active hitbox, unlike the S6.10b
+ * fixture above where the window defaults to the whole clip. The narrow
+ * window (versus the long i-frame window) guarantees at most one hit can
+ * ever land in this test, not just "no damage yet". */
+static const char *attack_window_fixture_gamedata = "[[blueprint]]\n"
+                                                    "name = \"hero\"\n"
+                                                    "texture = \"hero.png\"\n"
+                                                    "src = [0, 0, 32, 32]\n"
+                                                    "collision_offset = [-8, -8]\n"
+                                                    "collision_size = [16, 16]\n"
+                                                    "behavior = \"player\"\n"
+                                                    "speed = 80\n"
+                                                    "hitbox_offset_x = -16\n"
+                                                    "hitbox_offset_y = -16\n"
+                                                    "hitbox_w = 32\n"
+                                                    "hitbox_h = 32\n"
+                                                    "damage = 5\n"
+                                                    "attack_hit_frame_start = 1\n"
+                                                    "attack_hit_frame_end = 1\n"
+                                                    "\n"
+                                                    "[[blueprint.animation]]\n"
+                                                    "state = \"attack\"\n"
+                                                    "row = 0\n"
+                                                    "frames = 3\n"
+                                                    "speed = 6\n"
+                                                    "\n"
+                                                    "[[blueprint]]\n"
+                                                    "name = \"enemy_front\"\n"
+                                                    "texture = \"enemy.png\"\n"
+                                                    "src = [0, 0, 32, 32]\n"
+                                                    "collision_offset = [-16, -16]\n"
+                                                    "collision_size = [32, 32]\n"
+                                                    "health = [10, 10]\n"
+                                                    "defense = 0\n"
+                                                    "\n"
+                                                    "[[level]]\n"
+                                                    "name = \"test\"\n"
+                                                    "size = [320, 240]\n"
+                                                    "\n"
+                                                    "[[level.entity]]\n"
+                                                    "blueprint = \"hero\"\n"
+                                                    "pos = [160, 120]\n"
+                                                    "\n"
+                                                    "[[level.entity]]\n"
+                                                    "blueprint = \"enemy_front\"\n"
+                                                    "pos = [152, 120]\n";
+
+/* Presses ACTION_ATTACK once (facing left, same as attack_fixture_gamedata's
+ * own attack tests), then drives idle frames past each frame_index
+ * checkpoint: no damage on the press frame itself (frame_index == 0, the
+ * clip's very first frame, outside [1, 1]), still no damage right up to the
+ * frame_index == 1 wrap at frame 10, damage lands once inside the
+ * frame_index == 1 window, and no further damage once the attack's own
+ * 30-frame duration has long elapsed (attack_state_timer back at 0).
+ * Verified this test fails two ways: forcing entity_hitbox_is_active to
+ * always return true makes the "no damage on the press frame" assertion
+ * fail (health drops to 5 immediately instead of staying 10), and forcing
+ * it to always return false makes the "damage lands" assertion fail
+ * (health stays 10 forever). */
+void test_integration_attack_hitbox_frame_window(void)
+{
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, attack_window_fixture_gamedata));
+
+    InputState attack_input = {0};
+    input_state_set_gp_axis(&attack_input, GAMEPAD_AXIS_LEFT_X, -1.0F);
+    input_state_press_gp_button(&attack_input, GAMEPAD_BUTTON_RIGHT_FACE_LEFT);
+    test_advance_frame(&game, attack_input);
+
+    const Entity *enemy_front = test_find_entity_by_blueprint(&game.state, "enemy_front");
+    TEST_ASSERT_NOT_NULL(enemy_front);
+    const AttrSet *enemy_defaults = entity_resolve_defaults(&game.state, enemy_front->id);
+    TEST_ASSERT_EQUAL_INT(10, (int)attr_get_scoped_float(&enemy_front->attrs, enemy_defaults, "health", -1.0F));
+
+    InputState idle = {0};
+    test_advance_frames(&game, idle, 8);
+    enemy_front = test_find_entity_by_blueprint(&game.state, "enemy_front");
+    enemy_defaults = entity_resolve_defaults(&game.state, enemy_front->id);
+    TEST_ASSERT_EQUAL_INT(10, (int)attr_get_scoped_float(&enemy_front->attrs, enemy_defaults, "health", -1.0F));
+
+    test_advance_frames(&game, idle, 6);
+    enemy_front = test_find_entity_by_blueprint(&game.state, "enemy_front");
+    enemy_defaults = entity_resolve_defaults(&game.state, enemy_front->id);
+    /* max(1, 5 - 0) = 5 dealt -> 10 - 5 = 5 */
+    TEST_ASSERT_EQUAL_INT(5, (int)attr_get_scoped_float(&enemy_front->attrs, enemy_defaults, "health", -1.0F));
+
+    test_advance_frames(&game, idle, 60);
+    enemy_front = test_find_entity_by_blueprint(&game.state, "enemy_front");
+    enemy_defaults = entity_resolve_defaults(&game.state, enemy_front->id);
+    TEST_ASSERT_EQUAL_INT(5, (int)attr_get_scoped_float(&enemy_front->attrs, enemy_defaults, "health", -1.0F));
+
+    test_game_teardown(&game);
+}
+
+/* Co-located attacker/target pair (same trivial-overlap shape as
+ * combat_fixture_gamedata above), neither authoring any
+ * [[blueprint.animation]] clip -- exercises begin_hurt_state's
+ * HURT_STATE_DEFAULT_SECONDS (0.3s = 18 frames) fallback since target has
+ * no `hurt` clip. */
+static const char *hurt_state_fixture_gamedata = "[[blueprint]]\n"
+                                                 "name = \"attacker\"\n"
+                                                 "texture = \"t.png\"\n"
+                                                 "src = [0, 0, 16, 16]\n"
+                                                 "hitbox_offset_x = 0\n"
+                                                 "hitbox_offset_y = 0\n"
+                                                 "hitbox_w = 16\n"
+                                                 "hitbox_h = 16\n"
+                                                 "damage = 5\n"
+                                                 "\n"
+                                                 "[[blueprint]]\n"
+                                                 "name = \"target\"\n"
+                                                 "texture = \"t.png\"\n"
+                                                 "src = [0, 0, 16, 16]\n"
+                                                 "collision_offset = [0, 0]\n"
+                                                 "collision_size = [16, 16]\n"
+                                                 "health = [10, 10]\n"
+                                                 "defense = 0\n"
+                                                 "\n"
+                                                 "[[level]]\n"
+                                                 "name = \"test\"\n"
+                                                 "size = [320, 240]\n"
+                                                 "\n"
+                                                 "[[level.entity]]\n"
+                                                 "blueprint = \"attacker\"\n"
+                                                 "pos = [100, 100]\n"
+                                                 "\n"
+                                                 "[[level.entity]]\n"
+                                                 "blueprint = \"target\"\n"
+                                                 "pos = [100, 100]\n";
+
+/* Activates the attacker's hitbox directly (scenario setup, same pattern
+ * as the S6.10a tests above), lands one hit, then checks the target's
+ * `hurt_state_timer` field across checkpoints -- resolve_effective_anim_
+ * state (game.c) resolves to "hurt" if and only if `!dying &&
+ * hurt_state_timer > 0`, and target's health never crosses zero here (10
+ * -> 5), so `dying` stays false throughout and hurt_state_timer > 0 is an
+ * exact proxy for "effective state is hurt", the same way existing tests
+ * already assert on `moving`/`frame_index` directly rather than through
+ * an attr. One frame after the hit lands, hurt_state_timer is still
+ * positive (the hit landed AFTER that same frame's own tick_combat_timers
+ * already ran, so it isn't ticked down until the NEXT frame); well past
+ * the 18-frame default hurt duration (but still inside the target's
+ * 48-frame default i-frame window, so no second hit muddies the picture)
+ * it has decayed back to 0. Verified this test fails (hurt_state_timer
+ * stays 0 throughout) with begin_hurt_state's body temporarily replaced
+ * by a no-op. */
+void test_integration_hurt_state_on_damage(void)
+{
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, hurt_state_fixture_gamedata));
+
+    Entity *attacker = test_find_entity_by_blueprint(&game.state, "attacker");
+    TEST_ASSERT_NOT_NULL(attacker);
+    attacker->attack_state_timer = 10.0F;
+
+    InputState idle = {0};
+    test_advance_frame(&game, idle);
+
+    const Entity *target = test_find_entity_by_blueprint(&game.state, "target");
+    TEST_ASSERT_NOT_NULL(target);
+    /* max(1, 5 - 0) = 5 dealt -> 10 - 5 = 5 */
+    TEST_ASSERT_EQUAL_INT(5, (int)attr_get_scoped_float(&target->attrs, nullptr, "health", -1.0F));
+
+    test_advance_frame(&game, idle);
+    target = test_find_entity_by_blueprint(&game.state, "target");
+    TEST_ASSERT_TRUE_MESSAGE(target->hurt_state_timer > 0.0F,
+                             "target should be in the hurt state right after taking a hit");
+
+    test_advance_frames(&game, idle, 40);
+    target = test_find_entity_by_blueprint(&game.state, "target");
+    TEST_ASSERT_FALSE_MESSAGE(target->hurt_state_timer > 0.0F, "hurt state should have expired by now");
+    TEST_ASSERT_EQUAL_INT(5, (int)attr_get_scoped_float(&target->attrs, nullptr, "health", -1.0F));
+
+    test_game_teardown(&game);
+}
+
+/* Two independent attacker/target pairs 200px apart, mirroring
+ * combat_fixture_gamedata's own layout: "dying_target" authors a `death`
+ * clip (frames = 3, speed = 6 -> 0.5s = 30 frames), "vanish_target"
+ * authors none. Both start at health = [3, 3] against damage = 5 so a
+ * single hit defeats them outright (3 - 5 = -2). */
+static const char *death_state_fixture_gamedata = "[[blueprint]]\n"
+                                                  "name = \"attacker\"\n"
+                                                  "texture = \"t.png\"\n"
+                                                  "src = [0, 0, 16, 16]\n"
+                                                  "hitbox_offset_x = 0\n"
+                                                  "hitbox_offset_y = 0\n"
+                                                  "hitbox_w = 16\n"
+                                                  "hitbox_h = 16\n"
+                                                  "damage = 5\n"
+                                                  "\n"
+                                                  "[[blueprint]]\n"
+                                                  "name = \"dying_target\"\n"
+                                                  "texture = \"t.png\"\n"
+                                                  "src = [0, 0, 16, 16]\n"
+                                                  "collision_offset = [0, 0]\n"
+                                                  "collision_size = [16, 16]\n"
+                                                  "health = [3, 3]\n"
+                                                  "defense = 0\n"
+                                                  "\n"
+                                                  "[[blueprint.animation]]\n"
+                                                  "state = \"death\"\n"
+                                                  "row = 0\n"
+                                                  "frames = 3\n"
+                                                  "speed = 6\n"
+                                                  "\n"
+                                                  "[[blueprint]]\n"
+                                                  "name = \"vanish_target\"\n"
+                                                  "texture = \"t.png\"\n"
+                                                  "src = [0, 0, 16, 16]\n"
+                                                  "collision_offset = [0, 0]\n"
+                                                  "collision_size = [16, 16]\n"
+                                                  "health = [3, 3]\n"
+                                                  "defense = 0\n"
+                                                  "\n"
+                                                  "[[level]]\n"
+                                                  "name = \"test\"\n"
+                                                  "size = [320, 240]\n"
+                                                  "\n"
+                                                  "[[level.entity]]\n"
+                                                  "blueprint = \"attacker\"\n"
+                                                  "pos = [100, 100]\n"
+                                                  "\n"
+                                                  "[[level.entity]]\n"
+                                                  "blueprint = \"dying_target\"\n"
+                                                  "pos = [100, 100]\n"
+                                                  "\n"
+                                                  "[[level.entity]]\n"
+                                                  "blueprint = \"attacker\"\n"
+                                                  "pos = [300, 100]\n"
+                                                  "\n"
+                                                  "[[level.entity]]\n"
+                                                  "blueprint = \"vanish_target\"\n"
+                                                  "pos = [300, 100]\n";
+
+/* Defeats both targets in the same frame (both attackers' hitboxes
+ * activated directly as scenario setup, mirroring test_integration_damage_
+ * formula's use of raw entity-array indices to reach the second
+ * "attacker" instance). Both targets must still be ACTIVE the very frame
+ * they are defeated -- tick_death_state (game.c) deliberately deactivates
+ * on the NEXT frame's tick, never synchronously in the defeat frame
+ * itself, so that a target's own `defeat` rule (rules_evaluate_batch,
+ * rule.c, skips inactive entities) still gets to run that same frame; see
+ * test_integration_defeat_fires_once for that rule-still-fires guarantee.
+ * From the frame after, dying_target (has a `death` clip) stays active
+ * and shows state == "death" while its clip plays, whereas vanish_target
+ * (no `death` clip) is already inactive -- its death_state_timer started
+ * at 0, so the very next tick_death_state call deactivates it. dying_target
+ * finally deactivates too once its clip's 30-frame duration elapses.
+ * Verified this test fails (dying_target's active flag drops on the same
+ * schedule as vanish_target's, one frame earlier than expected) with
+ * begin_death_state's clip-lookup branch temporarily removed (always
+ * taking the "no death clip" path). `dying` is asserted directly (same
+ * footing as reading `moving`/`frame_index` in the existing anim tests)
+ * rather than through resolve_effective_anim_state's derived "death"
+ * label -- `dying` is exactly the flag that label keys off, with top
+ * priority over every other combat/movement state. */
+void test_integration_death_state_on_defeat(void)
+{
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, death_state_fixture_gamedata));
+
+    Entity *attacker_near = &game.state.gamedata.current_level.entities.data[0];
+    TEST_ASSERT_EQUAL_STRING("attacker", attacker_near->blueprint_name.ptr);
+    attacker_near->attack_state_timer = 10.0F;
+
+    Entity *attacker_far = &game.state.gamedata.current_level.entities.data[2];
+    TEST_ASSERT_EQUAL_STRING("attacker", attacker_far->blueprint_name.ptr);
+    attacker_far->attack_state_timer = 10.0F;
+
+    InputState idle = {0};
+    test_advance_frame(&game, idle);
+
+    const Entity *dying_target = test_find_entity_by_blueprint(&game.state, "dying_target");
+    TEST_ASSERT_NOT_NULL(dying_target);
+    const AttrSet *dying_defaults = entity_resolve_defaults(&game.state, dying_target->id);
+    TEST_ASSERT_TRUE_MESSAGE(attr_get_scoped_bool(&dying_target->attrs, dying_defaults, "active", true),
+                             "entity with a death clip should stay active the frame it is defeated");
+
+    const Entity *vanish_target = test_find_entity_by_blueprint(&game.state, "vanish_target");
+    TEST_ASSERT_NOT_NULL(vanish_target);
+    const AttrSet *vanish_defaults = entity_resolve_defaults(&game.state, vanish_target->id);
+    TEST_ASSERT_TRUE_MESSAGE(attr_get_scoped_bool(&vanish_target->attrs, vanish_defaults, "active", true),
+                             "entity with no death clip should still stay active the frame it is defeated, so its "
+                             "own defeat rule gets to run");
+
+    test_advance_frame(&game, idle);
+    dying_target = test_find_entity_by_blueprint(&game.state, "dying_target");
+    dying_defaults = entity_resolve_defaults(&game.state, dying_target->id);
+    TEST_ASSERT_TRUE_MESSAGE(dying_target->dying, "entity with a death clip should be marked dying");
+    TEST_ASSERT_TRUE_MESSAGE(attr_get_scoped_bool(&dying_target->attrs, dying_defaults, "active", true),
+                             "entity with a death clip should stay active while it plays");
+
+    vanish_target = test_find_entity_by_blueprint(&game.state, "vanish_target");
+    vanish_defaults = entity_resolve_defaults(&game.state, vanish_target->id);
+    TEST_ASSERT_FALSE_MESSAGE(attr_get_scoped_bool(&vanish_target->attrs, vanish_defaults, "active", true),
+                              "entity with no death clip should deactivate the frame after defeat");
+
+    test_advance_frames(&game, idle, 40);
+    dying_target = test_find_entity_by_blueprint(&game.state, "dying_target");
+    dying_defaults = entity_resolve_defaults(&game.state, dying_target->id);
+    TEST_ASSERT_FALSE_MESSAGE(attr_get_scoped_bool(&dying_target->attrs, dying_defaults, "active", true),
+                              "entity should deactivate once its death clip finishes");
 
     test_game_teardown(&game);
 }

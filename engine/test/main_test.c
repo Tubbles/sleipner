@@ -139,6 +139,9 @@ void test_integration_projectile_expires(void);
 void test_integration_anim_walk_direction_rows(void);
 void test_integration_anim_frame_progression(void);
 void test_integration_anim_state_switch(void);
+void test_integration_attack_hitbox_frame_window(void);
+void test_integration_hurt_state_on_damage(void);
+void test_integration_death_state_on_defeat(void);
 
 /* toml_emitter_test.c */
 void test_toml_emit_blueprints(void);
@@ -399,6 +402,9 @@ int main(void)
     RUN_TEST(test_integration_anim_walk_direction_rows);
     RUN_TEST(test_integration_anim_frame_progression);
     RUN_TEST(test_integration_anim_state_switch);
+    RUN_TEST(test_integration_attack_hitbox_frame_window);
+    RUN_TEST(test_integration_hurt_state_on_damage);
+    RUN_TEST(test_integration_death_state_on_defeat);
 
     RUN_TEST(test_integration_sprite_offset_edit_updates_entity_live);
     RUN_TEST(test_integration_sprite_offset_edit_emitted_to_toml);

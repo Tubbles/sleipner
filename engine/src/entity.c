@@ -78,11 +78,22 @@ Rectangle entity_collision_rect(const Entity *entity, const AttrSet *defaults)
     };
 }
 
+bool entity_hitbox_is_active(const Entity *entity, const AttrSet *defaults)
+{
+    if (entity->attack_state_timer <= 0.0F) {
+        return false;
+    }
+    int start = attr_get_scoped_int(&entity->attrs, defaults, "attack_hit_frame_start", ATTACK_HIT_FRAME_START_DEFAULT);
+    int end = attr_get_scoped_int(&entity->attrs, defaults, "attack_hit_frame_end", ATTACK_HIT_FRAME_END_DEFAULT);
+    return entity->frame_index >= start && entity->frame_index <= end;
+}
+
 /* One-rect fallback shape for hitbox_offset_x/y + hitbox_w/h attrs (S6.10a,
  * D26), same math as entity_collision_rect_prim above -- offset is the
  * rect's center relative to entity->position. While the hitbox is active
- * (S6.10b), the center is further shifted by ENTITY_HITBOX_REACH along
- * entity->facing so the hitbox lands in front of the entity. */
+ * (entity_hitbox_is_active, S6.10b/S6.11b), the center is further shifted
+ * by ENTITY_HITBOX_REACH along entity->facing so the hitbox lands in front
+ * of the entity. */
 static CollisionPrimitive entity_hitbox_rect_prim(const Entity *entity, const AttrSet *defaults)
 {
     float offset_x = attr_get_scoped_float(&entity->attrs, defaults, "hitbox_offset_x", 0.0F);
@@ -91,7 +102,7 @@ static CollisionPrimitive entity_hitbox_rect_prim(const Entity *entity, const At
     float height = attr_get_scoped_float(&entity->attrs, defaults, "hitbox_h", 0.0F);
     float reach_x = 0.0F;
     float reach_y = 0.0F;
-    if (entity->hitbox_active_timer > 0.0F) {
+    if (entity_hitbox_is_active(entity, defaults)) {
         reach_x = entity->facing.x * ENTITY_HITBOX_REACH;
         reach_y = entity->facing.y * ENTITY_HITBOX_REACH;
     }

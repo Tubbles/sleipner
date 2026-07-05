@@ -8,6 +8,7 @@
 
 #include "raylib.h"
 
+#include <limits.h>
 #include <stdbool.h>
 
 /* Blueprint properties needed to initialize an entity. Caller owns all
@@ -66,15 +67,42 @@ typedef struct {
     /* Combat runtime timers (S6.10a, D26), same footing as patrol_phase
      * above -- NOT emitted to TOML, decremented every frame by
      * tick_combat_timers (game.c). iframe_timer counts down the
-     * invincibility window after a hit lands (see entity_apply_damage);
-     * hitbox_active_timer counts down how much longer this entity's own
-     * hitbox stays live. Both start at 0 (inert) via entity_init's
-     * memset; the S6.10b attack activator is what sets
-     * hitbox_active_timer to a positive value. */
+     * invincibility window after a hit lands (see entity_apply_damage).
+     * Both start at 0 (inert) via entity_init's memset. */
     float iframe_timer;
-    float hitbox_active_timer;
+    /* Attack-state countdown (S6.10b/S6.11b, D26/D31): how much longer
+     * this entity's `state` resolves to "attack" (see
+     * resolve_effective_anim_state, game.c). Started by the S6.10b attack
+     * activator (update_player_attack) at the attack clip's own duration
+     * (frames/speed, or a sane fallback if the entity has no `attack`
+     * clip authored) rather than a fixed constant, so a longer/shorter
+     * clip naturally lengthens/shortens the swing. Renamed from
+     * hitbox_active_timer (S6.10b): it used to gate the hitbox directly;
+     * now it only gates the ATTACK STATE, and entity_hitbox_is_active
+     * (below) further narrows "is the hitbox live" to the clip's
+     * `attack_hit_frame_start`/`_end` window via `frame_index` -- the
+     * D31 "frames drive the hitbox" integration. Starts at 0 (inert) via
+     * entity_init's memset. */
+    float attack_state_timer;
+    /* Hurt-state countdown (S6.11b, D31): how much longer this entity's
+     * `state` resolves to "hurt" after taking a landed hit. Set by
+     * game.c's begin_hurt_state (called from detect_melee_damage/
+     * detect_contact_damage right after a successful entity_apply_damage)
+     * to the target's `hurt` clip duration, or a small fallback if it has
+     * none. Same runtime-only footing as attack_state_timer -- not
+     * emitted to TOML, starts at 0 (inert) via entity_init's memset. */
+    float hurt_state_timer;
+    /* Death-state countdown (S6.11b, D31): only meaningful while `dying`
+     * (below) is true. Set by game.c's begin_death_state to the target's
+     * `death` clip duration once its health reaches 0; once it counts
+     * down to 0 the entity is soft-destroyed (`active` attr set false).
+     * An entity with no `death` clip never has this timer set -- it is
+     * deactivated immediately instead (see begin_death_state). Same
+     * runtime-only footing as attack_state_timer -- not emitted to TOML,
+     * starts at 0 via entity_init's memset. */
+    float death_state_timer;
     /* Countdown for the knockback impulse below (S6.10c, D26), same
-     * runtime-only footing as iframe_timer/hitbox_active_timer above --
+     * runtime-only footing as iframe_timer/attack_state_timer above --
      * NOT emitted to TOML, decremented every frame by the knockback tick
      * pass (game.c) alongside tick_combat_timers. Starts at 0 (inert) via
      * entity_init's memset; entity_apply_knockback sets it to
@@ -101,8 +129,8 @@ typedef struct {
      * movement still has a defined direction. behavior_player (game.c)
      * updates it to the cardinal unit vector of the current movement
      * whenever the player moves; entity_hitbox_region reads it to place
-     * the attack hitbox in front of the entity while hitbox_active_timer
-     * is live (see ENTITY_HITBOX_REACH below). */
+     * the attack hitbox in front of the entity while entity_hitbox_is_active
+     * says the hitbox is live (see ENTITY_HITBOX_REACH below). */
     Vector2 facing;
     /* Initial knockback velocity in px/s (S6.10c, D26): set by
      * entity_apply_knockback alongside knockback_timer above, decays
@@ -114,6 +142,15 @@ typedef struct {
     /* Bools (1 byte each, packed at end) */
     bool flip;
     bool moving;
+    /* Terminal death flag (S6.11b, D31): set true (never cleared) by
+     * game.c's begin_death_state once this entity's health has reached 0.
+     * resolve_effective_anim_state (game.c) treats `dying` as the
+     * top-priority animation state ("death" overrides hurt/attack/
+     * walk/idle for the rest of this entity's life), unlike the timers
+     * above which only override while temporarily positive. Same
+     * runtime-only footing as attack_state_timer -- not emitted to TOML,
+     * starts false via entity_init's memset. */
+    bool dying;
 } Entity;
 
 /* Initialize an entity from a spec. Copies blueprint_name.
@@ -143,22 +180,46 @@ CollisionShape entity_trigger_region(const Entity *entity, const AttrSet *defaul
 Rectangle entity_collision_rect(const Entity *entity, const AttrSet *defaults);
 
 /* Reach (px) the one-rect hitbox fallback shifts its center along
- * entity->facing while entity->hitbox_active_timer > 0 (S6.10b, D26) --
- * on top of the plain hitbox_offset_x/y attrs, so an active attack's
- * hitbox sits in front of the entity instead of centered on it. Inactive
- * (hitbox_active_timer <= 0) callers see the plain attrs-derived offset,
+ * entity->facing while entity_hitbox_is_active(entity, defaults) is true
+ * (S6.10b/S6.11b, D26/D31) -- on top of the plain hitbox_offset_x/y attrs,
+ * so an active attack's hitbox sits in front of the entity instead of
+ * centered on it. Inactive callers see the plain attrs-derived offset,
  * unchanged from before this feature landed. Only applied to the
  * attr-derived fallback, not an authored entity->hitbox composite (no
  * [[blueprint.hitbox]] TOML authoring exists yet -- see TODO.md). */
 #define ENTITY_HITBOX_REACH 8.0F
 
+/* Default `attack_hit_frame_start`/`_end` bounds (S6.11b, D31) when a
+ * blueprint authors neither: the whole clip is the active window (frame 0
+ * upward, unbounded above), so a blueprint that doesn't opt into a
+ * narrower swing window -- or an attacker with no `attack` clip at all,
+ * whose frame_index never leaves 0 -- still gets a working hitbox for the
+ * entire attack_state_timer window, matching the pre-S6.11b fixed-timer
+ * behavior exactly. */
+#define ATTACK_HIT_FRAME_START_DEFAULT 0
+#define ATTACK_HIT_FRAME_END_DEFAULT INT_MAX
+
+/* Whether entity's hitbox is currently ACTIVE (S6.11b, D31): true only
+ * while the entity is mid-attack (attack_state_timer > 0) AND its
+ * frame_index falls within the scoped [attack_hit_frame_start,
+ * attack_hit_frame_end] window (attrs, defaulting per the two constants
+ * above). Replaces the old hitbox_active_timer > 0 gate (S6.10b): the
+ * timer alone used to BE the gate; now it only gates the attack STATE,
+ * and frame_index -- driven by the attack clip's own playback, see
+ * advance_entity_animation, game.c -- narrows that down to the clip's
+ * actual swing frames. Shared by detect_melee_damage's "can this entity
+ * currently deal a hit" check (game.c) and entity_hitbox_rect_prim's
+ * directional reach shift (entity.c) so both agree on exactly when the
+ * hitbox is live. */
+bool entity_hitbox_is_active(const Entity *entity, const AttrSet *defaults);
+
 /* Build the hitbox region for an entity (S6.10a/b, D26/D28): entity->hitbox
  * if an authored composite is present, otherwise a one-rect shape derived
  * from the hitbox_offset_x/y and hitbox_w/h attrs (scoped lookup, default
  * 0 -- an entity with none of these authored has an inert, zero-size
- * hitbox), shifted by ENTITY_HITBOX_REACH along entity->facing while the
- * hitbox is active. prim_storage has the same caller-owned-scratch-space
- * lifetime rule as entity_collision_region's. */
+ * hitbox), shifted by ENTITY_HITBOX_REACH along entity->facing while
+ * entity_hitbox_is_active says the hitbox is active. prim_storage has the
+ * same caller-owned-scratch-space lifetime rule as entity_collision_region's. */
 CollisionShape entity_hitbox_region(const Entity *entity, const AttrSet *defaults, CollisionPrimitive *prim_storage);
 
 /* Build the hurtbox region for an entity (S6.10a, D26/D28): entity->hurtbox
