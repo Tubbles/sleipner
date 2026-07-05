@@ -326,6 +326,21 @@ void test_action_parse_unknown(void)
     TEST_ASSERT_FALSE(parse_action_str(&action, "unknown_action:foo"));
 }
 
+/* dialogue: is ActionMapping.single_arg (S6.7c, D24): unlike every other
+ * has_args action, its whole remainder must survive verbatim, commas
+ * included, in `argument` alone -- parse_action_two_args's generic first-
+ * comma split (exercised by set_attr/add_attr above) must NOT apply here,
+ * or a comma anywhere in dialogue prose would silently truncate it. */
+void test_action_parse_dialogue_keeps_commas_unsplit(void)
+{
+    ActionNode action;
+    TEST_ASSERT_TRUE(parse_action_str(&action, "dialogue:Hello, traveler. Nice day, isn't it?"));
+    TEST_ASSERT_EQUAL_INT(ACTION_DIALOGUE, action.type);
+    TEST_ASSERT_EQUAL_STRING("Hello, traveler. Nice day, isn't it?", action.argument.ptr);
+    TEST_ASSERT_EQUAL_INT(0, (int)action.second_argument.len);
+    str_free(&action.argument);
+}
+
 /* ---- Trigger matching tests ---- */
 
 void test_trigger_matches_simple(void)
@@ -860,7 +875,7 @@ void test_evaluate_interact_sets_flag(void)
     EntityView views[] = {{.entity = &entity, .defaults = &blueprint.attrs}};
 
     rules_evaluate_batch(&test_diag, &test_heap_alloc, views, 1, &event, 1, &flags, &global_vars, &test_heap_alloc,
-                         &rule_table, nullptr, nullptr, &rule_alloc, nullptr, nullptr, nullptr);
+                         &rule_table, nullptr, nullptr, &rule_alloc, nullptr, nullptr, nullptr, nullptr);
     TEST_ASSERT_TRUE(flag_get(&flags, "chest_opened"));
 
     arena_free(&arena);
@@ -916,7 +931,7 @@ void test_evaluate_condition_blocks_action(void)
     EntityView views[] = {{.entity = &entity, .defaults = &blueprint.attrs}};
 
     rules_evaluate_batch(&test_diag, &test_heap_alloc, views, 1, &event, 1, &flags, &global_vars, &test_heap_alloc,
-                         &rule_table, nullptr, nullptr, &rule_alloc, nullptr, nullptr, nullptr);
+                         &rule_table, nullptr, nullptr, &rule_alloc, nullptr, nullptr, nullptr, nullptr);
     TEST_ASSERT_FALSE(flag_get(&flags, "chest_opened"));
 
     arena_free(&arena);
@@ -991,7 +1006,7 @@ void test_evaluate_fire_event_cascading(void)
     };
 
     rules_evaluate_batch(&test_diag, &test_heap_alloc, views, 2, &event, 1, &flags, &global_vars, &test_heap_alloc,
-                         &rule_table, nullptr, nullptr, &rule_alloc, nullptr, nullptr, nullptr);
+                         &rule_table, nullptr, nullptr, &rule_alloc, nullptr, nullptr, nullptr, nullptr);
     TEST_ASSERT_TRUE(flag_get(&flags, "door_opened"));
 
     arena_free(&arena);
@@ -1051,7 +1066,8 @@ void test_evaluate_batch_handles_over_64_seeded_events(void)
     AttrSet global_vars = {0};
 
     rules_evaluate_batch(&test_diag, &test_heap_alloc, views, ENTITY_COUNT, events, ENTITY_COUNT, &flags, &global_vars,
-                         &test_heap_alloc, &rule_table, nullptr, nullptr, &rule_alloc, nullptr, nullptr, nullptr);
+                         &test_heap_alloc, &rule_table, nullptr, nullptr, &rule_alloc, nullptr, nullptr, nullptr,
+                         nullptr);
 
     for (int index = 0; index < ENTITY_COUNT; index++) {
         TEST_ASSERT_EQUAL_INT(1, attr_get_int(&entities[index].attrs, "hit_count", 0));
@@ -1265,6 +1281,115 @@ void test_local_var_scoped_per_rule(void)
     test_attr_set_free_local(&global_vars);
 }
 
+/* ---- Dialogue tests (S6.7c, D24) ---- */
+
+static void free_dialogue_pages(DialogueState *state)
+{
+    for (int index = 0; index < state->pages.count; index++) {
+        str_free(&state->pages.data[index]);
+    }
+    vec_str_free(&state->pages);
+}
+
+void test_dialogue_revealed_char_count_zero_at_zero_elapsed(void)
+{
+    TEST_ASSERT_EQUAL_INT(0, dialogue_revealed_char_count(0.0F, 30.0F, 20));
+}
+
+void test_dialogue_revealed_char_count_partial_reveal(void)
+{
+    TEST_ASSERT_EQUAL_INT(3, dialogue_revealed_char_count(0.1F, 30.0F, 20));
+}
+
+void test_dialogue_revealed_char_count_clamps_to_page_length(void)
+{
+    TEST_ASSERT_EQUAL_INT(20, dialogue_revealed_char_count(10.0F, 30.0F, 20));
+}
+
+void test_dialogue_revealed_char_count_zero_page_length(void)
+{
+    TEST_ASSERT_EQUAL_INT(0, dialogue_revealed_char_count(5.0F, 30.0F, 0));
+}
+
+void test_dialogue_open_single_page_without_delimiter(void)
+{
+    DialogueState state = {0};
+    TEST_ASSERT_TRUE(dialogue_open(&state, test_heap_alloc, strv_from_cstr("Hello world")));
+    TEST_ASSERT_TRUE(state.active);
+    TEST_ASSERT_EQUAL_INT(0, state.current_page);
+    TEST_ASSERT_EQUAL_FLOAT(0.0F, state.reveal_elapsed);
+    TEST_ASSERT_EQUAL_INT(1, state.pages.count);
+    TEST_ASSERT_EQUAL_STRING("Hello world", state.pages.data[0].ptr);
+
+    free_dialogue_pages(&state);
+}
+
+void test_dialogue_open_splits_on_page_delimiter(void)
+{
+    DialogueState state = {0};
+    TEST_ASSERT_TRUE(dialogue_open(&state, test_heap_alloc, strv_from_cstr("Page one|Page two|Page three")));
+    TEST_ASSERT_EQUAL_INT(3, state.pages.count);
+    TEST_ASSERT_EQUAL_STRING("Page one", state.pages.data[0].ptr);
+    TEST_ASSERT_EQUAL_STRING("Page two", state.pages.data[1].ptr);
+    TEST_ASSERT_EQUAL_STRING("Page three", state.pages.data[2].ptr);
+
+    free_dialogue_pages(&state);
+}
+
+void test_dialogue_confirm_mid_reveal_skips_to_full(void)
+{
+    DialogueState state = {0};
+    TEST_ASSERT_TRUE(dialogue_open(&state, test_heap_alloc, strv_from_cstr("Hello world")));
+
+    dialogue_confirm(&state);
+    TEST_ASSERT_TRUE(state.active);
+    TEST_ASSERT_EQUAL_INT(0, state.current_page);
+    int page_length = (int)state.pages.data[0].len;
+    TEST_ASSERT_EQUAL_INT(page_length,
+                          dialogue_revealed_char_count(state.reveal_elapsed, DIALOGUE_CHARS_PER_SECOND, page_length));
+
+    free_dialogue_pages(&state);
+}
+
+void test_dialogue_confirm_advances_page_and_resets_typewriter(void)
+{
+    DialogueState state = {0};
+    TEST_ASSERT_TRUE(dialogue_open(&state, test_heap_alloc, strv_from_cstr("Page one|Page two")));
+
+    /* Fully reveal page 0 first (mirrors a real skip-to-full press). */
+    dialogue_confirm(&state);
+    TEST_ASSERT_EQUAL_INT(0, state.current_page);
+
+    /* Second confirm, now that page 0 is fully revealed, advances. */
+    dialogue_confirm(&state);
+    TEST_ASSERT_TRUE(state.active);
+    TEST_ASSERT_EQUAL_INT(1, state.current_page);
+    TEST_ASSERT_EQUAL_FLOAT(0.0F, state.reveal_elapsed);
+
+    free_dialogue_pages(&state);
+}
+
+void test_dialogue_confirm_closes_on_last_page_fully_revealed(void)
+{
+    DialogueState state = {0};
+    TEST_ASSERT_TRUE(dialogue_open(&state, test_heap_alloc, strv_from_cstr("Only page")));
+
+    dialogue_confirm(&state); /* skip to full */
+    TEST_ASSERT_TRUE(state.active);
+    dialogue_confirm(&state); /* last page, fully revealed -> close */
+    TEST_ASSERT_FALSE(state.active);
+
+    free_dialogue_pages(&state);
+}
+
+void test_dialogue_confirm_no_op_when_inactive(void)
+{
+    DialogueState state = {0};
+    dialogue_confirm(&state);
+    TEST_ASSERT_FALSE(state.active);
+    TEST_ASSERT_EQUAL_INT(0, state.pages.count);
+}
+
 int main(void)
 {
     test_helpers_init();
@@ -1299,6 +1424,7 @@ int main(void)
     RUN_TEST(test_action_parse_destroy);
     RUN_TEST(test_action_parse_fire_event);
     RUN_TEST(test_action_parse_unknown);
+    RUN_TEST(test_action_parse_dialogue_keeps_commas_unsplit);
     RUN_TEST(test_trigger_matches_simple);
     RUN_TEST(test_trigger_no_match_different_type);
     RUN_TEST(test_trigger_matches_event_with_argument);
@@ -1332,6 +1458,17 @@ int main(void)
     RUN_TEST(test_var_condition_falsy_when_unset);
     RUN_TEST(test_var_substitution_in_set_attr);
     RUN_TEST(test_local_var_scoped_per_rule);
+
+    RUN_TEST(test_dialogue_revealed_char_count_zero_at_zero_elapsed);
+    RUN_TEST(test_dialogue_revealed_char_count_partial_reveal);
+    RUN_TEST(test_dialogue_revealed_char_count_clamps_to_page_length);
+    RUN_TEST(test_dialogue_revealed_char_count_zero_page_length);
+    RUN_TEST(test_dialogue_open_single_page_without_delimiter);
+    RUN_TEST(test_dialogue_open_splits_on_page_delimiter);
+    RUN_TEST(test_dialogue_confirm_mid_reveal_skips_to_full);
+    RUN_TEST(test_dialogue_confirm_advances_page_and_resets_typewriter);
+    RUN_TEST(test_dialogue_confirm_closes_on_last_page_fully_revealed);
+    RUN_TEST(test_dialogue_confirm_no_op_when_inactive);
 
     return UNITY_END();
 }

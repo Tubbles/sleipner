@@ -992,6 +992,30 @@ static bool is_rule_mode_side_panel(const EditorState *editor_state)
     return editor_state->sub_mode == EDITOR_SUB_ATTR_EDIT && editor_state->top_mode == EDITOR_TOP_RULE;
 }
 
+#define DIALOGUE_BOX_HEIGHT 96
+#define DIALOGUE_FONT_SIZE 24
+
+/* Blocking dialogue box (S6.7c, D24): a filled bar across the bottom of
+ * the screen showing the current page's text revealed up to the
+ * headless-computed typewriter count (dialogue_revealed_char_count,
+ * rule.c) -- this function only draws the substring, it never advances
+ * the reveal itself (that's frame.c's run_dialogue_frame, driven by the
+ * real input layer so it stays headless-testable). No-op when no
+ * dialogue is open. */
+static void draw_dialogue_box(ScreenSize screen, GameState *state)
+{
+    const DialogueState *dialogue = &state->dialogue;
+    if (!dialogue->active || dialogue->pages.count == 0) {
+        return;
+    }
+    int box_y = screen.height - DIALOGUE_BOX_HEIGHT;
+    DrawRectangle(0, box_y, screen.width, DIALOGUE_BOX_HEIGHT, debug_bg_color);
+    const Str *page = &dialogue->pages.data[dialogue->current_page];
+    int revealed = dialogue_revealed_char_count(dialogue->reveal_elapsed, DIALOGUE_CHARS_PER_SECOND, (int)page->len);
+    const char *text = TextFormat("%.*s", revealed, page->ptr);
+    draw_ui_text(state->assets.ui_font, text, DEBUG_MARGIN, box_y + DEBUG_MARGIN, DIALOGUE_FONT_SIZE, debug_text_color);
+}
+
 /* Dispatch the right editor side panel for the current sub_mode/top_mode.
  * Split out of render_frame so a new top_mode's list-vs-detail branch
  * (e.g. EDITOR_TOP_LEVEL's level_detail_open check) doesn't push
@@ -1115,6 +1139,7 @@ static void render_frame(GameState *state, RenderParams params)
     draw_toast(&params.editor_state, screen, state->assets.ui_font);
     draw_hints_bar(state->editor_mode, &params.editor_state, &state->bindings, params.is_dirty, screen,
                    state->assets.ui_font);
+    draw_dialogue_box(screen, state);
     capture_overlay_blur_if_needed(params);
     menu_render(params.menu, params.blur, state->screen_width, state->screen_height);
     if (params.settings && params.settings->open) {

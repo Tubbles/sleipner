@@ -38,6 +38,7 @@ VEC_IMPL(subroutine, Subroutine)
 VEC_IMPL(timer, Timer)
 VEC_IMPL(exec_frame_snapshot, ExecFrameSnapshot)
 VEC_IMPL(rule_continuation, RuleContinuation)
+VEC_IMPL(str, Str)
 MAP_IMPL(entity_ruleset, int, vec_rule, map_hash_int, map_eq_int)
 
 /* ---- FlagSet ---- */
@@ -375,36 +376,50 @@ static bool parse_action_two_args(Allocator *alloc, ActionNode *node, Strv strv)
     return true;
 }
 
+/* Whole remainder becomes `argument` verbatim -- no comma split. See
+ * ActionMapping.single_arg. */
+static bool parse_single_arg_action(Allocator *alloc, ActionNode *node, Strv strv)
+{
+    node->argument = str_new(*alloc);
+    return str_from_strv(&node->argument, strv);
+}
+
 typedef struct {
     const char *prefix;
     ActionType type;
     bool has_args;
+    /* true: the whole remainder after the prefix becomes `argument`
+     * verbatim, no comma split, `second_argument` stays empty. Only
+     * dialogue text needs this today -- unlike every other has_args
+     * action (a name, or "name,value"/"x,y" coordinates), it is free
+     * prose that may itself contain commas. */
+    bool single_arg;
 } ActionMapping;
 
 static const ActionMapping action_mappings[] = {
-    {"set_flag:", ACTION_SET_FLAG, true},
-    {"clear_flag:", ACTION_CLEAR_FLAG, true},
-    {"set_attr:", ACTION_SET_ATTR, true},
-    {"add_attr:", ACTION_ADD_ATTR, true},
-    {"toggle_attr:", ACTION_TOGGLE_ATTR, true},
-    {"destroy", ACTION_DESTROY, false},
-    {"fire_event:", ACTION_FIRE_EVENT, true},
-    {"give_item:", ACTION_GIVE_ITEM, true},
-    {"remove_item:", ACTION_REMOVE_ITEM, true},
-    {"change_sprite:", ACTION_CHANGE_SPRITE, true},
-    {"play_sound:", ACTION_PLAY_SOUND, true},
-    {"dialogue:", ACTION_DIALOGUE, true},
-    {"transition:", ACTION_TRANSITION, true},
-    {"spawn:", ACTION_SPAWN, true},
-    {"camera_pan:", ACTION_CAMERA_PAN, true},
-    {"camera_shake:", ACTION_CAMERA_SHAKE, true},
-    {"call:", ACTION_CALL, true},
-    {"set_var:", ACTION_SET_VAR, true},
-    {"wait:", ACTION_WAIT, true},
-    {"create_timer_periodic:", ACTION_CREATE_TIMER_PERIODIC, true},
-    {"create_timer:", ACTION_CREATE_TIMER, true},
-    {"destroy_timer:", ACTION_DESTROY_TIMER, true},
-    {nullptr, 0, false},
+    {"set_flag:", ACTION_SET_FLAG, true, false},
+    {"clear_flag:", ACTION_CLEAR_FLAG, true, false},
+    {"set_attr:", ACTION_SET_ATTR, true, false},
+    {"add_attr:", ACTION_ADD_ATTR, true, false},
+    {"toggle_attr:", ACTION_TOGGLE_ATTR, true, false},
+    {"destroy", ACTION_DESTROY, false, false},
+    {"fire_event:", ACTION_FIRE_EVENT, true, false},
+    {"give_item:", ACTION_GIVE_ITEM, true, false},
+    {"remove_item:", ACTION_REMOVE_ITEM, true, false},
+    {"change_sprite:", ACTION_CHANGE_SPRITE, true, false},
+    {"play_sound:", ACTION_PLAY_SOUND, true, false},
+    {"dialogue:", ACTION_DIALOGUE, true, true},
+    {"transition:", ACTION_TRANSITION, true, false},
+    {"spawn:", ACTION_SPAWN, true, false},
+    {"camera_pan:", ACTION_CAMERA_PAN, true, false},
+    {"camera_shake:", ACTION_CAMERA_SHAKE, true, false},
+    {"call:", ACTION_CALL, true, false},
+    {"set_var:", ACTION_SET_VAR, true, false},
+    {"wait:", ACTION_WAIT, true, false},
+    {"create_timer_periodic:", ACTION_CREATE_TIMER_PERIODIC, true, false},
+    {"create_timer:", ACTION_CREATE_TIMER, true, false},
+    {"destroy_timer:", ACTION_DESTROY_TIMER, true, false},
+    {nullptr, 0, false, false},
 };
 
 Strv action_type_label(ActionType type)
@@ -440,7 +455,8 @@ static bool parse_simple_action(Diag *diag, Allocator *alloc, ActionNode *node, 
             node->type = mapping->type;
             Strv rest = strv;
             (void)strv_split(&rest, ':');
-            return parse_action_two_args(alloc, node, rest);
+            return mapping->single_arg ? parse_single_arg_action(alloc, node, rest)
+                                       : parse_action_two_args(alloc, node, rest);
         }
     }
 
@@ -1887,13 +1903,108 @@ static bool build_continuation_snapshot(Allocator *alloc,
     return true;
 }
 
-/* ACTION_WAIT: parses the duration, snapshots the CURRENT live frame
- * stack (frame_stack[0..frame_top)) -- at this point the top frame's
- * child_cursor already points past the wait node, exactly the position
- * resuming should continue from, so no special marker is needed -- and
- * pushes a RuleContinuation. context.rule_owner_entity_id/rule_index
- * identify the rule regardless of how deep inside for_each/call frames
- * the wait is nested (those rebind context.entity, never these two). */
+/* ---- Dialogue (S6.7c, D24) ----
+ *
+ * DialogueState is defined in rule.h alongside TransitionRequest: like
+ * that struct, `dialogue:` writes into it DIRECTLY from the rule VM
+ * (handle_dialogue_action, below) rather than through EffectQueue's
+ * deferred per-frame drain. */
+
+/* `full_reveal_time` combines chars_per_second and page_length in one
+ * sub-expression -- clang-tidy's bugprone-easily-swappable-parameters
+ * otherwise flags that pair as swappable, since nothing in a plain
+ * "multiply then clamp" formula uses them together (same rationale as
+ * camera_shake_magnitude's own rearrangement, game.c). */
+int dialogue_revealed_char_count(float elapsed, float chars_per_second, int page_length)
+{
+    if (elapsed <= 0.0F || page_length <= 0) {
+        return 0;
+    }
+    float full_reveal_time = (float)page_length / chars_per_second;
+    if (elapsed >= full_reveal_time) {
+        return page_length;
+    }
+    return (int)(elapsed * chars_per_second);
+}
+
+bool dialogue_open(DialogueState *state, Allocator alloc, Strv text)
+{
+    state->pages = vec_str_new(alloc);
+    Strv remaining = text;
+    do {
+        Strv page = strv_split(&remaining, DIALOGUE_PAGE_DELIMITER);
+        Str page_copy = str_new(alloc);
+        if (!str_from_strv(&page_copy, page) || !vec_str_push(&state->pages, page_copy)) {
+            return false;
+        }
+    } while (remaining.ptr);
+    state->current_page = 0;
+    state->reveal_elapsed = 0.0F;
+    state->active = true;
+    return true;
+}
+
+void dialogue_confirm(DialogueState *state)
+{
+    if (!state->active) {
+        return;
+    }
+    const Str *page = &state->pages.data[state->current_page];
+    int page_length = (int)page->len;
+    int revealed = dialogue_revealed_char_count(state->reveal_elapsed, DIALOGUE_CHARS_PER_SECOND, page_length);
+    if (revealed < page_length) {
+        /* Skip to full: page_length seconds is a deliberately oversized
+         * elapsed value (not page_length / DIALOGUE_CHARS_PER_SECOND,
+         * which risks landing a hair short of page_length after float
+         * rounding) -- see DIALOGUE_CHARS_PER_SECOND's doc comment in
+         * rule.h for why this is always enough. */
+        state->reveal_elapsed = (float)page_length;
+        return;
+    }
+    if (state->current_page + 1 < state->pages.count) {
+        state->current_page++;
+        state->reveal_elapsed = 0.0F;
+        return;
+    }
+    state->active = false;
+}
+
+/* Snapshots the CURRENT live frame stack (frame_stack[0..frame_top)) --
+ * at this point the top frame's child_cursor already points past the
+ * suspending node, exactly the position resuming should continue from, so
+ * no special marker is needed -- and pushes a RuleContinuation with the
+ * given `wake`. Shared by ACTION_WAIT (WAKE_TIMER) and ACTION_DIALOGUE
+ * (WAKE_DIALOGUE_CLOSED, S6.7c) -- they differ only in that value.
+ * context.rule_owner_entity_id/rule_index identify the rule regardless of
+ * how deep inside for_each/call frames the suspend is nested (those
+ * rebind context.entity, never these two). */
+static ExecResult suspend_rule(
+    Diag *diag, Allocator *alloc, ActionContext context, const ExecFrame *frame_stack, int frame_top, Wake wake)
+{
+    if (!context.continuations) {
+        debug_log(diag->debug, "suspend: no continuation storage -- skipping suspend");
+        return EXEC_COMPLETE;
+    }
+    RuleContinuation continuation = {
+        .entity_id = context.rule_owner_entity_id,
+        .rule_index = context.rule_index,
+        .local_vars = context.local_vars ? *context.local_vars : (AttrSet){0},
+        .wake = wake,
+    };
+    if (!build_continuation_snapshot(alloc, frame_stack, frame_top, &continuation.frames)) {
+        error_set(diag->error, "suspend: allocation failed snapshotting the execution frame stack");
+        return EXEC_ERROR;
+    }
+    context.continuations->alloc = *alloc;
+    if (!vec_rule_continuation_push(context.continuations, continuation)) {
+        error_set(diag->error, "suspend: allocation failed pushing continuation");
+        return EXEC_ERROR;
+    }
+    return EXEC_SUSPENDED;
+}
+
+/* ACTION_WAIT: parses the duration, then suspends via suspend_rule with a
+ * WAKE_TIMER wake. */
 static ExecResult handle_wait_action(Diag *diag,
                                      Allocator *alloc,
                                      const ActionNode *node,
@@ -1906,31 +2017,46 @@ static ExecResult handle_wait_action(Diag *diag,
         error_set(diag->error, "wait: invalid duration '%s'", node->argument.ptr);
         return EXEC_ERROR;
     }
-    if (!context.continuations) {
-        debug_log(diag->debug, "wait: no continuation storage -- skipping wait");
-        return EXEC_COMPLETE;
-    }
-    RuleContinuation continuation = {
-        .entity_id = context.rule_owner_entity_id,
-        .rule_index = context.rule_index,
-        .local_vars = context.local_vars ? *context.local_vars : (AttrSet){0},
-        .wake = {.kind = WAKE_TIMER, .remaining = duration},
-    };
-    if (!build_continuation_snapshot(alloc, frame_stack, frame_top, &continuation.frames)) {
-        error_set(diag->error, "wait: allocation failed snapshotting the execution frame stack");
+    return suspend_rule(diag, alloc, context, frame_stack, frame_top,
+                        (Wake){.kind = WAKE_TIMER, .remaining = duration});
+}
+
+/* ACTION_DIALOGUE (S6.7c, D24): opens context.dialogue DIRECTLY -- unlike
+ * the deferred EffectQueue effects (sound, camera_pan/shake, spawn) --
+ * because dialogue must BLOCK: the world freezes and the rule suspends
+ * until the player closes the box, which the per-frame drain can't
+ * express (see ActionContext.dialogue's doc comment, rule.h). Shares
+ * handle_wait_action's suspend path via suspend_rule, differing only in
+ * the Wake value (WAKE_DIALOGUE_CLOSED instead of WAKE_TIMER).
+ *
+ * At most one dialogue is meant to be open at a time. If one is already
+ * active when this fires (e.g. two on_spawn rules both opening dialogue
+ * in the same frame), the simple defined behavior is: drop the second
+ * open (logged), but still suspend this rule with WAKE_DIALOGUE_CLOSED so
+ * it resumes once the ALREADY-open dialogue closes, rather than either
+ * queuing it or running the rule's remaining actions out of order. See
+ * TODO.md for this single-dialogue-at-a-time limitation. */
+static ExecResult handle_dialogue_action(Diag *diag,
+                                         Allocator *alloc,
+                                         const ActionNode *node,
+                                         ActionContext context,
+                                         const ExecFrame *frame_stack,
+                                         int frame_top)
+{
+    if (!context.dialogue) {
+        debug_log(diag->debug, "dialogue: no dialogue state -- skipping open for '%s'", node->argument.ptr);
+    } else if (context.dialogue->active) {
+        debug_log(diag->debug, "dialogue: already active -- dropping open for '%s'", node->argument.ptr);
+    } else if (!dialogue_open(context.dialogue, *alloc, str_to_strv(node->argument))) {
+        error_set(diag->error, "dialogue: allocation failed opening '%s'", node->argument.ptr);
         return EXEC_ERROR;
     }
-    context.continuations->alloc = *alloc;
-    if (!vec_rule_continuation_push(context.continuations, continuation)) {
-        error_set(diag->error, "wait: allocation failed pushing continuation");
-        return EXEC_ERROR;
-    }
-    return EXEC_SUSPENDED;
+    return suspend_rule(diag, alloc, context, frame_stack, frame_top, (Wake){.kind = WAKE_DIALOGUE_CLOSED});
 }
 
 /* Dispatches `node`: a simple action runs immediately, a control-flow node
- * pushes a new frame for its children, ACTION_WAIT suspends. Used both for
- * a frame's own children (run_frame_stack, below) and for
+ * pushes a new frame for its children, ACTION_WAIT/ACTION_DIALOGUE
+ * suspend. Used both for a frame's own children (run_frame_stack, below) and for
  * action_node_execute's top-level node. `node_index` is node's index in
  * context.action_pool if known, or -1 if `node` was supplied directly
  * rather than reached via a parent frame's `indices` (see
@@ -1956,6 +2082,8 @@ static ExecResult dispatch_or_expand_node(Diag *diag,
         return expand_call_node(diag, node, context, frame_stack, frame_top) ? EXEC_COMPLETE : EXEC_ERROR;
     case ACTION_WAIT:
         return handle_wait_action(diag, alloc, node, context, frame_stack, *frame_top);
+    case ACTION_DIALOGUE:
+        return handle_dialogue_action(diag, alloc, node, context, frame_stack, *frame_top);
     default:
         return dispatch_simple_action(diag, alloc, node, context) ? EXEC_COMPLETE : EXEC_ERROR;
     }
@@ -2202,17 +2330,21 @@ void rules_resume_continuations(Diag *diag,
                                 vec_timer *timers,
                                 TransitionRequest *transition,
                                 EffectQueue *effects,
+                                DialogueState *dialogue,
                                 vec_rule_continuation *continuations,
                                 float delta_time)
 {
     int initial_count = continuations->count;
     for (int index = initial_count - 1; index >= 0; index--) {
         RuleContinuation *live = &continuations->data[index];
-        if (live->wake.kind != WAKE_TIMER) {
-            continue; /* WAKE_DIALOGUE_CLOSED: no producer yet (S6.7c) */
+        bool is_due = false;
+        if (live->wake.kind == WAKE_TIMER) {
+            live->wake.remaining -= delta_time;
+            is_due = live->wake.remaining <= 0.0F;
+        } else { /* WAKE_DIALOGUE_CLOSED (S6.7c): due the instant the dialogue is no longer active */
+            is_due = !dialogue || !dialogue->active;
         }
-        live->wake.remaining -= delta_time;
-        if (live->wake.remaining > 0.0F) {
+        if (!is_due) {
             continue;
         }
 
@@ -2257,6 +2389,7 @@ void rules_resume_continuations(Diag *diag,
             .timers = timers,
             .transition = transition,
             .effects = effects,
+            .dialogue = dialogue,
             .continuations = continuations,
             .pool_id = -1,
             .action_pool = &rule->action_tree.nodes,
@@ -2311,6 +2444,7 @@ static void evaluate_entity_rules(Diag *diag,
                                   vec_timer *timers,
                                   TransitionRequest *transition,
                                   EffectQueue *effects,
+                                  DialogueState *dialogue,
                                   vec_rule_continuation *continuations)
 {
     const vec_rule *ruleset = map_entity_ruleset_get(rule_table, entity->id);
@@ -2346,6 +2480,7 @@ static void evaluate_entity_rules(Diag *diag,
             .timers = timers,
             .transition = transition,
             .effects = effects,
+            .dialogue = dialogue,
             .continuations = continuations,
             .action_pool = &rule->action_tree.nodes,
             .pool_id = -1,
@@ -2383,6 +2518,7 @@ void rules_evaluate_batch(Diag *diag,
                           Allocator *scratch_alloc,
                           TransitionRequest *transition,
                           EffectQueue *effects,
+                          DialogueState *dialogue,
                           vec_rule_continuation *continuations)
 {
     vec_trigger_event pending_events = vec_trigger_event_new(*scratch_alloc);
@@ -2412,7 +2548,7 @@ void rules_evaluate_batch(Diag *diag,
             }
             evaluate_entity_rules(diag, alloc, entity, entity_index, views, view_count, flags, global_vars,
                                   progression_alloc, &pending_events, &next_events, rule_table, subroutines, timers,
-                                  transition, effects, continuations);
+                                  transition, effects, dialogue, continuations);
         }
 
         pending_events = next_events;

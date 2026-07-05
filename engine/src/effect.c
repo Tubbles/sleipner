@@ -10,7 +10,6 @@ VEC_IMPL(sound_effect_request, SoundEffectRequest)
 VEC_IMPL(camera_pan_request, CameraPanRequest)
 VEC_IMPL(camera_shake_request, CameraShakeRequest)
 VEC_IMPL(spawn_request, SpawnRequest)
-VEC_IMPL(dialogue_request, DialogueRequest)
 
 void effect_queue_init(EffectQueue *queue, Allocator alloc)
 {
@@ -18,7 +17,6 @@ void effect_queue_init(EffectQueue *queue, Allocator alloc)
     queue->camera_pans = vec_camera_pan_request_new(alloc);
     queue->camera_shakes = vec_camera_shake_request_new(alloc);
     queue->spawns = vec_spawn_request_new(alloc);
-    queue->dialogues = vec_dialogue_request_new(alloc);
 }
 
 void effect_queue_clear(EffectQueue *queue)
@@ -27,7 +25,6 @@ void effect_queue_clear(EffectQueue *queue)
     vec_camera_pan_request_clear(&queue->camera_pans);
     vec_camera_shake_request_clear(&queue->camera_shakes);
     vec_spawn_request_clear(&queue->spawns);
-    vec_dialogue_request_clear(&queue->dialogues);
 }
 
 bool effect_queue_push_sound(EffectQueue *queue, Strv name)
@@ -49,9 +46,4 @@ bool effect_queue_push_spawn(EffectQueue *queue, Strv blueprint, Vector2 positio
 {
     SpawnRequest request = {.blueprint = blueprint, .x = position.x, .y = position.y};
     return vec_spawn_request_push(&queue->spawns, request);
-}
-
-bool effect_queue_push_dialogue(EffectQueue *queue, Strv text)
-{
-    return vec_dialogue_request_push(&queue->dialogues, (DialogueRequest){.text = text});
 }

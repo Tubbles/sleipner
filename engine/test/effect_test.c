@@ -20,7 +20,6 @@ static void free_all(EffectQueue *queue)
     vec_camera_pan_request_free(&queue->camera_pans);
     vec_camera_shake_request_free(&queue->camera_shakes);
     vec_spawn_request_free(&queue->spawns);
-    vec_dialogue_request_free(&queue->dialogues);
 }
 
 void test_effect_queue_init_creates_empty_queue(void)
@@ -32,7 +31,6 @@ void test_effect_queue_init_creates_empty_queue(void)
     TEST_ASSERT_EQUAL_INT(0, queue.camera_pans.count);
     TEST_ASSERT_EQUAL_INT(0, queue.camera_shakes.count);
     TEST_ASSERT_EQUAL_INT(0, queue.spawns.count);
-    TEST_ASSERT_EQUAL_INT(0, queue.dialogues.count);
 }
 
 void test_effect_queue_push_sound_stores_name(void)
@@ -92,19 +90,6 @@ void test_effect_queue_push_spawn_stores_blueprint_and_position(void)
     free_all(&queue);
 }
 
-void test_effect_queue_push_dialogue_stores_text(void)
-{
-    EffectQueue queue;
-    effect_queue_init(&queue, test_heap_alloc);
-
-    TEST_ASSERT_TRUE(effect_queue_push_dialogue(&queue, strv_from_cstr("Hello, traveler.")));
-
-    TEST_ASSERT_EQUAL_INT(1, queue.dialogues.count);
-    TEST_ASSERT_TRUE(strv_eq_cstr(queue.dialogues.data[0].text, "Hello, traveler."));
-
-    free_all(&queue);
-}
-
 void test_effect_queue_clear_resets_counts_and_allows_reuse(void)
 {
     EffectQueue queue;
@@ -114,7 +99,6 @@ void test_effect_queue_clear_resets_counts_and_allows_reuse(void)
     TEST_ASSERT_TRUE(effect_queue_push_camera_pan(&queue, (Vector2){0.0F, 0.0F}, 1.0F));
     TEST_ASSERT_TRUE(effect_queue_push_camera_shake(&queue, (CameraShakeRequest){.magnitude = 1.0F, .duration = 1.0F}));
     TEST_ASSERT_TRUE(effect_queue_push_spawn(&queue, strv_from_cstr("b"), (Vector2){0.0F, 0.0F}));
-    TEST_ASSERT_TRUE(effect_queue_push_dialogue(&queue, strv_from_cstr("c")));
 
     int capacity_before = queue.sounds.capacity;
     effect_queue_clear(&queue);
@@ -123,7 +107,6 @@ void test_effect_queue_clear_resets_counts_and_allows_reuse(void)
     TEST_ASSERT_EQUAL_INT(0, queue.camera_pans.count);
     TEST_ASSERT_EQUAL_INT(0, queue.camera_shakes.count);
     TEST_ASSERT_EQUAL_INT(0, queue.spawns.count);
-    TEST_ASSERT_EQUAL_INT(0, queue.dialogues.count);
     TEST_ASSERT_EQUAL_INT(capacity_before, queue.sounds.capacity);
 
     /* Reusable: pushing again after clear grows count back to 1 without
@@ -134,13 +117,13 @@ void test_effect_queue_clear_resets_counts_and_allows_reuse(void)
     free_all(&queue);
 }
 
-/* effect_queue_drain used to own this assertion (push all five, drain,
- * assert all five empty) before S6.4 moved the per-frame apply/handler
+/* effect_queue_drain used to own this assertion (push all four, drain,
+ * assert all four empty) before S6.4 moved the per-frame apply/handler
  * pass out of effect.c and into frame.c (apply_effect_queue), leaving
  * effect.c a pure push/clear channel with no Diag/GameState dependency.
  * Retargeted to effect_queue_clear, the pure function that still lives
  * here and still backs frame.c's apply pass. */
-void test_effect_queue_clear_empties_all_five_after_full_push(void)
+void test_effect_queue_clear_empties_all_four_after_full_push(void)
 {
     EffectQueue queue;
     effect_queue_init(&queue, test_heap_alloc);
@@ -149,7 +132,6 @@ void test_effect_queue_clear_empties_all_five_after_full_push(void)
     TEST_ASSERT_TRUE(effect_queue_push_camera_pan(&queue, (Vector2){0.0F, 0.0F}, 1.0F));
     TEST_ASSERT_TRUE(effect_queue_push_camera_shake(&queue, (CameraShakeRequest){.magnitude = 1.0F, .duration = 1.0F}));
     TEST_ASSERT_TRUE(effect_queue_push_spawn(&queue, strv_from_cstr("b"), (Vector2){0.0F, 0.0F}));
-    TEST_ASSERT_TRUE(effect_queue_push_dialogue(&queue, strv_from_cstr("c")));
 
     effect_queue_clear(&queue);
 
@@ -157,7 +139,6 @@ void test_effect_queue_clear_empties_all_five_after_full_push(void)
     TEST_ASSERT_EQUAL_INT(0, queue.camera_pans.count);
     TEST_ASSERT_EQUAL_INT(0, queue.camera_shakes.count);
     TEST_ASSERT_EQUAL_INT(0, queue.spawns.count);
-    TEST_ASSERT_EQUAL_INT(0, queue.dialogues.count);
 
     free_all(&queue);
 }
@@ -171,8 +152,7 @@ int main(void)
     RUN_TEST(test_effect_queue_push_camera_pan_stores_target_and_duration);
     RUN_TEST(test_effect_queue_push_camera_shake_stores_magnitude_and_duration);
     RUN_TEST(test_effect_queue_push_spawn_stores_blueprint_and_position);
-    RUN_TEST(test_effect_queue_push_dialogue_stores_text);
     RUN_TEST(test_effect_queue_clear_resets_counts_and_allows_reuse);
-    RUN_TEST(test_effect_queue_clear_empties_all_five_after_full_push);
+    RUN_TEST(test_effect_queue_clear_empties_all_four_after_full_push);
     return UNITY_END();
 }

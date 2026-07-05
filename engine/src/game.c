@@ -144,6 +144,12 @@ static int find_player_entity(const GameState *state)
      * (possibly different) current level, the same way rule_table itself
      * is rebuilt from scratch above rather than carried over. */
     state->gamedata.continuations = vec_rule_continuation_new(gamedata_alloc);
+    /* A dialogue box from a previous level must never survive a reload or
+     * level switch (S6.7c, D24): `pages` is allocated from gamedata_arena,
+     * so it dangles the moment this runtime is rebuilt for a different
+     * level, and any continuation waiting on it is being dropped above
+     * anyway. */
+    state->dialogue = (DialogueState){0};
 
     for (int index = 0; index < state->gamedata.current_level.entities.count; index++) {
         const Entity *entity = &state->gamedata.current_level.entities.data[index];
@@ -191,6 +197,7 @@ bool game_load_gamedata(Diag *diag, GameState *state, GamedataParams params)
     state->gamedata.rule_table = map_entity_ruleset_new(gamedata_alloc_early);
     state->gamedata.entity_blueprints = map_int_str_new(gamedata_alloc_early);
     state->gamedata.continuations = vec_rule_continuation_new(gamedata_alloc_early);
+    state->dialogue = (DialogueState){0};
     if (!root) {
         error_set(diag->error, "toml_parse: %s", errbuf);
         error_wrap(diag->error, "game_load_gamedata");
@@ -253,7 +260,7 @@ bool game_load_gamedata(Diag *diag, GameState *state, GamedataParams params)
                                      spawn_events.count, &state->progression.flags, &state->progression.vars,
                                      &progression_alloc, &state->gamedata.rule_table, &state->gamedata.subroutines,
                                      &state->gamedata.timers, &scratch_alloc, &state->transition, &state->effects,
-                                     &state->gamedata.continuations);
+                                     &state->dialogue, &state->gamedata.continuations);
             }
         }
         game_snap_camera(state);
@@ -682,19 +689,23 @@ void game_update(Diag *diag, GameState *state, InputState input, float delta_tim
         int view_count = 0;
         EntityView *views = build_entity_views(state, &view_count);
 
-        /* Resume due `wait:` continuations (S6.7b, D24) before any normal
-         * trigger detection/evaluation this frame -- a resumed action's
-         * fire_event/destroy feeds into trigger_events below, joining
-         * this frame's own cascade the same way rules_evaluate_batch's
-         * internal cascade already handles events from freshly-triggered
-         * rules. */
+        /* Resume due `wait:`/`dialogue:` continuations (S6.7b/c, D24)
+         * before any normal trigger detection/evaluation this frame -- a
+         * resumed action's fire_event/destroy feeds into trigger_events
+         * below, joining this frame's own cascade the same way
+         * rules_evaluate_batch's internal cascade already handles events
+         * from freshly-triggered rules. Note this only runs when
+         * game_update itself runs -- frame.c's dialogue branch skips
+         * game_update entirely while a dialogue is open, so a
+         * WAKE_DIALOGUE_CLOSED continuation only becomes due starting the
+         * first frame AFTER the dialogue closes. */
         if (state->gamedata.continuations.count > 0) {
             Allocator rule_alloc = allocator_arena(&state->gamedata_arena);
             Allocator progression_alloc = allocator_arena(&state->progression_arena);
             rules_resume_continuations(diag, &rule_alloc, views, view_count, &trigger_events, &state->progression.flags,
                                        &state->progression.vars, &progression_alloc, &state->gamedata.rule_table,
                                        &state->gamedata.subroutines, &state->gamedata.timers, &state->transition,
-                                       &state->effects, &state->gamedata.continuations, delta_time);
+                                       &state->effects, &state->dialogue, &state->gamedata.continuations, delta_time);
         }
 
         /* Detect new solid-entity overlaps and fire collide events on both parties */
@@ -732,7 +743,8 @@ void game_update(Diag *diag, GameState *state, InputState input, float delta_tim
             rules_evaluate_batch(diag, &rule_alloc, views, view_count, trigger_events.data, trigger_events.count,
                                  &state->progression.flags, &state->progression.vars, &progression_alloc,
                                  &state->gamedata.rule_table, &state->gamedata.subroutines, &state->gamedata.timers,
-                                 &scratch_alloc, &state->transition, &state->effects, &state->gamedata.continuations);
+                                 &scratch_alloc, &state->transition, &state->effects, &state->dialogue,
+                                 &state->gamedata.continuations);
         }
     }
 }

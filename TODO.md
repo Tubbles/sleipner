@@ -176,6 +176,15 @@ predicate rows and MOVE reparenting).
   runs in editor mode, or if a Place happens without a following reload before
   play resumes. Fix by routing Place through the same rebuild the spawn/paste
   paths use.
+- **Only one `dialogue:` can be active at a time.** `handle_dialogue_action`
+  (`rule.c`, S6.7c) drops (logs) a second `dialogue:` open that fires while
+  another dialogue is already active -- e.g. two `on_spawn` rules both
+  opening dialogue in the same frame -- rather than queuing it. The
+  dropped rule still suspends with `WAKE_DIALOGUE_CLOSED` so it resumes
+  once the already-open dialogue closes, but its own text is never shown.
+  Fine for a single-NPC-at-a-time game; would need a `vec` of pending
+  dialogue requests if simultaneous triggers become common.
+
 ## Collision system follow-ups
 
 - **Editor cannot author or edit composite collision shapes.** S4.5 added

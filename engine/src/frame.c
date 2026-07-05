@@ -341,27 +341,23 @@ static bool respawn_rebuild_tracking(Diag *diag, GameState *state)
     return true;
 }
 
-static void log_dialogue_effects(Diag *diag, const vec_dialogue_request *dialogues)
-{
-    for (int index = 0; index < dialogues->count; index++) {
-        const DialogueRequest *request = &dialogues->data[index];
-        debug_log(diag->debug, "effect: dialogue %.*s", (int)request->text.len, request->text.ptr);
-    }
-}
-
 /* GameState-aware replacement for the old S6.2 effect_queue_drain scaffold
  * (which lived in effect.c and only logged). effect.c stays a pure push/
  * clear channel; this is the per-frame apply pass with real GameState
  * access (SFX registry, audio device), which is why it lives here instead.
  * Sound (S6.4), camera_pan/camera_shake (S6.5), and spawn (S6.6) are
- * handled so far -- S6.7 adds a handler for dialogue, following this same
- * pattern. Spawning is the only effect that can change entity count, so
- * it alone needs the follow-up count-parallel rebuild (rule_table,
- * entity_blueprints, player_index, prev_player_overlaps/prev_solid_collisions)
- * -- via respawn_rebuild_tracking, which preserves the overlap edge state
- * across the rebuild so enter/collide triggers don't spuriously refire.
- * Guarded on spawned_count > 0 so a frame with no spawns (the common case)
- * pays nothing beyond the empty-vec loop. */
+ * handled here. Dialogue does NOT go through this queue (S6.7c, D24): it
+ * must block the triggering rule, which a deferred per-frame drain can't
+ * express, so ACTION_DIALOGUE opens GameState.dialogue directly from the
+ * rule VM instead (see rule.c's handle_dialogue_action) and frame_update's
+ * dialogue branch (below) drives it. Spawning is the only effect here
+ * that can change entity count, so it alone needs the follow-up
+ * count-parallel rebuild (rule_table, entity_blueprints, player_index,
+ * prev_player_overlaps/prev_solid_collisions) -- via
+ * respawn_rebuild_tracking, which preserves the overlap edge state across
+ * the rebuild so enter/collide triggers don't spuriously refire. Guarded
+ * on spawned_count > 0 so a frame with no spawns (the common case) pays
+ * nothing beyond the empty-vec loop. */
 static void apply_effect_queue(Diag *diag, GameState *state)
 {
     apply_sound_effects(diag, state, &state->effects.sounds);
@@ -373,7 +369,6 @@ static void apply_effect_queue(Diag *diag, GameState *state)
         debug_log(diag->debug, "error: %s", error_get(diag->error));
         error_clear(diag->error);
     }
-    log_dialogue_effects(diag, &state->effects.dialogues);
     effect_queue_clear(&state->effects);
 }
 
@@ -465,12 +460,37 @@ static void run_settings_frame(GameState *state, FrameContext *ctx, InputState i
     }
 }
 
+/* Modal dialogue frame (S6.7c, D24): the world is frozen -- game_update is
+ * never called -- while a dialogue is open, mirroring frame_update's
+ * settings-open branch above. Ticks the typewriter reveal by delta_time
+ * every frame regardless of input, then on ACTION_CONFIRM defers to
+ * dialogue_confirm (rule.c) for the skip-to-full / advance-page / close
+ * decision. */
+static void run_dialogue_frame(GameState *state, const InputState *input, float delta_time)
+{
+    state->dialogue.reveal_elapsed += delta_time;
+    if (input_pressed(input, &state->bindings, ACTION_CONFIRM)) {
+        dialogue_confirm(&state->dialogue);
+    }
+}
+
 void frame_update(Diag *diag, GameState *state, FrameContext *ctx, InputState input, float delta_time)
 {
     handle_global_toggles(state, &input, ctx->font_preview_enabled);
 
     if (ctx->settings && settings_is_open(ctx->settings)) {
         run_settings_frame(state, ctx, input, delta_time);
+        return;
+    }
+
+    /* Dialogue is modal over the world but never opens over the menu (a
+     * rule only fires dialogue: from active play, i.e. run_active_frame
+     * below, never while the menu branch is running) -- so it's enough to
+     * check this before ACTION_MENU_TOGGLE/the menu dispatch, ignoring
+     * both while a dialogue is open rather than fighting over the same
+     * frame. */
+    if (state->dialogue.active) {
+        run_dialogue_frame(state, &input, delta_time);
         return;
     }
 

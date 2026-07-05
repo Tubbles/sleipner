@@ -160,7 +160,7 @@ MAP_DECL(entity_ruleset, int, vec_rule)
 
 /* --- Suspendable rule continuations (S6.7b, D24) ---
  *
- * `wait:` (and, later, blocking `dialogue:`, S6.7c) needs to suspend a
+ * `wait:` (and, since S6.7c, blocking `dialogue:`) needs to suspend a
  * rule's in-progress ExecFrame stack (rule.c) across frame boundaries and
  * resume it later. A continuation must never hold a raw pointer into
  * anything volatile: the entity array can reallocate (S6.6 spawn) and
@@ -214,9 +214,10 @@ typedef struct {
 
 VEC_DECL(exec_frame_snapshot, ExecFrameSnapshot)
 
-/* What wakes a suspended continuation. WAKE_DIALOGUE_CLOSED is reserved
- * for S6.7c (blocking `dialogue:`) -- no action produces it yet; only
- * WAKE_TIMER is ticked by rules_resume_continuations today. */
+/* What wakes a suspended continuation. WAKE_TIMER is ticked down by
+ * rules_resume_continuations each frame; WAKE_DIALOGUE_CLOSED (S6.7c) has
+ * no countdown -- it becomes due the moment DialogueState.active goes
+ * false, checked directly rather than ticked. */
 typedef enum {
     WAKE_TIMER,
     WAKE_DIALOGUE_CLOSED,
@@ -331,6 +332,70 @@ typedef struct {
     float y;   /* player spawn Y */
 } TransitionRequest;
 
+VEC_DECL(str, Str) /* one dialogue page per entry -- see DialogueState.pages below */
+
+/* --- Blocking dialogue state (written by ACTION_DIALOGUE, S6.7c, D24) ---
+ *
+ * Lives on GameState, NOT GamedataState -- like TransitionRequest above,
+ * `dialogue:` writes into it DIRECTLY from the rule VM rather than through
+ * EffectQueue's deferred per-frame drain, because D24 requires dialogue to
+ * BLOCK: the world freezes and the triggering rule suspends until the
+ * player closes the box, which a fire-and-forget queue can't express (see
+ * ActionContext.dialogue's doc comment below). Not undo-snapshotted, and
+ * reset to inactive everywhere GamedataState.continuations is reset
+ * (game_load_gamedata's early-reset block, setup_current_level_runtime) --
+ * `pages` is allocated from gamedata_arena, so it must not outlive that
+ * arena's rewind on reload/transition/level-switch.
+ *
+ * `pages` is the dialogue action's whole argument -- a single, unsplit
+ * ONE_ARG string (dialogue text may contain commas/spaces, so the generic
+ * two-arg comma split coord-style actions use must not apply here, see
+ * rule.c's ActionMapping.single_arg) -- split on DIALOGUE_PAGE_DELIMITER,
+ * one page if the delimiter is absent (dialogue_open). Each page is copied
+ * into the caller's allocator at open time even though the source text
+ * already lives in gamedata_arena, cheap insurance that keeps the
+ * ownership story simple.
+ *
+ * `reveal_elapsed` is seconds since `current_page` was last opened or
+ * advanced; dialogue_revealed_char_count derives the number of characters
+ * to show from it (the typewriter effect). Reset to 0 whenever
+ * `current_page` advances. */
+typedef struct {
+    bool active;
+    vec_str pages;
+    int current_page;
+    float reveal_elapsed;
+} DialogueState;
+
+/* Characters revealed per second by the typewriter effect. Must stay
+ * >= 1.0 -- dialogue_confirm's skip-to-full logic sets `reveal_elapsed`
+ * to the page's character count (not character-count / this rate) as a
+ * deliberately oversized value, which only guarantees full reveal on the
+ * next computation if this rate is at least 1 char/sec. */
+#define DIALOGUE_CHARS_PER_SECOND 30.0F
+
+/* Delimiter that splits one dialogue action's text into multiple pages. */
+#define DIALOGUE_PAGE_DELIMITER '|'
+
+/* How many of `page_length` characters are revealed after `elapsed`
+ * seconds at `chars_per_second`. Clamped to [0, page_length]. Exposed for
+ * direct unit testing (rule_test.c); production callers pass
+ * DIALOGUE_CHARS_PER_SECOND. */
+int dialogue_revealed_char_count(float elapsed, float chars_per_second, int page_length);
+
+/* Splits `text` on DIALOGUE_PAGE_DELIMITER into `state->pages` (one page
+ * if the delimiter is absent), copying each page via `alloc`. Resets to
+ * page 0, elapsed 0, active = true. Returns false only if a page copy
+ * allocation fails. */
+[[nodiscard]] bool dialogue_open(DialogueState *state, Allocator alloc, Strv text);
+
+/* One frame's CONFIRM press against an active dialogue: if the current
+ * page is mid-reveal, skips it to fully revealed; else if there is a next
+ * page, advances to it and resets the typewriter; else (last page, fully
+ * revealed) closes the dialogue (active = false). No-op if `state` is not
+ * active. */
+void dialogue_confirm(DialogueState *state);
+
 /* --- Action execution --- */
 #define MAX_CALL_DEPTH 32
 
@@ -354,11 +419,19 @@ typedef struct {
     vec_timer *timers;                 /* mutable timer list for create_timer/destroy_timer */
     TransitionRequest *transition;     /* written by transition action */
     EffectQueue *effects;              /* effect channel -- not yet written by any action (S6.2 scaffold) */
-    /* Sink for ACTION_WAIT (S6.7b, D24): when execution suspends, the
-     * snapshot is pushed here. nullptr is tolerated (a wait silently
-     * no-ops, logged, like the effects/transition nullptr fallbacks
-     * above) so callers that never suspend (most direct
-     * action_node_execute test callers) don't need to wire it up. */
+    /* Written DIRECTLY by ACTION_DIALOGUE (S6.7c, D24), unlike the
+     * deferred EffectQueue effects above: dialogue must suspend the rule
+     * until the box closes, which the per-frame drain can't express.
+     * nullptr is tolerated the same way effects/transition are -- the
+     * action logs and skips opening but still suspends (see
+     * handle_dialogue_action, rule.c). */
+    DialogueState *dialogue;
+    /* Sink for ACTION_WAIT (S6.7b, D24) and ACTION_DIALOGUE (S6.7c): when
+     * execution suspends, the snapshot is pushed here. nullptr is
+     * tolerated (a suspend silently no-ops, logged, like the effects/
+     * transition nullptr fallbacks above) so callers that never suspend
+     * (most direct action_node_execute test callers) don't need to wire
+     * it up. */
     vec_rule_continuation *continuations;
     int call_depth;                     /* recursion guard for call: */
     const vec_action_node *action_pool; /* pool the current tree's children/else_children indices resolve against */
@@ -403,19 +476,22 @@ void rules_evaluate_batch(Diag *diag,
                           Allocator *scratch_alloc,
                           TransitionRequest *transition,
                           EffectQueue *effects,
+                          DialogueState *dialogue,
                           vec_rule_continuation *continuations);
 
 /* --- Continuation resume pass (S6.7b, D24) ---
  * Must run before normal trigger detection/evaluation each frame: ticks
- * every WAKE_TIMER continuation's `remaining` down by delta_time, and for
- * each one that becomes due, re-resolves its entity by id (dropping the
+ * every WAKE_TIMER continuation's `remaining` down by delta_time, checks
+ * every WAKE_DIALOGUE_CLOSED continuation against `dialogue->active`
+ * (S6.7c -- due the moment it goes false, no countdown), and for each one
+ * that becomes due, re-resolves its entity by id (dropping the
  * continuation silently if it's gone), rebuilds its ExecFrame stack from
  * the snapshot, and resumes execution. A continuation that completes runs
  * its rule's remaining sibling roots (still per-root isolated, see
- * execute_rule_roots in rule.c); one that suspends again (another wait)
- * is replaced by the fresh snapshot. `views`/`view_count` must be built
- * the same way the caller builds them for rules_evaluate_batch (same
- * frame, same entity array) -- see game.c's build_entity_views.
+ * execute_rule_roots in rule.c); one that suspends again (another wait or
+ * dialogue) is replaced by the fresh snapshot. `views`/`view_count` must
+ * be built the same way the caller builds them for rules_evaluate_batch
+ * (same frame, same entity array) -- see game.c's build_entity_views.
  * `event_queue` receives any events a resumed action fires (fire_event,
  * destroy, defeat); the caller should feed these into the same frame's
  * own trigger cascade, mirroring how rules_evaluate_batch's internal
@@ -435,5 +511,6 @@ void rules_resume_continuations(Diag *diag,
                                 vec_timer *timers,
                                 TransitionRequest *transition,
                                 EffectQueue *effects,
+                                DialogueState *dialogue,
                                 vec_rule_continuation *continuations,
                                 float delta_time);

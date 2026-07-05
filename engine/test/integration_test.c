@@ -4347,3 +4347,197 @@ void test_integration_wait_entity_destroyed_drops_continuation(void)
 
     test_game_teardown(&game);
 }
+
+/* ---- Integration: blocking `dialogue:` (S6.7c, D24) ----
+ *
+ * Same discipline as the `wait:` suite above: every test drives real
+ * frames through frame_update (via test_advance_frame(s)) and asserts
+ * only on observable game state -- flags, entity attrs/position, and
+ * DialogueState's own fields (active/current_page/pages), which are what
+ * a player would perceive as "which page is showing" -- never on
+ * ExecFrame/continuation internals. */
+
+void test_integration_dialogue_blocks_until_closed(void)
+{
+    /* on_spawn: set_flag:before fires immediately; dialogue: opens the
+     * box and suspends the rule, so set_flag:after must not run until the
+     * player closes it. */
+    static const char *gamedata = "[[blueprint]]\n"
+                                  "name = \"narrator\"\n"
+                                  "texture = \"t.png\"\n"
+                                  "src = [0, 0, 16, 16]\n"
+                                  "\n"
+                                  "[[blueprint.rule]]\n"
+                                  "trigger = \"on_spawn\"\n"
+                                  "actions = [\"set_flag:before\", \"dialogue:Hello world\", \"set_flag:after\"]\n"
+                                  "\n"
+                                  "[[level]]\n"
+                                  "name = \"test\"\n"
+                                  "size = [320, 240]\n"
+                                  "\n"
+                                  "[[level.entity]]\n"
+                                  "blueprint = \"narrator\"\n"
+                                  "pos = [10, 10]\n";
+
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, gamedata));
+
+    TEST_ASSERT_TRUE(flag_get(&game.state.progression.flags, "before"));
+    TEST_ASSERT_TRUE(game.state.dialogue.active);
+    TEST_ASSERT_FALSE(flag_get(&game.state.progression.flags, "after"));
+
+    InputState confirm_skip = {0};
+    input_state_press_key(&confirm_skip, KEY_ENTER);
+    test_advance_frame(&game, confirm_skip); /* mid-reveal -- skips to full */
+    TEST_ASSERT_TRUE(game.state.dialogue.active);
+    TEST_ASSERT_FALSE(flag_get(&game.state.progression.flags, "after"));
+
+    InputState confirm_close = {0};
+    input_state_press_key(&confirm_close, KEY_ENTER);
+    test_advance_frame(&game, confirm_close); /* only page, fully revealed -- closes */
+    TEST_ASSERT_FALSE(game.state.dialogue.active);
+    /* The D24 blocking guarantee: the post-dialogue action does not run
+     * on the very frame the dialogue closes -- the continuation only
+     * becomes due starting the NEXT frame's resume pass (see
+     * rules_resume_continuations' doc comment, rule.h). */
+    TEST_ASSERT_FALSE(flag_get(&game.state.progression.flags, "after"));
+
+    InputState idle = {0};
+    test_advance_frame(&game, idle);
+    TEST_ASSERT_TRUE(flag_get(&game.state.progression.flags, "after"));
+
+    test_game_teardown(&game);
+}
+
+void test_integration_dialogue_world_frozen(void)
+{
+    /* A periodic timer (already created before the dialogue opens, in the
+     * same on_spawn rule) and player movement input both prove the world
+     * is frozen: neither the timer's rule nor update_player's movement
+     * may advance while DialogueState.active is true, since frame_update
+     * skips game_update entirely in that case. */
+    static const char *gamedata = "[[blueprint]]\n"
+                                  "name = \"player\"\n"
+                                  "texture = \"t.png\"\n"
+                                  "src = [0, 0, 16, 16]\n"
+                                  "behavior = \"player\"\n"
+                                  "\n"
+                                  "[[blueprint]]\n"
+                                  "name = \"narrator\"\n"
+                                  "texture = \"t.png\"\n"
+                                  "src = [0, 0, 16, 16]\n"
+                                  "\n"
+                                  "[[blueprint.rule]]\n"
+                                  "trigger = \"on_spawn\"\n"
+                                  "actions = [\"create_timer_periodic:pulse,0.05\", \"dialogue:Hi there\"]\n"
+                                  "\n"
+                                  "[[blueprint.rule]]\n"
+                                  "trigger = \"timer_periodic:pulse\"\n"
+                                  "actions = [\"add_attr:self.pulse_count,1\"]\n"
+                                  "\n"
+                                  "[[level]]\n"
+                                  "name = \"test\"\n"
+                                  "size = [320, 240]\n"
+                                  "\n"
+                                  "[[level.entity]]\n"
+                                  "blueprint = \"player\"\n"
+                                  "pos = [100, 100]\n"
+                                  "\n"
+                                  "[[level.entity]]\n"
+                                  "blueprint = \"narrator\"\n"
+                                  "pos = [10, 10]\n"
+                                  "pulse_count = 0\n";
+
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, gamedata));
+    TEST_ASSERT_TRUE(game.state.dialogue.active);
+
+    const Entity *player = game_get_player_const(&game.state);
+    TEST_ASSERT_NOT_NULL(player);
+    Vector2 start_position = player->position;
+
+    InputState move_right = {0};
+    input_state_hold_key(&move_right, KEY_RIGHT);
+    test_advance_frames(&game, move_right, 20); /* 0.333s -- several periodic-timer fires' worth, if not frozen */
+
+    TEST_ASSERT_TRUE(game.state.dialogue.active);
+    player = game_get_player_const(&game.state);
+    TEST_ASSERT_EQUAL_FLOAT(start_position.x, player->position.x);
+    TEST_ASSERT_EQUAL_FLOAT(start_position.y, player->position.y);
+
+    const Entity *narrator = test_find_entity_by_blueprint(&game.state, "narrator");
+    TEST_ASSERT_NOT_NULL(narrator);
+    TEST_ASSERT_EQUAL_INT(0, (int)attr_get_scoped_float(&narrator->attrs, nullptr, "pulse_count", 0.0F));
+
+    test_game_teardown(&game);
+}
+
+void test_integration_dialogue_pages_and_typewriter(void)
+{
+    /* Two pages: CONFIRM mid-reveal skips to full, the next CONFIRM
+     * advances to page 2, and the reveal count grows with elapsed time. */
+    static const char *gamedata = "[[blueprint]]\n"
+                                  "name = \"narrator\"\n"
+                                  "texture = \"t.png\"\n"
+                                  "src = [0, 0, 16, 16]\n"
+                                  "\n"
+                                  "[[blueprint.rule]]\n"
+                                  "trigger = \"on_spawn\"\n"
+                                  "actions = [\"dialogue:Page one|Page two\"]\n"
+                                  "\n"
+                                  "[[level]]\n"
+                                  "name = \"test\"\n"
+                                  "size = [320, 240]\n"
+                                  "\n"
+                                  "[[level.entity]]\n"
+                                  "blueprint = \"narrator\"\n"
+                                  "pos = [10, 10]\n";
+
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, gamedata));
+    TEST_ASSERT_TRUE(game.state.dialogue.active);
+    TEST_ASSERT_EQUAL_INT(0, game.state.dialogue.current_page);
+    TEST_ASSERT_EQUAL_INT(2, game.state.dialogue.pages.count);
+
+    /* Reveal count grows with elapsed time while no CONFIRM is pressed. */
+    InputState idle = {0};
+    test_advance_frame(&game, idle);
+    int page_zero_length = (int)game.state.dialogue.pages.data[0].len;
+    int revealed_after_one_frame =
+        dialogue_revealed_char_count(game.state.dialogue.reveal_elapsed, DIALOGUE_CHARS_PER_SECOND, page_zero_length);
+    test_advance_frames(&game, idle, 5); /* 6 frames total = 0.1s */
+    int revealed_after_more_frames =
+        dialogue_revealed_char_count(game.state.dialogue.reveal_elapsed, DIALOGUE_CHARS_PER_SECOND, page_zero_length);
+    TEST_ASSERT_TRUE(revealed_after_more_frames >= revealed_after_one_frame);
+    TEST_ASSERT_TRUE(revealed_after_more_frames > 0);
+    TEST_ASSERT_TRUE(revealed_after_more_frames < page_zero_length); /* still mid-reveal */
+
+    /* CONFIRM while mid-reveal skips to the full first page -- still page 0. */
+    InputState confirm_skip = {0};
+    input_state_press_key(&confirm_skip, KEY_ENTER);
+    test_advance_frame(&game, confirm_skip);
+    TEST_ASSERT_TRUE(game.state.dialogue.active);
+    TEST_ASSERT_EQUAL_INT(0, game.state.dialogue.current_page);
+    TEST_ASSERT_EQUAL_INT(page_zero_length, dialogue_revealed_char_count(game.state.dialogue.reveal_elapsed,
+                                                                         DIALOGUE_CHARS_PER_SECOND, page_zero_length));
+
+    /* Next CONFIRM (page 0 now fully revealed) advances to page 2, typewriter reset. */
+    InputState confirm_advance = {0};
+    input_state_press_key(&confirm_advance, KEY_ENTER);
+    test_advance_frame(&game, confirm_advance);
+    TEST_ASSERT_TRUE(game.state.dialogue.active);
+    TEST_ASSERT_EQUAL_INT(1, game.state.dialogue.current_page);
+
+    /* Skip page 2 to full, then CONFIRM closes (last page). */
+    InputState confirm_skip2 = {0};
+    input_state_press_key(&confirm_skip2, KEY_ENTER);
+    test_advance_frame(&game, confirm_skip2);
+    TEST_ASSERT_TRUE(game.state.dialogue.active);
+
+    InputState confirm_close = {0};
+    input_state_press_key(&confirm_close, KEY_ENTER);
+    test_advance_frame(&game, confirm_close);
+    TEST_ASSERT_FALSE(game.state.dialogue.active);
+
+    test_game_teardown(&game);
+}

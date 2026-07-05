@@ -20,15 +20,19 @@
  * This module is a PURE channel: push helpers and effect_queue_clear only,
  * no GameState access and no side effects. The per-frame apply pass that
  * actually handles each effect type (looks up sounds in the SFX registry,
- * moves the camera, spawns entities, shows dialogue) lives in frame.c
- * instead (apply_effect_queue), since it needs GameState (registry, audio
+ * moves the camera, spawns entities) lives in frame.c instead
+ * (apply_effect_queue), since it needs GameState (registry, audio
  * device, camera) that this header deliberately does not depend on.
  * frame.c calls it once per frame, right after game_update returns, and it
- * clears the queue via effect_queue_clear at the end.
+ * clears the queue via effect_queue_clear at the end. Dialogue is NOT one
+ * of these effects (S6.7c, D24): it must block the triggering rule, which
+ * this fire-and-forget queue can't express, so ACTION_DIALOGUE writes
+ * directly into GameState.dialogue instead -- see rule.h's DialogueState
+ * and ActionContext.dialogue doc comments.
  *
  * STRING LIFETIME RULE -- read before pushing a Strv into any of these:
- * every Strv pushed here (sound name, spawn blueprint, dialogue text) is
- * NON-OWNING, unlike TransitionRequest.level (an owning Str). Transitions
+ * every Strv pushed here (sound name, spawn blueprint) is NON-OWNING,
+ * unlike TransitionRequest.level (an owning Str). Transitions
  * are rare and event-bounded, so copying the level name once is cheap.
  * Effects can be pushed every frame (camera_shake, sound), so an
  * owning-copy-per-effect-per-frame would grow progression_arena without
@@ -69,36 +73,28 @@ typedef struct {
 VEC_DECL(spawn_request, SpawnRequest)
 
 typedef struct {
-    Strv text;
-} DialogueRequest;
-
-VEC_DECL(dialogue_request, DialogueRequest)
-
-typedef struct {
     vec_sound_effect_request sounds;
     vec_camera_pan_request camera_pans;
     vec_camera_shake_request camera_shakes;
     vec_spawn_request spawns;
-    vec_dialogue_request dialogues;
 } EffectQueue;
 
-/* Initialize all five vecs against `alloc` (progression_arena in
+/* Initialize all four vecs against `alloc` (progression_arena in
  * production -- see GameState.effects). Call at game_init, and again at
  * game_reset_progression since arena_reset there invalidates the previous
  * vecs' backing storage. */
 void effect_queue_init(EffectQueue *queue, Allocator alloc);
 
-/* Clear all five vecs: count -> 0, capacity retained (see CLAUDE.md "Vec
+/* Clear all four vecs: count -> 0, capacity retained (see CLAUDE.md "Vec
  * growth and pointer stability"). Capacity is bounded by the most effects
  * ever pushed in a single frame, not by frame count, so repeated
  * push-then-clear cycles never grow progression_arena. */
 void effect_queue_clear(EffectQueue *queue);
 
-/* Push helpers, one per request type. `name`/`blueprint`/`text` fields
- * must satisfy the string-lifetime rule documented above. Each returns
- * false only if the backing vec push failed to allocate. */
+/* Push helpers, one per request type. `name`/`blueprint` fields must
+ * satisfy the string-lifetime rule documented above. Each returns false
+ * only if the backing vec push failed to allocate. */
 [[nodiscard]] bool effect_queue_push_sound(EffectQueue *queue, Strv name);
 [[nodiscard]] bool effect_queue_push_camera_pan(EffectQueue *queue, Vector2 target, float duration);
 [[nodiscard]] bool effect_queue_push_camera_shake(EffectQueue *queue, CameraShakeRequest request);
 [[nodiscard]] bool effect_queue_push_spawn(EffectQueue *queue, Strv blueprint, Vector2 position);
-[[nodiscard]] bool effect_queue_push_dialogue(EffectQueue *queue, Strv text);

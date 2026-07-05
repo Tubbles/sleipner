@@ -149,14 +149,22 @@ typedef struct {
     int screen_height;
     TransitionRequest transition;
     /* Channel stub rule actions use to reach the world (sound, camera_pan,
-     * camera_shake, spawn, dialogue). Backed by progression_arena -- see
-     * effect.h for the full lifecycle and string-lifetime rules. Not part
-     * of GamedataState: not undo-snapshotted, and it must survive the
+     * camera_shake, spawn). Backed by progression_arena -- see effect.h
+     * for the full lifecycle and string-lifetime rules. Not part of
+     * GamedataState: not undo-snapshotted, and it must survive the
      * arena_restore(gamedata_base) that a level transition or hot-reload
-     * runs against gamedata_arena. */
+     * runs against gamedata_arena. Dialogue is NOT routed through this
+     * queue -- see DialogueState below. */
     EffectQueue effects;
     /* Runtime camera_pan/camera_shake state -- see CameraEffect above. */
     CameraEffect camera_effect;
+    /* Blocking dialogue state opened directly by ACTION_DIALOGUE (S6.7c,
+     * D24, rule.h) -- not part of GamedataState (not undo-snapshotted),
+     * and reset to inactive everywhere GamedataState.continuations is
+     * reset (game_load_gamedata, setup_current_level_runtime, game.c)
+     * since `pages` is allocated from gamedata_arena. See DialogueState's
+     * doc comment (rule.h) for the full design. */
+    DialogueState dialogue;
 } GameState;
 
 typedef struct {

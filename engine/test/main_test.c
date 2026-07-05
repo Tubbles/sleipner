@@ -195,6 +195,9 @@ void test_integration_wait_inside_if_else(void);
 void test_integration_wait_inside_for_each(void);
 void test_integration_two_entities_wait_independently(void);
 void test_integration_wait_entity_destroyed_drops_continuation(void);
+void test_integration_dialogue_blocks_until_closed(void);
+void test_integration_dialogue_world_frozen(void);
+void test_integration_dialogue_pages_and_typewriter(void);
 
 int main(void)
 {
@@ -334,6 +337,9 @@ int main(void)
     RUN_TEST(test_integration_wait_inside_for_each);
     RUN_TEST(test_integration_two_entities_wait_independently);
     RUN_TEST(test_integration_wait_entity_destroyed_drops_continuation);
+    RUN_TEST(test_integration_dialogue_blocks_until_closed);
+    RUN_TEST(test_integration_dialogue_world_frozen);
+    RUN_TEST(test_integration_dialogue_pages_and_typewriter);
 
     RUN_TEST(test_integration_sprite_offset_edit_updates_entity_live);
     RUN_TEST(test_integration_sprite_offset_edit_emitted_to_toml);
