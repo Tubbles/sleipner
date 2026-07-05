@@ -375,26 +375,103 @@ static void update_player(Entity *player,
     }
 }
 
-static void resolve_player_obstacles(GameState *state, int player_index)
+/* Push `entity` out of every solid obstacle in the level. Generalized from
+ * the original player-only resolve_player_obstacles (S6.9a, D30) so any
+ * moving behavior can reuse it -- only the mover's own position is ever
+ * adjusted, obstacles never move. */
+static void resolve_entity_obstacles(GameState *state, int entity_index)
 {
     Level *level = &state->gamedata.current_level;
-    Entity *player = &level->entities.data[player_index];
-    const AttrSet *player_defaults = entity_resolve_defaults(state, player->id);
-    CollisionPrimitive player_prim_storage;
-    CollisionShape player_shape = entity_collision_region(player, player_defaults, &player_prim_storage);
+    Entity *entity = &level->entities.data[entity_index];
+    const AttrSet *entity_defaults = entity_resolve_defaults(state, entity->id);
+    CollisionPrimitive entity_prim_storage;
+    CollisionShape entity_shape = entity_collision_region(entity, entity_defaults, &entity_prim_storage);
     for (int index = 0; index < level->entities.count; index++) {
         Entity *obstacle = &level->entities.data[index];
         const AttrSet *defaults = entity_resolve_defaults(state, obstacle->id);
-        if (index == player_index || !attr_get_scoped_bool(&obstacle->attrs, defaults, "solid", false)) {
+        if (index == entity_index || !attr_get_scoped_bool(&obstacle->attrs, defaults, "solid", false)) {
             continue;
         }
         CollisionPrimitive obstacle_prim_storage;
         CollisionShape obstacle_shape = entity_collision_region(obstacle, defaults, &obstacle_prim_storage);
         Vector2 push =
-            resolve_composite(&player_shape, player->position, 0.0F, &obstacle_shape, obstacle->position, 0.0F);
-        player->position.x += push.x;
-        player->position.y += push.y;
+            resolve_composite(&entity_shape, entity->position, 0.0F, &obstacle_shape, obstacle->position, 0.0F);
+        entity->position.x += push.x;
+        entity->position.y += push.y;
     }
+}
+
+/* --- Behavior dispatch table (S6.9a, D30/D39) ---
+ *
+ * `behavior name -> update fn` lookup, no OOP -- mirrors action_mappings'
+ * table-lookup style (rule.c). game_update dispatches every current-level
+ * entity through this instead of hardcoding a single player update. */
+
+typedef struct {
+    GameState *state;
+    int entity_index;
+    const InputState *input; /* the real local input for this frame */
+    const BindingStore *bindings;
+    float delta_time;
+} BehaviorContext;
+
+typedef void (*BehaviorUpdateFn)(BehaviorContext *context);
+
+/* D39's multiplayer input seam: an entity's `input_source` attr (default
+ * "local:0") selects where its input comes from. Only "local:0" resolves to
+ * the real local input today -- every other source (a second local gamepad,
+ * or a future networked player) yields idle input, since no other input
+ * providers exist yet. This is the sole point behaviors read input through,
+ * so plugging in real multi-source routing later (S8) means changing only
+ * this function. */
+static InputState input_for_entity(const Entity *entity, const AttrSet *defaults, const InputState *local_input)
+{
+    const char *source = attr_get_scoped_string(&entity->attrs, defaults, "input_source");
+    if (!source || strcmp(source, "local:0") == 0) {
+        return *local_input;
+    }
+    return (InputState){0};
+}
+
+static void behavior_static(BehaviorContext *context)
+{
+    (void)context;
+}
+
+static void behavior_player(BehaviorContext *context)
+{
+    GameState *state = context->state;
+    Entity *player = &state->gamedata.current_level.entities.data[context->entity_index];
+    const AttrSet *player_defaults = entity_resolve_defaults(state, player->id);
+    InputState routed_input = input_for_entity(player, player_defaults, context->input);
+    RectU32 level_size = {(uint32_t)state->gamedata.current_level.width,
+                          (uint32_t)state->gamedata.current_level.height};
+    update_player(player, player_defaults, &routed_input, context->bindings, context->delta_time, level_size);
+    resolve_entity_obstacles(state, context->entity_index);
+}
+
+static const struct {
+    const char *name;
+    BehaviorUpdateFn fn;
+} behavior_table[] = {
+    {"static", behavior_static},
+    {"player", behavior_player},
+    {nullptr, nullptr},
+};
+
+/* Falls back to the static (no-op) behavior for a null or unrecognized
+ * name -- an entity with no `behavior` attr is inert by default. */
+static BehaviorUpdateFn behavior_lookup(const char *name)
+{
+    if (!name) {
+        return behavior_static;
+    }
+    for (int index = 0; behavior_table[index].name; index++) {
+        if (strcmp(name, behavior_table[index].name) == 0) {
+            return behavior_table[index].fn;
+        }
+    }
+    return behavior_static;
 }
 
 #define CAMERA_FOLLOW_SPEED 10.0F
@@ -667,13 +744,23 @@ void game_update(Diag *diag, GameState *state, InputState input, float delta_tim
     state->elapsed += delta_time;
 
     if (!state->editor_mode) {
-        Entity *player = game_get_player(state);
+        for (int index = 0; index < state->gamedata.current_level.entities.count; index++) {
+            Entity *entity = &state->gamedata.current_level.entities.data[index];
+            const AttrSet *defaults = entity_resolve_defaults(state, entity->id);
+            const char *behavior_name = attr_get_scoped_string(&entity->attrs, defaults, "behavior");
+            BehaviorUpdateFn update_fn = behavior_lookup(behavior_name);
+            BehaviorContext context = {
+                .state = state,
+                .entity_index = index,
+                .input = &input,
+                .bindings = &state->bindings,
+                .delta_time = delta_time,
+            };
+            update_fn(&context);
+        }
+
+        const Entity *player = game_get_player_const(state);
         if (player) {
-            const AttrSet *player_defaults = entity_resolve_defaults(state, player->id);
-            RectU32 level_size = {(uint32_t)state->gamedata.current_level.width,
-                                  (uint32_t)state->gamedata.current_level.height};
-            update_player(player, player_defaults, &input, &state->bindings, delta_time, level_size);
-            resolve_player_obstacles(state, state->gamedata.player_index);
             camera_update_target(state, player->position, delta_time);
             camera_update_shake(state, delta_time);
         }

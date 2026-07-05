@@ -204,6 +204,8 @@ void test_integration_wait_entity_destroyed_drops_continuation(void);
 void test_integration_dialogue_blocks_until_closed(void);
 void test_integration_dialogue_world_frozen(void);
 void test_integration_dialogue_pages_and_typewriter(void);
+void test_integration_static_entity_does_not_move(void);
+void test_integration_input_source_seam(void);
 
 int main(void)
 {
@@ -352,6 +354,8 @@ int main(void)
     RUN_TEST(test_integration_dialogue_blocks_until_closed);
     RUN_TEST(test_integration_dialogue_world_frozen);
     RUN_TEST(test_integration_dialogue_pages_and_typewriter);
+    RUN_TEST(test_integration_static_entity_does_not_move);
+    RUN_TEST(test_integration_input_source_seam);
 
     RUN_TEST(test_integration_sprite_offset_edit_updates_entity_live);
     RUN_TEST(test_integration_sprite_offset_edit_emitted_to_toml);

@@ -4923,3 +4923,139 @@ void test_integration_dialogue_pages_and_typewriter(void)
 
     test_game_teardown(&game);
 }
+
+/* ---- Integration: behavior dispatch table + input-source seam (S6.9a, D30/D39) ----
+ *
+ * Same black-box discipline as the suites above: drive real frames through
+ * frame_update with a real InputState, assert only on observable entity
+ * state (position, moving). No internal symbol (behavior_lookup,
+ * BehaviorContext, input_for_entity) appears in a test body. */
+
+void test_integration_static_entity_does_not_move(void)
+{
+    /* An entity with an explicit "static" behavior, and another with no
+     * behavior attr at all (S6.9a/D30's fallback also resolves to static),
+     * must both stay exactly where they started while the player moves
+     * under held input -- proving the dispatch loop only moves entities
+     * whose behavior actually does something. */
+    static const char *gamedata = "[[blueprint]]\n"
+                                  "name = \"hero\"\n"
+                                  "texture = \"t.png\"\n"
+                                  "src = [0, 0, 16, 16]\n"
+                                  "behavior = \"player\"\n"
+                                  "\n"
+                                  "[[blueprint]]\n"
+                                  "name = \"statue\"\n"
+                                  "texture = \"t.png\"\n"
+                                  "src = [0, 0, 16, 16]\n"
+                                  "behavior = \"static\"\n"
+                                  "\n"
+                                  "[[blueprint]]\n"
+                                  "name = \"rock\"\n"
+                                  "texture = \"t.png\"\n"
+                                  "src = [0, 0, 16, 16]\n"
+                                  "\n"
+                                  "[[level]]\n"
+                                  "name = \"test\"\n"
+                                  "size = [320, 240]\n"
+                                  "\n"
+                                  "[[level.entity]]\n"
+                                  "blueprint = \"hero\"\n"
+                                  "pos = [100, 100]\n"
+                                  "\n"
+                                  "[[level.entity]]\n"
+                                  "blueprint = \"statue\"\n"
+                                  "pos = [200, 100]\n"
+                                  "\n"
+                                  "[[level.entity]]\n"
+                                  "blueprint = \"rock\"\n"
+                                  "pos = [220, 100]\n";
+
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, gamedata));
+
+    Entity *statue = test_find_entity_by_blueprint(&game.state, "statue");
+    Entity *rock = test_find_entity_by_blueprint(&game.state, "rock");
+    TEST_ASSERT_NOT_NULL(statue);
+    TEST_ASSERT_NOT_NULL(rock);
+    Vector2 statue_start = statue->position;
+    Vector2 rock_start = rock->position;
+
+    InputState move_right = {0};
+    input_state_hold_key(&move_right, KEY_RIGHT);
+    test_advance_frames(&game, move_right, 20);
+
+    const Entity *player = game_get_player_const(&game.state);
+    TEST_ASSERT_NOT_NULL(player);
+    TEST_ASSERT_TRUE(player->position.x > 100.0F); /* the mover actually moved */
+
+    statue = test_find_entity_by_blueprint(&game.state, "statue");
+    rock = test_find_entity_by_blueprint(&game.state, "rock");
+    TEST_ASSERT_EQUAL_FLOAT(statue_start.x, statue->position.x);
+    TEST_ASSERT_EQUAL_FLOAT(statue_start.y, statue->position.y);
+    TEST_ASSERT_EQUAL_FLOAT(rock_start.x, rock->position.x);
+    TEST_ASSERT_EQUAL_FLOAT(rock_start.y, rock->position.y);
+
+    test_game_teardown(&game);
+}
+
+void test_integration_input_source_seam(void)
+{
+    /* Two entities share the "player" behavior. The first has no
+     * input_source attr (defaults to "local:0"); the second sets
+     * input_source = "network:1". Both entities are exposed to the same
+     * held movement key through frame_update's real InputState, but only
+     * the local:0 entity should move -- proving behavior_player routes
+     * input through the input_source provider seam (D39) rather than
+     * reading the frame's InputState directly. */
+    static const char *gamedata = "[[blueprint]]\n"
+                                  "name = \"hero\"\n"
+                                  "texture = \"t.png\"\n"
+                                  "src = [0, 0, 16, 16]\n"
+                                  "behavior = \"player\"\n"
+                                  "\n"
+                                  "[[blueprint]]\n"
+                                  "name = \"remote_hero\"\n"
+                                  "texture = \"t.png\"\n"
+                                  "src = [0, 0, 16, 16]\n"
+                                  "behavior = \"player\"\n"
+                                  "input_source = \"network:1\"\n"
+                                  "\n"
+                                  "[[level]]\n"
+                                  "name = \"test\"\n"
+                                  "size = [320, 240]\n"
+                                  "\n"
+                                  "[[level.entity]]\n"
+                                  "blueprint = \"hero\"\n"
+                                  "pos = [100, 100]\n"
+                                  "\n"
+                                  "[[level.entity]]\n"
+                                  "blueprint = \"remote_hero\"\n"
+                                  "pos = [200, 100]\n";
+
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, gamedata));
+
+    const Entity *player = game_get_player_const(&game.state);
+    TEST_ASSERT_NOT_NULL(player);
+    TEST_ASSERT_EQUAL_STRING("hero", player->blueprint_name.ptr);
+
+    Entity *remote = test_find_entity_by_blueprint(&game.state, "remote_hero");
+    TEST_ASSERT_NOT_NULL(remote);
+    Vector2 remote_start = remote->position;
+
+    InputState move_right = {0};
+    input_state_hold_key(&move_right, KEY_RIGHT);
+    test_advance_frames(&game, move_right, 20);
+
+    player = game_get_player_const(&game.state);
+    TEST_ASSERT_TRUE(player->position.x > 100.0F);
+    TEST_ASSERT_TRUE(player->moving);
+
+    remote = test_find_entity_by_blueprint(&game.state, "remote_hero");
+    TEST_ASSERT_EQUAL_FLOAT(remote_start.x, remote->position.x);
+    TEST_ASSERT_EQUAL_FLOAT(remote_start.y, remote->position.y);
+    TEST_ASSERT_FALSE(remote->moving);
+
+    test_game_teardown(&game);
+}
