@@ -42,6 +42,18 @@ void test_camera_shake_magnitude_full_at_zero_elapsed(void);
 void test_camera_shake_magnitude_half_at_half_duration(void);
 void test_camera_shake_magnitude_zero_at_and_past_duration(void);
 void test_camera_shake_magnitude_never_negative(void);
+void test_transition_fade_tick_none_is_idle(void);
+void test_transition_fade_tick_out_counts_down(void);
+void test_transition_fade_tick_out_reaching_zero_swaps_into_fade_in(void);
+void test_transition_fade_tick_in_reaching_zero_returns_to_none(void);
+void test_transition_fade_tick_full_cycle_swaps_once_then_returns_to_none(void);
+void test_transition_fade_alpha_zero_when_none(void);
+void test_transition_fade_alpha_zero_at_fade_out_start(void);
+void test_transition_fade_alpha_one_at_fade_out_end(void);
+void test_transition_fade_alpha_one_at_swap_instant(void);
+void test_transition_fade_alpha_zero_at_fade_in_end(void);
+void test_transition_fade_alpha_monotonic_across_fade_out(void);
+void test_transition_fade_alpha_monotonic_across_fade_in(void);
 
 /* level_test.c */
 void test_level_load_first(void);
@@ -82,6 +94,7 @@ void test_integration_spawn_inside_for_each_deferred(void);
 void test_integration_real_gamedata_loads(void);
 void test_integration_real_gamedata_all_levels_load(void);
 void test_integration_transition_changes_level(void);
+void test_integration_transition_fades_and_suppresses_input(void);
 void test_integration_level_load_sets_music_with_no_crossfade(void);
 void test_integration_transition_to_different_track_starts_crossfade(void);
 void test_integration_transition_to_same_track_does_not_restart_crossfade(void);
@@ -277,6 +290,18 @@ int main(void)
     RUN_TEST(test_camera_shake_magnitude_half_at_half_duration);
     RUN_TEST(test_camera_shake_magnitude_zero_at_and_past_duration);
     RUN_TEST(test_camera_shake_magnitude_never_negative);
+    RUN_TEST(test_transition_fade_tick_none_is_idle);
+    RUN_TEST(test_transition_fade_tick_out_counts_down);
+    RUN_TEST(test_transition_fade_tick_out_reaching_zero_swaps_into_fade_in);
+    RUN_TEST(test_transition_fade_tick_in_reaching_zero_returns_to_none);
+    RUN_TEST(test_transition_fade_tick_full_cycle_swaps_once_then_returns_to_none);
+    RUN_TEST(test_transition_fade_alpha_zero_when_none);
+    RUN_TEST(test_transition_fade_alpha_zero_at_fade_out_start);
+    RUN_TEST(test_transition_fade_alpha_one_at_fade_out_end);
+    RUN_TEST(test_transition_fade_alpha_one_at_swap_instant);
+    RUN_TEST(test_transition_fade_alpha_zero_at_fade_in_end);
+    RUN_TEST(test_transition_fade_alpha_monotonic_across_fade_out);
+    RUN_TEST(test_transition_fade_alpha_monotonic_across_fade_in);
 
     RUN_TEST(test_integration_load_gamedata);
     RUN_TEST(test_integration_load_specific_level);
@@ -296,6 +321,7 @@ int main(void)
     RUN_TEST(test_integration_real_gamedata_loads);
     RUN_TEST(test_integration_real_gamedata_all_levels_load);
     RUN_TEST(test_integration_transition_changes_level);
+    RUN_TEST(test_integration_transition_fades_and_suppresses_input);
     RUN_TEST(test_integration_level_load_sets_music_with_no_crossfade);
     RUN_TEST(test_integration_transition_to_different_track_starts_crossfade);
     RUN_TEST(test_integration_transition_to_same_track_does_not_restart_crossfade);

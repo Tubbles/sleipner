@@ -452,3 +452,124 @@ void test_camera_shake_magnitude_never_negative(void)
     TEST_ASSERT_TRUE(camera_shake_magnitude(10.0F, 0.9F, 1.0F) >= 0.0F);
     TEST_ASSERT_TRUE(camera_shake_magnitude(10.0F, 100.0F, 1.0F) >= 0.0F);
 }
+
+/* --- transition_fade_tick / transition_fade_alpha (S6.14, D27) ---
+ * Pure state machine, no GameState needed -- frame.c's handle_transition
+ * is the only production caller. */
+
+void test_transition_fade_tick_none_is_idle(void)
+{
+    TransitionFadeStep step =
+        transition_fade_tick((TransitionFade){.phase = TRANSITION_FADE_NONE, .timer = 0.0F}, 0.1F);
+    TEST_ASSERT_EQUAL_INT(TRANSITION_FADE_NONE, step.fade.phase);
+    TEST_ASSERT_FALSE(step.do_swap);
+    TEST_ASSERT_EQUAL_FLOAT(0.0F, step.fade.timer);
+}
+
+void test_transition_fade_tick_out_counts_down(void)
+{
+    TransitionFadeStep step =
+        transition_fade_tick((TransitionFade){.phase = TRANSITION_FADE_OUT, .timer = TRANSITION_FADE_SECONDS}, 0.1F);
+    TEST_ASSERT_EQUAL_INT(TRANSITION_FADE_OUT, step.fade.phase);
+    TEST_ASSERT_FALSE(step.do_swap);
+    TEST_ASSERT_FLOAT_WITHIN(0.001F, TRANSITION_FADE_SECONDS - 0.1F, step.fade.timer);
+}
+
+void test_transition_fade_tick_out_reaching_zero_swaps_into_fade_in(void)
+{
+    TransitionFadeStep step =
+        transition_fade_tick((TransitionFade){.phase = TRANSITION_FADE_OUT, .timer = 0.05F}, 0.1F);
+    TEST_ASSERT_EQUAL_INT(TRANSITION_FADE_IN, step.fade.phase);
+    TEST_ASSERT_TRUE(step.do_swap);
+    TEST_ASSERT_EQUAL_FLOAT(TRANSITION_FADE_SECONDS, step.fade.timer);
+}
+
+void test_transition_fade_tick_in_reaching_zero_returns_to_none(void)
+{
+    TransitionFadeStep step = transition_fade_tick((TransitionFade){.phase = TRANSITION_FADE_IN, .timer = 0.05F}, 0.1F);
+    TEST_ASSERT_EQUAL_INT(TRANSITION_FADE_NONE, step.fade.phase);
+    TEST_ASSERT_FALSE(step.do_swap);
+    TEST_ASSERT_EQUAL_FLOAT(0.0F, step.fade.timer);
+}
+
+/* Full round trip at a realistic 1/60s frame step: FADE_OUT -> exactly
+ * one do_swap -> FADE_IN -> NONE. This is the D27 guarantee ("0.3s out,
+ * swap, 0.3s in") expressed as a state-machine property rather than a
+ * single sample. */
+void test_transition_fade_tick_full_cycle_swaps_once_then_returns_to_none(void)
+{
+    TransitionFade fade = {.phase = TRANSITION_FADE_OUT, .timer = TRANSITION_FADE_SECONDS};
+    float delta_time = 1.0F / 60.0F;
+    int swap_count = 0;
+    int max_frames = 120;
+    for (int frame = 0; frame < max_frames && fade.phase != TRANSITION_FADE_NONE; frame++) {
+        TransitionFadeStep step = transition_fade_tick(fade, delta_time);
+        if (step.do_swap) {
+            swap_count++;
+        }
+        fade = step.fade;
+    }
+    TEST_ASSERT_EQUAL_INT(1, swap_count);
+    TEST_ASSERT_EQUAL_INT(TRANSITION_FADE_NONE, fade.phase);
+}
+
+void test_transition_fade_alpha_zero_when_none(void)
+{
+    TEST_ASSERT_EQUAL_FLOAT(0.0F,
+                            transition_fade_alpha((TransitionFade){.phase = TRANSITION_FADE_NONE, .timer = 0.0F}));
+}
+
+void test_transition_fade_alpha_zero_at_fade_out_start(void)
+{
+    TEST_ASSERT_EQUAL_FLOAT(
+        0.0F, transition_fade_alpha((TransitionFade){.phase = TRANSITION_FADE_OUT, .timer = TRANSITION_FADE_SECONDS}));
+}
+
+void test_transition_fade_alpha_one_at_fade_out_end(void)
+{
+    TEST_ASSERT_EQUAL_FLOAT(1.0F, transition_fade_alpha((TransitionFade){.phase = TRANSITION_FADE_OUT, .timer = 0.0F}));
+}
+
+/* The swap instant is FADE_IN's very first tick: do_swap fires with the
+ * timer reset to TRANSITION_FADE_SECONDS -- alpha must read fully black
+ * at that exact (phase, timer) pair, matching the do_swap-instant
+ * guarantee above. */
+void test_transition_fade_alpha_one_at_swap_instant(void)
+{
+    TEST_ASSERT_EQUAL_FLOAT(
+        1.0F, transition_fade_alpha((TransitionFade){.phase = TRANSITION_FADE_IN, .timer = TRANSITION_FADE_SECONDS}));
+}
+
+void test_transition_fade_alpha_zero_at_fade_in_end(void)
+{
+    TEST_ASSERT_EQUAL_FLOAT(0.0F, transition_fade_alpha((TransitionFade){.phase = TRANSITION_FADE_IN, .timer = 0.0F}));
+}
+
+/* step_count integer-driven steps (rather than a float loop counter) to
+ * satisfy bugprone-float-loop-counter/clang-analyzer FloatLoopCounter --
+ * the float timer value is derived inside the loop body instead. */
+void test_transition_fade_alpha_monotonic_across_fade_out(void)
+{
+    float previous =
+        transition_fade_alpha((TransitionFade){.phase = TRANSITION_FADE_OUT, .timer = TRANSITION_FADE_SECONDS});
+    int step_count = 6;
+    for (int step = 1; step <= step_count; step++) {
+        float timer = TRANSITION_FADE_SECONDS - ((float)step * 0.05F);
+        float alpha = transition_fade_alpha((TransitionFade){.phase = TRANSITION_FADE_OUT, .timer = timer});
+        TEST_ASSERT_TRUE(alpha >= previous);
+        previous = alpha;
+    }
+}
+
+void test_transition_fade_alpha_monotonic_across_fade_in(void)
+{
+    float previous =
+        transition_fade_alpha((TransitionFade){.phase = TRANSITION_FADE_IN, .timer = TRANSITION_FADE_SECONDS});
+    int step_count = 6;
+    for (int step = 1; step <= step_count; step++) {
+        float timer = TRANSITION_FADE_SECONDS - ((float)step * 0.05F);
+        float alpha = transition_fade_alpha((TransitionFade){.phase = TRANSITION_FADE_IN, .timer = timer});
+        TEST_ASSERT_TRUE(alpha <= previous);
+        previous = alpha;
+    }
+}

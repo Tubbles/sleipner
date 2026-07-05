@@ -326,6 +326,24 @@ predicate rows and MOVE reparenting).
   registry; worth a generic `map_<name>_for_each` if a bigger map ever
   needs the same teardown-by-value pattern.
 
+## Level transition follow-ups
+
+- **A hot-reload or pause-menu RESTORE landing mid-fade races the
+  pending swap.** `handle_hot_reload` (`main.c`) polls unconditionally
+  every `HOT_RELOAD_POLL_FRAMES`, and RESTORE's dispatch both end up
+  calling `game_load_gamedata`, which rewinds and re-parses
+  `gamedata_arena` without checking `state->fade.phase` (S6.14, D27).
+  `state->transition.level` is a `Str` allocated in `gamedata_arena` by
+  `execute_transition_action` (`rule.c`) and is only copied out at the
+  fade's midpoint (`run_transition_swap`, `frame.c`). If either reload
+  path fires while `state->fade.phase != TRANSITION_FADE_NONE`, that
+  `Str` can be rewound/overwritten before the swap reads it, producing
+  a garbled level name. Narrow window (the fade is 0.6s total end to
+  end) but real given the project's live hot-reload workflow. Needs a
+  decision (defer the reload until the fade finishes, cancel/reset the
+  fade on reload, or re-validate the pending transition against the
+  freshly-loaded gamedata) before fixing.
+
 ## Input system future work
 
 - **Plugin-declared actions.** When a plugin/engine system arrives,

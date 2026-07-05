@@ -131,10 +131,12 @@ typedef struct {
  * integration tests. */
 void frame_update(Diag *diag, GameState *state, FrameContext *ctx, InputState input, float delta_time);
 
-/* Apply a pending level transition. No-op when state->transition.pending
- * is false; otherwise clears the flag, calls ctx->level_loader_fn to
- * reload gamedata under the requested level name, places the player
- * at the saved spawn point, snaps the camera, and pre-seeds player
- * overlap tracking so newly-overlapped entities don't spuriously
- * fire enter triggers. Pushes a "Level loaded" undo entry on success. */
-void handle_transition(Diag *diag, GameState *state, FrameContext *ctx);
+/* Fade-to-black level transition driver (S6.14, D27). Call once per
+ * frame, unconditionally -- state->fade.phase is the source of truth,
+ * not state->transition.pending. A `transition:` rule action firing
+ * while idle starts a 0.3s fade-out; the level swap (gamedata reload,
+ * player placed at the saved spawn point, camera snap, overlap-tracking
+ * pre-seed so enter triggers don't refire, "Level loaded" undo entry)
+ * runs at the fully-black midpoint; a 0.3s fade-in follows. See
+ * frame.c's handle_transition doc comment for the full state machine. */
+void handle_transition(Diag *diag, GameState *state, FrameContext *ctx, float delta_time);

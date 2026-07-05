@@ -437,17 +437,31 @@ void run_active_frame(Diag *diag,
     if (editor_state->toast_timer > 0.0F) {
         editor_state->toast_timer -= delta_time;
     }
-    game_update(diag, state, input, delta_time);
+    /* Input suppression during a fade-to-black transition (S6.14, D27):
+     * a zeroed InputState reaches game_update instead of the real one,
+     * so the player can't move or act while the screen fades out, swaps
+     * levels, and fades back in. state->fade is ticked by frame.c's
+     * handle_transition, called once per frame right after frame_update
+     * (see main.c/test_helpers.c) -- so the phase read here is the one
+     * left over from the PREVIOUS frame's tick, which is exactly the
+     * frame boundary the fade is meant to gate. Editor input (above) and
+     * the toast timer (above) are untouched -- D27 only asks for player
+     * input to be suppressed, not the editor or UI feedback. */
+    InputState game_input = state->fade.phase == TRANSITION_FADE_NONE ? input : (InputState){0};
+    game_update(diag, state, game_input, delta_time);
     apply_effect_queue(diag, state, editor_state);
 }
 
-void handle_transition(Diag *diag, GameState *state, FrameContext *ctx)
+/* THE SWAP: the fully-black-midpoint body of a level transition -- load
+ * the target level, position the player at the requested spawn point,
+ * snap the camera, pre-seed overlap tracking so enter triggers don't
+ * refire at the spawn, and push a fresh undo baseline. Runs from
+ * handle_transition exactly once per transition, on the frame
+ * transition_fade_tick reports do_swap. Unchanged from the pre-S6.14
+ * instant-swap body other than being extracted into its own function. */
+static void run_transition_swap(Diag *diag, GameState *state, FrameContext *ctx)
 {
-    if (!state->transition.pending) {
-        return;
-    }
     undo_history_clear(ctx->undo_history);
-    state->transition.pending = false;
     float spawn_x = state->transition.x;
     float spawn_y = state->transition.y;
     SCRATCH_SCOPE(&state->scratch_arena);
@@ -481,6 +495,49 @@ void handle_transition(Diag *diag, GameState *state, FrameContext *ctx)
     }
     undo_history_new_entry(ctx->undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
                            strv_from_cstr("Level loaded"));
+}
+
+/* Fade-to-black transition driver (S6.14, D27). Called once per frame
+ * (main.c, test_helpers.c), unconditionally of whether a transition is
+ * in flight -- state->fade.phase is the source of truth, not
+ * state->transition.pending.
+ *
+ * Two mutually exclusive branches, never both in the same call:
+ *  - Idle (phase == NONE): if a `transition:` rule action fired this
+ *    frame (pending == true), START the fade -- phase = FADE_OUT,
+ *    timer = TRANSITION_FADE_SECONDS -- and consume pending. The swap
+ *    itself does NOT run this frame; the screen has not gone black yet.
+ *  - Mid-fade (phase != NONE): tick transition_fade_tick by delta_time.
+ *    do_swap fires exactly once, on the frame FADE_OUT's timer reaches
+ *    zero (the fully-black midpoint) -- that frame, and only that
+ *    frame, runs run_transition_swap.
+ *
+ * A second `transition:` firing while a fade is already in flight is
+ * simply left pending (this function never reads `pending` in the
+ * mid-fade branch) -- rule.c's execute_transition_action overwrites the
+ * same TransitionRequest fields in place, so the LAST such request
+ * before the fade returns to idle is the one that gets consumed,
+ * coalescing into a single target rather than queuing multiple swaps.
+ * Not reachable via ordinary play since player input (and therefore the
+ * enter/interact triggers that fire transition:) is suppressed for the
+ * whole fade -- see run_active_frame above -- but a scripted/timer-driven
+ * transition could still reach it, hence documenting the behavior here. */
+void handle_transition(Diag *diag, GameState *state, FrameContext *ctx, float delta_time)
+{
+    if (state->fade.phase == TRANSITION_FADE_NONE) {
+        if (!state->transition.pending) {
+            return;
+        }
+        state->transition.pending = false;
+        state->fade = (TransitionFade){.phase = TRANSITION_FADE_OUT, .timer = TRANSITION_FADE_SECONDS};
+        return;
+    }
+
+    TransitionFadeStep step = transition_fade_tick(state->fade, delta_time);
+    state->fade = step.fade;
+    if (step.do_swap) {
+        run_transition_swap(diag, state, ctx);
+    }
 }
 
 static void run_settings_frame(GameState *state, FrameContext *ctx, InputState input, float delta_time)

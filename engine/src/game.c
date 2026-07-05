@@ -788,6 +788,34 @@ float camera_shake_magnitude(float magnitude, float elapsed, float duration)
     return decayed < 0.0F ? 0.0F : decayed;
 }
 
+/* See TransitionFade's doc comment (game.h) for the full state machine. */
+TransitionFadeStep transition_fade_tick(TransitionFade fade, float delta_time)
+{
+    if (fade.phase == TRANSITION_FADE_NONE) {
+        return (TransitionFadeStep){.fade = fade, .do_swap = false};
+    }
+    float remaining = fade.timer - delta_time;
+    if (remaining > 0.0F) {
+        return (TransitionFadeStep){.fade = {.phase = fade.phase, .timer = remaining}, .do_swap = false};
+    }
+    if (fade.phase == TRANSITION_FADE_OUT) {
+        return (TransitionFadeStep){.fade = {.phase = TRANSITION_FADE_IN, .timer = TRANSITION_FADE_SECONDS},
+                                    .do_swap = true};
+    }
+    return (TransitionFadeStep){.fade = {.phase = TRANSITION_FADE_NONE, .timer = 0.0F}, .do_swap = false};
+}
+
+float transition_fade_alpha(TransitionFade fade)
+{
+    if (fade.phase == TRANSITION_FADE_OUT) {
+        return 1.0F - (fade.timer / TRANSITION_FADE_SECONDS);
+    }
+    if (fade.phase == TRANSITION_FADE_IN) {
+        return fade.timer / TRANSITION_FADE_SECONDS;
+    }
+    return 0.0F;
+}
+
 /* Pan (S6.5, D22/D26) overrides normal follow while active: advance
  * elapsed, interpolate via the pure camera_pan_position, and clear
  * `active` once elapsed reaches duration so plain follow resumes next

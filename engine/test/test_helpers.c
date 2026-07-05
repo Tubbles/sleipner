@@ -297,15 +297,17 @@ void test_radial_select_item(TestGame *game, int item_index)
 
 void test_advance_frame(TestGame *game, InputState input)
 {
-    frame_update(&game->diag, &game->state, &game->frame_ctx, input, 1.0F / 60.0F);
-    handle_transition(&game->diag, &game->state, &game->frame_ctx);
+    float delta_time = 1.0F / 60.0F;
+    frame_update(&game->diag, &game->state, &game->frame_ctx, input, delta_time);
+    handle_transition(&game->diag, &game->state, &game->frame_ctx, delta_time);
 }
 
 void test_advance_frames(TestGame *game, InputState input, int frames)
 {
+    float delta_time = 1.0F / 60.0F;
     for (int iteration = 0; iteration < frames; iteration++) {
-        frame_update(&game->diag, &game->state, &game->frame_ctx, input, 1.0F / 60.0F);
-        handle_transition(&game->diag, &game->state, &game->frame_ctx);
+        frame_update(&game->diag, &game->state, &game->frame_ctx, input, delta_time);
+        handle_transition(&game->diag, &game->state, &game->frame_ctx, delta_time);
     }
 }
 

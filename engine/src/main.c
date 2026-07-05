@@ -1171,6 +1171,22 @@ static void draw_dialogue_box(ScreenSize screen, GameState *state)
     draw_ui_text(state->assets.ui_font, text, DEBUG_MARGIN, box_y + DEBUG_MARGIN, DIALOGUE_FONT_SIZE, debug_text_color);
 }
 
+/* Fade-to-black transition overlay (S6.14, D27): a full-screen black
+ * rectangle at the pure transition_fade_alpha opacity (game.h), drawn
+ * over the world/HUD/debug/dialogue layers but under the pause menu,
+ * settings, and inventory overlays below -- a transition never runs
+ * while one of those is open (handle_transition only fires from active
+ * play, frame.c), so the ordering is a formality, not a live conflict.
+ * No-op (skips the draw call) when the fade is idle. */
+static void draw_transition_fade_overlay(ScreenSize screen, const GameState *state)
+{
+    float alpha = transition_fade_alpha(state->fade);
+    if (alpha <= 0.0F) {
+        return;
+    }
+    DrawRectangle(0, 0, screen.width, screen.height, Fade(BLACK, alpha));
+}
+
 /* Dispatch the right editor side panel for the current sub_mode/top_mode.
  * Split out of render_frame so a new top_mode's list-vs-detail branch
  * (e.g. EDITOR_TOP_LEVEL's level_detail_open check) doesn't push
@@ -1298,6 +1314,7 @@ static void render_frame(GameState *state, RenderParams params)
     draw_hints_bar(state->editor_mode, &params.editor_state, &state->bindings, params.is_dirty, screen,
                    state->assets.ui_font);
     draw_dialogue_box(screen, state);
+    draw_transition_fade_overlay(screen, state);
     capture_overlay_blur_if_needed(params);
     menu_render(params.menu, params.blur, state->screen_width, state->screen_height);
     if (params.settings && params.settings->open) {
@@ -1512,7 +1529,7 @@ int main(void)
 
         frame_update(diag, state, &frame_ctx, input, delta_time);
 
-        handle_transition(diag, state, &frame_ctx);
+        handle_transition(diag, state, &frame_ctx, delta_time);
 
         /* Per-level music crossfade (S6.13b, D32): reads state->music,
          * ticked by game_update inside frame_update above and possibly

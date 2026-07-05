@@ -107,6 +107,53 @@ typedef struct {
     CameraShakeEffect shake;
 } CameraEffect;
 
+/* --- TransitionFade: fade-to-black state machine driving level
+ * transitions (S6.14, D27) ---
+ *
+ * Lives on GameState, NOT GamedataState: like CameraEffect above, it is
+ * transient per-session state, not undo-snapshotted. Unlike CameraEffect,
+ * it is NOT reset by game_snap_camera -- the swap step of the state
+ * machine below calls game_snap_camera itself while `fade.phase` is
+ * already mid-flight (about to become FADE_IN), so resetting `fade`
+ * there would stomp the very transition it belongs to. See frame.h's
+ * handle_transition doc comment for the full driver.
+ *
+ * `phase` starts NONE (idle). frame.c's handle_transition moves it to
+ * FADE_OUT (`timer = TRANSITION_FADE_SECONDS`) when a `transition:`
+ * rule action fires. transition_fade_tick below counts `timer` down
+ * each frame; at 0 during FADE_OUT it reports `do_swap = true` (the
+ * frame the level swap itself must run, at the fully-black midpoint)
+ * and moves to FADE_IN with a fresh timer; at 0 during FADE_IN it
+ * returns to NONE. Player input is suppressed by the caller (frame.c's
+ * run_active_frame) for every frame `phase != TRANSITION_FADE_NONE`. */
+#define TRANSITION_FADE_SECONDS 0.3F
+
+typedef enum {
+    TRANSITION_FADE_NONE,
+    TRANSITION_FADE_OUT,
+    TRANSITION_FADE_IN,
+} TransitionFadePhase;
+
+typedef struct {
+    TransitionFadePhase phase;
+    float timer;
+} TransitionFade;
+
+/* Result of one transition_fade_tick call: `fade` is the new (phase,
+ * timer) to store back onto GameState.fade; `do_swap` is true exactly
+ * on the frame FADE_OUT's timer reaches zero, telling handle_transition
+ * to run the level-swap body THIS frame and no other. Bundling phase
+ * and timer into the TransitionFade struct (rather than passing them as
+ * two loose parameters) is also what keeps transition_fade_tick's and
+ * transition_fade_alpha's own parameter lists from tripping clang-tidy's
+ * bugprone-easily-swappable-parameters: a bare (TransitionFadePhase,
+ * float) pair is flagged because the enum implicitly converts to
+ * float. */
+typedef struct {
+    TransitionFade fade;
+    bool do_swap;
+} TransitionFadeStep;
+
 typedef struct {
     GamedataState gamedata;
     Arena gamedata_arena;
@@ -166,6 +213,9 @@ typedef struct {
      * since `pages` is allocated from gamedata_arena. See DialogueState's
      * doc comment (rule.h) for the full design. */
     DialogueState dialogue;
+    /* Fade-to-black state machine driving level transitions (S6.14,
+     * D27) -- see TransitionFade's doc comment above. */
+    TransitionFade fade;
 } GameState;
 
 typedef struct {
@@ -206,6 +256,20 @@ Vector2 camera_pan_position(Vector2 from, Vector2 target, float elapsed, float d
  * duration <= 0 returns 0. Exposed for direct unit testing (game_test.c);
  * the only production caller is game_update's shake-offset computation. */
 float camera_shake_magnitude(float magnitude, float elapsed, float duration);
+
+/* Pure fade-to-black step (S6.14, D27): advances `fade` by delta_time
+ * and reports whether this is the frame to run the level swap. See
+ * TransitionFade's doc comment above for the full state machine.
+ * Exposed for direct unit testing (game_test.c); the only production
+ * caller is frame.c's handle_transition. */
+TransitionFadeStep transition_fade_tick(TransitionFade fade, float delta_time);
+
+/* Pure black-overlay opacity in [0, 1] for the current fade state: 0 at
+ * NONE, ramping 0->1 across FADE_OUT, 1 at the swap instant (FADE_IN's
+ * first tick), ramping 1->0 across FADE_IN. Exposed for direct unit
+ * testing (game_test.c); the only production caller is main.c's
+ * render_frame. */
+float transition_fade_alpha(TransitionFade fade);
 
 /* Switch the active level in memory: swaps state->gamedata.current_level
  * with the matching entry in state->gamedata.other_levels and rebuilds the

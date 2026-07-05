@@ -1267,6 +1267,89 @@ void test_integration_transition_changes_level(void)
     test_game_teardown(&game);
 }
 
+/* S6.14, D27: a level transition now runs a 0.3s fade-out -> swap-at-
+ * midpoint -> 0.3s fade-in state machine instead of swapping the instant
+ * the trigger fires. Driven through the same fixture/enter-trigger path
+ * as test_integration_transition_changes_level above -- this test adds
+ * the fade-timing and input-suppression assertions D27 requires. Verified
+ * to fail (the level is already "interior" the very frame the fade
+ * starts) against a temporary revert of handle_transition to the
+ * pre-S6.14 instant swap before writing the fix. */
+void test_integration_transition_fades_and_suppresses_input(void)
+{
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_transition));
+
+    /* Walk right into the door trigger (player at (100,100), door at
+     * (200,100), speed 80px/s -- ~64 frames to reach) until the fade
+     * itself starts. */
+    InputState right = {0};
+    input_state_set_gp_axis(&right, GAMEPAD_AXIS_LEFT_X, 1.0F);
+    int max_iterations = 200;
+    int iteration = 0;
+    while (iteration < max_iterations && game.state.fade.phase == TRANSITION_FADE_NONE) {
+        test_advance_frame(&game, right);
+        iteration++;
+    }
+    TEST_ASSERT_TRUE_MESSAGE(iteration < max_iterations, "fade should start within 200 frames");
+    TEST_ASSERT_EQUAL_INT(TRANSITION_FADE_OUT, game.state.fade.phase);
+
+    /* Key D27 guarantee: the swap happens at the fade's midpoint, not
+     * instantly -- the level is still "field" the frame the fade starts. */
+    TEST_ASSERT_EQUAL_STRING("field", game.state.gamedata.current_level.name.ptr);
+    Vector2 position_at_fade_start = game_get_player_const(&game.state)->position;
+
+    /* Feed movement input for several frames while still fading out.
+     * TRANSITION_FADE_SECONDS is 0.3s = 18 frames at 1/60s; 10 is
+     * comfortably inside that window. Input must be suppressed (no
+     * movement) and the level must not have swapped yet. */
+    for (int frame = 0; frame < 10; frame++) {
+        test_advance_frame(&game, right);
+    }
+    TEST_ASSERT_EQUAL_STRING("field", game.state.gamedata.current_level.name.ptr);
+    Vector2 position_mid_fade_out = game_get_player_const(&game.state)->position;
+    TEST_ASSERT_EQUAL_FLOAT(position_at_fade_start.x, position_mid_fade_out.x);
+    TEST_ASSERT_EQUAL_FLOAT(position_at_fade_start.y, position_mid_fade_out.y);
+
+    /* Continue past the ~0.3s mark: the swap must have landed by now,
+     * at the spawn point the transition action declared. */
+    iteration = 0;
+    while (iteration < max_iterations && strcmp(game.state.gamedata.current_level.name.ptr, "field") == 0) {
+        test_advance_frame(&game, right);
+        iteration++;
+    }
+    TEST_ASSERT_TRUE_MESSAGE(iteration < max_iterations, "swap should land within 200 frames");
+    TEST_ASSERT_EQUAL_STRING("interior", game.state.gamedata.current_level.name.ptr);
+    TEST_ASSERT_EQUAL_INT(TRANSITION_FADE_IN, game.state.fade.phase);
+    Vector2 position_after_swap = game_get_player_const(&game.state)->position;
+
+    /* Still suppressed during fade-in: feed movement, player must not
+     * drift from the spawn point. */
+    for (int frame = 0; frame < 10; frame++) {
+        test_advance_frame(&game, right);
+    }
+    Vector2 position_mid_fade_in = game_get_player_const(&game.state)->position;
+    TEST_ASSERT_EQUAL_FLOAT(position_after_swap.x, position_mid_fade_in.x);
+    TEST_ASSERT_EQUAL_FLOAT(position_after_swap.y, position_mid_fade_in.y);
+
+    /* Run out the fade-in's remaining ~0.3s: control resumes once the
+     * fade returns to idle. */
+    iteration = 0;
+    InputState idle = {0};
+    while (iteration < max_iterations && game.state.fade.phase != TRANSITION_FADE_NONE) {
+        test_advance_frame(&game, idle);
+        iteration++;
+    }
+    TEST_ASSERT_TRUE_MESSAGE(iteration < max_iterations, "fade-in should end within 200 frames");
+
+    Vector2 position_before_final_move = game_get_player_const(&game.state)->position;
+    test_advance_frame(&game, right);
+    Vector2 position_after_final_move = game_get_player_const(&game.state)->position;
+    TEST_ASSERT_TRUE(position_after_final_move.x > position_before_final_move.x);
+
+    test_game_teardown(&game);
+}
+
 /* S6.13b, D32: loading a level sets its music_name as the current track
  * with no crossfade -- there is nothing playing yet to fade from. Driven
  * through the real load path (test_game_setup -> game_load_gamedata). */
