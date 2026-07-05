@@ -57,6 +57,7 @@ add_executable(engine_tests
     integration_test.c
     level_test.c
     render_test.c
+    save_test.c
     toml_emitter_test.c
     rule_integration_test.c
     sprite_offset_integration_test.c

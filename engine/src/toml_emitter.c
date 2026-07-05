@@ -8,7 +8,10 @@
 #include "error.h"
 #include "input_func.h"
 #include "level.h"
+#include "map.h"
+#include "progression.h"
 #include "rule.h"
+#include "strv.h"
 #include "tileset.h"
 
 #include "raylib.h"
@@ -43,6 +46,31 @@ static int emit_append(char *buffer, int capacity, int offset, const char *forma
 
 /* ---- Attribute value emitter ---- */
 
+/* Shared by ATTR_FLOAT below, the bindings emitter's scale field, and the
+ * save-state position pair (S6.15c) -- TOML requires a decimal point (or
+ * exponent) on a float literal so the parser keeps it as float, not int.
+ *
+ * value is listed before the buffer/capacity/offset trio (rather than
+ * after, like most emit_* helpers here) so it isn't adjacent to `offset`
+ * -- same dodge emit_collision_kind uses below: clang-tidy's
+ * bugprone-easily-swappable-parameters flags an (int, float) pair since
+ * one implicitly converts to the other. */
+static int emit_float_literal(float value, char *buffer, int capacity, int offset)
+{
+    char tmp[FLOAT_STR_BUFSIZE];
+    (void)snprintf(tmp, sizeof(tmp), "%g", (double)value);
+    if (strchr(tmp, '.') != nullptr) {
+        return emit_append(buffer, capacity, offset, "%s", tmp);
+    }
+    if (strchr(tmp, 'e') != nullptr) {
+        return emit_append(buffer, capacity, offset, "%s", tmp);
+    }
+    if (strchr(tmp, 'E') != nullptr) {
+        return emit_append(buffer, capacity, offset, "%s", tmp);
+    }
+    return emit_append(buffer, capacity, offset, "%s.0", tmp);
+}
+
 static int emit_attr_value(char *buffer, int capacity, int offset, const Attribute *attr)
 {
     switch (attr->type) {
@@ -53,21 +81,8 @@ static int emit_attr_value(char *buffer, int capacity, int offset, const Attribu
         return emit_append(buffer, capacity, offset, "%s", "false");
     case ATTR_INT:
         return emit_append(buffer, capacity, offset, "%d", attr->value.i);
-    case ATTR_FLOAT: {
-        char tmp[FLOAT_STR_BUFSIZE];
-        (void)snprintf(tmp, sizeof(tmp), "%g", (double)attr->value.f);
-        /* TOML requires a decimal point so the parser keeps the value as float, not int. */
-        if (strchr(tmp, '.') != nullptr) {
-            return emit_append(buffer, capacity, offset, "%s", tmp);
-        }
-        if (strchr(tmp, 'e') != nullptr) {
-            return emit_append(buffer, capacity, offset, "%s", tmp);
-        }
-        if (strchr(tmp, 'E') != nullptr) {
-            return emit_append(buffer, capacity, offset, "%s", tmp);
-        }
-        return emit_append(buffer, capacity, offset, "%s.0", tmp);
-    }
+    case ATTR_FLOAT:
+        return emit_float_literal(attr->value.f, buffer, capacity, offset);
     case ATTR_STRING:
         return emit_append(buffer, capacity, offset, "\"%s\"", attr->value.str.ptr);
     }
@@ -721,12 +736,8 @@ static int emit_scale_field(char *buffer, int capacity, int offset, const Atomic
     if (atom->scale == 1.0F) {
         return offset;
     }
-    char tmp[FLOAT_STR_BUFSIZE];
-    (void)snprintf(tmp, sizeof(tmp), "%g", (double)atom->scale);
-    if (strchr(tmp, '.') != nullptr || strchr(tmp, 'e') != nullptr || strchr(tmp, 'E') != nullptr) {
-        return emit_append(buffer, capacity, offset, ", scale = %s", tmp);
-    }
-    return emit_append(buffer, capacity, offset, ", scale = %s.0", tmp);
+    offset = emit_append(buffer, capacity, offset, ", scale = ");
+    return emit_float_literal(atom->scale, buffer, capacity, offset);
 }
 
 static int emit_atom(char *buffer, int capacity, int offset, const AtomicInput *atom)
@@ -845,6 +856,120 @@ int toml_emit_bindings(ErrorState *err, char *buffer, int capacity, const Bindin
         }
         offset = emit_function_block(buffer, capacity, offset, name, alternatives);
     }
+    if (offset < 0) {
+        error_set(err, "buffer too small (capacity %d)", capacity);
+    }
+    return offset;
+}
+
+/* ---- Save-state emitter (S6.15c, D33) ---- */
+
+static int emit_save_flags(char *buffer, int capacity, int offset, const FlagSet *flags)
+{
+    offset = emit_append(buffer, capacity, offset, "flags = [");
+    for (int index = 0; index < flags->names.count; index++) {
+        if (index > 0) {
+            offset = emit_append(buffer, capacity, offset, ", ");
+        }
+        offset = emit_append(buffer, capacity, offset, "\"%s\"", flags->names.data[index].name.ptr);
+    }
+    return emit_append(buffer, capacity, offset, "]\n");
+}
+
+static int emit_save_vars(char *buffer, int capacity, int offset, const AttrSet *vars)
+{
+    if (vars->entries.count == 0) {
+        return offset;
+    }
+    offset = emit_append(buffer, capacity, offset, "\n[save.vars]\n");
+    for (int index = 0; index < vars->entries.count; index++) {
+        const Attribute *attr = &vars->entries.data[index];
+        offset = emit_append(buffer, capacity, offset, "%s = ", attr->name.ptr);
+        offset = emit_attr_value(buffer, capacity, offset, attr);
+        offset = emit_append(buffer, capacity, offset, "\n");
+    }
+    return offset;
+}
+
+static int emit_save_items(char *buffer, int capacity, int offset, const ItemSet *items)
+{
+    if (items->counts.count == 0) {
+        return offset;
+    }
+    offset = emit_append(buffer, capacity, offset, "\n[save.items]\n");
+    for (int index = 0; index < items->counts.capacity; index++) {
+        if (items->counts.entries[index].state != MAP_ENTRY_OCCUPIED) {
+            continue;
+        }
+        Strv name = items->counts.entries[index].key;
+        offset = emit_append(buffer, capacity, offset, "%.*s = %d\n", (int)name.len, name.ptr,
+                             items->counts.entries[index].value);
+    }
+    return offset;
+}
+
+static int emit_save_position(char *buffer, int capacity, int offset, Vector2 position)
+{
+    offset = emit_append(buffer, capacity, offset, "pos = [");
+    offset = emit_float_literal(position.x, buffer, capacity, offset);
+    offset = emit_append(buffer, capacity, offset, ", ");
+    offset = emit_float_literal(position.y, buffer, capacity, offset);
+    return emit_append(buffer, capacity, offset, "]\n");
+}
+
+static int emit_save_entity_delta(char *buffer, int capacity, int offset, const EntityDelta *entity_delta)
+{
+    offset = emit_append(buffer, capacity, offset, "[[level_delta.entity]]\n");
+    offset = emit_append(buffer, capacity, offset, "id = %d\n", entity_delta->id);
+    offset = emit_save_position(buffer, capacity, offset, entity_delta->position);
+    offset = emit_append(buffer, capacity, offset, "active = %s\n", entity_delta->active ? "true" : "false");
+    for (int index = 0; index < entity_delta->attrs.entries.count; index++) {
+        const Attribute *attr = &entity_delta->attrs.entries.data[index];
+        offset = emit_append(buffer, capacity, offset, "%s = ", attr->name.ptr);
+        offset = emit_attr_value(buffer, capacity, offset, attr);
+        offset = emit_append(buffer, capacity, offset, "\n");
+    }
+    return emit_append(buffer, capacity, offset, "\n");
+}
+
+static int emit_save_level_deltas(char *buffer, int capacity, int offset, const map_strv_level_delta *level_deltas)
+{
+    for (int index = 0; index < level_deltas->capacity; index++) {
+        if (level_deltas->entries[index].state != MAP_ENTRY_OCCUPIED) {
+            continue;
+        }
+        Strv name = level_deltas->entries[index].key;
+        const LevelDelta *delta = &level_deltas->entries[index].value;
+        offset = emit_append(buffer, capacity, offset, "[[level_delta]]\n");
+        offset = emit_append(buffer, capacity, offset, "name = \"%.*s\"\n\n", (int)name.len, name.ptr);
+        for (int entity_index = 0; entity_index < delta->entities.count; entity_index++) {
+            offset = emit_save_entity_delta(buffer, capacity, offset, &delta->entities.data[entity_index]);
+        }
+    }
+    return offset;
+}
+
+int toml_emit_save(ErrorState *err,
+                   char *buffer,
+                   int capacity,
+                   int version,
+                   Strv current_level_name,
+                   const FlagSet *flags,
+                   const AttrSet *vars,
+                   const ItemSet *items,
+                   const map_strv_level_delta *level_deltas)
+{
+    int offset = 0;
+    offset = emit_append(buffer, capacity, offset, "[save]\n");
+    offset = emit_append(buffer, capacity, offset, "version = %d\n", version);
+    offset = emit_append(buffer, capacity, offset, "current_level = \"%.*s\"\n", (int)current_level_name.len,
+                         current_level_name.ptr);
+    offset = emit_save_flags(buffer, capacity, offset, flags);
+    offset = emit_save_vars(buffer, capacity, offset, vars);
+    offset = emit_save_items(buffer, capacity, offset, items);
+    offset = emit_append(buffer, capacity, offset, "\n");
+    offset = emit_save_level_deltas(buffer, capacity, offset, level_deltas);
+
     if (offset < 0) {
         error_set(err, "buffer too small (capacity %d)", capacity);
     }

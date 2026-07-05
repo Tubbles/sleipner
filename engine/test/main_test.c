@@ -189,6 +189,13 @@ void test_toml_emit_bindings_round_trip_defaults(void);
 void test_toml_emit_bindings_round_trip_after_mutation(void);
 void test_toml_load_bindings_missing_file_keeps_defaults(void);
 
+/* save_test.c */
+void test_save_round_trip(void);
+void test_save_deserialize_malformed_toml_fails(void);
+void test_save_deserialize_missing_save_section_fails(void);
+void test_save_deserialize_minimal_valid_is_empty(void);
+void test_save_deserialize_unsupported_version_fails(void);
+
 /* sprite_offset_integration_test.c */
 void test_integration_sprite_offset_edit_updates_entity_live(void);
 void test_integration_sprite_offset_edit_emitted_to_toml(void);
@@ -491,6 +498,12 @@ int main(void)
     RUN_TEST(test_toml_emit_bindings_round_trip_defaults);
     RUN_TEST(test_toml_emit_bindings_round_trip_after_mutation);
     RUN_TEST(test_toml_load_bindings_missing_file_keeps_defaults);
+
+    RUN_TEST(test_save_round_trip);
+    RUN_TEST(test_save_deserialize_malformed_toml_fails);
+    RUN_TEST(test_save_deserialize_missing_save_section_fails);
+    RUN_TEST(test_save_deserialize_minimal_valid_is_empty);
+    RUN_TEST(test_save_deserialize_unsupported_version_fails);
 
     return UNITY_END();
 }

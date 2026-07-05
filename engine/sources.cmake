@@ -56,6 +56,7 @@ set(ENGINE_SOURCE_FILES
     random.c
     render.c
     rule.c
+    save.c
     settings.c
     shape.c
     str.c

@@ -366,6 +366,18 @@ predicate rows and MOVE reparenting).
   proves a captured delta is dropped on hot-reload; would need
   `reset_editor_after_reload` (or equivalent) reachable from test
   infrastructure.
+- **No cross-level "player" section in the save format yet (S6.15c,
+  D33).** `SaveState` (`save.h`) bundles `current_level_name` plus
+  the whole `ProgressionState` (flags/vars/items/level_deltas), but
+  there is no dedicated `[[player]]`-style table the way DESIGN.md's
+  original multiplayer-era Save Format sketch has. The player's own
+  state (health, position, any instance attrs) rides inside whichever
+  level's `EntityDelta` it occupies at save time, via S6.15b's
+  `progression_capture_level_delta` -- correct for a save taken
+  mid-level (the caller must run that capture for the current level
+  first), but there is no cross-level home for player state independent
+  of which level it happens to be standing in. Revisit once S6.15d
+  (file I/O + pause-menu UI) or multiplayer forces the question.
 
 ## Input system future work
 
