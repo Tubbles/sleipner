@@ -23,6 +23,10 @@ void test_blueprint_multiple_children(void);
 void test_blueprint_child_no_tag(void);
 void test_blueprint_child_default_offset(void);
 
+/* gamedata_source_test.c */
+void test_gamedata_source_falls_back_to_embedded_when_file_absent(void);
+void test_gamedata_source_prefers_file_when_present(void);
+
 /* game_test.c */
 void test_game_init_defaults(void);
 void test_game_update_increments_frame(void);
@@ -271,6 +275,9 @@ int main(void)
     UNITY_BEGIN();
 
     RUN_TEST(test_asset_blur_fs_is_embedded_glsl);
+
+    RUN_TEST(test_gamedata_source_falls_back_to_embedded_when_file_absent);
+    RUN_TEST(test_gamedata_source_prefers_file_when_present);
 
     RUN_TEST(test_blueprint_load_single);
     RUN_TEST(test_blueprint_load_multiple);

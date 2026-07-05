@@ -51,6 +51,17 @@ target_compile_definitions(sleipner PRIVATE SLEIPNER_VERSION="${SLEIPNER_GIT_VER
 embed_all_assets(${CMAKE_SOURCE_DIR})
 target_link_libraries(sleipner PRIVATE sleipner_assets)
 
+# engine itself (not just sleipner/engine_tests) must link sleipner_assets:
+# gamedata_source.c (ENGINE_SOURCE_FILES) gates ASSET(gamedata_toml) behind
+# #if defined(SLEIPNER_EMBED_GAMEDATA), a compile-time check resolved while
+# THIS translation unit builds inside the engine static library -- unlike
+# ASSET()'s embed_*_start/_end symbols, which are only resolved at the
+# final executable's link step (why blur.c's unconditional ASSET(blur_fs)
+# call never needed this), the preprocessor define has to reach engine's
+# own compilation, not just whichever executable links engine + sleipner_assets
+# together afterward.
+target_link_libraries(engine PUBLIC sleipner_assets)
+
 if(NOT CMAKE_CROSSCOMPILING)
     add_subdirectory(test)
 endif()

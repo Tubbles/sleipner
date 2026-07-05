@@ -403,6 +403,31 @@ predicate rows and MOVE reparenting).
   expose a gamepad selector. Defer until the engine actually supports
   multiple gamepads.
 
+## Distribution follow-ups
+
+- **Android on-device embedded-gamedata verification is a manual step
+  (S7.2, D40).** `gamedata_source_read` (`engine/src/gamedata_source.h`/`.c`)
+  and its `engine_tests` coverage (`gamedata_source_test.c`) prove the
+  file-first/embedded-fallback load order headlessly, but nothing in CI
+  can exercise the real Android install path. Before shipping an APK
+  built with `SLEIPNER_EMBED_GAMEDATA` ON, delete
+  `/storage/emulated/0/Sync/sleipner/gamedata.toml` on a device (or a
+  fresh install that never synced one) and confirm the game still boots
+  into the embedded copy rather than showing a load error.
+- **The `embed_asset`-generated `.S` files carry no `.note.GNU-stack`
+  marker (pre-existing, not introduced by S7.2).** Every asset embedded
+  via `embed_asset` (`engine/sources.cmake`) lacks the section, so GNU ld
+  2.44 warns `missing .note.GNU-stack section implies executable stack`
+  at link time for whichever embedded-asset object happens to be last on
+  the link line -- adding `gamedata_toml` just changed which object's
+  name shows up in the warning (confirmed by configuring with
+  `SLEIPNER_EMBED_GAMEDATA=OFF`, where the warning re-attaches to
+  `gamecontrollerdb_txt` instead). Harmless today (a warning, not an
+  error; the resulting `PT_GNU_STACK` defaults conservatively rather than
+  actually executing anything off the stack) but would need
+  `embed_asset`'s generated template to append a
+  `.section .note.GNU-stack,"",%progbits` marker to silence it for good.
+
 ## misc
 - for some reason, when running against the walls significantly warps the
   sprite. could be related to float position not scaling up correctly or other

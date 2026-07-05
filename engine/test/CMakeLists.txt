@@ -56,6 +56,7 @@ add_executable(engine_tests
     assets_test.c
     blueprint_test.c
     game_test.c
+    gamedata_source_test.c
     integration_test.c
     level_test.c
     render_test.c

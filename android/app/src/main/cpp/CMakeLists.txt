@@ -11,6 +11,10 @@ set(PROJECT_ROOT "${CMAKE_SOURCE_DIR}/../../../../..")
 set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(USE_EXTERNAL_GLFW OFF CACHE BOOL "" FORCE)
 set(PLATFORM "Android" CACHE STRING "" FORCE)
+# D40: shipped Android builds embed data/gamedata.toml as a load-time
+# fallback (see engine/sources.cmake), so a fresh install boots even
+# before the Syncthing-synced file exists on the device.
+set(SLEIPNER_EMBED_GAMEDATA ON CACHE BOOL "" FORCE)
 add_subdirectory(${PROJECT_ROOT}/engine/vendor/raylib ${CMAKE_BINARY_DIR}/raylib)
 
 include(${PROJECT_ROOT}/engine/sources.cmake)

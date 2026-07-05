@@ -9,7 +9,8 @@
             "generator": "Ninja",
             "binaryDir": "${sourceDir}/build/Release",
             "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "Release"
+                "CMAKE_BUILD_TYPE": "Release",
+                "SLEIPNER_EMBED_GAMEDATA": "ON"
             }
         },
         {
@@ -20,7 +21,8 @@
             "binaryDir": "${sourceDir}/build/windows",
             "toolchainFile": "${sourceDir}/cmake/toolchains/mingw-w64.cmake",
             "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "Release"
+                "CMAKE_BUILD_TYPE": "Release",
+                "SLEIPNER_EMBED_GAMEDATA": "ON"
             }
         }
     ],

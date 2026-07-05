@@ -20,6 +20,15 @@ else()
     set(ARENA_SOURCE arena_posix.c)
 endif()
 
+# D40: file-first / embedded-fallback gamedata.toml loading. OFF by
+# default -- a bare/dev `cmake` build embeds nothing and always reads the
+# live data/gamedata.toml file. Shipping configurations flip this ON: the
+# linux/windows presets (CMakePresets.json) and the Android build
+# (android/app/src/main/cpp/CMakeLists.txt) set it via a forced cache
+# variable so a distributed binary still boots with no external gamedata
+# present. See gamedata_source.h/.c for the runtime load order.
+option(SLEIPNER_EMBED_GAMEDATA "Embed data/gamedata.toml as a load-time fallback" OFF)
+
 set(ENGINE_SOURCE_FILES
     ${ARENA_SOURCE}
     atlas.c
@@ -48,6 +57,7 @@ set(ENGINE_SOURCE_FILES
     font_cache.c
     frame.c
     game.c
+    gamedata_source.c
     hud.c
     input.c
     input_func.c
@@ -146,4 +156,13 @@ function(embed_all_assets root)
     embed_asset(sleipner_assets blur_fs              "${root}/assets/shaders/blur.fs" NULL_TERMINATE)
     # Input mappings
     embed_asset(sleipner_assets gamecontrollerdb_txt "${root}/assets/gamecontrollerdb.txt")
+
+    # Gamedata fallback (D40) -- only embedded when SLEIPNER_EMBED_GAMEDATA
+    # is ON. PUBLIC so every target that links sleipner_assets (sleipner,
+    # engine_tests, the Android sleipner .so) sees the #define and can
+    # gate ASSET(gamedata_toml) behind #if defined(SLEIPNER_EMBED_GAMEDATA).
+    if(SLEIPNER_EMBED_GAMEDATA)
+        embed_asset(sleipner_assets gamedata_toml "${root}/data/gamedata.toml" NULL_TERMINATE)
+        target_compile_definitions(sleipner_assets PUBLIC SLEIPNER_EMBED_GAMEDATA)
+    endif()
 endfunction()

@@ -49,3 +49,11 @@ DECLARE_ASSET(blur_fs);
 
 /* Input mappings */
 DECLARE_ASSET(gamecontrollerdb_txt);
+
+/* Gamedata fallback (D40) -- only embedded when SLEIPNER_EMBED_GAMEDATA is
+ * ON (release/shipping presets, Android build). Guarded so a dev build
+ * with the option OFF, which never embeds gamedata.toml, doesn't declare
+ * symbols the linker has nothing to resolve them to. */
+#if defined(SLEIPNER_EMBED_GAMEDATA)
+DECLARE_ASSET(gamedata_toml);
+#endif

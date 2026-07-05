@@ -52,6 +52,7 @@ const char *__lsan_default_suppressions(void)
 #include "frame.h"
 #include "settings.h"
 #include "game.h"
+#include "gamedata_source.h"
 #include "hud.h"
 #include "input.h"
 #include "input_func.h"
@@ -82,7 +83,6 @@ const char *__lsan_default_suppressions(void)
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
-#include <sys/stat.h>
 
 VEC_IMPL(font_preview, FontPreviewEntry)
 
@@ -811,55 +811,19 @@ static bool dispatch_save_preferences(GameState *state)
     return true;
 }
 
-static char *read_file_text(GameState *state, const char *path, Arena *arena)
-{
-    /* Stat the file first for diagnostics */
-    struct stat file_stat;
-    if (stat(path, &file_stat) != 0) {
-        error_set(&state->error, "stat(%s): %s", path, strerror(errno));
-        return nullptr;
-    }
-    debug_log(&state->debug, "gamedata: stat(%s): size=%ld mode=%o uid=%d gid=%d", path, (long)file_stat.st_size,
-              (unsigned)file_stat.st_mode, (int)file_stat.st_uid, (int)file_stat.st_gid);
-
-    FILE *file = fopen(path, FOPEN_READ);
-    if (!file) {
-        error_set(&state->error, "fopen(%s): %s", path, strerror(errno));
-        return nullptr;
-    }
-
-    ArenaCheckpoint read_cp = arena_save(arena);
-    char *buffer = arena_alloc(arena, MAX_GAMEDATA_SIZE + 1);
-    if (!buffer) {
-        (void)fclose(file);
-        return nullptr;
-    }
-    /* Pre-zero so null termination is automatic; avoids tainted-index write after fread */
-    (void)memset(buffer, 0, MAX_GAMEDATA_SIZE + 1);
-
-    size_t bytes_read = fread(buffer, 1, MAX_GAMEDATA_SIZE, file);
-    if (ferror(file)) {
-        error_set(&state->error, "fread(%s): %s", path, strerror(errno));
-        arena_restore(arena, read_cp);
-        (void)fclose(file);
-        return nullptr;
-    }
-    (void)fclose(file);
-    debug_log(&state->debug, "gamedata: read %zu bytes from %s", bytes_read, path);
-    return buffer;
-}
-
 static void load_gamedata(Diag *diag, GameState *state, const char *level_name)
 {
     SCRATCH_SCOPE(&state->scratch_arena);
     Str gd_path = gamedata_path(state, allocator_arena(&state->scratch_arena));
-    char *content = read_file_text(state, gd_path.ptr, &state->gamedata_arena);
+    GamedataSource source = gamedata_source_read(state, gd_path.ptr);
+    const char *content = source.toml_string;
     if (!content) {
         error_wrap(diag->error, "load_gamedata");
         debug_log(diag->debug, "error: %s", error_get(diag->error));
         error_clear(diag->error);
         return;
     }
+    debug_log(diag->debug, "gamedata: loaded from %s", source.from_file ? "file" : "embedded fallback");
 
     int content_length = (int)strlen(content);
 
