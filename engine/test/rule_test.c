@@ -31,6 +31,8 @@ FAKE_VALUE_FUNC(toml_table_t *, toml_table_at, const toml_array_t *, int);
  * above) — ACTION_PLAY_SOUND's handler calls this, but no existing test
  * here populates ActionContext.effects, so it's never actually invoked. */
 FAKE_VALUE_FUNC(bool, effect_queue_push_sound, EffectQueue *, Strv);
+FAKE_VALUE_FUNC(bool, effect_queue_push_camera_pan, EffectQueue *, Vector2, float);
+FAKE_VALUE_FUNC(bool, effect_queue_push_camera_shake, EffectQueue *, CameraShakeRequest);
 
 #include "test_heap_alloc.h"
 

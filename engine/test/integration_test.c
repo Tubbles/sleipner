@@ -611,6 +611,103 @@ void test_integration_play_sound_enqueues(void)
     test_game_teardown(&game);
 }
 
+void test_integration_camera_pan_moves_target(void)
+{
+    /* Same 84px-gap enter-trigger geometry as fixture_triggers /
+     * test_integration_enter_trigger_fires_on_overlap, translated +200 in
+     * X and embedded in an 800x600 level (viewport is the 320x240
+     * test_helpers.c default) so both the walk-in path and the pan target
+     * below sit inside camera_clamp_target's unclamped range -- a level
+     * only as big as the 320x240/240x sized fixtures elsewhere in this
+     * file would force camera_target to the level center regardless of
+     * the pan, since level_size <= viewport takes the centering branch. */
+    static const char *fixture_camera_pan = "[[blueprint]]\n"
+                                            "name = \"player\"\n"
+                                            "texture = \"player.png\"\n"
+                                            "src = [0, 0, 32, 32]\n"
+                                            "collision_offset = [0, 0]\n"
+                                            "collision_size = [16, 16]\n"
+                                            "behavior = \"player\"\n"
+                                            "speed = 80\n"
+                                            "\n"
+                                            "[[blueprint]]\n"
+                                            "name = \"zone\"\n"
+                                            "texture = \"rock.png\"\n"
+                                            "src = [0, 0, 16, 16]\n"
+                                            "collision_offset = [0, 0]\n"
+                                            "collision_size = [32, 32]\n"
+                                            "solid = false\n"
+                                            "\n"
+                                            "[[blueprint.rule]]\n"
+                                            "trigger = \"enter\"\n"
+                                            "actions = [\"camera_pan:600,450,1.0\", \"set_flag:zone_entered\"]\n"
+                                            "\n"
+                                            "[[level]]\n"
+                                            "name = \"test\"\n"
+                                            "size = [800, 600]\n"
+                                            "\n"
+                                            "[[level.entity]]\n"
+                                            "blueprint = \"player\"\n"
+                                            "pos = [300, 300]\n"
+                                            "\n"
+                                            "[[level.entity]]\n"
+                                            "blueprint = \"zone\"\n"
+                                            "pos = [400, 300]\n";
+
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_camera_pan));
+    TEST_ASSERT_FALSE(flag_get(&game.state.progression.flags, "zone_entered"));
+
+    /* Walk right one frame at a time until the enter trigger fires --
+     * the exact frame is needed (not just "fired somewhere in N frames")
+     * so the elapsed-time checks below line up with a known pan start. */
+    InputState walk = {0};
+    input_state_set_gp_axis(&walk, GAMEPAD_AXIS_LEFT_X, 1.0F);
+    bool triggered = false;
+    for (int frame = 0; frame < 100; frame++) {
+        test_advance_frame(&game, walk);
+        if (flag_get(&game.state.progression.flags, "zone_entered")) {
+            triggered = true;
+            break;
+        }
+    }
+    TEST_ASSERT_TRUE_MESSAGE(triggered, "enter trigger never fired");
+
+    /* apply_effect_queue (frame.c) already ran this same frame and
+     * captured this camera_target as the pan's `from` -- see
+     * apply_camera_pan_effects. */
+    Vector2 pan_start = game.state.gamedata.camera_target;
+
+    /* Player goes idle from here on: pan overriding follow (D22/D26) is
+     * the only thing that may still move camera_target. */
+    InputState idle = {0};
+
+    /* Half the 1.0s duration (60 frames at 1/60s) -- camera_target should
+     * be roughly midway from pan_start to the pan target (600, 450). */
+    test_advance_frames(&game, idle, 30);
+    Vector2 midpoint = game.state.gamedata.camera_target;
+    float expected_mid_x = pan_start.x + (600.0F - pan_start.x) * 0.5F;
+    float expected_mid_y = pan_start.y + (450.0F - pan_start.y) * 0.5F;
+    TEST_ASSERT_FLOAT_WITHIN(2.0F, expected_mid_x, midpoint.x);
+    TEST_ASSERT_FLOAT_WITHIN(2.0F, expected_mid_y, midpoint.y);
+
+    /* Remaining half -- pan should have reached its target exactly */
+    test_advance_frames(&game, idle, 30);
+    Vector2 at_end = game.state.gamedata.camera_target;
+    TEST_ASSERT_FLOAT_WITHIN(1.0F, 600.0F, at_end.x);
+    TEST_ASSERT_FLOAT_WITHIN(1.0F, 450.0F, at_end.y);
+
+    /* Pan is over: normal player-follow must resume. The idle player
+     * stopped well short of (600, 450), so a resumed follow pulls
+     * camera_target measurably back toward it over further idle frames --
+     * observed through camera_target itself, not camera_effect.pan.active. */
+    test_advance_frames(&game, idle, 30);
+    Vector2 after_pan = game.state.gamedata.camera_target;
+    TEST_ASSERT_TRUE_MESSAGE(after_pan.x < at_end.x - 1.0F, "follow did not resume after pan completed");
+
+    test_game_teardown(&game);
+}
+
 static char *read_file(const char *path)
 {
     FILE *file = fopen(path, "re");

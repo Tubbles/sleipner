@@ -799,6 +799,79 @@ void test_toml_emit_rules(void)
     arena_free(&arena2);
 }
 
+/* S6.5's camera_pan/camera_shake actions carry three and two comma-separated
+ * values respectively (parse_action_two_args splits at the first comma
+ * only, so the rest lands in second_argument). The emit table must mark
+ * both ACTION_EMIT_TWO_ARGS (like change_sprite/transition) so re-saving a
+ * rule via the editor doesn't silently drop the trailing value(s). */
+static const char *camera_action_fixture = "[[blueprint]]\n"
+                                           "name = \"trigger_zone\"\n"
+                                           "texture = \"trigger.png\"\n"
+                                           "src = [0, 0, 16, 16]\n"
+                                           "collision_offset = [0, 0]\n"
+                                           "collision_size = [16, 16]\n"
+                                           "\n"
+                                           "[[blueprint.rule]]\n"
+                                           "trigger = \"interact\"\n"
+                                           "actions = [\"camera_pan:10,20,1.5\", \"camera_shake:3,0.5\"]\n"
+                                           "\n"
+                                           "[[level]]\n"
+                                           "name = \"test\"\n"
+                                           "size = [320, 240]\n";
+
+void test_toml_emit_camera_pan_shake_round_trip(void)
+{
+    Arena arena;
+    TEST_ASSERT_TRUE(arena_init(&test_err, &arena));
+    BlueprintTable blueprints = {0};
+
+    toml_table_t *root = parse_toml(camera_action_fixture);
+    TEST_ASSERT_NOT_NULL(root);
+    blueprints_load(&test_diag, &blueprints, root, &arena);
+    toml_free(root);
+
+    char output[8192];
+    Level empty_level = {0};
+    int written = toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &empty_subroutines,
+                                     &empty_tileset, &empty_atlas_regions, &empty_level, 0);
+    TEST_ASSERT_TRUE(written > 0);
+
+    /* Full argument set must survive emit -- ACTION_EMIT_ONE_ARG truncates
+     * to "camera_pan:10" / "camera_shake:3", silently dropping the rest. */
+    TEST_ASSERT_NOT_NULL(strstr(output, "\"camera_pan:10,20,1.5\""));
+    TEST_ASSERT_NOT_NULL(strstr(output, "\"camera_shake:3,0.5\""));
+
+    /* Round-trip: re-parse and verify both actions' full argument sets survive */
+    Arena arena2;
+    TEST_ASSERT_TRUE(arena_init(&test_err, &arena2));
+    BlueprintTable blueprints2 = {0};
+
+    toml_table_t *root2 = parse_toml(output);
+    TEST_ASSERT_NOT_NULL(root2);
+    blueprints_load(&test_diag, &blueprints2, root2, &arena2);
+    toml_free(root2);
+
+    TEST_ASSERT_EQUAL_INT(1, blueprints2.entries.count);
+    const Blueprint *blueprint = &blueprints2.entries.data[0];
+    TEST_ASSERT_EQUAL_INT(1, blueprint->rules.count);
+
+    const Rule *rule = &blueprint->rules.data[0];
+    TEST_ASSERT_EQUAL_INT(2, rule->action_tree.nodes.count);
+
+    const ActionNode *pan_node = &rule->action_tree.nodes.data[0];
+    TEST_ASSERT_EQUAL_INT(ACTION_CAMERA_PAN, pan_node->type);
+    TEST_ASSERT_EQUAL_STRING("10", pan_node->argument.ptr);
+    TEST_ASSERT_EQUAL_STRING("20,1.5", pan_node->second_argument.ptr);
+
+    const ActionNode *shake_node = &rule->action_tree.nodes.data[1];
+    TEST_ASSERT_EQUAL_INT(ACTION_CAMERA_SHAKE, shake_node->type);
+    TEST_ASSERT_EQUAL_STRING("3", shake_node->argument.ptr);
+    TEST_ASSERT_EQUAL_STRING("0.5", shake_node->second_argument.ptr);
+
+    arena_free(&arena);
+    arena_free(&arena2);
+}
+
 /* S4.5/D28: [[blueprint.collision]] authors a composite collision shape (a
  * list of primitives) on a blueprint. Two primitives of different kinds
  * (rect + circle) with non-zero offsets exercises both the per-kind field

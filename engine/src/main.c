@@ -1049,8 +1049,16 @@ static void render_frame(GameState *state, RenderParams params)
 
     /* Gameplay camera: split into integer target (pixel-perfect in low-res buffer)
      * and fractional remainder (applied as sub-pixel offset during upscale blit).
-     * Without this, camera jumps in PIXEL_SCALE-sized steps on screen. */
-    CameraSplit camera_split = render_split_camera_target(state->gamedata.camera_target);
+     * Without this, camera jumps in PIXEL_SCALE-sized steps on screen.
+     * camera_effect.shake.offset (S6.5) is folded in here, before the split,
+     * so the jitter gets the same sub-pixel smoothing as normal camera
+     * movement -- it is never written into gamedata.camera_target itself,
+     * keeping the clean, clamped follow/pan position intact underneath. */
+    Vector2 shaken_target = {
+        state->gamedata.camera_target.x + state->camera_effect.shake.offset.x,
+        state->gamedata.camera_target.y + state->camera_effect.shake.offset.y,
+    };
+    CameraSplit camera_split = render_split_camera_target(shaken_target);
     Vector2 int_cam = camera_split.integer_target;
     Vector2 frac_cam = camera_split.fractional_offset;
 

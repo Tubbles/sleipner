@@ -34,6 +34,14 @@ void test_camera_follows_player(void);
 void test_camera_clamped_to_level_bounds(void);
 void test_camera_centers_small_level(void);
 void test_camera_snaps_on_load(void);
+void test_camera_pan_position_at_start_is_from(void);
+void test_camera_pan_position_at_half_duration_is_midpoint(void);
+void test_camera_pan_position_at_duration_is_target(void);
+void test_camera_pan_position_clamps_past_duration(void);
+void test_camera_shake_magnitude_full_at_zero_elapsed(void);
+void test_camera_shake_magnitude_half_at_half_duration(void);
+void test_camera_shake_magnitude_zero_at_and_past_duration(void);
+void test_camera_shake_magnitude_never_negative(void);
 
 /* level_test.c */
 void test_level_load_first(void);
@@ -68,6 +76,7 @@ void test_integration_enter_trigger_fires_on_overlap(void);
 void test_integration_enter_trigger_fires_only_once(void);
 void test_integration_change_sprite_action_updates_source_rect(void);
 void test_integration_play_sound_enqueues(void);
+void test_integration_camera_pan_moves_target(void);
 void test_integration_real_gamedata_loads(void);
 void test_integration_real_gamedata_all_levels_load(void);
 void test_integration_transition_changes_level(void);
@@ -121,6 +130,7 @@ void test_toml_emit_persisted_attrs(void);
 void test_toml_emit_no_persisted_attrs(void);
 void test_toml_emit_child_persisted_attrs_round_trip(void);
 void test_toml_emit_rules(void);
+void test_toml_emit_camera_pan_shake_round_trip(void);
 void test_toml_emit_collision_composite_round_trip(void);
 void test_toml_emit_nested_control_flow_round_trip(void);
 void test_toml_emit_subroutines_round_trip(void);
@@ -208,6 +218,14 @@ int main(void)
     RUN_TEST(test_camera_clamped_to_level_bounds);
     RUN_TEST(test_camera_centers_small_level);
     RUN_TEST(test_camera_snaps_on_load);
+    RUN_TEST(test_camera_pan_position_at_start_is_from);
+    RUN_TEST(test_camera_pan_position_at_half_duration_is_midpoint);
+    RUN_TEST(test_camera_pan_position_at_duration_is_target);
+    RUN_TEST(test_camera_pan_position_clamps_past_duration);
+    RUN_TEST(test_camera_shake_magnitude_full_at_zero_elapsed);
+    RUN_TEST(test_camera_shake_magnitude_half_at_half_duration);
+    RUN_TEST(test_camera_shake_magnitude_zero_at_and_past_duration);
+    RUN_TEST(test_camera_shake_magnitude_never_negative);
 
     RUN_TEST(test_integration_load_gamedata);
     RUN_TEST(test_integration_load_specific_level);
@@ -221,6 +239,7 @@ int main(void)
     RUN_TEST(test_integration_enter_trigger_fires_only_once);
     RUN_TEST(test_integration_change_sprite_action_updates_source_rect);
     RUN_TEST(test_integration_play_sound_enqueues);
+    RUN_TEST(test_integration_camera_pan_moves_target);
     RUN_TEST(test_integration_real_gamedata_loads);
     RUN_TEST(test_integration_real_gamedata_all_levels_load);
     RUN_TEST(test_integration_transition_changes_level);
@@ -331,6 +350,7 @@ int main(void)
     RUN_TEST(test_toml_emit_no_persisted_attrs);
     RUN_TEST(test_toml_emit_child_persisted_attrs_round_trip);
     RUN_TEST(test_toml_emit_rules);
+    RUN_TEST(test_toml_emit_camera_pan_shake_round_trip);
     RUN_TEST(test_toml_emit_collision_composite_round_trip);
     RUN_TEST(test_toml_emit_nested_control_flow_round_trip);
     RUN_TEST(test_toml_emit_subroutines_round_trip);

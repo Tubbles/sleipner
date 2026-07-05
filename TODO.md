@@ -137,13 +137,31 @@ predicate rows and MOVE reparenting).
 ## Rule VM follow-ups
 
 - **Numeric action arguments aren't validated for non-numeric garbage.**
-  `execute_change_sprite_action` (`rule.c`) only checks structurally that
-  `x,y,w,h` has all four comma-separated parts (mirroring
-  `execute_transition_action`'s comma check); like `set_attr`/`add_attr`, a
-  non-numeric token (e.g. `change_sprite:16,oops,48,64`) silently resolves
-  via `strtof` to `0` rather than erroring. Pre-existing behavior across the
-  whole action VM, not introduced here — worth a shared pass if stricter
-  numeric-arg validation is ever wanted.
+  `execute_change_sprite_action` (`rule.c`) only checks structurally
+  that `x,y,w,h` has all four comma-separated parts (mirroring
+  `execute_transition_action`'s comma check); like `set_attr`/`add_attr`,
+  a non-numeric token (e.g. `change_sprite:16,oops,48,64`) silently resolves
+  via `strtof` to `0` rather than erroring. S6.5's `camera_pan`/`camera_shake`
+  (`execute_camera_pan_action`/`execute_camera_shake_action`, `rule.c`) break
+  from this: they validate every numeric token via `parse_strict_float` and
+  `error_set` on garbage, since a bad pan/shake duration should fail loudly
+  rather than silently pan/shake for zero seconds. The VM is now inconsistent
+  on this axis (two actions strict, the rest permissive) — worth a shared
+  pass to pick one behavior and apply it everywhere, whichever direction
+  that goes.
+- **TOML emitter still drops the extra value on re-emitting spawn.**
+  `parse_action_two_args` (`rule.c`) always splits a simple action's
+  argument string at the first comma only, regardless of how many
+  values the action logically takes: `argument` gets everything before
+  it, `second_argument` gets everything after. `toml_emitter.c`'s
+  `action_emit_table` still marks `spawn:` (`toml_emitter.c:251`) as
+  `ACTION_EMIT_ONE_ARG`, so `emit_simple_action_string`
+  (`toml_emitter.c:268-286`) re-emits only `argument` and silently
+  drops `second_argument`. camera_pan/camera_shake had the identical
+  bug and were fixed to `ACTION_EMIT_TWO_ARGS` in the S6.5 commit;
+  spawn is left as-is because it has no execute handler yet (S6.6),
+  so S6.6 should fix spawn's emit table entry alongside implementing
+  its execute path, with its own round-trip test.
 
 ## Collision system follow-ups
 

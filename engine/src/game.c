@@ -401,14 +401,78 @@ static Vector2 camera_clamp_target(Vector2 target, RectU32 level_size, RectU32 v
     return target;
 }
 
+Vector2 camera_pan_position(Vector2 from, Vector2 target, float elapsed, float duration)
+{
+    float progress = duration > 0.0F ? elapsed / duration : 1.0F;
+    if (progress < 0.0F) {
+        progress = 0.0F;
+    } else if (progress > 1.0F) {
+        progress = 1.0F;
+    }
+    return (Vector2){
+        from.x + ((target.x - from.x) * progress),
+        from.y + ((target.y - from.y) * progress),
+    };
+}
+
+/* decayed = magnitude * (1 - elapsed/duration), rearranged to
+ * magnitude - (magnitude * elapsed) / duration (equivalent by the
+ * distributive law) so magnitude and elapsed appear together in the same
+ * sub-expression -- clang-tidy's bugprone-easily-swappable-parameters
+ * otherwise flags the two as swappable, since nothing in the original
+ * formula used them together. */
+float camera_shake_magnitude(float magnitude, float elapsed, float duration)
+{
+    if (duration <= 0.0F || elapsed >= duration) {
+        return 0.0F;
+    }
+    float decayed = magnitude - ((magnitude * elapsed) / duration);
+    return decayed < 0.0F ? 0.0F : decayed;
+}
+
+/* Pan (S6.5, D22/D26) overrides normal follow while active: advance
+ * elapsed, interpolate via the pure camera_pan_position, and clear
+ * `active` once elapsed reaches duration so plain follow resumes next
+ * frame. Both branches feed the same camera_clamp_target call so a pan
+ * target can never push the camera outside the level. */
 static void camera_update_target(GameState *state, Vector2 player_position, float delta_time)
 {
-    float blend = fminf(CAMERA_FOLLOW_SPEED * delta_time, 1.0F);
-    state->gamedata.camera_target.x += (player_position.x - state->gamedata.camera_target.x) * blend;
-    state->gamedata.camera_target.y += (player_position.y - state->gamedata.camera_target.y) * blend;
+    CameraPanEffect *pan = &state->camera_effect.pan;
+    if (pan->active) {
+        pan->elapsed += delta_time;
+        state->gamedata.camera_target = camera_pan_position(pan->from, pan->target, pan->elapsed, pan->duration);
+        if (pan->elapsed >= pan->duration) {
+            pan->active = false;
+        }
+    } else {
+        float blend = fminf(CAMERA_FOLLOW_SPEED * delta_time, 1.0F);
+        state->gamedata.camera_target.x += (player_position.x - state->gamedata.camera_target.x) * blend;
+        state->gamedata.camera_target.y += (player_position.y - state->gamedata.camera_target.y) * blend;
+    }
     RectU32 level_size = {(uint32_t)state->gamedata.current_level.width,
                           (uint32_t)state->gamedata.current_level.height};
     state->gamedata.camera_target = camera_clamp_target(state->gamedata.camera_target, level_size, state->game_bounds);
+}
+
+/* Shake (S6.5, D22/D26) is a render-time jitter, never written into
+ * camera_target itself: advance elapsed, decay the magnitude via the pure
+ * camera_shake_magnitude, and redraw a fresh random offset every frame
+ * while active. Computed here (not render.c/main.c) so it stays
+ * headless-observable and render stays read-only; main.c's camera
+ * assembly adds this offset to camera_target at draw time. */
+static void camera_update_shake(GameState *state, float delta_time)
+{
+    CameraShakeEffect *shake = &state->camera_effect.shake;
+    if (shake->elapsed >= shake->duration) {
+        shake->offset = (Vector2){0};
+        return;
+    }
+    shake->elapsed += delta_time;
+    float current_magnitude = camera_shake_magnitude(shake->magnitude, shake->elapsed, shake->duration);
+    shake->offset = (Vector2){
+        random_float_range(&state->rng, -1.0F, 1.0F) * current_magnitude,
+        random_float_range(&state->rng, -1.0F, 1.0F) * current_magnitude,
+    };
 }
 
 void game_snap_camera(GameState *state)
@@ -420,6 +484,10 @@ void game_snap_camera(GameState *state)
     RectU32 level_size = {(uint32_t)state->gamedata.current_level.width,
                           (uint32_t)state->gamedata.current_level.height};
     state->gamedata.camera_target = camera_clamp_target(snap_position, level_size, state->game_bounds);
+    /* A snap means fresh load, hot-reload, or level transition (see the
+     * two call sites: game_load_gamedata and frame.c's handle_transition)
+     * -- a pan/shake in flight must not survive into the new context. */
+    state->camera_effect = (CameraEffect){0};
 }
 
 static void update_child_positions(Level *level)
@@ -579,6 +647,7 @@ void game_update(Diag *diag, GameState *state, InputState input, float delta_tim
             update_player(player, player_defaults, &input, &state->bindings, delta_time, level_size);
             resolve_player_obstacles(state, state->gamedata.player_index);
             camera_update_target(state, player->position, delta_time);
+            camera_update_shake(state, delta_time);
         }
     }
 

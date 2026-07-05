@@ -13,6 +13,7 @@
 #include "str.h"
 #include "strv.h"
 
+#include "raylib.h"
 #include "toml.h"
 
 #include <ctype.h>
@@ -1200,6 +1201,125 @@ static bool execute_change_sprite_action(Diag *diag, Allocator *alloc, const Act
            attr_set_sprite_value(attrs, "src_w", alloc, w_buf) && attr_set_sprite_value(attrs, "src_h", alloc, h_buf);
 }
 
+/* Copies a comma-split token (a slice into node->second_argument, not
+ * null-terminated on its own) into a scratch buffer and resolves any
+ * $variable reference in it. Duplicates resolve_sprite_token's body
+ * (S6.3, above) rather than sharing it -- that helper's name/doc comment
+ * are sprite-specific and camera_pan is not a sprite action. */
+static void resolve_camera_token(char *out, int out_size, Strv token, ActionContext context)
+{
+    char raw[MAX_ARG];
+    strv_copy_to_cstr(token, raw, MAX_ARG);
+    resolve_arg(out, out_size, raw, context);
+}
+
+/* strtof alone (the convention execute_change_sprite_action/
+ * execute_transition_action use) silently turns garbage into 0.0 --
+ * acceptable there since a bad sprite/level coordinate just looks wrong
+ * on screen, but a malformed camera_pan/camera_shake duration should
+ * fail loudly instead of panning/shaking for zero seconds. Returns false
+ * (leaving *out untouched) if text has no valid float or has trailing
+ * non-numeric characters. */
+static bool parse_strict_float(const char *text, float *out)
+{
+    char *endptr = nullptr;
+    float value = strtof(text, &endptr);
+    if (endptr == text || *endptr != '\0') {
+        return false;
+    }
+    *out = value;
+    return true;
+}
+
+/* camera_pan:x,y,duration (S6.5, D22/D26) -- pushes a CameraPanRequest onto
+ * the effect queue; frame.c's apply pass starts the pan (capturing the
+ * current camera_target as `from`) and game_update advances it every
+ * frame, overriding player-follow until it completes. parse_action_two_args
+ * already split "x,y,duration" into argument="x" and
+ * second_argument="y,duration" (one comma); recover the remaining two
+ * tokens with one more split, mirroring execute_change_sprite_action. */
+static bool execute_camera_pan_action(Diag *diag, const ActionNode *node, ActionContext context)
+{
+    if (!context.effects) {
+        debug_log(diag->debug, "camera_pan: no effect channel");
+        return true;
+    }
+    if (!node->argument.ptr || !node->second_argument.ptr) {
+        error_set(diag->error, "camera_pan: expected 'x,y,duration'");
+        return false;
+    }
+    Strv rest = str_to_strv(node->second_argument);
+    Strv y_token = strv_split(&rest, ',');
+    if (!rest.ptr) {
+        error_set(diag->error, "camera_pan: expected 'y,duration' in second argument, got '%s'",
+                  node->second_argument.ptr);
+        return false;
+    }
+    Strv duration_token = rest;
+
+    char x_buf[MAX_ARG];
+    char y_buf[MAX_ARG];
+    char duration_buf[MAX_ARG];
+    resolve_arg(x_buf, MAX_ARG, node->argument.ptr, context);
+    resolve_camera_token(y_buf, MAX_ARG, y_token, context);
+    resolve_camera_token(duration_buf, MAX_ARG, duration_token, context);
+
+    Vector2 target;
+    float duration;
+    if (!parse_strict_float(x_buf, &target.x)) {
+        error_set(diag->error, "camera_pan: invalid x '%s'", x_buf);
+        return false;
+    }
+    if (!parse_strict_float(y_buf, &target.y)) {
+        error_set(diag->error, "camera_pan: invalid y '%s'", y_buf);
+        return false;
+    }
+    if (!parse_strict_float(duration_buf, &duration)) {
+        error_set(diag->error, "camera_pan: invalid duration '%s'", duration_buf);
+        return false;
+    }
+    if (!effect_queue_push_camera_pan(context.effects, target, duration)) {
+        error_set(diag->error, "camera_pan: allocation failed");
+        return false;
+    }
+    return true;
+}
+
+/* camera_shake:magnitude,duration (S6.5, D22/D26) -- parse_action_two_args
+ * already splits this into exactly argument="magnitude",
+ * second_argument="duration"; the 2-value case needs no further split,
+ * unlike camera_pan above. */
+static bool execute_camera_shake_action(Diag *diag, const ActionNode *node, ActionContext context)
+{
+    if (!context.effects) {
+        debug_log(diag->debug, "camera_shake: no effect channel");
+        return true;
+    }
+    if (!node->argument.ptr || !node->second_argument.ptr) {
+        error_set(diag->error, "camera_shake: expected 'magnitude,duration'");
+        return false;
+    }
+    char magnitude_buf[MAX_ARG];
+    char duration_buf[MAX_ARG];
+    resolve_arg(magnitude_buf, MAX_ARG, node->argument.ptr, context);
+    resolve_arg(duration_buf, MAX_ARG, node->second_argument.ptr, context);
+
+    CameraShakeRequest request;
+    if (!parse_strict_float(magnitude_buf, &request.magnitude)) {
+        error_set(diag->error, "camera_shake: invalid magnitude '%s'", magnitude_buf);
+        return false;
+    }
+    if (!parse_strict_float(duration_buf, &request.duration)) {
+        error_set(diag->error, "camera_shake: invalid duration '%s'", duration_buf);
+        return false;
+    }
+    if (!effect_queue_push_camera_shake(context.effects, request)) {
+        error_set(diag->error, "camera_shake: allocation failed");
+        return false;
+    }
+    return true;
+}
+
 static bool execute_set_var_action(Diag *diag, Allocator *alloc, const ActionNode *node, ActionContext context)
 {
     char resolved_value[MAX_ARG];
@@ -1416,6 +1536,10 @@ static bool dispatch_simple_action(Diag *diag, Allocator *alloc, const ActionNod
             return true;
         }
         return effect_queue_push_sound(context.effects, str_to_strv(node->argument));
+    case ACTION_CAMERA_PAN:
+        return execute_camera_pan_action(diag, node, context);
+    case ACTION_CAMERA_SHAKE:
+        return execute_camera_shake_action(diag, node, context);
     case ACTION_CREATE_TIMER:
         return execute_create_timer_action(diag, node, context, false);
     case ACTION_CREATE_TIMER_PERIODIC:

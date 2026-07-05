@@ -368,3 +368,66 @@ void test_camera_snaps_on_load(void)
 
     game_free(&diag, &state);
 }
+
+/* --- camera_pan_position / camera_shake_magnitude (S6.5, D22/D26) ---
+ * Pure math, no GameState needed -- these are the two helpers
+ * camera_update_target's pan-override branch and game_update's shake-offset
+ * computation call every frame (game.c). */
+
+void test_camera_pan_position_at_start_is_from(void)
+{
+    Vector2 from = {100.0F, 50.0F};
+    Vector2 target = {300.0F, 150.0F};
+    Vector2 result = camera_pan_position(from, target, 0.0F, 1.0F);
+    TEST_ASSERT_FLOAT_WITHIN(0.001F, from.x, result.x);
+    TEST_ASSERT_FLOAT_WITHIN(0.001F, from.y, result.y);
+}
+
+void test_camera_pan_position_at_half_duration_is_midpoint(void)
+{
+    Vector2 from = {100.0F, 50.0F};
+    Vector2 target = {300.0F, 150.0F};
+    Vector2 result = camera_pan_position(from, target, 0.5F, 1.0F);
+    TEST_ASSERT_FLOAT_WITHIN(0.001F, 200.0F, result.x);
+    TEST_ASSERT_FLOAT_WITHIN(0.001F, 100.0F, result.y);
+}
+
+void test_camera_pan_position_at_duration_is_target(void)
+{
+    Vector2 from = {100.0F, 50.0F};
+    Vector2 target = {300.0F, 150.0F};
+    Vector2 result = camera_pan_position(from, target, 1.0F, 1.0F);
+    TEST_ASSERT_FLOAT_WITHIN(0.001F, target.x, result.x);
+    TEST_ASSERT_FLOAT_WITHIN(0.001F, target.y, result.y);
+}
+
+void test_camera_pan_position_clamps_past_duration(void)
+{
+    Vector2 from = {100.0F, 50.0F};
+    Vector2 target = {300.0F, 150.0F};
+    Vector2 result = camera_pan_position(from, target, 5.0F, 1.0F);
+    TEST_ASSERT_FLOAT_WITHIN(0.001F, target.x, result.x);
+    TEST_ASSERT_FLOAT_WITHIN(0.001F, target.y, result.y);
+}
+
+void test_camera_shake_magnitude_full_at_zero_elapsed(void)
+{
+    TEST_ASSERT_FLOAT_WITHIN(0.001F, 10.0F, camera_shake_magnitude(10.0F, 0.0F, 1.0F));
+}
+
+void test_camera_shake_magnitude_half_at_half_duration(void)
+{
+    TEST_ASSERT_FLOAT_WITHIN(0.001F, 5.0F, camera_shake_magnitude(10.0F, 0.5F, 1.0F));
+}
+
+void test_camera_shake_magnitude_zero_at_and_past_duration(void)
+{
+    TEST_ASSERT_EQUAL_FLOAT(0.0F, camera_shake_magnitude(10.0F, 1.0F, 1.0F));
+    TEST_ASSERT_EQUAL_FLOAT(0.0F, camera_shake_magnitude(10.0F, 5.0F, 1.0F));
+}
+
+void test_camera_shake_magnitude_never_negative(void)
+{
+    TEST_ASSERT_TRUE(camera_shake_magnitude(10.0F, 0.9F, 1.0F) >= 0.0F);
+    TEST_ASSERT_TRUE(camera_shake_magnitude(10.0F, 100.0F, 1.0F) >= 0.0F);
+}

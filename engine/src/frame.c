@@ -219,28 +219,48 @@ static void apply_sound_effects(Diag *diag, GameState *state, const vec_sound_ef
     }
 }
 
-/* camera_pan/camera_shake/spawn/dialogue have no handler yet (S6.5-S6.7):
- * logged for the same observability the S6.2 scaffold had, otherwise
- * no-ops. apply_effect_queue below still clears these vecs every frame so
- * they never accumulate in the meantime. */
-static void log_camera_pan_effects(Diag *diag, const vec_camera_pan_request *camera_pans)
+/* camera_pan/camera_shake have real handlers as of S6.5: start (or
+ * restart) the corresponding CameraEffect field on GameState.
+ * game_update's camera_update_target/camera_update_shake (game.c) advance
+ * them every frame after this. Multiple requests of the same kind in one
+ * frame: last one wins, same simplicity apply_sound_effects' alias cap
+ * takes for sound -- D22/D26 don't ask for queueing or blending several
+ * pans/shakes together. */
+static void apply_camera_pan_effects(Diag *diag, GameState *state, const vec_camera_pan_request *camera_pans)
 {
     for (int index = 0; index < camera_pans->count; index++) {
         const CameraPanRequest *request = &camera_pans->data[index];
         debug_log(diag->debug, "effect: camera_pan target=(%.1f, %.1f) duration=%.2f", (double)request->target.x,
                   (double)request->target.y, (double)request->duration);
+        state->camera_effect.pan = (CameraPanEffect){
+            .active = true,
+            .from = state->gamedata.camera_target,
+            .target = request->target,
+            .duration = request->duration,
+            .elapsed = 0.0F,
+        };
     }
 }
 
-static void log_camera_shake_effects(Diag *diag, const vec_camera_shake_request *camera_shakes)
+static void apply_camera_shake_effects(Diag *diag, GameState *state, const vec_camera_shake_request *camera_shakes)
 {
     for (int index = 0; index < camera_shakes->count; index++) {
         const CameraShakeRequest *request = &camera_shakes->data[index];
         debug_log(diag->debug, "effect: camera_shake magnitude=%.2f duration=%.2f", (double)request->magnitude,
                   (double)request->duration);
+        state->camera_effect.shake = (CameraShakeEffect){
+            .magnitude = request->magnitude,
+            .duration = request->duration,
+            .elapsed = 0.0F,
+            .offset = {0},
+        };
     }
 }
 
+/* spawn/dialogue have no handler yet (S6.6/S6.7): logged for the same
+ * observability the S6.2 scaffold had, otherwise no-ops.
+ * apply_effect_queue below still clears these vecs every frame so they
+ * never accumulate in the meantime. */
 static void log_spawn_effects(Diag *diag, const vec_spawn_request *spawns)
 {
     for (int index = 0; index < spawns->count; index++) {
@@ -262,13 +282,13 @@ static void log_dialogue_effects(Diag *diag, const vec_dialogue_request *dialogu
  * (which lived in effect.c and only logged). effect.c stays a pure push/
  * clear channel; this is the per-frame apply pass with real GameState
  * access (SFX registry, audio device), which is why it lives here instead.
- * Sound is the only handled type so far -- S6.5-S6.7 add handlers for the
- * rest, following this same pattern. */
+ * Sound (S6.4) and camera_pan/camera_shake (S6.5) are handled so far --
+ * S6.6/S6.7 add handlers for spawn/dialogue, following this same pattern. */
 static void apply_effect_queue(Diag *diag, GameState *state)
 {
     apply_sound_effects(diag, state, &state->effects.sounds);
-    log_camera_pan_effects(diag, &state->effects.camera_pans);
-    log_camera_shake_effects(diag, &state->effects.camera_shakes);
+    apply_camera_pan_effects(diag, state, &state->effects.camera_pans);
+    apply_camera_shake_effects(diag, state, &state->effects.camera_shakes);
     log_spawn_effects(diag, &state->effects.spawns);
     log_dialogue_effects(diag, &state->effects.dialogues);
     effect_queue_clear(&state->effects);

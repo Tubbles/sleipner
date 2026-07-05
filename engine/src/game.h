@@ -72,6 +72,46 @@ typedef struct {
     map_strv_sound sounds;
 } AssetRegistry;
 
+/* --- CameraEffect: runtime pan/shake state started by the camera_pan/
+ * camera_shake rule actions (S6.5, D22/D26) ---
+ *
+ * Lives on GameState, NOT GamedataState: it is transient per-session
+ * effect state, not undo-snapshotted, and must not bleed across a level
+ * change -- game_snap_camera zeroes it every time the camera itself is
+ * snapped (fresh load, hot-reload, level transition), so a pan/shake
+ * in flight never survives into the next level.
+ *
+ * `pan` overrides camera_update_target's normal player-follow while
+ * active (game.c): from/target/duration/elapsed drive the pure
+ * camera_pan_position lerp, and `active` clears itself once elapsed
+ * reaches duration, letting follow resume next frame.
+ *
+ * `shake` has no separate `active` flag -- it is implicitly inactive
+ * whenever elapsed >= duration (the zero-initialized default), same
+ * convention camera_shake_magnitude uses. `offset` is computed once per
+ * frame in game_update (not render) so it is headless-observable; the
+ * gameplay camera assembly (main.c) adds it to camera_target as a
+ * visual-only jitter, never writing it back into camera_target itself. */
+typedef struct {
+    bool active;
+    Vector2 from;
+    Vector2 target;
+    float duration;
+    float elapsed;
+} CameraPanEffect;
+
+typedef struct {
+    float magnitude;
+    float duration;
+    float elapsed;
+    Vector2 offset;
+} CameraShakeEffect;
+
+typedef struct {
+    CameraPanEffect pan;
+    CameraShakeEffect shake;
+} CameraEffect;
+
 typedef struct {
     GamedataState gamedata;
     Arena gamedata_arena;
@@ -115,6 +155,8 @@ typedef struct {
      * arena_restore(gamedata_base) that a level transition or hot-reload
      * runs against gamedata_arena. */
     EffectQueue effects;
+    /* Runtime camera_pan/camera_shake state -- see CameraEffect above. */
+    CameraEffect camera_effect;
 } GameState;
 
 typedef struct {
@@ -138,8 +180,23 @@ void game_free(Diag *diag, GameState *state);
  * pause-menu RESTORE action. */
 void game_reset_progression(GameState *state);
 
-/* Snap camera to the clamped player position (no lerp). Call after level load or transition. */
+/* Snap camera to the clamped player position (no lerp). Call after level load
+ * or transition. Also zeroes state->camera_effect (S6.5) -- see CameraEffect's
+ * doc comment above for why this is the single reset site. */
 void game_snap_camera(GameState *state);
+
+/* Pure lerp for an active camera_pan effect: from -> target as elapsed goes
+ * 0 -> duration, clamped at both ends (elapsed <= 0 returns from, elapsed >=
+ * duration returns target). duration <= 0 also returns target. Exposed for
+ * direct unit testing (game_test.c); the only production caller is
+ * camera_update_target's pan-override branch (game.c). */
+Vector2 camera_pan_position(Vector2 from, Vector2 target, float elapsed, float duration);
+
+/* Pure linear decay for an active camera_shake effect: full `magnitude` at
+ * elapsed = 0, decaying to 0 at elapsed >= duration, never negative.
+ * duration <= 0 returns 0. Exposed for direct unit testing (game_test.c);
+ * the only production caller is game_update's shake-offset computation. */
+float camera_shake_magnitude(float magnitude, float elapsed, float duration);
 
 /* Switch the active level in memory: swaps state->gamedata.current_level
  * with the matching entry in state->gamedata.other_levels and rebuilds the
