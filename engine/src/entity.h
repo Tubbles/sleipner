@@ -40,6 +40,12 @@ typedef struct {
     float frame_timer;
     int frame_index;
     int parent_index;
+    /* Runtime phase accumulator for the npc_patrol behavior (S6.9b, D30) --
+     * a plain runtime field, same footing as frame_timer/frame_index above:
+     * NOT emitted to TOML (see toml_emitter.c's [[level.entity]] writer,
+     * which only writes blueprint/pos/persisted_attrs). A persisted attr
+     * updated every frame would grow gamedata.toml on every save instead. */
+    float patrol_phase;
 
     /* Vectors (8 bytes each) */
     Vector2 position;

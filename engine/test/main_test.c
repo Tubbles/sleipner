@@ -206,6 +206,10 @@ void test_integration_dialogue_world_frozen(void);
 void test_integration_dialogue_pages_and_typewriter(void);
 void test_integration_static_entity_does_not_move(void);
 void test_integration_input_source_seam(void);
+void test_integration_npc_patrol_oscillates(void);
+void test_integration_chase_within_aggro_moves_toward_player(void);
+void test_integration_chase_outside_aggro_idle(void);
+void test_integration_chase_respects_collision(void);
 
 int main(void)
 {
@@ -356,6 +360,10 @@ int main(void)
     RUN_TEST(test_integration_dialogue_pages_and_typewriter);
     RUN_TEST(test_integration_static_entity_does_not_move);
     RUN_TEST(test_integration_input_source_seam);
+    RUN_TEST(test_integration_npc_patrol_oscillates);
+    RUN_TEST(test_integration_chase_within_aggro_moves_toward_player);
+    RUN_TEST(test_integration_chase_outside_aggro_idle);
+    RUN_TEST(test_integration_chase_respects_collision);
 
     RUN_TEST(test_integration_sprite_offset_edit_updates_entity_live);
     RUN_TEST(test_integration_sprite_offset_edit_emitted_to_toml);

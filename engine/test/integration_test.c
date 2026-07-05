@@ -5059,3 +5059,237 @@ void test_integration_input_source_seam(void)
 
     test_game_teardown(&game);
 }
+
+/* ---- Integration: npc_patrol and chase behaviors (S6.9b, D30) ----
+ *
+ * Same black-box discipline as the dispatch-table suite above: every test
+ * drives real frame_update frames and asserts only on entity.position/
+ * .moving. No internal symbol (behavior_npc_patrol, chase_step_toward,
+ * patrol_phase) appears in a test body. */
+
+void test_integration_npc_patrol_oscillates(void)
+{
+    /* A patrol entity with no player in the level at all (idle/absent, so
+     * nothing else can move it) oscillates along patrol_dx over a 2.0s
+     * patrol_period: +x for the first 1.0s half, -x for the second half,
+     * landing back near its start position after one full 120-frame cycle
+     * at the fixture's 1/60s frame step. */
+    static const char *gamedata = "[[blueprint]]\n"
+                                  "name = \"guard\"\n"
+                                  "texture = \"t.png\"\n"
+                                  "src = [0, 0, 16, 16]\n"
+                                  "behavior = \"npc_patrol\"\n"
+                                  "patrol_dx = 40\n"
+                                  "patrol_dy = 0\n"
+                                  "patrol_period = 2.0\n"
+                                  "\n"
+                                  "[[level]]\n"
+                                  "name = \"test\"\n"
+                                  "size = [320, 240]\n"
+                                  "\n"
+                                  "[[level.entity]]\n"
+                                  "blueprint = \"guard\"\n"
+                                  "pos = [100, 100]\n";
+
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, gamedata));
+
+    Entity *guard = test_find_entity_by_blueprint(&game.state, "guard");
+    TEST_ASSERT_NOT_NULL(guard);
+    float start_x = guard->position.x;
+
+    InputState idle = {0};
+
+    /* 0.5s in (well within the first 1.0s half): moving in +patrol_dx. */
+    test_advance_frames(&game, idle, 30);
+    guard = test_find_entity_by_blueprint(&game.state, "guard");
+    TEST_ASSERT_TRUE(guard->position.x > start_x);
+
+    /* 1.0s in: the reversal point, near peak displacement. */
+    test_advance_frames(&game, idle, 30);
+    guard = test_find_entity_by_blueprint(&game.state, "guard");
+    float peak_x = guard->position.x;
+
+    /* 1.5s in (well within the second half): clearly reversed. */
+    test_advance_frames(&game, idle, 30);
+    guard = test_find_entity_by_blueprint(&game.state, "guard");
+    TEST_ASSERT_TRUE(guard->position.x < peak_x);
+
+    /* 2.0s in: one full period elapsed, back near the start. */
+    test_advance_frames(&game, idle, 30);
+    guard = test_find_entity_by_blueprint(&game.state, "guard");
+    TEST_ASSERT_FLOAT_WITHIN(2.0F, start_x, guard->position.x);
+
+    test_game_teardown(&game);
+}
+
+void test_integration_chase_within_aggro_moves_toward_player(void)
+{
+    /* Goblin at x=100, player at x=260 (distance 160), aggro_radius=200 --
+     * the player is inside range, so the goblin should steer toward it. */
+    static const char *gamedata = "[[blueprint]]\n"
+                                  "name = \"hero\"\n"
+                                  "texture = \"t.png\"\n"
+                                  "src = [0, 0, 16, 16]\n"
+                                  "behavior = \"player\"\n"
+                                  "\n"
+                                  "[[blueprint]]\n"
+                                  "name = \"goblin\"\n"
+                                  "texture = \"t.png\"\n"
+                                  "src = [0, 0, 16, 16]\n"
+                                  "behavior = \"chase\"\n"
+                                  "aggro_radius = 200\n"
+                                  "speed = 60\n"
+                                  "\n"
+                                  "[[level]]\n"
+                                  "name = \"test\"\n"
+                                  "size = [400, 240]\n"
+                                  "\n"
+                                  "[[level.entity]]\n"
+                                  "blueprint = \"hero\"\n"
+                                  "pos = [260, 100]\n"
+                                  "\n"
+                                  "[[level.entity]]\n"
+                                  "blueprint = \"goblin\"\n"
+                                  "pos = [100, 100]\n";
+
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, gamedata));
+
+    const Entity *player = game_get_player_const(&game.state);
+    Entity *goblin = test_find_entity_by_blueprint(&game.state, "goblin");
+    TEST_ASSERT_NOT_NULL(player);
+    TEST_ASSERT_NOT_NULL(goblin);
+    float start_distance = fabsf(player->position.x - goblin->position.x);
+
+    InputState idle = {0};
+    test_advance_frames(&game, idle, 30);
+
+    player = game_get_player_const(&game.state);
+    goblin = test_find_entity_by_blueprint(&game.state, "goblin");
+    float end_distance = fabsf(player->position.x - goblin->position.x);
+    TEST_ASSERT_TRUE(end_distance < start_distance);
+    TEST_ASSERT_TRUE(goblin->moving);
+
+    test_game_teardown(&game);
+}
+
+void test_integration_chase_outside_aggro_idle(void)
+{
+    /* Goblin at x=100, player at x=340 (distance 240), aggro_radius=50 --
+     * the player is well outside range, so the goblin must stay put. */
+    static const char *gamedata = "[[blueprint]]\n"
+                                  "name = \"hero\"\n"
+                                  "texture = \"t.png\"\n"
+                                  "src = [0, 0, 16, 16]\n"
+                                  "behavior = \"player\"\n"
+                                  "\n"
+                                  "[[blueprint]]\n"
+                                  "name = \"goblin\"\n"
+                                  "texture = \"t.png\"\n"
+                                  "src = [0, 0, 16, 16]\n"
+                                  "behavior = \"chase\"\n"
+                                  "aggro_radius = 50\n"
+                                  "speed = 60\n"
+                                  "\n"
+                                  "[[level]]\n"
+                                  "name = \"test\"\n"
+                                  "size = [400, 240]\n"
+                                  "\n"
+                                  "[[level.entity]]\n"
+                                  "blueprint = \"hero\"\n"
+                                  "pos = [340, 100]\n"
+                                  "\n"
+                                  "[[level.entity]]\n"
+                                  "blueprint = \"goblin\"\n"
+                                  "pos = [100, 100]\n";
+
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, gamedata));
+
+    Entity *goblin = test_find_entity_by_blueprint(&game.state, "goblin");
+    TEST_ASSERT_NOT_NULL(goblin);
+    Vector2 start = goblin->position;
+
+    InputState idle = {0};
+    test_advance_frames(&game, idle, 30);
+
+    goblin = test_find_entity_by_blueprint(&game.state, "goblin");
+    TEST_ASSERT_EQUAL_FLOAT(start.x, goblin->position.x);
+    TEST_ASSERT_EQUAL_FLOAT(start.y, goblin->position.y);
+    TEST_ASSERT_FALSE(goblin->moving);
+
+    test_game_teardown(&game);
+}
+
+void test_integration_chase_respects_collision(void)
+{
+    /* Goblin at x=50, a solid wall at x=200 (32x32 collision), player at
+     * x=340 -- well inside a generous aggro_radius. The goblin chases
+     * right toward the player but the wall sits directly in its path, so
+     * resolve_entity_obstacles (the same push-out the player itself uses)
+     * must stop it at the wall's left edge instead of letting it pass
+     * through to the player, exactly mirroring
+     * test_integration_walk_and_collide's player-vs-rock assertion. */
+    static const char *gamedata = "[[blueprint]]\n"
+                                  "name = \"hero\"\n"
+                                  "texture = \"t.png\"\n"
+                                  "src = [0, 0, 16, 16]\n"
+                                  "collision_offset = [0, 0]\n"
+                                  "collision_size = [16, 16]\n"
+                                  "behavior = \"player\"\n"
+                                  "\n"
+                                  "[[blueprint]]\n"
+                                  "name = \"goblin\"\n"
+                                  "texture = \"t.png\"\n"
+                                  "src = [0, 0, 16, 16]\n"
+                                  "collision_offset = [0, 0]\n"
+                                  "collision_size = [10, 10]\n"
+                                  "behavior = \"chase\"\n"
+                                  "aggro_radius = 300\n"
+                                  "speed = 300\n"
+                                  "\n"
+                                  "[[blueprint]]\n"
+                                  "name = \"wall\"\n"
+                                  "texture = \"t.png\"\n"
+                                  "src = [0, 0, 32, 32]\n"
+                                  "collision_offset = [0, 0]\n"
+                                  "collision_size = [32, 32]\n"
+                                  "solid = true\n"
+                                  "\n"
+                                  "[[level]]\n"
+                                  "name = \"test\"\n"
+                                  "size = [400, 240]\n"
+                                  "\n"
+                                  "[[level.entity]]\n"
+                                  "blueprint = \"hero\"\n"
+                                  "pos = [340, 100]\n"
+                                  "\n"
+                                  "[[level.entity]]\n"
+                                  "blueprint = \"goblin\"\n"
+                                  "pos = [50, 100]\n"
+                                  "\n"
+                                  "[[level.entity]]\n"
+                                  "blueprint = \"wall\"\n"
+                                  "pos = [200, 100]\n";
+
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, gamedata));
+
+    InputState idle = {0};
+    test_advance_frames(&game, idle, 120);
+
+    Entity *goblin = test_find_entity_by_blueprint(&game.state, "goblin");
+    const Entity *wall = test_find_entity_by_blueprint(&game.state, "wall");
+    const Entity *player = game_get_player_const(&game.state);
+    TEST_ASSERT_NOT_NULL(goblin);
+    TEST_ASSERT_NOT_NULL(wall);
+    TEST_ASSERT_NOT_NULL(player);
+
+    Rectangle goblin_col = test_entity_collision_rect(&game.state, goblin);
+    Rectangle wall_col = test_entity_collision_rect(&game.state, wall);
+    TEST_ASSERT_TRUE(goblin_col.x + goblin_col.width <= wall_col.x + 0.1F);
+    TEST_ASSERT_TRUE(goblin->position.x < player->position.x);
+
+    test_game_teardown(&game);
+}

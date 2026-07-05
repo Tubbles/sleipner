@@ -401,7 +401,7 @@ static void resolve_entity_obstacles(GameState *state, int entity_index)
     }
 }
 
-/* --- Behavior dispatch table (S6.9a, D30/D39) ---
+/* --- Behavior dispatch table (S6.9a/S6.9b, D30/D39) ---
  *
  * `behavior name -> update fn` lookup, no OOP -- mirrors action_mappings'
  * table-lookup style (rule.c). game_update dispatches every current-level
@@ -450,13 +450,130 @@ static void behavior_player(BehaviorContext *context)
     resolve_entity_obstacles(state, context->entity_index);
 }
 
+/* Sets moving/anim_row/flip/frame_timer/frame_index from a per-frame move
+ * step, the same walk-cycle rule update_player uses -- shared by
+ * behavior_npc_patrol and behavior_chase (S6.9b, D30) so both animate
+ * consistently without duplicating the frame-cycling math twice. */
+static void animate_walking_entity(Entity *entity, Vector2 step, float delta_time)
+{
+    entity->moving = step.x != 0.0F || step.y != 0.0F;
+    if (!entity->moving) {
+        entity->frame_index = 0;
+        entity->frame_timer = 0.0F;
+        return;
+    }
+    if (fabsf(step.x) > fabsf(step.y)) {
+        entity->anim_row = ANIM_WALK_SIDE;
+        entity->flip = step.x < 0.0F;
+    } else if (step.y > 0.0F) {
+        entity->anim_row = ANIM_WALK_DOWN;
+    } else {
+        entity->anim_row = ANIM_WALK_UP;
+    }
+    entity->frame_timer += delta_time * ANIM_SPEED;
+    if (entity->frame_timer >= 1.0F) {
+        entity->frame_timer -= 1.0F;
+        entity->frame_index = (entity->frame_index + 1) % WALK_FRAMES;
+    }
+}
+
+/* Back-and-forth mover per D30: oscillates along (patrol_dx, patrol_dy)
+ * with a full out-and-back cycle every patrol_period seconds. Uses an
+ * INCREMENTAL model -- entity->patrol_phase (a runtime-only Entity field,
+ * never emitted to TOML) advances by delta_time and wraps at
+ * patrol_period, then the first half of the cycle steps toward
+ * +patrol_delta and the second half steps back -- so resolve_entity_
+ * obstacles can push the mover out of a wall on every frame of travel,
+ * not just at two fixed endpoints. patrol_period <= 0 (unset/misauthored)
+ * or a zero/negative delta_time is a no-op, matching a static entity. */
+static void behavior_npc_patrol(BehaviorContext *context)
+{
+    GameState *state = context->state;
+    Entity *entity = &state->gamedata.current_level.entities.data[context->entity_index];
+    const AttrSet *defaults = entity_resolve_defaults(state, entity->id);
+    float patrol_period = attr_get_scoped_float(&entity->attrs, defaults, "patrol_period", 0.0F);
+    if (patrol_period <= 0.0F || context->delta_time <= 0.0F) {
+        animate_walking_entity(entity, (Vector2){0}, context->delta_time);
+        return;
+    }
+
+    float patrol_dx = attr_get_scoped_float(&entity->attrs, defaults, "patrol_dx", 0.0F);
+    float patrol_dy = attr_get_scoped_float(&entity->attrs, defaults, "patrol_dy", 0.0F);
+    float half_period = patrol_period / 2.0F;
+
+    entity->patrol_phase = fmodf(entity->patrol_phase + context->delta_time, patrol_period);
+    float direction = entity->patrol_phase < half_period ? 1.0F : -1.0F;
+    Vector2 step = {
+        direction * (patrol_dx / half_period) * context->delta_time,
+        direction * (patrol_dy / half_period) * context->delta_time,
+    };
+
+    entity->position.x += step.x;
+    entity->position.y += step.y;
+    animate_walking_entity(entity, step, context->delta_time);
+    resolve_entity_obstacles(state, context->entity_index);
+}
+
+#define CHASE_STEER_EPSILON 0.01F
+
+static float distance_between(Vector2 first, Vector2 second)
+{
+    float delta_x = second.x - first.x;
+    float delta_y = second.y - first.y;
+    return sqrtf((delta_x * delta_x) + (delta_y * delta_y));
+}
+
+/* Pure steering step: moves speed * delta_time pixels from chaser_position
+ * straight toward target_position, or zero once within CHASE_STEER_EPSILON
+ * (avoids normalizing a near-zero vector). Factored out of behavior_chase
+ * so the direction/step math is unit-testable independent of the
+ * aggro-radius gate and collision resolution (S6.9b, D30). */
+static Vector2 chase_step_toward(Vector2 chaser_position, Vector2 target_position, float speed, float delta_time)
+{
+    float distance = distance_between(chaser_position, target_position);
+    if (distance <= CHASE_STEER_EPSILON) {
+        return (Vector2){0};
+    }
+    float scale = (speed * delta_time) / distance;
+    return (Vector2){(target_position.x - chaser_position.x) * scale, (target_position.y - chaser_position.y) * scale};
+}
+
+/* Straight-line chaser per D30: while within aggro_radius of the player,
+ * steers directly toward it (chase_step_toward) and reuses
+ * resolve_entity_obstacles for collision, so a solid wall between chaser
+ * and player blocks the chase exactly like it blocks the player. Idles
+ * (no movement) if there's no player entity or the player is outside
+ * aggro_radius. */
+static void behavior_chase(BehaviorContext *context)
+{
+    GameState *state = context->state;
+    Entity *entity = &state->gamedata.current_level.entities.data[context->entity_index];
+    const AttrSet *defaults = entity_resolve_defaults(state, entity->id);
+    const Entity *player = game_get_player_const(state);
+    entity->moving = false;
+    if (!player) {
+        return;
+    }
+
+    float aggro_radius = attr_get_scoped_float(&entity->attrs, defaults, "aggro_radius", 0.0F);
+    if (distance_between(entity->position, player->position) > aggro_radius) {
+        return;
+    }
+
+    float speed = attr_get_scoped_float(&entity->attrs, defaults, "speed", DEFAULT_PLAYER_SPEED);
+    Vector2 step = chase_step_toward(entity->position, player->position, speed, context->delta_time);
+    entity->position.x += step.x;
+    entity->position.y += step.y;
+    animate_walking_entity(entity, step, context->delta_time);
+    resolve_entity_obstacles(state, context->entity_index);
+}
+
 static const struct {
     const char *name;
     BehaviorUpdateFn fn;
 } behavior_table[] = {
-    {"static", behavior_static},
-    {"player", behavior_player},
-    {nullptr, nullptr},
+    {"static", behavior_static}, {"player", behavior_player}, {"npc_patrol", behavior_npc_patrol},
+    {"chase", behavior_chase},   {nullptr, nullptr},
 };
 
 /* Falls back to the static (no-op) behavior for a null or unrecognized
