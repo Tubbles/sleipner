@@ -71,6 +71,7 @@ const char *__lsan_default_suppressions(void)
 #include "error.h"
 
 #include <errno.h>
+#include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -203,8 +204,25 @@ static void font_preview_add(GameState *state, const char *name, EmbeddedAsset a
     (void)vec_font_preview_push(&state->assets.font_previews, entry);
 }
 
+/* i-frame render flicker (S6.10a, D26): blink on/off every
+ * COMBAT_FLICKER_INTERVAL_SECONDS while invincible, driven by
+ * GameState.elapsed rather than a per-entity accumulator so it needs no
+ * extra state. Not invincible (iframe_timer <= 0) is always visible. */
+#define COMBAT_FLICKER_INTERVAL_SECONDS 0.05F
+
+static bool entity_flicker_visible(const Entity *entity, const GameState *state)
+{
+    if (entity->iframe_timer <= 0.0F) {
+        return true;
+    }
+    return fmodf(state->elapsed, COMBAT_FLICKER_INTERVAL_SECONDS * 2.0F) < COMBAT_FLICKER_INTERVAL_SECONDS;
+}
+
 static void draw_player_entity(const GameState *state, const Entity *player)
 {
+    if (!entity_flicker_visible(player, state)) {
+        return;
+    }
     float source_width = (float)FRAME_SIZE;
     if (player->flip) {
         source_width = -source_width;
@@ -230,6 +248,9 @@ static Rectangle get_source_rect(const AttrSet *instance, const AttrSet *default
 static void draw_entity(const GameState *state, const Entity *entity)
 {
     if (!entity->texture) {
+        return;
+    }
+    if (!entity_flicker_visible(entity, state)) {
         return;
     }
     const AttrSet *defaults = entity_resolve_defaults(state, entity->id);

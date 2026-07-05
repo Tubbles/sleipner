@@ -122,6 +122,9 @@ void test_integration_settings_path_edit_parent_lists_contents(void);
 void test_integration_settings_path_edit_drive_select_round_trip(void);
 void test_integration_settings_path_edit_commit_normalizes_separators(void);
 void test_integration_settings_path_edit_buffer_row_enters_keyboard_mode(void);
+void test_integration_damage_formula(void);
+void test_integration_iframes_block_repeat_damage(void);
+void test_integration_defeat_fires_once(void);
 
 /* toml_emitter_test.c */
 void test_toml_emit_blueprints(void);
@@ -311,6 +314,9 @@ int main(void)
     RUN_TEST(test_integration_settings_path_edit_drive_select_round_trip);
     RUN_TEST(test_integration_settings_path_edit_commit_normalizes_separators);
     RUN_TEST(test_integration_settings_path_edit_buffer_row_enters_keyboard_mode);
+    RUN_TEST(test_integration_damage_formula);
+    RUN_TEST(test_integration_iframes_block_repeat_damage);
+    RUN_TEST(test_integration_defeat_fires_once);
 
     RUN_TEST(test_level_load_first);
     RUN_TEST(test_level_load_by_name);

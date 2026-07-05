@@ -201,6 +201,16 @@ predicate rows and MOVE reparenting).
   fallback. Authoring a multi-primitive composite (rect+circle+triangle) is
   TOML-only today. A visual editor for this would need a primitive list UI
   (add/remove/select kind) plus per-kind drag handles.
+- **Hitbox/hurtbox have no `[[blueprint.hitbox]]`/`[[blueprint.hurtbox]]`
+  TOML composite authoring (S6.10a).**
+  `entity_hitbox_region`/`entity_hurtbox_region` (`entity.c`) only support
+  the attr-based one-rect fallback (`hitbox_offset_x/y`+`hitbox_w/h`,
+  `hurtbox_*`) plus the `entity->hitbox`/`entity->hurtbox` composite
+  fields for future authoring -- mirrors `trigger_region`'s own
+  still-open composite gap (the bullet above only covers
+  `collision_region`). Would need the same `[[blueprint.collision]]`
+  treatment (parse + emit + deep-copy on instantiate)
+  `blueprint.c`/`level.c`/`toml_emitter.c` already give `collision_region`.
 
 ## Audio / SFX follow-ups
 

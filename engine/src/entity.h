@@ -30,6 +30,16 @@ typedef struct {
      * built from the collision_offset/collision_w/collision_h attrs. */
     CollisionShape collision_region;
     CollisionShape trigger_region;
+    /* Combat regions (S6.10a, D26/D28). Same "empty means absent" contract
+     * as collision_region/trigger_region above, but there is no
+     * [[blueprint.hitbox]]/[[blueprint.hurtbox]] TOML composite authoring
+     * yet -- mirrors trigger_region's own current gap (also never
+     * populated from TOML). entity_hitbox_region/entity_hurtbox_region
+     * fall back to one-rect attr-derived shapes instead; see those
+     * functions below. TODO: authored composite hitbox/hurtbox, same as
+     * the still-open trigger_region composite gap. */
+    CollisionShape hitbox;
+    CollisionShape hurtbox;
 
     Str blueprint_name;
     Str tag;
@@ -46,6 +56,16 @@ typedef struct {
      * which only writes blueprint/pos/persisted_attrs). A persisted attr
      * updated every frame would grow gamedata.toml on every save instead. */
     float patrol_phase;
+    /* Combat runtime timers (S6.10a, D26), same footing as patrol_phase
+     * above -- NOT emitted to TOML, decremented every frame by
+     * tick_combat_timers (game.c). iframe_timer counts down the
+     * invincibility window after a hit lands (see entity_apply_damage);
+     * hitbox_active_timer counts down how much longer this entity's own
+     * hitbox stays live. Both start at 0 (inert) via entity_init's
+     * memset; the S6.10b attack activator is what sets
+     * hitbox_active_timer to a positive value. */
+    float iframe_timer;
+    float hitbox_active_timer;
 
     /* Vectors (8 bytes each) */
     Vector2 position;
@@ -81,6 +101,43 @@ CollisionShape entity_trigger_region(const Entity *entity, const AttrSet *defaul
  * entity_collision_region. Uses scoped attr lookup so blueprint edits to
  * collision_offset/size are reflected immediately. */
 Rectangle entity_collision_rect(const Entity *entity, const AttrSet *defaults);
+
+/* Build the hitbox region for an entity (S6.10a, D26/D28): entity->hitbox
+ * if an authored composite is present, otherwise a one-rect shape derived
+ * from the hitbox_offset_x/y and hitbox_w/h attrs (scoped lookup, default
+ * 0 -- an entity with none of these authored has an inert, zero-size
+ * hitbox). prim_storage has the same caller-owned-scratch-space lifetime
+ * rule as entity_collision_region's. */
+CollisionShape entity_hitbox_region(const Entity *entity, const AttrSet *defaults, CollisionPrimitive *prim_storage);
+
+/* Build the hurtbox region for an entity (S6.10a, D26/D28): entity->hurtbox
+ * if an authored composite is present; else a one-rect shape derived from
+ * the hurtbox_offset_x/y and hurtbox_w/h attrs, if both hurtbox_w and
+ * hurtbox_h are authored positive; else entity_collision_region -- the
+ * entity's physical body is the default damageable area until a dedicated
+ * hurtbox is authored. prim_storage has the same lifetime rule as
+ * entity_collision_region's. */
+CollisionShape entity_hurtbox_region(const Entity *entity, const AttrSet *defaults, CollisionPrimitive *prim_storage);
+
+/* Default invincibility window (seconds) applied by entity_apply_damage
+ * when the target has no scoped `iframes` attr of its own (S6.10a, D26). */
+#define ENTITY_DEFAULT_IFRAME_SECONDS 0.8F
+
+/* Apply one hit of raw_damage to target (S6.10a, D26). No-op (returns
+ * false) if target is currently invincible (`iframe_timer > 0`).
+ * Otherwise deducts max(1, raw_damage - target's scoped `defense` attr,
+ * default 0) from target's scoped `health` attr (written via
+ * attr_set_float, mirroring how rule.c's execute_set_attr_action writes
+ * health) and resets target->iframe_timer to target's scoped `iframes`
+ * attr (default ENTITY_DEFAULT_IFRAME_SECONDS). Does NOT check the
+ * resulting health or push TRIGGER_DEFEAT itself -- the caller owns the
+ * trigger_events queue and the entity's view index, so it must read
+ * health before/after this call and push the event itself, gating on
+ * "old health was > 0" the same way execute_set_attr_action/
+ * execute_add_attr_action (rule.c) do, so an already-defeated entity
+ * hit again doesn't re-fire defeat. */
+[[nodiscard]] bool
+entity_apply_damage(Entity *target, const AttrSet *target_defaults, float raw_damage, Allocator *alloc);
 
 /* Find an entity by tag within the same composition tree as source.
  * Handles implicit tags: "self", "parent", "root".

@@ -820,6 +820,79 @@ detect_solid_collisions(const GameState *state, Level *level, vec_bool *prev_col
     }
 }
 
+/* Decrements the per-entity combat timers (S6.10a, D26) by delta_time,
+ * clamped at 0 so they never go negative: iframe_timer (invincibility
+ * window after a hit) and hitbox_active_timer (how much longer this
+ * entity's own hitbox stays live -- set by the S6.10b attack activator,
+ * just honored here). Runs once per frame for every entity in the level,
+ * mirroring update_child_positions' "for each entity, mutate" shape. */
+static void tick_combat_timers(Level *level, float delta_time)
+{
+    for (int index = 0; index < level->entities.count; index++) {
+        Entity *entity = &level->entities.data[index];
+        entity->iframe_timer = fmaxf(0.0F, entity->iframe_timer - delta_time);
+        entity->hitbox_active_timer = fmaxf(0.0F, entity->hitbox_active_timer - delta_time);
+    }
+}
+
+/* One-hit-per-frame melee resolution (S6.10a, D26): every entity A with a
+ * live hitbox_active_timer damages every OTHER active entity T (that has a
+ * `health` attr) whose hurtbox its hitbox overlaps. entity_apply_damage
+ * itself rejects a T still inside its own i-frame window, so a T hit by
+ * several overlapping hitboxes in the same frame is only damaged once --
+ * the iframe_timer set on the first hit blocks the rest with no separate
+ * "already hit this frame" bookkeeping needed. A hit that drops health
+ * from > 0 to <= 0 pushes TRIGGER_DEFEAT into out_events so it fires in
+ * this same frame's rules_evaluate_batch, mirroring how
+ * execute_set_attr_action/execute_add_attr_action (rule.c) push the same
+ * event when a rule-driven health write crosses zero; gating on "old
+ * health was > 0" (not just "new health <= 0") keeps an already-defeated
+ * entity that gets hit again (once its i-frames lapse) from re-firing
+ * defeat every subsequent hit. */
+static void detect_melee_damage(GameState *state, Level *level, Allocator *alloc, vec_trigger_event *out_events)
+{
+    Entity *entities = level->entities.data;
+    int entity_count = level->entities.count;
+    for (int attacker_index = 0; attacker_index < entity_count; attacker_index++) {
+        if (entities[attacker_index].hitbox_active_timer <= 0.0F) {
+            continue;
+        }
+        const AttrSet *attacker_defaults = entity_resolve_defaults(state, entities[attacker_index].id);
+        CollisionPrimitive hitbox_prim_storage;
+        CollisionShape hitbox =
+            entity_hitbox_region(&entities[attacker_index], attacker_defaults, &hitbox_prim_storage);
+        float damage = attr_get_scoped_float(&entities[attacker_index].attrs, attacker_defaults, "damage", 0.0F);
+
+        for (int target_index = 0; target_index < entity_count; target_index++) {
+            if (target_index == attacker_index) {
+                continue;
+            }
+            const AttrSet *target_defaults = entity_resolve_defaults(state, entities[target_index].id);
+            if (!attr_get_scoped(&entities[target_index].attrs, target_defaults, "health") ||
+                !attr_get_scoped_bool(&entities[target_index].attrs, target_defaults, "active", true)) {
+                continue;
+            }
+            CollisionPrimitive hurtbox_prim_storage;
+            CollisionShape hurtbox =
+                entity_hurtbox_region(&entities[target_index], target_defaults, &hurtbox_prim_storage);
+            bool overlapping = composite_overlap(&hitbox, entities[attacker_index].position, 0.0F, &hurtbox,
+                                                 entities[target_index].position, 0.0F);
+            if (!overlapping) {
+                continue;
+            }
+            float old_health = attr_get_scoped_float(&entities[target_index].attrs, target_defaults, "health", 0.0F);
+            if (!entity_apply_damage(&entities[target_index], target_defaults, damage, alloc)) {
+                continue;
+            }
+            float new_health = attr_get_scoped_float(&entities[target_index].attrs, target_defaults, "health", 0.0F);
+            if (old_health > 0.0F && new_health <= 0.0F) {
+                (void)vec_trigger_event_push(out_events,
+                                             (TriggerEvent){.type = TRIGGER_DEFEAT, .entity_index = target_index});
+            }
+        }
+    }
+}
+
 static void
 collect_trigger_events(DebugState *dbg, GameState *state, const InputState *input, vec_trigger_event *out_events)
 {
@@ -893,6 +966,12 @@ void game_update(Diag *diag, GameState *state, InputState input, float delta_tim
         int view_count = 0;
         EntityView *views = build_entity_views(state, &view_count);
 
+        /* Combat timer tick (S6.10a, D26) -- decrement before this frame's
+         * melee pass below reads them, so a timer set by scenario setup
+         * or the S6.10b attack activator is honored as active THIS frame,
+         * not the frame after. */
+        tick_combat_timers(&state->gamedata.current_level, delta_time);
+
         /* Resume due `wait:`/`dialogue:` continuations (S6.7b/c, D24)
          * before any normal trigger detection/evaluation this frame -- a
          * resumed action's fire_event/destroy feeds into trigger_events
@@ -941,6 +1020,12 @@ void game_update(Diag *diag, GameState *state, InputState input, float delta_tim
         }
 
         collect_trigger_events(diag->debug, state, &input, &trigger_events);
+
+        /* Melee damage pass (S6.10a, D26) -- must run before the
+         * trigger_events.count check below, since a defeat it detects
+         * needs to feed into THIS frame's rules_evaluate_batch. */
+        Allocator combat_alloc = allocator_arena(&state->gamedata_arena);
+        detect_melee_damage(state, &state->gamedata.current_level, &combat_alloc, &trigger_events);
 
         if (trigger_events.count > 0) {
             Allocator rule_alloc = allocator_arena(&state->gamedata_arena);

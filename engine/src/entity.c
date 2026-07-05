@@ -76,6 +76,84 @@ Rectangle entity_collision_rect(const Entity *entity, const AttrSet *defaults)
     };
 }
 
+/* One-rect fallback shape for hitbox_offset_x/y + hitbox_w/h attrs (S6.10a,
+ * D26), same math as entity_collision_rect_prim above -- offset is the
+ * rect's center relative to entity->position. */
+static CollisionPrimitive entity_hitbox_rect_prim(const Entity *entity, const AttrSet *defaults)
+{
+    float offset_x = attr_get_scoped_float(&entity->attrs, defaults, "hitbox_offset_x", 0.0F);
+    float offset_y = attr_get_scoped_float(&entity->attrs, defaults, "hitbox_offset_y", 0.0F);
+    float width = attr_get_scoped_float(&entity->attrs, defaults, "hitbox_w", 0.0F);
+    float height = attr_get_scoped_float(&entity->attrs, defaults, "hitbox_h", 0.0F);
+    return (CollisionPrimitive){
+        .kind = COLLIDER_RECT,
+        .offset = {offset_x + (width / 2.0F), offset_y + (height / 2.0F)},
+        .angle_offset = 0.0F,
+        .rect = {.half_w = width / 2.0F, .half_h = height / 2.0F},
+    };
+}
+
+CollisionShape entity_hitbox_region(const Entity *entity, const AttrSet *defaults, CollisionPrimitive *prim_storage)
+{
+    if (entity->hitbox.prims.count > 0) {
+        return entity->hitbox;
+    }
+    *prim_storage = entity_hitbox_rect_prim(entity, defaults);
+    return (CollisionShape){.prims = {.data = prim_storage, .count = 1, .capacity = 1}};
+}
+
+/* One-rect fallback shape for hurtbox_offset_x/y + hurtbox_w/h attrs
+ * (S6.10a, D26), same math as entity_hitbox_rect_prim above. Only used by
+ * entity_hurtbox_region when both hurtbox_w/h are authored positive --
+ * see that function's doc comment for the further collision_region
+ * fallback. */
+static CollisionPrimitive entity_hurtbox_rect_prim(const Entity *entity, const AttrSet *defaults)
+{
+    float offset_x = attr_get_scoped_float(&entity->attrs, defaults, "hurtbox_offset_x", 0.0F);
+    float offset_y = attr_get_scoped_float(&entity->attrs, defaults, "hurtbox_offset_y", 0.0F);
+    float width = attr_get_scoped_float(&entity->attrs, defaults, "hurtbox_w", 0.0F);
+    float height = attr_get_scoped_float(&entity->attrs, defaults, "hurtbox_h", 0.0F);
+    return (CollisionPrimitive){
+        .kind = COLLIDER_RECT,
+        .offset = {offset_x + (width / 2.0F), offset_y + (height / 2.0F)},
+        .angle_offset = 0.0F,
+        .rect = {.half_w = width / 2.0F, .half_h = height / 2.0F},
+    };
+}
+
+CollisionShape entity_hurtbox_region(const Entity *entity, const AttrSet *defaults, CollisionPrimitive *prim_storage)
+{
+    if (entity->hurtbox.prims.count > 0) {
+        return entity->hurtbox;
+    }
+    float width = attr_get_scoped_float(&entity->attrs, defaults, "hurtbox_w", 0.0F);
+    float height = attr_get_scoped_float(&entity->attrs, defaults, "hurtbox_h", 0.0F);
+    if (width > 0.0F && height > 0.0F) {
+        *prim_storage = entity_hurtbox_rect_prim(entity, defaults);
+        return (CollisionShape){.prims = {.data = prim_storage, .count = 1, .capacity = 1}};
+    }
+    return entity_collision_region(entity, defaults, prim_storage);
+}
+
+bool entity_apply_damage(Entity *target, const AttrSet *target_defaults, float raw_damage, Allocator *alloc)
+{
+    if (target->iframe_timer > 0.0F) {
+        return false;
+    }
+    float defense = attr_get_scoped_float(&target->attrs, target_defaults, "defense", 0.0F);
+    float damage_dealt = raw_damage - defense;
+    if (damage_dealt < 1.0F) {
+        damage_dealt = 1.0F;
+    }
+    float current_health = attr_get_scoped_float(&target->attrs, target_defaults, "health", 0.0F);
+    if (!attr_set_float(alloc, &target->attrs, "health", current_health - damage_dealt)) {
+        return false;
+    }
+    target->iframe_timer =
+        attr_get_scoped_float(&target->attrs, target_defaults, "iframes", ENTITY_DEFAULT_IFRAME_SECONDS);
+    return true;
+}
+
 static int find_entity_index(const Entity *entity, const Entity *entities, int entity_count)
 {
     for (int index = 0; index < entity_count; index++) {

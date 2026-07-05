@@ -5293,3 +5293,183 @@ void test_integration_chase_respects_collision(void)
 
     test_game_teardown(&game);
 }
+
+/* ---- Integration: S6.10a combat damage core (hitbox/hurtbox, i-frames,
+ * defeat). ACTION_ATTACK itself is S6.10b -- these tests activate a
+ * hitbox directly by setting hitbox_active_timer as scenario setup (like
+ * placing an entity), then drive real frames and assert only on
+ * observable attrs (health, a defeat-triggered flag, position). */
+
+static const char *combat_fixture_gamedata = "[[blueprint]]\n"
+                                             "name = \"attacker\"\n"
+                                             "texture = \"t.png\"\n"
+                                             "src = [0, 0, 16, 16]\n"
+                                             "hitbox_offset_x = 0\n"
+                                             "hitbox_offset_y = 0\n"
+                                             "hitbox_w = 16\n"
+                                             "hitbox_h = 16\n"
+                                             "damage = 5\n"
+                                             "\n"
+                                             "[[blueprint]]\n"
+                                             "name = \"target\"\n"
+                                             "texture = \"t.png\"\n"
+                                             "src = [0, 0, 16, 16]\n"
+                                             "collision_offset = [0, 0]\n"
+                                             "collision_size = [16, 16]\n"
+                                             "health = [10, 10]\n"
+                                             "defense = 2\n"
+                                             "\n"
+                                             "[[blueprint]]\n"
+                                             "name = \"tanky_target\"\n"
+                                             "texture = \"t.png\"\n"
+                                             "src = [0, 0, 16, 16]\n"
+                                             "collision_offset = [0, 0]\n"
+                                             "collision_size = [16, 16]\n"
+                                             "health = [10, 10]\n"
+                                             "defense = 10\n"
+                                             "\n"
+                                             "[[blueprint]]\n"
+                                             "name = \"fragile_target\"\n"
+                                             "texture = \"t.png\"\n"
+                                             "src = [0, 0, 16, 16]\n"
+                                             "collision_offset = [0, 0]\n"
+                                             "collision_size = [16, 16]\n"
+                                             "health = [3, 3]\n"
+                                             "defense = 0\n"
+                                             "\n"
+                                             "[[blueprint.rule]]\n"
+                                             "trigger = \"defeat\"\n"
+                                             "actions = [\"add_attr:self.defeat_count,1\"]\n"
+                                             "\n"
+                                             "[[level]]\n"
+                                             "name = \"test\"\n"
+                                             "size = [320, 240]\n"
+                                             "\n"
+                                             "[[level.entity]]\n"
+                                             "blueprint = \"attacker\"\n"
+                                             "pos = [100, 100]\n"
+                                             "\n"
+                                             "[[level.entity]]\n"
+                                             "blueprint = \"target\"\n"
+                                             "pos = [100, 100]\n"
+                                             "\n"
+                                             "[[level.entity]]\n"
+                                             "blueprint = \"attacker\"\n"
+                                             "pos = [300, 100]\n"
+                                             "\n"
+                                             "[[level.entity]]\n"
+                                             "blueprint = \"tanky_target\"\n"
+                                             "pos = [300, 100]\n"
+                                             "\n"
+                                             "[[level.entity]]\n"
+                                             "blueprint = \"attacker\"\n"
+                                             "pos = [100, 300]\n"
+                                             "\n"
+                                             "[[level.entity]]\n"
+                                             "blueprint = \"fragile_target\"\n"
+                                             "pos = [100, 300]\n";
+
+/* Two independent attacker/target pairs, 200px apart so their hitboxes
+ * never cross-contaminate the other pair's hurtbox: (100,100) has
+ * damage=5 vs defense=2 (3 dealt, above the floor); (300,100) has
+ * damage=5 vs defense=10 (would be negative, clamped to the max(1, ...)
+ * floor). Both attacker/target pairs sit at the exact same position so
+ * the hitbox and hurtbox rects (both centered on their own entity's
+ * position) trivially overlap without needing separate distance math. */
+void test_integration_damage_formula(void)
+{
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, combat_fixture_gamedata));
+
+    Entity *attacker = test_find_entity_by_blueprint(&game.state, "attacker");
+    TEST_ASSERT_NOT_NULL(attacker);
+    attacker->hitbox_active_timer = 1.0F;
+
+    Entity *tanky_attacker = &game.state.gamedata.current_level.entities.data[2];
+    TEST_ASSERT_EQUAL_STRING("attacker", tanky_attacker->blueprint_name.ptr);
+    tanky_attacker->hitbox_active_timer = 1.0F;
+
+    InputState idle = {0};
+    test_advance_frame(&game, idle);
+
+    const Entity *target = test_find_entity_by_blueprint(&game.state, "target");
+    const Entity *tanky_target = test_find_entity_by_blueprint(&game.state, "tanky_target");
+    TEST_ASSERT_NOT_NULL(target);
+    TEST_ASSERT_NOT_NULL(tanky_target);
+
+    /* max(1, 5 - 2) = 3 dealt -> 10 - 3 = 7 */
+    TEST_ASSERT_EQUAL_INT(7, (int)attr_get_scoped_float(&target->attrs, nullptr, "health", -1.0F));
+    /* max(1, 5 - 10) floors to 1 dealt -> 10 - 1 = 9 */
+    TEST_ASSERT_EQUAL_INT(9, (int)attr_get_scoped_float(&tanky_target->attrs, nullptr, "health", -1.0F));
+
+    test_game_teardown(&game);
+}
+
+/* Verified this test fails without the damage pass: with detect_melee_damage
+ * temporarily no-op'd, both health reads above stay at their starting 10
+ * instead of dropping to 7/9. */
+
+void test_integration_iframes_block_repeat_damage(void)
+{
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, combat_fixture_gamedata));
+
+    Entity *attacker = test_find_entity_by_blueprint(&game.state, "attacker");
+    TEST_ASSERT_NOT_NULL(attacker);
+    /* Comfortably longer than the whole test (about 1.2s of frames below)
+     * so the hitbox never goes inactive on its own -- only i-frames are
+     * under test here. */
+    attacker->hitbox_active_timer = 10.0F;
+
+    InputState idle = {0};
+    test_advance_frame(&game, idle);
+
+    const Entity *target = test_find_entity_by_blueprint(&game.state, "target");
+    TEST_ASSERT_NOT_NULL(target);
+    TEST_ASSERT_EQUAL_INT(7, (int)attr_get_scoped_float(&target->attrs, nullptr, "health", -1.0F));
+
+    /* Still well inside the default 0.8s i-frame window -- health must not
+     * drop again even though the hitbox keeps overlapping the hurtbox. */
+    test_advance_frames(&game, idle, 10);
+    TEST_ASSERT_EQUAL_INT(7, (int)attr_get_scoped_float(&target->attrs, nullptr, "health", -1.0F));
+
+    /* Comfortably past the 0.8s i-frame window (60 more frames at 1/60s
+     * is a full extra second) -- the hitbox is still active, so a second
+     * hit must land. */
+    test_advance_frames(&game, idle, 60);
+    TEST_ASSERT_EQUAL_INT(4, (int)attr_get_scoped_float(&target->attrs, nullptr, "health", -1.0F));
+
+    test_game_teardown(&game);
+}
+
+void test_integration_defeat_fires_once(void)
+{
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, combat_fixture_gamedata));
+
+    Entity *fragile_attacker = &game.state.gamedata.current_level.entities.data[4];
+    TEST_ASSERT_EQUAL_STRING("attacker", fragile_attacker->blueprint_name.ptr);
+    /* Stays active well past the whole test, same rationale as the
+     * i-frames test above -- keeps hitting the (now-defeated)
+     * fragile_target every frame once its own i-frames lapse, so the test
+     * can prove defeat still only fires once even under repeat hits. */
+    fragile_attacker->hitbox_active_timer = 10.0F;
+
+    InputState idle = {0};
+    test_advance_frame(&game, idle);
+
+    Entity *fragile_target = test_find_entity_by_blueprint(&game.state, "fragile_target");
+    TEST_ASSERT_NOT_NULL(fragile_target);
+    /* max(1, 5 - 0) = 5 dealt -> 3 - 5 = -2, crossing zero this frame */
+    TEST_ASSERT_EQUAL_INT(-2, (int)attr_get_scoped_float(&fragile_target->attrs, nullptr, "health", 1.0F));
+    TEST_ASSERT_EQUAL_INT(1, (int)attr_get_scoped_float(&fragile_target->attrs, nullptr, "defeat_count", 0.0F));
+
+    /* Run well past the i-frame window (so the attacker's hitbox lands on
+     * the target again) and confirm defeat_count stays at exactly 1 --
+     * the old_health > 0 gate must block a re-fire on an already-defeated
+     * entity taking further hits. */
+    test_advance_frames(&game, idle, 60);
+    TEST_ASSERT_EQUAL_INT(1, (int)attr_get_scoped_float(&fragile_target->attrs, nullptr, "defeat_count", 0.0F));
+
+    test_game_teardown(&game);
+}
