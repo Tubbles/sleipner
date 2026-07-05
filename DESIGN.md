@@ -525,91 +525,93 @@ The editor renders rules as a visual tree (like WC3's trigger view), navigated w
 
 ## Save System
 
+Implemented in S6.15 (slices a-e) per D33 — this section describes the singleplayer system that actually shipped, superseding an earlier multiplayer-era sketch. Multiplayer save sharding (per-player character sections, host-owned saves) is deferred to Stage 8 and is not built; see the Multiplayer section above for the future design, which this section no longer duplicates.
+
 ### Two Files, Two Concerns
 
 - **`gamedata.toml`** = the game (level design, blueprints, rules). Shared via Syncthing, versioned in git. Never contains player progress.
-- **Save file** = runtime world state. One save captures the complete host state — all players, all global variables, all entity modifications. It's the world, not a character sheet.
+- **Save file** = process-lifetime progression (set flags, global vars, item counts) plus a per-level "entity delta" for every level the player has visited (position, instance-attr overrides, active/inactive) — see `SaveState` (`engine/src/save.h`) and `ProgressionState` (`engine/src/progression.h`).
 
 ### Storage Location
 
-Save files live in app-local storage, **not** Syncthing. Syncthing is for creative data (gamedata.toml). Saves are runtime state — syncing them would cause conflicts if two devices play simultaneously.
+Save files live in the OS-conventional per-user data directory, resolved by `platform_saves_dir` (`engine/src/platform_paths.c`) — app-local storage, **not** Syncthing (unlike `gamedata.toml`/`keybindings.toml`, which sync to Android through the shared Syncthing folder):
 
-- Desktop: `~/.local/share/sleipner/saves/`
-- Android: app internal storage
+- Linux/BSD: `$XDG_DATA_HOME/sleipner/saves/` (fallback `$HOME/.local/share/sleipner/saves/`)
+- Windows: `%APPDATA%/sleipner/saves/`
+- Android: `<internalDataPath>/saves/` (raylib `GetApplicationDirectory()`, already app-scoped, no extra `sleipner/` segment)
 
-### Persistent World State
+`platform_ensure_saves_dir` creates the directory (mkdir -p semantics) before every write, so a first-run save doesn't need the directory to pre-exist.
 
-The world has one persistent state. Everything persists by default:
-- Kill an enemy → it stays dead.
-- Open a chest → it stays open.
-- Move an object → it stays moved.
+### The Delta Layer Doubles as Cross-Transition Persistence
 
-Respawning is explicit — a timer rule, a `fire_event:respawn_enemies` trigger, or a design decision in the rules. The game designer decides what resets, not the engine.
+`progression_capture_level_delta` (`engine/src/progression.c`) snapshots every entity in the level being left — position, instance attrs (an entity's instance `AttrSet` already IS its delta against blueprint defaults, per "Entity–blueprint connection" under Memory Architecture below), and an explicit `active` flag — into `ProgressionState.level_deltas`, a `Strv -> LevelDelta` map keyed by level name; `progression_apply_level_delta` re-applies a level's stored delta onto its freshly re-parsed entities when the level is (re)loaded. Both are wired into `frame.c`'s `run_transition_swap` (capture before the reload, apply after), so within a level the player has actually visited: kill an enemy, it stays dead; open a chest, it stays open; move an entity, it stays moved. `level_deltas` lives in `progression_arena`, the same process-lifetime arena as flags/vars/items — never rewound by a level transition or hot-reload. It is wiped wholesale only by pause-menu RESTORE or a fresh game (`game_reset_progression`, which zeroes flags/vars/items/level_deltas together), or narrowly cleared on hot-reload alone (`progression_clear_level_deltas`, since the gamedata just changed underneath it and any captured delta is stale, while flags/vars/items are deliberately left intact).
+
+A save captures exactly this state: `save_write` runs `progression_capture_level_delta` for the CURRENT level first (so the player's own position and any just-made changes are folded in), then serializes the whole `ProgressionState` — every visited level's stored delta, not just the current one. `save_load` deserializes straight into `progression_arena`, loads the saved `current_level`, and re-applies that level's delta exactly the way a transition would.
+
+Known limitations (see TODO.md's "Level transition follow-ups" section for the full write-ups, not duplicated here):
+- Entities spawned at runtime (`spawn:`, S6.6) get session-only ids and are never matched again after a reload — spawned entities do not persist across transitions or saves.
+- There is no dedicated cross-level "player" section the way an earlier multiplayer-era sketch of this format had — the player's own state rides inside whichever level's entity delta it occupies at save time, which is correct for a save taken mid-level but gives the player no home independent of the level it happens to be standing in. Revisit once multiplayer forces the question.
+- `save_load` does not pre-seed overlap tracking (`prev_player_overlaps`) after restoring the player's position, unlike a transition's spawn-in step — a save taken while standing inside a trigger's region could refire that trigger immediately after loading.
 
 ### Save Format
 
-TOML, same parser/emitter as gamedata. The save stores the **delta from the gamedata baseline** — only what changed. Anything not in the save is at its blueprint/level default. This keeps saves small.
+TOML, parsed with the same `tomlc99` vendor library and written by the same kind of hand-rolled emitter as `gamedata.toml` (`toml_emit_save`, `engine/src/toml_emitter.c`). A `[save]` header carries the format version, the current level name, and the set-flag list; `[save.vars]`/`[save.items]` are name -> value / name -> count tables, omitted entirely when empty; one `[[level_delta]]` array-of-tables entry exists per level with a captured delta, each carrying a `name` and a `[[level_delta.entity]]` sub-array of per-entity deltas (`id`, `pos`, `active`, plus any custom instance attrs). `SAVE_FORMAT_VERSION` (currently `1`, `save.h`) is checked on load; an unrecognized version fails cleanly with an error rather than guessing at a migration.
+
+Representative output for a save with two set flags, one var of each typed kind, two stacked items, and captured deltas in two visited levels (field names and nesting verified against `toml_emit_save`/`save_test.c`; `[save.vars]`, `[save.items]`, and `[[level_delta]]` are each simply absent when there's nothing to emit):
 
 ```toml
-[meta]
-timestamp = 2026-03-16T19:30:00
-playtime = 3600
+[save]
+version = 1
+current_level = "field"
+flags = ["door_open", "met_wizard"]
 
-# All players in this world
-[[player]]
-name = "player_1"
-level = "overworld"
-position = [320, 180]
-health = [7, 10]
-direction = "down"
-items = ["sword", "key", "potion"]
-equipment = { main_weapon = "iron_sword", shield = "wooden_shield" }
+[save.vars]
+gold = 42
+speed_multiplier = 1.5
+has_key = true
+hero_name = "Zelda"
 
-[[player]]
-name = "player_2"
-level = "overworld"
-position = [340, 180]
-health = [10, 10]
-items = ["bow", "arrow", "arrow"]
+[save.items]
+sword = 1
+potion = 3
 
-[globals]
-chest_1_opened = true
-boss_defeated = false
-bridge_repaired = true
+[[level_delta]]
+name = "field"
 
-# Entities modified from their gamedata baseline
-# Only stores the delta — what changed from blueprint/level defaults
-[[entity_state]]
-level = "overworld"
-entity_id = 6
-destroyed = true
+[[level_delta.entity]]
+id = 5
+pos = [120.5, 80.25]
+active = true
+opened = true
 
-[[entity_state]]
-level = "dungeon_1"
-entity_id = 3
-attrs = { health = [2, 5] }
+[[level_delta.entity]]
+id = 7
+pos = [40.0, 40.0]
+active = false
+
+[[level_delta]]
+name = "interior"
+
+[[level_delta.entity]]
+id = 12
+pos = [200.0, 150.0]
+active = true
+health = 3
 ```
 
 ### Loading
 
-1. Load `gamedata.toml` — the designed world (blueprints, levels, rules).
-2. Apply `entity_state` deltas from the save file on top — destroyed entities are removed, modified attributes are overridden.
-3. Restore player positions, inventories, equipment.
-4. Restore global variables.
+`save_load` (`engine/src/save.c`): read the file, `save_deserialize` it into `progression_arena`, load the saved `current_level` via the caller's level loader, re-apply that level's delta onto the freshly parsed entities (this restores the player's position too, since apply never special-cases the player's entity id), snap the camera, and reset undo history to a fresh baseline. A missing file or a parse failure leaves `state` untouched; a saved level name no longer present in the current `gamedata.toml` also fails without committing the parsed progression, though `state->gamedata` may already reflect a partial reload attempt in that one case, same as any other reload failure.
 
-### Save Slots
+### Save Slots and Autosave
 
-Multiple numbered files: `save_1.toml`, `save_2.toml`, etc. Each stores a timestamp and current level name for the slot selection screen. Auto-save goes to a dedicated `autosave.toml` that doesn't overwrite manual saves.
+`SAVE_SLOT_COUNT` (currently 3) numbered files, `save_1.toml` through `save_3.toml`, plus a separate `autosave.toml` that manual saves never overwrite (the pause-menu Save UI only ever targets a numbered slot). `save_write` backs up an existing file to `<path>.bak` (`file_backup.h`'s `backup_file`) before overwriting it. Autosave (`save_autosave`) fires on every level transition (`frame.c`'s `run_transition_swap`, right after the swap and its own undo baseline) and on quit (`main.c`, right after the game loop exits); both call sites treat a failed autosave as non-fatal — log the error and continue, never abort a transition or block shutdown.
 
-### Auto-Save
+### Pause-Menu Save/Load UI
 
-- On every level transition.
-- On quit.
-- Manual save via pause menu.
+The pause menu's "SAVE GAME" / "LOAD GAME" entries (`MENU_ENTRY_SAVE_GAME`/`MENU_ENTRY_LOAD_GAME`, `menu.h`) open a modal slot picker (`SaveScreen`, `engine/src/save_screen.h`/`.c`) listing the numbered slots plus the autosave file (shown in LOAD mode only), each marked filled or empty from a `FileExists` probe taken when the picker opens. Confirming a slot calls `save_write`/`save_load` and returns straight to active play rather than back to the pause menu; a failure (bad directory, a failed write/load, or confirming an empty LOAD slot) leaves the picker open with a toast (`Saved`/`Save failed`/`Loaded`/`Load failed`/`Empty`).
 
-### Multiplayer
-
-The host owns the save. All players are stored in the same save file. When a player joins, their character section is created. When they leave, their state persists in the save for when they rejoin.
+**This is a separate mechanism from the editor's gamedata Save/Restore.** The pause menu's own "SAVE" / "RESTORE" entries (`MENU_ENTRY_SAVE`/`MENU_ENTRY_RESTORE`) write or discard changes to `data/gamedata.toml` itself — the level design, not player progress — via `main.c`'s `save_gamedata`/`menu_dispatch_restore`. The two pairs of menu entries sit next to each other in the same list but touch entirely different files and have entirely different call paths.
 
 ## Data Architecture
 
@@ -1251,6 +1253,7 @@ The function-layer overhaul (2026-04) unblocked black-box bug-repro tests: every
 - [x] Save-state TOML serialize/deserialize, completing S6.15c per D33: a new `SaveState { Str current_level_name; ProgressionState progression; }` (`save.h`) is a thin bundle over S6.15b's process-lifetime state plus the one fact it doesn't already carry -- which level to reload on restore. `save_serialize(const SaveState *, Allocator *, ErrorState *) -> Str` and `save_deserialize(const char *, Allocator *, ErrorState *, SaveState *out) -> bool` (`save.c`) are pure string<->struct: no file I/O, no pause-menu wiring (still S6.15d). Schema: a `[save]` header (`version`, `current_level`, a `flags` array of set flag names), `[save.vars]`/`[save.items]` tables (name -> typed value / name -> count), and one `[[level_delta]]` array-of-tables entry per captured level, each with a `name` and a `[[level_delta.entity]]` sub-array (`id`, `pos`, `active`, plus the entity's own attrs). `toml_emit_save` (`toml_emitter.h`/`.c`) does the emitting, taking the raw `FlagSet`/`AttrSet`/`ItemSet`/`map_strv_level_delta` pieces rather than a bundled type -- mirrors `toml_emit_gamedata`'s own raw-pieces signature, keeping `SaveState` a `save.h`-only concern. It reuses the existing `emit_attr_value` (typed int/float/bool/string encoding) directly, and a newly extracted `emit_float_literal` helper (factored out of `emit_attr_value`'s `ATTR_FLOAT` case and the bindings emitter's `emit_scale_field`, which had duplicated the same "%g, force a decimal point so TOML keeps it as float" logic) backs the new position-pair emission -- unlike gamedata's own `[[level.entity]]` `pos` field (which truncates to int, since authored positions are whole-pixel by convention), a save's captured runtime position can be fractional, so it round-trips as a float pair. `emit_float_literal` lists its float `value` parameter before the `buffer`/`capacity`/`offset` trio, the same `bugprone-easily-swappable-parameters` dodge `emit_collision_kind` already uses, since an adjacent `(int offset, float value)` pair implicitly converts. Parsing (`save.c`) mirrors `blueprint.c`'s `parse_custom_attr`/`level.c`'s `parse_instance_attr` bool/int/double/string cascade -- a third copy of the same established idiom (the first two are file-local statics with no shared header, so this duplicates rather than extracts) -- and `level.c`'s generic key-walk (`toml_table_nkval`+`narr`+`ntab`, skipping the fields with dedicated parsing) for entity-delta attrs. A missing section (no `flags`, no `[save.vars]`, no `[[level_delta]]`) is tolerated as empty, not an error; a missing `[save]` table, a hard TOML parse failure, or an unsupported `version` (`SAVE_FORMAT_VERSION = 1`, named rather than a bare literal per the magic-numbers lint note) all return false with a wrapped `ErrorState` chain. tomlc99 string datums (`toml_string_in`/`toml_string_at`) are freed via the vendor `free()` exemption (CLAUDE.md) exactly like `blueprint.c`/`level.c` already do; the transient mutable copy `toml_parse` needs (it parses in place) is allocated and freed through the caller's own `Allocator` rather than a second allocator, confirmed safe to free before `toml_free` since tomlc99's `STRNDUP` copies every string out of the input buffer during the parse itself. Five unit tests (`save_test.c`, registered in `engine_tests`/`main_test.c` alongside `toml_emitter_test.c` since both need real `tomlc99` parsing, not fff fakes): a full round trip (several flags, one var of each typed kind, stacked items, two levels' worth of entity deltas including one inactive/"destroyed" entity, asserted on the deserialized STRUCT, order-independent via `map`/`flag` lookups rather than assumed iteration order) built and freed against `test_heap_alloc` so the whole thing runs ASan/LSan-clean; a malformed/truncated TOML string; a syntactically valid document missing the `[save]` table entirely; a minimal valid save (bare `version`+`current_level`) round-tripping to an empty-but-valid state; and an unsupported `version` value. The player's own cross-level state (health, inventory-adjacent attrs) is NOT a separate save section yet -- it rides inside whichever level's `EntityDelta` the player entity happens to occupy at save time (via S6.15b's `progression_capture_level_delta`, which must run for the current level before `save_serialize` is called), so a save taken mid-level captures the player correctly but there is no dedicated "player" TOML table the way DESIGN.md's original multiplayer-era Save Format sketch envisioned -- tracked in TODO.md as a documented gap, not attempted here. File I/O (reading/writing the actual save slot on disk) and the pause-menu Save/Load UI are S6.15d. (S6.15c, D33)
 - [x] Save file I/O, autosave, and load-and-apply, completing S6.15d1 per D33 (the pause-menu Save/Load slot picker is the separate S6.15d2 slice, now also done -- see below): `save_write(Diag *, GameState *, const char *path) -> bool` (`save.c`) runs `progression_capture_level_delta` for the CURRENT level first (so the player's own position/attrs and any just-made gameplay changes are in the delta before it's captured), bundles a `SaveState`, `save_serialize`s it, backs up `path` to `path.bak` if it already exists, and writes via raylib's `SaveFileText`. The `.bak` step reuses `backup_file`, pulled out of `main.c`'s file-local `save_gamedata` into a new `file_backup.h`/`.c` (signature changed from `(GameState *, const char *)` to `(Diag *, const char *)` since `save.c` has no `GameState`-shaped backup caller of its own) -- and the small `FOPEN_READ`/`FOPEN_WRITE`/`FOPEN_APPEND` platform-mode-string block `main.c` previously defined inline moved to a new shared `fopen_mode.h` alongside it, since now two translation units need it. `save_load(Diag *, GameState *, const char *path, SaveLevelLoaderFn, void *, UndoHistory *) -> bool` (`save.c`) is "restore from a save file": `LoadFileText` the path (a missing file fails cleanly with `state` untouched), `save_deserialize` straight into `progression_arena` via an `arena_save`/`arena_restore` checkpoint rather than a scratch-buffer-then-deep-copy pass (on success the parsed `SaveState`'s flags/vars/items/level_deltas already live in the right arena and `state->progression` is simply reassigned to it; on any failure -- bad TOML, or the saved level name no longer existing in gamedata -- `arena_restore` discards the partial parse and `state->progression` is left exactly as it was, though `state->gamedata` may already reflect `game_load_gamedata`'s own partial-failure contract in the level-not-found case, same as any other reload failure), then loads the saved `current_level_name` via a caller-supplied `SaveLevelLoaderFn` (a `save.h`-local typedef structurally identical to `frame.h`'s `LevelLoaderFn` -- same four parameter types, so `production_level_loader`/`test_level_loader` pass through without a cast -- declared fresh rather than reused so `save.h` doesn't have to pull in `frame.h`'s much heavier transitive includes), re-applies that level's delta via `progression_apply_level_delta` (which restores the player's position too, since it never special-cases the player's entity id), snaps the camera, and clears + pushes a fresh undo baseline the same way every other reload path does (`frame.c`'s `run_transition_swap`, `main.c`'s `reset_editor_after_reload`). `save_autosave(Diag *, GameState *) -> bool` (`save.c`) composes `<platform_saves_dir>autosave.toml` (`platform_paths.h`, ensuring the directory exists first) and calls `save_write`. Autosave is wired through a new `AutosaveFn` (`frame.h`, matching `save_autosave`'s signature) on `FrameContext`, nullptr-is-OK like every other `FrameContext` callback (headless tests get no autosave unless a test explicitly wires one) -- production sets `frame_ctx.autosave_fn = save_autosave` and it fires from two call sites: `frame.c`'s `run_transition_swap`, right after the level swap and its own undo baseline (so the autosave's own `progression_capture_level_delta` call captures the player at the just-arrived spawn position), and `main.c`'s post-loop shutdown sequence, right after the game-loop `while` exits and before teardown begins. Both call sites treat a `false` return as non-fatal: log the error, clear it, and continue -- a failed autosave (no writable saves dir, disk full) must never abort a transition already in flight or block shutdown. A real bug surfaced and was fixed while writing the round-trip test: `toml_emitter.c`'s `emit_save_entity_delta` unconditionally emitted `active = <bool>` from `EntityDelta`'s own dedicated field, then looped over the entity's instance `attrs` with no exclusion list -- for any entity soft-destroyed via the documented `set_attr:active,false` convention (progression.h's own `EntityDelta.active` doc comment), the attrs loop then ALSO emitted an `active = ...` line for the very same key, a duplicate that tomlc99's parser rejects outright, so `save_load` failed on any save containing such an entity. Fixed with a small `entity_delta_attr_is_reserved` check in the attrs loop, mirroring the reserved-key set `save.c`'s `entity_delta_key_is_known` already uses on the parse side. Three new black-box tests (`save_test.c`): `test_save_write_then_load_round_trips_via_file` drives real interact input (give an item, set a flag, open-and-soft-destroy a chest) against a temp-file save, then directly mutates the live state (clears the flag, doubles the item count, re-closes/reactivates the chest, moves the player) before `save_load`ing the same file back and asserting every mutated field was restored -- verified to fail when `save_load`'s commit step (the `state->progression` reassignment, the `progression_apply_level_delta` call, or the level-loader call) is stubbed to a no-op; `test_save_load_missing_file_fails`; and `test_autosave_on_transition_writes_and_round_trips` drives a real transition with `frame_ctx.autosave_fn` wired to `save_autosave` and `XDG_DATA_HOME` redirected to a temp directory (the same env-var-override convention `platform_paths_test.c` already uses), asserting the autosave file lands on disk and round-trips a transition-captured player position that deliberately differs from the target level's own authored spawn point, so a broken apply step is caught rather than coincidentally matching. The editor's own gamedata Save (menu SAVE, `save_gamedata`/`backup_file` against `data/gamedata.toml`) is untouched and stays entirely separate from the player-facing save system. (S6.15d1, D33)
 - [x] Pause-menu Save/Load slot picker, completing S6.15d2 per D33 (closing out the save system, sliced a-e; only the DESIGN reconciliation pass, S6.15e, remains): the pause menu gains two new entries, `MENU_ENTRY_SAVE_GAME`/`MENU_ENTRY_LOAD_GAME` (`menu.h`), placed right after the editor's `MENU_ENTRY_SAVE`/`MENU_ENTRY_RESTORE` (both pairs are persistence operations) and before `MENU_ENTRY_INVENTORY` -- the editor's raw gamedata Save/Restore is untouched and stays entirely separate from the player-facing save system, exactly like S6.15d1 left it. A new module `save_screen.h`/`.c` (`SaveScreen`) mirrors `inventory_screen.h`'s modal-overlay lifecycle (`_init`/`_open`/`_close`/`_is_open`/`_handle_input`/`_render`/`_cleanup`, world frozen while open, sharing the menu/settings/inventory blur backdrop) but the "data" is a fixed on-disk slot list rather than a data-driven snapshot: `SAVE_SLOT_COUNT` (3) numbered slots plus the autosave file as an extra LOAD-only row, `slot_exists`/`autosave_exists` populated by a `FileExists` probe at open time so the renderer can mark filled/empty rows and dim empty ones. `save_screen_entry_count(SaveScreenMode)` (3 in SAVE mode, 4 in LOAD mode) and `save_screen_nav(cursor, entry_count, direction)` (clamp-not-wrap, same convention as `inventory_screen_grid_nav`/`MenuState`'s own up/down) are pure, unit-tested functions, as are `save_screen_slot_path`/`save_screen_autosave_path` (`Strv saves_dir, int slot_index -> Str "<saves_dir>save_<slot_index + 1>.toml"`, 0-based index / 1-based on-disk name). `SaveScreen` deliberately never touches `GameState`/`Diag`/`UndoHistory` or calls `save_write`/`save_load` itself -- `save_screen_handle_input` just reports the cursor row back via a `confirmed_slot` out-param on CONFIRM (unconditionally, even for an empty LOAD slot; gating on emptiness is the caller's job since the caller already needs `slot_exists`/`autosave_exists` to resolve the real path) -- keeping the module's only dependencies alloc/blur/input/input_func/raylib/str/strv, the same reason `inventory_screen.c` never reaches into `progression.h` directly. All the GameState-shaped wiring lives in `frame.c`: `open_save_screen` (a new `dispatch_menu_action` case per new action, `MENU_ACTION_OPEN_SAVE_MENU`/`MENU_ACTION_OPEN_LOAD_MENU`) resolves `platform_saves_dir` and calls `save_screen_open`, closing the pause menu the same way `MENU_ACTION_OPEN_INVENTORY` does; a new `run_save_screen_frame` (mirrors `run_inventory_frame`'s world-freeze branch in `frame_update`) drains `confirmed_slot` into `handle_save_screen_confirm`, which resolves+ensures the saves directory, composes the path (`save_screen_slot_path`/`_autosave_path`), and calls `save_write` (SAVE mode) or `save_load` (LOAD mode, `ctx->level_loader_fn`/`ctx->undo_history` -- the same `FrameContext` fields `run_transition_swap`'s autosave hook already uses). A successful confirm closes the picker straight back to active play (never reopening the pause menu, unlike CANCEL) -- D33's spec that confirming Save/Load resumes gameplay; a failed directory resolution, a failed `save_write`/`save_load`, or a confirm on an empty LOAD slot all leave the picker open with a toast (`Saved`/`Save failed`/`Loaded`/`Load failed`/`Empty`, reusing `editor_state->toast_text`/`toast_timer` the same way `main.c`'s `menu_dispatch_save` already does) instead of silently no-opping or bouncing back to the menu -- a failed load must be visible. `MenuDispatchCtx`/`FrameContext` both gained a `SaveScreen *save_screen` field (nullptr-is-OK, same contract as `inventory`/`settings`); `main.c`/`test_helpers.c` wire a real one in, `RenderParams`/`capture_overlay_blur_if_needed`/the render call site follow the same four-way (menu/settings/inventory/save_screen) pattern the blur capture already used for three. Inserting the two new entries between `MENU_ENTRY_RESTORE` and `MENU_ENTRY_INVENTORY` shifted `MENU_ENTRY_INVENTORY`/`_SETTINGS`/`_TOGGLE_DEBUG_OVERLAY`/`_QUIT`'s ordinal values, which rippled into eight existing hardcoded down-press-count navigation tests in `integration_test.c` (all updated in the same commit; `MENU_ENTRY_SAVE`/`_RESTORE` themselves kept their values, so the much larger set of tests landing on `MENU_ENTRY_SAVE` needed no change). Tests: `save_screen_test.c` (new, fff-fake unity-build unit tests mirroring `inventory_screen_test.c`'s style, `FileExists` faked via `SET_RETURN_SEQ` to drive the open-time slot scan) covers `entry_count`/`entry_is_autosave`/`nav`/`slot_path`/`autosave_path`/`open`/`entry_exists`/`handle_input`; two new `menu_test.c` cases assert the two new `MenuAction` mappings; one new black-box `integration_test.c` case, `test_integration_save_screen_save_and_load_round_trip_via_menu`, drives the entire round trip through the real F3/DOWN/ENTER input path against a temp `XDG_DATA_HOME` (the same env-var-override convention `platform_paths_test.c`/`save_test.c`'s autosave test already use) -- give an item, open Save Game, prove the world-freeze the same way the Inventory test above does, navigate to slot index 1 and confirm (asserts `save_2.toml` lands on disk and both overlays close back to active play), mutate the live item count/player position directly, then Load Game the same slot and assert the mutation was overwritten back to the saved values -- verified to fail against a temporary stub of `handle_save_screen_confirm`'s `save_write`/`save_load` calls. (S6.15d2, D33)
+- [x] DESIGN.md save-format section reconciled with the shipped save system, completing S6.15e per D33 and closing out S6.15 (sliced a-e) and Stage 6 of the open-work master plan (`work/open-work-master-plan.md`): the old `## Save System` section (a pre-S6.15 multiplayer-era sketch describing a `[[player]]`/`[[entity_state]]`/`[meta]` format that was never built) is replaced with a description of what `save.c`/`toml_emitter.c`/`save_screen.c` actually ship -- the `[save]`/`[save.vars]`/`[save.items]`/`[[level_delta]]`/`[[level_delta.entity]]` schema `toml_emit_save` emits (with a representative example verified against the emitter and `save_test.c`'s fixture), the `progression_capture_level_delta`/`_apply_level_delta` delta layer doubling as cross-transition persistence (D27/D33), `platform_saves_dir`'s per-platform save locations, the `SAVE_SLOT_COUNT` slot files plus `autosave.toml`, autosave-on-transition/-on-quit, the pause-menu Save/Load slot picker, and that the editor's own gamedata Save/Restore (`MENU_ENTRY_SAVE`/`_RESTORE`) is a separate mechanism untouched by any of this. The three gaps already tracked in TODO.md's "Level transition follow-ups" section (no dedicated cross-level player section, `save_load` not pre-seeding `prev_player_overlaps`, spawned entities not persisting across transitions) are cross-referenced rather than duplicated -- none of them were fixed here, since this slice is docs-only; no engine code changed. With S6.15e done, Stage 6 -- Gameplay systems (S6.1 PRNG through S6.15 Save/load) is complete. (S6.15e, D33)
 
 ### Phase 9 — Collision Engine Integration
 
