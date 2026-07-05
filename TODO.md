@@ -184,13 +184,16 @@ predicate rows and MOVE reparenting).
   once the already-open dialogue closes, but its own text is never shown.
   Fine for a single-NPC-at-a-time game; would need a `vec` of pending
   dialogue requests if simultaneous triggers become common.
-- **Inventory core and pickup toast landed (S6.8a/S6.8b, D25); equipment/UI
-  still pending.** `give_item`/`remove_item`/`has_item` are real (`ItemSet`,
-  `ProgressionState.items`, `rule.c`), and `give_item` now shows a "Got
-  <item>" toast via S1.2's toast surface (`effect.c`'s `ToastRequest`,
-  `frame.c`'s `apply_toast_effects`). Equipment/categories and the
-  pause-menu inventory grid (gamepad-navigable) are still open, per
-  DESIGN.md's Inventory & Items open questions.
+- **Inventory core, pickup toast, and pause-menu grid landed (S6.8a/S6.8b/
+  S6.12b, D25); equipment/categories still pending.** `give_item`/
+  `remove_item`/`has_item` are real (`ItemSet`, `ProgressionState.items`,
+  `rule.c`), `give_item` shows a "Got <item>" toast via S1.2's toast
+  surface (`effect.c`'s `ToastRequest`, `frame.c`'s `apply_toast_effects`),
+  and the pause-menu Inventory entry opens a gamepad-navigable grid of the
+  snapshot (`engine/src/inventory_screen.h`/`.c`). Equipment/categories,
+  attribute-modifying equipment, and per-item actions from the grid
+  (use/equip/drop) are still open, per DESIGN.md's Inventory & Items open
+  questions.
 
 ## Collision system follow-ups
 
@@ -293,11 +296,11 @@ predicate rows and MOVE reparenting).
   outlined squares). A real heart sprite would replace `draw_heart`'s
   raylib calls with a texture draw once art exists -- no change needed
   to the pure `hud_compute_hearts`/`hud_heart_screen_position` layer.
-- **Inventory pause-menu screen and minimap not started (S6.12b+,
-  D34).** S6.12a only covers the hearts row. The pause-menu inventory
-  grid (gamepad-navigable, per DESIGN.md's Inventory & Items open
-  questions and the "Inventory core and pickup toast" bullet above) and
-  a minimap/map screen are separate, deferred slices.
+- **Minimap not started (S6.12a covered hearts, S6.12b covered the
+  inventory grid; D34).** The pause-menu inventory grid landed in S6.12b
+  (`engine/src/inventory_screen.h`/`.c`, see the "Inventory core, pickup
+  toast, and pause-menu grid" bullet above). A minimap/map screen is a
+  separate, still-deferred slice.
 
 ## Audio / SFX follow-ups
 

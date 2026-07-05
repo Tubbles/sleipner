@@ -9,6 +9,7 @@
 #include "frame.h"
 #include "game.h"
 #include "input.h"
+#include "inventory_screen.h"
 #include "level.h"
 #include "menu.h"
 #include "raylib.h"
@@ -52,6 +53,7 @@ typedef struct {
     UndoHistory undo_history;
     MenuState menu;
     SettingsState settings;
+    InventoryScreen inventory;
     EditorState editor_state;
     Camera2D editor_camera;
     WatchList watches;

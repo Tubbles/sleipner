@@ -10,13 +10,16 @@
 /* Pause-overlay main menu.
  *
  * Opens via the global menu binding (ACTION_MENU_TOGGLE) in either play
- * or editor mode, suspending normal frame logic until closed. Five
- * entries: Resume, Save, Restore, Toggle Debug Overlay, Quit. Background
- * is a frozen Gaussian blur of the frame the menu opened over.
+ * or editor mode, suspending normal frame logic until closed. Seven
+ * entries: Resume, Save, Restore, Inventory, Settings, Toggle Debug
+ * Overlay, Quit. Background is a frozen Gaussian blur of the frame the
+ * menu opened over.
  *
  * The menu's only inputs are nav (up/down), confirm, and cancel. It owns
  * no game state — Save / Restore / Toggle / Quit return as a MenuAction
- * enum the caller dispatches against. */
+ * enum the caller dispatches against; Inventory / Settings hand off to
+ * their own overlay screens (see MENU_ACTION_OPEN_INVENTORY /
+ * MENU_ACTION_OPEN_SETTINGS's call sites in frame.c). */
 
 #define MENU_FONT_SIZE 64
 
@@ -24,6 +27,7 @@ typedef enum {
     MENU_ENTRY_RESUME,
     MENU_ENTRY_SAVE,
     MENU_ENTRY_RESTORE,
+    MENU_ENTRY_INVENTORY,
     MENU_ENTRY_SETTINGS,
     MENU_ENTRY_TOGGLE_DEBUG_OVERLAY,
     MENU_ENTRY_QUIT,
@@ -35,6 +39,7 @@ typedef enum {
     MENU_ACTION_RESUME,
     MENU_ACTION_SAVE,
     MENU_ACTION_RESTORE,
+    MENU_ACTION_OPEN_INVENTORY,
     MENU_ACTION_OPEN_SETTINGS,
     MENU_ACTION_TOGGLE_DEBUG_OVERLAY,
     MENU_ACTION_QUIT,

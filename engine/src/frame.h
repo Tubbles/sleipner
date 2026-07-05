@@ -4,6 +4,7 @@
 #include "editor/editor.h"
 #include "game.h"
 #include "input.h"
+#include "inventory_screen.h"
 #include "menu.h"
 #include "raylib.h"
 #include "settings.h"
@@ -62,6 +63,7 @@ typedef struct {
     UndoHistory *undo_history;
     MenuState *menu;
     SettingsState *settings;
+    InventoryScreen *inventory;
     bool *quit_requested;
     MenuSaveFn save_fn;
     MenuRestoreFn restore_fn;
@@ -70,7 +72,8 @@ typedef struct {
 /* Apply one MenuAction. RESUME / TOGGLE_DEBUG_OVERLAY / QUIT are
  * pure state transitions; SAVE / RESTORE go through ctx.save_fn /
  * ctx.restore_fn (each may be nullptr); OPEN_SETTINGS hands control
- * to the Settings overlay. */
+ * to the Settings overlay; OPEN_INVENTORY hands control to the
+ * Inventory overlay, snapshotting state->progression.items. */
 void dispatch_menu_action(MenuDispatchCtx ctx, MenuAction action);
 
 /* Editor-or-play step + simulation step. Does NOT call
@@ -109,6 +112,7 @@ typedef struct {
     UndoHistory *undo_history;
     MenuState *menu;
     SettingsState *settings;
+    InventoryScreen *inventory;
     bool *font_preview_enabled;
     bool *quit_requested;
     MenuSaveFn save_fn;

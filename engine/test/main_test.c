@@ -91,6 +91,7 @@ void test_integration_give_item_toast_fades_in_play_mode(void);
 void test_integration_remove_item_at_zero(void);
 void test_integration_item_survives_transition(void);
 void test_integration_restore_clears_items(void);
+void test_integration_inventory_screen_open_close_freezes_world(void);
 void test_integration_editor_pan_does_not_reset_player_position(void);
 void test_integration_editor_undo_at_left_edge_preserves_play_state(void);
 void test_integration_editor_attr_edit_tap_decrements_by_one(void);
@@ -301,6 +302,7 @@ int main(void)
     RUN_TEST(test_integration_remove_item_at_zero);
     RUN_TEST(test_integration_item_survives_transition);
     RUN_TEST(test_integration_restore_clears_items);
+    RUN_TEST(test_integration_inventory_screen_open_close_freezes_world);
     RUN_TEST(test_integration_editor_pan_does_not_reset_player_position);
     RUN_TEST(test_integration_editor_undo_at_left_edge_preserves_play_state);
     RUN_TEST(test_integration_editor_attr_edit_tap_decrements_by_one);

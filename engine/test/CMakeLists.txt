@@ -46,6 +46,7 @@ add_unit_test(menu_test)
 add_unit_test(font_cache_test)
 add_unit_test(settings_capture_test)
 add_unit_test(hud_test)
+add_unit_test(inventory_screen_test)
 
 add_executable(engine_tests
     main_test.c

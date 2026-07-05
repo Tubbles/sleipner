@@ -375,7 +375,7 @@ Conflict resolution mirrors the gamedata workflow if both desktop and Android ed
 - **Avoid NOLINT comments.** Prefer fixing the code. NOLINTs are noise that hide real issues.
 - **Never disable lint checks without asking.** Do not modify `.clang-tidy` Checks or add inline suppressions without explicit user approval.
 ### Known tricky checks (add new entries when a check has a non-obvious fix)
-- `bugprone-easily-swappable-parameters` — Two adjacent parameters of the same type. Fix by reordering params, changing one to a different type (e.g. index instead of pointer), or wrapping in a struct.
+- `bugprone-easily-swappable-parameters` — Two adjacent parameters of the same type. Fix by reordering params, changing one to a different type (e.g. index instead of pointer), or wrapping in a struct. Also fires on an `int` adjacent to an `enum` parameter (they're "convertible" in C, not just identical types) — reorder so a struct or pointer type sits between them rather than assuming enum vs int is automatically safe.
 - `performance-no-int-to-ptr` — Don't cast integers to pointers. Use index arithmetic or memcpy instead of `(Type *)(uintptr_t)value`.
 
 ## Toolchain Reference

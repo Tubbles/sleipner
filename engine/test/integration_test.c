@@ -9,6 +9,7 @@
 #include "game.h"
 #include "input.h"
 #include "input_func.h"
+#include "inventory_screen.h"
 #include "level.h"
 #include "menu.h"
 #include "rule.h"
@@ -1553,6 +1554,57 @@ void test_integration_restore_clears_items(void)
     TEST_ASSERT_FALSE(game.menu.open);
 
     TEST_ASSERT_FALSE(item_has(&game.state.progression.items, "key"));
+
+    test_game_teardown(&game);
+}
+
+/* S6.12b, D25/D34: the pause-menu Inventory entry opens a modal grid
+ * overlay of the player's items, freezing the world while open -- mirrors
+ * test_integration_dialogue_world_frozen's world-freeze proof (held
+ * movement input never moves the player) and the existing menu-navigation
+ * tests' real F3/DOWN/ENTER/ESCAPE input-layer drive. */
+void test_integration_inventory_screen_open_close_freezes_world(void)
+{
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_gamedata));
+
+    InputState open_menu = {0};
+    input_state_press_key(&open_menu, KEY_F3);
+    test_advance_frame(&game, open_menu);
+    TEST_ASSERT_TRUE(game.menu.open);
+
+    /* Walk to INVENTORY: RESUME, SAVE, RESTORE, INVENTORY -- 3 down-presses. */
+    for (int step = 0; step < 3; step++) {
+        InputState down = {0};
+        input_state_press_key(&down, KEY_DOWN);
+        test_advance_frame(&game, down);
+    }
+    TEST_ASSERT_EQUAL_INT(MENU_ENTRY_INVENTORY, game.menu.selected);
+
+    InputState confirm = {0};
+    input_state_press_key(&confirm, KEY_ENTER);
+    test_advance_frame(&game, confirm);
+    TEST_ASSERT_TRUE(inventory_screen_is_open(&game.inventory));
+    TEST_ASSERT_FALSE(game.menu.open);
+
+    const Entity *player = game_get_player_const(&game.state);
+    TEST_ASSERT_NOT_NULL(player);
+    Vector2 start_position = player->position;
+
+    InputState move_right = {0};
+    input_state_hold_key(&move_right, KEY_RIGHT);
+    test_advance_frames(&game, move_right, 20);
+
+    TEST_ASSERT_TRUE(inventory_screen_is_open(&game.inventory));
+    player = game_get_player_const(&game.state);
+    TEST_ASSERT_EQUAL_FLOAT(start_position.x, player->position.x);
+    TEST_ASSERT_EQUAL_FLOAT(start_position.y, player->position.y);
+
+    InputState cancel = {0};
+    input_state_press_key(&cancel, KEY_ESCAPE);
+    test_advance_frame(&game, cancel);
+    TEST_ASSERT_FALSE(inventory_screen_is_open(&game.inventory));
+    TEST_ASSERT_TRUE(game.menu.open);
 
     test_game_teardown(&game);
 }
@@ -3885,10 +3937,10 @@ void test_integration_menu_navigation_and_quit(void)
     TEST_ASSERT_TRUE(game.menu.open);
     TEST_ASSERT_EQUAL_INT(MENU_ENTRY_RESUME, game.menu.selected);
 
-    /* Walk to QUIT. The menu has six entries: RESUME, SAVE, RESTORE,
-     * SETTINGS, TOGGLE_DEBUG_OVERLAY, QUIT — 5 down-presses from RESUME.
-     * One tap per frame. */
-    for (int step = 0; step < 5; step++) {
+    /* Walk to QUIT. The menu has seven entries: RESUME, SAVE, RESTORE,
+     * INVENTORY, SETTINGS, TOGGLE_DEBUG_OVERLAY, QUIT — 6 down-presses
+     * from RESUME. One tap per frame. */
+    for (int step = 0; step < 6; step++) {
         InputState down = {0};
         input_state_press_key(&down, KEY_DOWN);
         test_advance_frame(&game, down);
@@ -3983,13 +4035,13 @@ void test_integration_settings_tab_switch(void)
     TestGame game;
     TEST_ASSERT_TRUE(test_game_setup(&game, fixture_gamedata));
 
-    /* Open menu (F3) → walk to SETTINGS (3 down-presses from RESUME) → confirm. */
+    /* Open menu (F3) → walk to SETTINGS (4 down-presses from RESUME) → confirm. */
     InputState menu_open = {0};
     input_state_press_key(&menu_open, KEY_F3);
     test_advance_frame(&game, menu_open);
     TEST_ASSERT_TRUE(game.menu.open);
 
-    for (int step = 0; step < 3; step++) {
+    for (int step = 0; step < 4; step++) {
         InputState down = {0};
         input_state_press_key(&down, KEY_DOWN);
         test_advance_frame(&game, down);
@@ -4041,11 +4093,11 @@ void test_integration_settings_path_edit_commit(void)
     TestGame game;
     TEST_ASSERT_TRUE(test_game_setup(&game, fixture_gamedata));
 
-    /* Open menu → SETTINGS (3 down-presses) → confirm. */
+    /* Open menu → SETTINGS (4 down-presses) → confirm. */
     InputState menu_open = {0};
     input_state_press_key(&menu_open, KEY_F3);
     test_advance_frame(&game, menu_open);
-    for (int step = 0; step < 3; step++) {
+    for (int step = 0; step < 4; step++) {
         InputState down = {0};
         input_state_press_key(&down, KEY_DOWN);
         test_advance_frame(&game, down);
@@ -4116,7 +4168,7 @@ void test_integration_settings_path_edit_parent_lists_contents(void)
     InputState menu_open = {0};
     input_state_press_key(&menu_open, KEY_F3);
     test_advance_frame(&game, menu_open);
-    for (int step = 0; step < 3; step++) {
+    for (int step = 0; step < 4; step++) {
         InputState down = {0};
         input_state_press_key(&down, KEY_DOWN);
         test_advance_frame(&game, down);
@@ -4164,7 +4216,7 @@ void test_integration_settings_path_edit_drive_select_round_trip(void)
     InputState menu_open = {0};
     input_state_press_key(&menu_open, KEY_F3);
     test_advance_frame(&game, menu_open);
-    for (int step = 0; step < 3; step++) {
+    for (int step = 0; step < 4; step++) {
         InputState down = {0};
         input_state_press_key(&down, KEY_DOWN);
         test_advance_frame(&game, down);
@@ -4225,7 +4277,7 @@ void test_integration_settings_path_edit_commit_normalizes_separators(void)
     InputState menu_open = {0};
     input_state_press_key(&menu_open, KEY_F3);
     test_advance_frame(&game, menu_open);
-    for (int step = 0; step < 3; step++) {
+    for (int step = 0; step < 4; step++) {
         InputState down = {0};
         input_state_press_key(&down, KEY_DOWN);
         test_advance_frame(&game, down);
@@ -4405,7 +4457,7 @@ void test_integration_settings_path_edit_buffer_row_enters_keyboard_mode(void)
     InputState menu_open = {0};
     input_state_press_key(&menu_open, KEY_F3);
     test_advance_frame(&game, menu_open);
-    for (int step = 0; step < 3; step++) {
+    for (int step = 0; step < 4; step++) {
         InputState down = {0};
         input_state_press_key(&down, KEY_DOWN);
         test_advance_frame(&game, down);

@@ -15,6 +15,7 @@
 #include "game.h"
 #include "input.h"
 #include "input_func.h"
+#include "inventory_screen.h"
 #include "level.h"
 #include "map.h"
 #include "menu.h"
@@ -64,6 +65,13 @@ void dispatch_menu_action(MenuDispatchCtx ctx, MenuAction action)
     case MENU_ACTION_RESTORE:
         if (ctx.restore_fn) {
             ctx.restore_fn(ctx.diag, ctx.state, ctx.editor_state, ctx.watches, ctx.undo_history);
+        }
+        menu_close(ctx.menu);
+        break;
+    case MENU_ACTION_OPEN_INVENTORY:
+        if (ctx.inventory) {
+            Allocator progression_alloc = allocator_arena(&ctx.state->progression_arena);
+            inventory_screen_open(ctx.inventory, &ctx.state->progression.items, progression_alloc);
         }
         menu_close(ctx.menu);
         break;
@@ -501,6 +509,23 @@ static void run_settings_frame(GameState *state, FrameContext *ctx, InputState i
     }
 }
 
+/* Modal inventory frame (S6.12b, D25/D34): mirrors run_settings_frame above
+ * -- the world is frozen (frame_update returns without calling
+ * run_active_frame) while the screen is open. No save/preferences side
+ * channel to drain: the inventory screen only reads a snapshot taken at
+ * open time, it never mutates persisted state. */
+static void run_inventory_frame(GameState *state, FrameContext *ctx, InputState input)
+{
+    bool close_requested = false;
+    inventory_screen_handle_input(ctx->inventory, &input, &state->bindings, &close_requested);
+    if (close_requested) {
+        inventory_screen_close(ctx->inventory);
+        if (ctx->menu) {
+            menu_open(ctx->menu);
+        }
+    }
+}
+
 /* Modal dialogue frame (S6.7c, D24): the world is frozen -- game_update is
  * never called -- while a dialogue is open, mirroring frame_update's
  * settings-open branch above. Ticks the typewriter reveal by delta_time
@@ -521,6 +546,11 @@ void frame_update(Diag *diag, GameState *state, FrameContext *ctx, InputState in
 
     if (ctx->settings && settings_is_open(ctx->settings)) {
         run_settings_frame(state, ctx, input, delta_time);
+        return;
+    }
+
+    if (ctx->inventory && inventory_screen_is_open(ctx->inventory)) {
+        run_inventory_frame(state, ctx, input);
         return;
     }
 
@@ -552,6 +582,7 @@ void frame_update(Diag *diag, GameState *state, FrameContext *ctx, InputState in
             .undo_history = ctx->undo_history,
             .menu = ctx->menu,
             .settings = ctx->settings,
+            .inventory = ctx->inventory,
             .quit_requested = ctx->quit_requested,
             .save_fn = ctx->save_fn,
             .restore_fn = ctx->restore_fn,

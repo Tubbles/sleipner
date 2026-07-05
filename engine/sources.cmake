@@ -44,6 +44,7 @@ set(ENGINE_SOURCE_FILES
     input.c
     input_func.c
     input_func_toml.c
+    inventory_screen.c
     keyboard_widget.c
     level.c
     map.c
