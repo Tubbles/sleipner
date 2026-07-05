@@ -872,6 +872,75 @@ void test_toml_emit_camera_pan_shake_round_trip(void)
     arena_free(&arena2);
 }
 
+/* S6.6's spawn action carries a blueprint name plus two comma-separated
+ * coordinates (parse_action_two_args splits at the first comma only, so
+ * "goblin,300,200" lands as argument="goblin", second_argument="300,200").
+ * Same shape as camera_pan above, and the same S6.5-deferred bug: the emit
+ * table must mark ACTION_EMIT_TWO_ARGS, not ACTION_EMIT_ONE_ARG, or
+ * re-saving a spawn rule via the editor silently drops the coordinates
+ * (saves "spawn:goblin", keeping only the blueprint name). */
+static const char *spawn_action_fixture = "[[blueprint]]\n"
+                                          "name = \"trigger_zone\"\n"
+                                          "texture = \"trigger.png\"\n"
+                                          "src = [0, 0, 16, 16]\n"
+                                          "collision_offset = [0, 0]\n"
+                                          "collision_size = [16, 16]\n"
+                                          "\n"
+                                          "[[blueprint.rule]]\n"
+                                          "trigger = \"interact\"\n"
+                                          "actions = [\"spawn:goblin,300,200\"]\n"
+                                          "\n"
+                                          "[[level]]\n"
+                                          "name = \"test\"\n"
+                                          "size = [320, 240]\n";
+
+void test_toml_emit_spawn_round_trip(void)
+{
+    Arena arena;
+    TEST_ASSERT_TRUE(arena_init(&test_err, &arena));
+    BlueprintTable blueprints = {0};
+
+    toml_table_t *root = parse_toml(spawn_action_fixture);
+    TEST_ASSERT_NOT_NULL(root);
+    blueprints_load(&test_diag, &blueprints, root, &arena);
+    toml_free(root);
+
+    char output[8192];
+    Level empty_level = {0};
+    int written = toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &empty_subroutines,
+                                     &empty_tileset, &empty_atlas_regions, &empty_level, 0);
+    TEST_ASSERT_TRUE(written > 0);
+
+    /* Full argument set must survive emit -- ACTION_EMIT_ONE_ARG truncates
+     * to "spawn:goblin", silently dropping the coordinates. */
+    TEST_ASSERT_NOT_NULL(strstr(output, "\"spawn:goblin,300,200\""));
+
+    /* Round-trip: re-parse and verify the full argument set survives */
+    Arena arena2;
+    TEST_ASSERT_TRUE(arena_init(&test_err, &arena2));
+    BlueprintTable blueprints2 = {0};
+
+    toml_table_t *root2 = parse_toml(output);
+    TEST_ASSERT_NOT_NULL(root2);
+    blueprints_load(&test_diag, &blueprints2, root2, &arena2);
+    toml_free(root2);
+
+    TEST_ASSERT_EQUAL_INT(1, blueprints2.entries.count);
+    const Blueprint *blueprint = &blueprints2.entries.data[0];
+    TEST_ASSERT_EQUAL_INT(1, blueprint->rules.count);
+
+    const Rule *rule = &blueprint->rules.data[0];
+    TEST_ASSERT_EQUAL_INT(1, rule->action_tree.nodes.count);
+
+    const ActionNode *spawn_node = &rule->action_tree.nodes.data[0];
+    TEST_ASSERT_EQUAL_INT(ACTION_SPAWN, spawn_node->type);
+    TEST_ASSERT_EQUAL_STRING("goblin", spawn_node->argument.ptr);
+    TEST_ASSERT_EQUAL_STRING("300,200", spawn_node->second_argument.ptr);
+
+    arena_free(&arena);
+    arena_free(&arena2);
+}
+
 /* S4.5/D28: [[blueprint.collision]] authors a composite collision shape (a
  * list of primitives) on a blueprint. Two primitives of different kinds
  * (rect + circle) with non-zero offsets exercises both the per-kind field

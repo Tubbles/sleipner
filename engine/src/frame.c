@@ -257,17 +257,88 @@ static void apply_camera_shake_effects(Diag *diag, GameState *state, const vec_c
     }
 }
 
-/* spawn/dialogue have no handler yet (S6.6/S6.7): logged for the same
- * observability the S6.2 scaffold had, otherwise no-ops.
- * apply_effect_queue below still clears these vecs every frame so they
- * never accumulate in the meantime. */
-static void log_spawn_effects(Diag *diag, const vec_spawn_request *spawns)
+/* spawn has a real handler as of S6.6 (D22/F24): look the blueprint up by
+ * name and spawn it via level_spawn_entity, the same primitive
+ * handle_place_input (the editor's PLACE path, above) uses. Deliberately
+ * runs here -- after game_update returns -- rather than synchronously in
+ * the rule VM: a spawn mutates current_level.entities, which would
+ * invalidate the EntityView array and view_count a for_each batch is
+ * still iterating (see rule.c's execute_spawn_action). An unknown
+ * blueprint name is logged and skipped, not treated as a frame error --
+ * one rule referencing a typo'd blueprint shouldn't hard-fail the level.
+ * Returns the number of entities actually spawned, so the caller can
+ * skip the (otherwise unconditional) setup_current_level_runtime rebuild
+ * on frames where nothing was spawned. */
+static int apply_spawn_effects(Diag *diag, GameState *state, const vec_spawn_request *spawns)
 {
+    Allocator alloc = allocator_arena(&state->gamedata_arena);
+    int spawned_count = 0;
     for (int index = 0; index < spawns->count; index++) {
         const SpawnRequest *request = &spawns->data[index];
-        debug_log(diag->debug, "effect: spawn %.*s at (%.1f, %.1f)", (int)request->blueprint.len,
-                  request->blueprint.ptr, (double)request->x, (double)request->y);
+        char blueprint_name[MAX_ARG];
+        strv_copy_to_cstr(request->blueprint, blueprint_name, MAX_ARG);
+        debug_log(diag->debug, "effect: spawn %s at (%.1f, %.1f)", blueprint_name, (double)request->x,
+                  (double)request->y);
+        const Blueprint *blueprint = blueprint_find(&state->gamedata.blueprints, blueprint_name);
+        if (!blueprint) {
+            debug_log(diag->debug, "effect: spawn '%s': unknown blueprint", blueprint_name);
+            continue;
+        }
+        Vector2 position = {request->x, request->y};
+        if (!level_spawn_entity(diag, &state->gamedata.current_level, blueprint, position, &state->gamedata.blueprints,
+                                texture_registry_lookup, state, &alloc)) {
+            debug_log(diag->debug, "effect: spawn '%s': %s", blueprint_name, error_get(diag->error));
+            error_clear(diag->error);
+            continue;
+        }
+        spawned_count++;
     }
+    return spawned_count;
+}
+
+/* Rebuild the count-parallel tracking after a spawn changed entity count,
+ * WITHOUT losing the temporal overlap edge state.
+ *
+ * setup_current_level_runtime (game.c) reinitializes prev_player_overlaps
+ * and prev_solid_collisions to all-false for the new entity count. That is
+ * correct for a fresh load/transition (nothing was overlapping "last frame"
+ * yet), but for a mid-gameplay spawn it would wipe the "overlapped last
+ * frame" state that game.c's detect_enter_targets/detect_solid_collisions
+ * diff against -- refiring enter for the entity the player is still standing
+ * in, and collide for any still-touching solid pair, on the very next frame.
+ * A for_each-driven spawn compounds this into runaway spawning.
+ *
+ * So: snapshot the pre-spawn edge vecs (by value -- copies the data pointer,
+ * still valid arena memory: setup allocates the fresh vecs at the arena top,
+ * orphaning but never overwriting the old blocks, and nothing restores/resets
+ * the arena in between, so reading old while writing new is safe), let setup
+ * rebuild everything from scratch, then copy the pre-existing entities' edge
+ * state back into the freshly-rebuilt (larger) vecs. Newly-spawned entities
+ * keep setup's fresh false in both vecs -- correct, they weren't overlapping
+ * anything last frame. The solid matrix is entity_count², so the restore is
+ * the entity_count² reindex F24 called for, done as a copy into setup's
+ * proven rebuild rather than a hand-rolled resize. new_count >= old_count
+ * always (spawn only adds), so every (a,b) with a,b < old_count is in range
+ * of the new_count² matrix. */
+static bool respawn_rebuild_tracking(Diag *diag, GameState *state)
+{
+    vec_bool old_player_overlaps = state->gamedata.prev_player_overlaps;
+    vec_bool old_solid_collisions = state->gamedata.prev_solid_collisions;
+    int old_count = old_player_overlaps.count;
+    if (!setup_current_level_runtime(diag, state)) {
+        return false;
+    }
+    int new_count = state->gamedata.prev_player_overlaps.count;
+    for (int index = 0; index < old_count; index++) {
+        state->gamedata.prev_player_overlaps.data[index] = old_player_overlaps.data[index];
+    }
+    for (int entity_a = 0; entity_a < old_count; entity_a++) {
+        for (int entity_b = 0; entity_b < old_count; entity_b++) {
+            state->gamedata.prev_solid_collisions.data[(entity_a * new_count) + entity_b] =
+                old_solid_collisions.data[(entity_a * old_count) + entity_b];
+        }
+    }
+    return true;
 }
 
 static void log_dialogue_effects(Diag *diag, const vec_dialogue_request *dialogues)
@@ -282,14 +353,26 @@ static void log_dialogue_effects(Diag *diag, const vec_dialogue_request *dialogu
  * (which lived in effect.c and only logged). effect.c stays a pure push/
  * clear channel; this is the per-frame apply pass with real GameState
  * access (SFX registry, audio device), which is why it lives here instead.
- * Sound (S6.4) and camera_pan/camera_shake (S6.5) are handled so far --
- * S6.6/S6.7 add handlers for spawn/dialogue, following this same pattern. */
+ * Sound (S6.4), camera_pan/camera_shake (S6.5), and spawn (S6.6) are
+ * handled so far -- S6.7 adds a handler for dialogue, following this same
+ * pattern. Spawning is the only effect that can change entity count, so
+ * it alone needs the follow-up count-parallel rebuild (rule_table,
+ * entity_blueprints, player_index, prev_player_overlaps/prev_solid_collisions)
+ * -- via respawn_rebuild_tracking, which preserves the overlap edge state
+ * across the rebuild so enter/collide triggers don't spuriously refire.
+ * Guarded on spawned_count > 0 so a frame with no spawns (the common case)
+ * pays nothing beyond the empty-vec loop. */
 static void apply_effect_queue(Diag *diag, GameState *state)
 {
     apply_sound_effects(diag, state, &state->effects.sounds);
     apply_camera_pan_effects(diag, state, &state->effects.camera_pans);
     apply_camera_shake_effects(diag, state, &state->effects.camera_shakes);
-    log_spawn_effects(diag, &state->effects.spawns);
+    int spawned_count = apply_spawn_effects(diag, state, &state->effects.spawns);
+    if (spawned_count > 0 && !respawn_rebuild_tracking(diag, state)) {
+        error_wrap(diag->error, "apply_effect_queue");
+        debug_log(diag->debug, "error: %s", error_get(diag->error));
+        error_clear(diag->error);
+    }
     log_dialogue_effects(diag, &state->effects.dialogues);
     effect_queue_clear(&state->effects);
 }

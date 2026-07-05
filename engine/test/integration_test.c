@@ -708,6 +708,215 @@ void test_integration_camera_pan_moves_target(void)
     test_game_teardown(&game);
 }
 
+void test_integration_spawn_creates_entity(void)
+{
+    /* Same 84px-gap enter-trigger geometry as fixture_play_sound /
+     * fixture_camera_pan above -- walking the player from (100,100) into
+     * the zone at (200,100) fires "enter" well inside 100 frames at
+     * speed=80. The zone's rule spawns a "goblin" (a distinct blueprint
+     * from anything already in the level, with its own default attr) at
+     * a fixed position away from both player and zone. */
+    static const char *fixture_spawn = "[[blueprint]]\n"
+                                       "name = \"player\"\n"
+                                       "texture = \"player.png\"\n"
+                                       "src = [0, 0, 32, 32]\n"
+                                       "collision_offset = [0, 0]\n"
+                                       "collision_size = [16, 16]\n"
+                                       "behavior = \"player\"\n"
+                                       "speed = 80\n"
+                                       "\n"
+                                       "[[blueprint]]\n"
+                                       "name = \"goblin\"\n"
+                                       "texture = \"rock.png\"\n"
+                                       "src = [0, 0, 16, 16]\n"
+                                       "collision_offset = [0, 0]\n"
+                                       "collision_size = [16, 16]\n"
+                                       "hp = 7\n"
+                                       "\n"
+                                       "[[blueprint]]\n"
+                                       "name = \"zone\"\n"
+                                       "texture = \"rock.png\"\n"
+                                       "src = [0, 0, 16, 16]\n"
+                                       "collision_offset = [0, 0]\n"
+                                       "collision_size = [32, 32]\n"
+                                       "solid = false\n"
+                                       "\n"
+                                       "[[blueprint.rule]]\n"
+                                       "trigger = \"enter\"\n"
+                                       "actions = [\"spawn:goblin,250,180\"]\n"
+                                       "\n"
+                                       "[[level]]\n"
+                                       "name = \"test\"\n"
+                                       "size = [320, 240]\n"
+                                       "\n"
+                                       "[[level.entity]]\n"
+                                       "blueprint = \"player\"\n"
+                                       "pos = [100, 100]\n"
+                                       "\n"
+                                       "[[level.entity]]\n"
+                                       "blueprint = \"zone\"\n"
+                                       "pos = [200, 100]\n";
+
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_spawn));
+    TEST_ASSERT_EQUAL_INT(0, test_count_entities_by_blueprint(&game.state, "goblin"));
+
+    /* Drive test_advance_frame (the real frame_update path, not
+     * game_update directly) so the spawn is applied by
+     * apply_effect_queue's drain, not just enqueued -- unlike
+     * test_integration_play_sound_enqueues, this test asserts on the
+     * post-drain world, not the raw queue. */
+    InputState walk = {0};
+    input_state_set_gp_axis(&walk, GAMEPAD_AXIS_LEFT_X, 1.0F);
+    bool spawned = false;
+    for (int frame = 0; frame < 100; frame++) {
+        test_advance_frame(&game, walk);
+        if (test_count_entities_by_blueprint(&game.state, "goblin") > 0) {
+            spawned = true;
+            break;
+        }
+    }
+    TEST_ASSERT_TRUE_MESSAGE(spawned, "spawn action never fired");
+    TEST_ASSERT_EQUAL_INT(1, test_count_entities_by_blueprint(&game.state, "goblin"));
+
+    /* The player is standing inside the zone right now -- that is what just
+     * fired the one-shot enter. Hold it there (idle) for more frames and
+     * assert the count stays EXACTLY one: the spawn's tracking rebuild must
+     * preserve the player-overlap edge state, or detect_enter_targets sees
+     * "not overlapping last frame" again next frame and refires enter,
+     * spawning a fresh goblin every frame. Count-exact, so a refire fails. */
+    InputState idle = {0};
+    test_advance_frames(&game, idle, 30);
+    TEST_ASSERT_EQUAL_INT(1, test_count_entities_by_blueprint(&game.state, "goblin"));
+
+    Entity *goblin = test_find_entity_by_blueprint(&game.state, "goblin");
+    TEST_ASSERT_NOT_NULL(goblin);
+    TEST_ASSERT_FLOAT_WITHIN(0.5F, 250.0F, goblin->position.x);
+    TEST_ASSERT_FLOAT_WITHIN(0.5F, 180.0F, goblin->position.y);
+
+    /* Blueprint defaults must be resolvable -- this only works if
+     * the spawn's setup_current_level_runtime rebuild actually
+     * registered the new entity's id in entity_blueprints (F24's map
+     * fix-up), not just pushed it into current_level.entities. */
+    const AttrSet *defaults = entity_resolve_defaults(&game.state, goblin->id);
+    TEST_ASSERT_NOT_NULL(defaults);
+    TEST_ASSERT_EQUAL_INT(7, attr_get_scoped_int(&goblin->attrs, defaults, "hp", -1));
+
+    test_game_teardown(&game);
+}
+
+void test_integration_spawn_inside_for_each_deferred(void)
+{
+    /* Three "target_marker" entities (marked via a custom is_target attr,
+     * so the for_each filter can select exactly them and not the player/
+     * zone/goblin blueprints) sit away from the player's walk path. The
+     * zone's enter rule iterates every entity, filters to the marked
+     * three, and spawns one goblin per match -- exercising for_each +
+     * spawn together, the core F24 safety scenario: if spawn mutated
+     * current_level.entities synchronously instead of deferring to the
+     * drain, this is exactly the setup (a for_each body enqueuing spawns)
+     * that could revisit or corrupt the array it is still iterating. */
+    static const char *fixture_for_each_spawn = "[[blueprint]]\n"
+                                                "name = \"player\"\n"
+                                                "texture = \"player.png\"\n"
+                                                "src = [0, 0, 32, 32]\n"
+                                                "collision_offset = [0, 0]\n"
+                                                "collision_size = [16, 16]\n"
+                                                "behavior = \"player\"\n"
+                                                "speed = 80\n"
+                                                "\n"
+                                                "[[blueprint]]\n"
+                                                "name = \"target_marker\"\n"
+                                                "texture = \"rock.png\"\n"
+                                                "src = [0, 0, 16, 16]\n"
+                                                "collision_offset = [0, 0]\n"
+                                                "collision_size = [16, 16]\n"
+                                                "solid = false\n"
+                                                "is_target = true\n"
+                                                "\n"
+                                                "[[blueprint]]\n"
+                                                "name = \"goblin\"\n"
+                                                "texture = \"rock.png\"\n"
+                                                "src = [0, 0, 16, 16]\n"
+                                                "collision_offset = [0, 0]\n"
+                                                "collision_size = [16, 16]\n"
+                                                "\n"
+                                                "[[blueprint]]\n"
+                                                "name = \"zone\"\n"
+                                                "texture = \"rock.png\"\n"
+                                                "src = [0, 0, 16, 16]\n"
+                                                "collision_offset = [0, 0]\n"
+                                                "collision_size = [32, 32]\n"
+                                                "solid = false\n"
+                                                "\n"
+                                                "[[blueprint.rule]]\n"
+                                                "trigger = \"enter\"\n"
+                                                "actions = [{ for_each = \"entities\", bind = \"target\", "
+                                                "conditions = [\"attr:is_target\"], do = [\"spawn:goblin,999,999\"] "
+                                                "}]\n"
+                                                "\n"
+                                                "[[level]]\n"
+                                                "name = \"test\"\n"
+                                                "size = [320, 240]\n"
+                                                "\n"
+                                                "[[level.entity]]\n"
+                                                "blueprint = \"player\"\n"
+                                                "pos = [100, 100]\n"
+                                                "\n"
+                                                "[[level.entity]]\n"
+                                                "blueprint = \"zone\"\n"
+                                                "pos = [200, 100]\n"
+                                                "\n"
+                                                "[[level.entity]]\n"
+                                                "blueprint = \"target_marker\"\n"
+                                                "pos = [10, 10]\n"
+                                                "\n"
+                                                "[[level.entity]]\n"
+                                                "blueprint = \"target_marker\"\n"
+                                                "pos = [20, 20]\n"
+                                                "\n"
+                                                "[[level.entity]]\n"
+                                                "blueprint = \"target_marker\"\n"
+                                                "pos = [30, 30]\n";
+
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_for_each_spawn));
+    TEST_ASSERT_EQUAL_INT(3, test_count_entities_by_blueprint(&game.state, "target_marker"));
+    TEST_ASSERT_EQUAL_INT(0, test_count_entities_by_blueprint(&game.state, "goblin"));
+
+    InputState walk = {0};
+    input_state_set_gp_axis(&walk, GAMEPAD_AXIS_LEFT_X, 1.0F);
+    bool spawned = false;
+    for (int frame = 0; frame < 100; frame++) {
+        test_advance_frame(&game, walk);
+        if (test_count_entities_by_blueprint(&game.state, "goblin") > 0) {
+            spawned = true;
+            break;
+        }
+    }
+    TEST_ASSERT_TRUE_MESSAGE(spawned, "for_each spawn action never fired");
+
+    /* Exactly one goblin per target_marker, never more. The batch's
+     * EntityView array (game.c) is built once per batch with a fixed
+     * view_count captured by value before rules_evaluate_batch runs, so
+     * even a hypothetical non-deferred spawn couldn't extend the for_each
+     * loop bound mid-iteration -- but a synchronous spawn growing/
+     * reallocating current_level.entities while for_each still holds
+     * Entity* pointers into the pre-growth array is exactly the
+     * corruption CLAUDE.md's vec-growth rule warns about. Deferring to
+     * the drain (after game_update returns, after this whole batch is
+     * done iterating) sidesteps it entirely. */
+    TEST_ASSERT_EQUAL_INT(3, test_count_entities_by_blueprint(&game.state, "goblin"));
+
+    /* A few more idle frames rule out a delayed second wave, not just an
+     * immediate one. */
+    InputState idle = {0};
+    test_advance_frames(&game, idle, 10);
+    TEST_ASSERT_EQUAL_INT(3, test_count_entities_by_blueprint(&game.state, "goblin"));
+
+    test_game_teardown(&game);
+}
+
 static char *read_file(const char *path)
 {
     FILE *file = fopen(path, "re");

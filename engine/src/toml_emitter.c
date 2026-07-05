@@ -248,7 +248,7 @@ static const ActionEmitEntry action_emit_table[] = {
     {.prefix = "play_sound:", .type = ACTION_PLAY_SOUND, .arg_count = ACTION_EMIT_ONE_ARG},
     {.prefix = "dialogue:", .type = ACTION_DIALOGUE, .arg_count = ACTION_EMIT_ONE_ARG},
     {.prefix = "transition:", .type = ACTION_TRANSITION, .arg_count = ACTION_EMIT_TWO_ARGS},
-    {.prefix = "spawn:", .type = ACTION_SPAWN, .arg_count = ACTION_EMIT_ONE_ARG},
+    {.prefix = "spawn:", .type = ACTION_SPAWN, .arg_count = ACTION_EMIT_TWO_ARGS},
     {.prefix = "camera_pan:", .type = ACTION_CAMERA_PAN, .arg_count = ACTION_EMIT_TWO_ARGS},
     {.prefix = "camera_shake:", .type = ACTION_CAMERA_SHAKE, .arg_count = ACTION_EMIT_TWO_ARGS},
     {.prefix = "call:", .type = ACTION_CALL, .arg_count = ACTION_EMIT_ONE_ARG},

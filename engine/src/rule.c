@@ -1320,6 +1320,95 @@ static bool execute_camera_shake_action(Diag *diag, const ActionNode *node, Acti
     return true;
 }
 
+/* Copies a comma-split token (a slice into node->second_argument, not
+ * null-terminated on its own) into a scratch buffer and resolves any
+ * $variable reference in it. Duplicates resolve_sprite_token/
+ * resolve_camera_token's body (S6.3/S6.5, above) rather than sharing it --
+ * those helpers' names/doc comments are specific to their own actions. */
+static void resolve_spawn_token(char *out, int out_size, Strv token, ActionContext context)
+{
+    char raw[MAX_ARG];
+    strv_copy_to_cstr(token, raw, MAX_ARG);
+    resolve_arg(out, out_size, raw, context);
+}
+
+/* spawn:blueprint,x,y (S6.6, D22/F24) -- pushes a SpawnRequest onto the
+ * effect queue; frame.c's apply pass (apply_spawn_effects) looks the
+ * blueprint up and calls level_spawn_entity after the whole rules batch
+ * (and game_update) returns. The VM itself never mutates
+ * current_level.entities -- that is what makes spawning from inside a
+ * for_each safe: the EntityView array a batch iterates was built once at
+ * the batch boundary (game.c), so a spawn enqueued mid-batch cannot grow
+ * or reallocate the array the batch is still walking. parse_action_two_args
+ * already split "blueprint,x,y" into argument="blueprint" and
+ * second_argument="x,y"; recover the remaining two tokens with one more
+ * split, mirroring execute_camera_pan_action. Unlike ACTION_PLAY_SOUND
+ * (which pushes node->argument's Strv unresolved), the blueprint name is
+ * resolved for a possible $variable substitution the same way x/y are --
+ * a for_each body may want to pick the spawned blueprint dynamically. */
+static bool execute_spawn_action(Diag *diag, Allocator *alloc, const ActionNode *node, ActionContext context)
+{
+    if (!context.effects) {
+        debug_log(diag->debug, "spawn: no effect channel");
+        return true;
+    }
+    if (!node->argument.ptr || !node->second_argument.ptr) {
+        error_set(diag->error, "spawn: expected 'blueprint,x,y'");
+        return false;
+    }
+    Strv rest = str_to_strv(node->second_argument);
+    Strv x_token = strv_split(&rest, ',');
+    if (!rest.ptr) {
+        error_set(diag->error, "spawn: expected 'x,y' in second argument, got '%s'", node->second_argument.ptr);
+        return false;
+    }
+    Strv y_token = rest;
+
+    char blueprint_buf[MAX_ARG];
+    char x_buf[MAX_ARG];
+    char y_buf[MAX_ARG];
+    resolve_arg(blueprint_buf, MAX_ARG, node->argument.ptr, context);
+    resolve_spawn_token(x_buf, MAX_ARG, x_token, context);
+    resolve_spawn_token(y_buf, MAX_ARG, y_token, context);
+
+    Vector2 position;
+    if (!parse_strict_float(x_buf, &position.x)) {
+        error_set(diag->error, "spawn: invalid x '%s'", x_buf);
+        return false;
+    }
+    if (!parse_strict_float(y_buf, &position.y)) {
+        error_set(diag->error, "spawn: invalid y '%s'", y_buf);
+        return false;
+    }
+
+    /* node->argument is a Str parsed into gamedata_arena at load time, so a
+     * literal blueprint name (no $variable, the common case) can be pushed
+     * by reference exactly like ACTION_PLAY_SOUND's name. A $variable
+     * substitution resolves into blueprint_buf, a stack buffer that is
+     * gone by the time the drain runs after game_update returns -- that
+     * case must copy the resolved name into a gamedata-arena-owned Str
+     * first, the same way execute_transition_action copies the resolved
+     * level name into context.transition->level. */
+    Strv blueprint_name;
+    Str resolved_name;
+    if (!strchr(node->argument.ptr, '$')) {
+        blueprint_name = str_to_strv(node->argument);
+    } else {
+        resolved_name = str_new(*alloc);
+        if (!str_from_cstr(&resolved_name, blueprint_buf)) {
+            error_set(diag->error, "spawn: allocation failed for blueprint name");
+            return false;
+        }
+        blueprint_name = str_to_strv(resolved_name);
+    }
+
+    if (!effect_queue_push_spawn(context.effects, blueprint_name, position)) {
+        error_set(diag->error, "spawn: allocation failed");
+        return false;
+    }
+    return true;
+}
+
 static bool execute_set_var_action(Diag *diag, Allocator *alloc, const ActionNode *node, ActionContext context)
 {
     char resolved_value[MAX_ARG];
@@ -1540,6 +1629,8 @@ static bool dispatch_simple_action(Diag *diag, Allocator *alloc, const ActionNod
         return execute_camera_pan_action(diag, node, context);
     case ACTION_CAMERA_SHAKE:
         return execute_camera_shake_action(diag, node, context);
+    case ACTION_SPAWN:
+        return execute_spawn_action(diag, alloc, node, context);
     case ACTION_CREATE_TIMER:
         return execute_create_timer_action(diag, node, context, false);
     case ACTION_CREATE_TIMER_PERIODIC:

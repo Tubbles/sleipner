@@ -142,27 +142,26 @@ predicate rows and MOVE reparenting).
   `execute_transition_action`'s comma check); like `set_attr`/`add_attr`,
   a non-numeric token (e.g. `change_sprite:16,oops,48,64`) silently resolves
   via `strtof` to `0` rather than erroring. S6.5's `camera_pan`/`camera_shake`
-  (`execute_camera_pan_action`/`execute_camera_shake_action`, `rule.c`) break
-  from this: they validate every numeric token via `parse_strict_float` and
-  `error_set` on garbage, since a bad pan/shake duration should fail loudly
-  rather than silently pan/shake for zero seconds. The VM is now inconsistent
-  on this axis (two actions strict, the rest permissive) — worth a shared
-  pass to pick one behavior and apply it everywhere, whichever direction
-  that goes.
-- **TOML emitter still drops the extra value on re-emitting spawn.**
-  `parse_action_two_args` (`rule.c`) always splits a simple action's
-  argument string at the first comma only, regardless of how many
-  values the action logically takes: `argument` gets everything before
-  it, `second_argument` gets everything after. `toml_emitter.c`'s
-  `action_emit_table` still marks `spawn:` (`toml_emitter.c:251`) as
-  `ACTION_EMIT_ONE_ARG`, so `emit_simple_action_string`
-  (`toml_emitter.c:268-286`) re-emits only `argument` and silently
-  drops `second_argument`. camera_pan/camera_shake had the identical
-  bug and were fixed to `ACTION_EMIT_TWO_ARGS` in the S6.5 commit;
-  spawn is left as-is because it has no execute handler yet (S6.6),
-  so S6.6 should fix spawn's emit table entry alongside implementing
-  its execute path, with its own round-trip test.
-
+  and S6.6's `spawn` (`execute_camera_pan_action`/`execute_camera_shake_action`/
+  `execute_spawn_action`, `rule.c`) break from this: they validate every
+  numeric token via `parse_strict_float` and `error_set` on garbage, since a
+  bad pan/shake duration or spawn position should fail loudly rather than
+  silently pan/shake for zero seconds or spawn at the origin. The VM is now
+  inconsistent on this axis (three actions strict, the rest permissive) —
+  worth a shared pass to pick one behavior and apply it everywhere, whichever
+  direction that goes.
+- **Editor Place path never resizes the overlap/solid edge vecs after
+  spawning.** `handle_place_input` (`frame.c`) hand-patches `entity_blueprints`
+  and `rule_table` for the newly-placed entity but, unlike S6.6's spawn path
+  (`respawn_rebuild_tracking`, `frame.c`) and S5.7's paste
+  (`setup_current_level_runtime` call), never grows `prev_player_overlaps`/
+  `prev_solid_collisions` to the new entity count. Harmless today: `game_update`
+  (`game.c`) skips all overlap detection while `editor_mode` is on, so the
+  under-sized vecs are never read during placement, and the next full reload/
+  transition rebuilds them anyway. Becomes a real bug if overlap detection ever
+  runs in editor mode, or if a Place happens without a following reload before
+  play resumes. Fix by routing Place through the same rebuild the spawn/paste
+  paths use.
 ## Collision system follow-ups
 
 - **Editor cannot author or edit composite collision shapes.** S4.5 added
