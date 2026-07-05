@@ -1761,6 +1761,17 @@ static bool dispatch_simple_action(Diag *diag, Allocator *alloc, const ActionNod
             return true;
         }
         item_give(diag, context.progression_alloc, context.items, node->argument.ptr);
+        /* Pickup toast (S6.8b, D25): fire-and-forget feedback, not the
+         * primary effect of this action (unlike ACTION_PLAY_SOUND), so a
+         * missing effect channel or a failed push only logs -- it must
+         * never turn a successful give_item into a failing action.
+         * node->argument is a Str parsed into gamedata_arena at load time
+         * (never rewound mid-frame), so pushing it by reference is safe
+         * through the same-frame drain, exactly like ACTION_PLAY_SOUND's
+         * node->argument push below. */
+        if (context.effects && !effect_queue_push_toast(context.effects, str_to_strv(node->argument))) {
+            debug_log(diag->debug, "give_item: toast push failed for '%s'", node->argument.ptr);
+        }
         return true;
     case ACTION_REMOVE_ITEM:
         if (!context.items) {

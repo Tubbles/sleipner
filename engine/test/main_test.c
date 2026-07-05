@@ -86,6 +86,8 @@ void test_integration_progression_survives_transition(void);
 void test_integration_progression_survives_hot_reload(void);
 void test_integration_progression_restore_clears_progression(void);
 void test_integration_give_item_then_has_item(void);
+void test_integration_give_item_shows_toast(void);
+void test_integration_give_item_toast_fades_in_play_mode(void);
 void test_integration_remove_item_at_zero(void);
 void test_integration_item_survives_transition(void);
 void test_integration_restore_clears_items(void);
@@ -267,6 +269,8 @@ int main(void)
     RUN_TEST(test_integration_progression_survives_hot_reload);
     RUN_TEST(test_integration_progression_restore_clears_progression);
     RUN_TEST(test_integration_give_item_then_has_item);
+    RUN_TEST(test_integration_give_item_shows_toast);
+    RUN_TEST(test_integration_give_item_toast_fades_in_play_mode);
     RUN_TEST(test_integration_remove_item_at_zero);
     RUN_TEST(test_integration_item_survives_transition);
     RUN_TEST(test_integration_restore_clears_items);

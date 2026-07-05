@@ -77,8 +77,13 @@ typedef struct {
 #define TOAST_DURATION 2.0F      /* seconds before toast fades out */
 #define TOAST_FADE_TIME 0.5F     /* seconds of fade-out at the end */
 #define TOAST_FONT_SIZE 32       /* toast text font size */
-#define ALPHA_MAX 255.0F         /* max alpha value for color byte conversion */
-#define RULE_TREE_INDENT_PX 20   /* screen px added to the panel's left margin per tree depth level */
+/* Max length of a toast message formatted at runtime (e.g. the S6.8b pickup
+ * toast's "Got <item>"), mirrors settings.c's TOAST_MSG_BUF_CAP -- a
+ * distinct name and constant because the two live in different structs
+ * (EditorState vs SettingsState) with independent lifetimes. */
+#define TOAST_MSG_BUF_SIZE 64
+#define ALPHA_MAX 255.0F       /* max alpha value for color byte conversion */
+#define RULE_TREE_INDENT_PX 20 /* screen px added to the panel's left margin per tree depth level */
 
 extern const Color debug_text_color;
 extern const Color debug_bg_color;
@@ -315,27 +320,28 @@ typedef struct {
     int word_builder_len;                         /* current built string length */
     char word_builder_buf[WORD_BUILDER_BUF_SIZE]; /* current built string (null-terminated) */
     float toast_timer;                            /* seconds remaining for toast display */
-    Strv toast_text;                              /* current toast message (non-owning, points into undo arena) */
-    int fuzzy_finder_scroll;                      /* selected index (0 = "[ NEW... ]") */
-    const char **fuzzy_finder_items;              /* sorted unique name pointers (gamedata_arena) */
-    int fuzzy_finder_item_count;                  /* number of names (excludes the NEW sentinel) */
-    KeyboardWidget word_builder_kb;               /* reused two-level radial keyboard for word builder typing */
-    bool adding_attr;                             /* true when fuzzy finder is open for adding a runtime attribute */
-    bool adding_persisted_attr;                   /* true when fuzzy finder is open for adding a persisted attribute */
-    int selected_tree_index;                      /* -1 = not in tree section; >=0 = parent/child/ADD CHILD */
-    bool editing_child_tag;                       /* word builder is editing a blueprint child tag */
-    bool editing_child_offset;                    /* attr_edit is editing a blueprint child offset */
-    int child_edit_axis;                          /* 0=x, 1=y — which offset axis */
-    int child_edit_index;                         /* which child in blueprint->children is being edited */
-    bool adding_child;                            /* true when fuzzy finder is open for adding a blueprint child */
-    int blueprint_list_scroll;                    /* scroll position in blueprint list view */
-    int selected_blueprint_index;                 /* -1 = list view; >=0 = detail view */
-    int blueprint_attr_index;                     /* -1 = none; index into blueprint attrs (detail view) */
-    int blueprint_tree_index;                     /* -1 = not in tree; >=0 = child/ADD CHILD row */
-    bool adding_blueprint_attr;                   /* fuzzy finder is adding a blueprint-level attr */
-    bool creating_blueprint;                      /* word builder is naming a new blueprint */
-    bool duplicating_blueprint;                   /* word builder is naming a duplicate blueprint */
-    int watch_list_scroll;                        /* focused index into the watch list picker (0 = first entry) */
+    Strv toast_text; /* current toast message (non-owning, points into undo arena or toast_msg_buf) */
+    char toast_msg_buf[TOAST_MSG_BUF_SIZE]; /* owned storage for a runtime-formatted toast (e.g. pickup "Got X") */
+    int fuzzy_finder_scroll;                /* selected index (0 = "[ NEW... ]") */
+    const char **fuzzy_finder_items;        /* sorted unique name pointers (gamedata_arena) */
+    int fuzzy_finder_item_count;            /* number of names (excludes the NEW sentinel) */
+    KeyboardWidget word_builder_kb;         /* reused two-level radial keyboard for word builder typing */
+    bool adding_attr;                       /* true when fuzzy finder is open for adding a runtime attribute */
+    bool adding_persisted_attr;             /* true when fuzzy finder is open for adding a persisted attribute */
+    int selected_tree_index;                /* -1 = not in tree section; >=0 = parent/child/ADD CHILD */
+    bool editing_child_tag;                 /* word builder is editing a blueprint child tag */
+    bool editing_child_offset;              /* attr_edit is editing a blueprint child offset */
+    int child_edit_axis;                    /* 0=x, 1=y — which offset axis */
+    int child_edit_index;                   /* which child in blueprint->children is being edited */
+    bool adding_child;                      /* true when fuzzy finder is open for adding a blueprint child */
+    int blueprint_list_scroll;              /* scroll position in blueprint list view */
+    int selected_blueprint_index;           /* -1 = list view; >=0 = detail view */
+    int blueprint_attr_index;               /* -1 = none; index into blueprint attrs (detail view) */
+    int blueprint_tree_index;               /* -1 = not in tree; >=0 = child/ADD CHILD row */
+    bool adding_blueprint_attr;             /* fuzzy finder is adding a blueprint-level attr */
+    bool creating_blueprint;                /* word builder is naming a new blueprint */
+    bool duplicating_blueprint;             /* word builder is naming a duplicate blueprint */
+    int watch_list_scroll;                  /* focused index into the watch list picker (0 = first entry) */
     int level_list_scroll;             /* focused index into the level list: 0 = current_level, N = other_levels[N-1] */
     bool level_switch_confirm_pending; /* dirty-check gate: CONFIRM once more switches despite unsaved changes */
     bool creating_level;               /* word builder is naming a new level */

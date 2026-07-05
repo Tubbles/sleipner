@@ -20,9 +20,10 @@
  * This module is a PURE channel: push helpers and effect_queue_clear only,
  * no GameState access and no side effects. The per-frame apply pass that
  * actually handles each effect type (looks up sounds in the SFX registry,
- * moves the camera, spawns entities) lives in frame.c instead
- * (apply_effect_queue), since it needs GameState (registry, audio
- * device, camera) that this header deliberately does not depend on.
+ * moves the camera, spawns entities, points the toast overlay at a
+ * formatted message) lives in frame.c instead (apply_effect_queue), since
+ * it needs GameState (registry, audio device, camera) or EditorState
+ * (toast overlay) that this header deliberately does not depend on.
  * frame.c calls it once per frame, right after game_update returns, and it
  * clears the queue via effect_queue_clear at the end. Dialogue is NOT one
  * of these effects (S6.7c, D24): it must block the triggering rule, which
@@ -31,7 +32,7 @@
  * and ActionContext.dialogue doc comments.
  *
  * STRING LIFETIME RULE -- read before pushing a Strv into any of these:
- * every Strv pushed here (sound name, spawn blueprint) is NON-OWNING,
+ * every Strv pushed here (sound name, spawn blueprint, toast text) is NON-OWNING,
  * unlike TransitionRequest.level (an owning Str). Transitions
  * are rare and event-bounded, so copying the level name once is cheap.
  * Effects can be pushed every frame (camera_shake, sound), so an
@@ -72,29 +73,41 @@ typedef struct {
 
 VEC_DECL(spawn_request, SpawnRequest)
 
+/* Pickup toast (S6.8b, D25): carries the raw item name, not a pre-formatted
+ * "Got X" string -- formatting happens once, in frame.c's apply_toast_effects,
+ * which owns the buffer the toast surface reads from for its 2-second
+ * lifetime. */
+typedef struct {
+    Strv text;
+} ToastRequest;
+
+VEC_DECL(toast_request, ToastRequest)
+
 typedef struct {
     vec_sound_effect_request sounds;
     vec_camera_pan_request camera_pans;
     vec_camera_shake_request camera_shakes;
     vec_spawn_request spawns;
+    vec_toast_request toasts;
 } EffectQueue;
 
-/* Initialize all four vecs against `alloc` (progression_arena in
+/* Initialize all five vecs against `alloc` (progression_arena in
  * production -- see GameState.effects). Call at game_init, and again at
  * game_reset_progression since arena_reset there invalidates the previous
  * vecs' backing storage. */
 void effect_queue_init(EffectQueue *queue, Allocator alloc);
 
-/* Clear all four vecs: count -> 0, capacity retained (see CLAUDE.md "Vec
+/* Clear all five vecs: count -> 0, capacity retained (see CLAUDE.md "Vec
  * growth and pointer stability"). Capacity is bounded by the most effects
  * ever pushed in a single frame, not by frame count, so repeated
  * push-then-clear cycles never grow progression_arena. */
 void effect_queue_clear(EffectQueue *queue);
 
-/* Push helpers, one per request type. `name`/`blueprint` fields must
+/* Push helpers, one per request type. `name`/`blueprint`/`text` fields must
  * satisfy the string-lifetime rule documented above. Each returns false
  * only if the backing vec push failed to allocate. */
 [[nodiscard]] bool effect_queue_push_sound(EffectQueue *queue, Strv name);
 [[nodiscard]] bool effect_queue_push_camera_pan(EffectQueue *queue, Vector2 target, float duration);
 [[nodiscard]] bool effect_queue_push_camera_shake(EffectQueue *queue, CameraShakeRequest request);
 [[nodiscard]] bool effect_queue_push_spawn(EffectQueue *queue, Strv blueprint, Vector2 position);
+[[nodiscard]] bool effect_queue_push_toast(EffectQueue *queue, Strv text);

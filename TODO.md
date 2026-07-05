@@ -184,11 +184,12 @@ predicate rows and MOVE reparenting).
   once the already-open dialogue closes, but its own text is never shown.
   Fine for a single-NPC-at-a-time game; would need a `vec` of pending
   dialogue requests if simultaneous triggers become common.
-- **Inventory core landed (S6.8a, D25); pickup toast and UI still pending.**
-  `give_item`/`remove_item`/`has_item` are real (`ItemSet`,
-  `ProgressionState.items`, `rule.c`) but nothing surfaces a pickup visually
-  yet -- S6.8b is the toast via S1.2's surface. Equipment/categories and the
-  pause-menu inventory grid (gamepad-navigable) are also still open, per
+- **Inventory core and pickup toast landed (S6.8a/S6.8b, D25); equipment/UI
+  still pending.** `give_item`/`remove_item`/`has_item` are real (`ItemSet`,
+  `ProgressionState.items`, `rule.c`), and `give_item` now shows a "Got
+  <item>" toast via S1.2's toast surface (`effect.c`'s `ToastRequest`,
+  `frame.c`'s `apply_toast_effects`). Equipment/categories and the
+  pause-menu inventory grid (gamepad-navigable) are still open, per
   DESIGN.md's Inventory & Items open questions.
 
 ## Collision system follow-ups

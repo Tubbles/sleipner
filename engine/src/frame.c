@@ -27,6 +27,7 @@
 #include "raylib.h"
 
 #include <stdbool.h>
+#include <stdio.h>
 
 void handle_global_toggles(GameState *state, const InputState *input, bool *font_preview_enabled)
 {
@@ -341,28 +342,50 @@ static bool respawn_rebuild_tracking(Diag *diag, GameState *state)
     return true;
 }
 
+/* toast has a real handler as of S6.8b (D25): give_item enqueues the raw
+ * item name (see rule.c's ACTION_GIVE_ITEM case), and this formats it into
+ * editor_state->toast_msg_buf -- a fixed owned buffer, not the pushed Strv
+ * itself -- because the toast must keep displaying for TOAST_DURATION
+ * seconds after this same-frame drain finishes, well past the point where
+ * a gamedata_arena action argument might be rewound by an intervening
+ * transition/hot-reload. Multiple toasts queued in one frame: last one
+ * wins, same simplicity apply_camera_pan_effects/apply_camera_shake_effects
+ * already take (D22/D26 don't ask for toast queueing either). */
+static void apply_toast_effects(Diag *diag, EditorState *editor_state, const vec_toast_request *toasts)
+{
+    for (int index = 0; index < toasts->count; index++) {
+        const ToastRequest *request = &toasts->data[index];
+        debug_log(diag->debug, "effect: toast '%.*s'", (int)request->text.len, request->text.ptr);
+        (void)snprintf(editor_state->toast_msg_buf, sizeof(editor_state->toast_msg_buf), "Got %.*s",
+                       (int)request->text.len, request->text.ptr);
+        editor_state->toast_text = strv_from_cstr(editor_state->toast_msg_buf);
+        editor_state->toast_timer = TOAST_DURATION;
+    }
+}
+
 /* GameState-aware replacement for the old S6.2 effect_queue_drain scaffold
  * (which lived in effect.c and only logged). effect.c stays a pure push/
  * clear channel; this is the per-frame apply pass with real GameState
  * access (SFX registry, audio device), which is why it lives here instead.
- * Sound (S6.4), camera_pan/camera_shake (S6.5), and spawn (S6.6) are
- * handled here. Dialogue does NOT go through this queue (S6.7c, D24): it
- * must block the triggering rule, which a deferred per-frame drain can't
- * express, so ACTION_DIALOGUE opens GameState.dialogue directly from the
- * rule VM instead (see rule.c's handle_dialogue_action) and frame_update's
- * dialogue branch (below) drives it. Spawning is the only effect here
- * that can change entity count, so it alone needs the follow-up
- * count-parallel rebuild (rule_table, entity_blueprints, player_index,
- * prev_player_overlaps/prev_solid_collisions) -- via
+ * Sound (S6.4), camera_pan/camera_shake (S6.5), spawn (S6.6), and toast
+ * (S6.8b) are handled here. Dialogue does NOT go through this queue (S6.7c,
+ * D24): it must block the triggering rule, which a deferred per-frame drain
+ * can't express, so ACTION_DIALOGUE opens GameState.dialogue directly from
+ * the rule VM instead (see rule.c's handle_dialogue_action) and
+ * frame_update's dialogue branch (below) drives it. Spawning is the only
+ * effect here that can change entity count, so it alone needs the
+ * follow-up count-parallel rebuild (rule_table, entity_blueprints,
+ * player_index, prev_player_overlaps/prev_solid_collisions) -- via
  * respawn_rebuild_tracking, which preserves the overlap edge state across
  * the rebuild so enter/collide triggers don't spuriously refire. Guarded
  * on spawned_count > 0 so a frame with no spawns (the common case) pays
  * nothing beyond the empty-vec loop. */
-static void apply_effect_queue(Diag *diag, GameState *state)
+static void apply_effect_queue(Diag *diag, GameState *state, EditorState *editor_state)
 {
     apply_sound_effects(diag, state, &state->effects.sounds);
     apply_camera_pan_effects(diag, state, &state->effects.camera_pans);
     apply_camera_shake_effects(diag, state, &state->effects.camera_shakes);
+    apply_toast_effects(diag, editor_state, &state->effects.toasts);
     int spawned_count = apply_spawn_effects(diag, state, &state->effects.spawns);
     if (spawned_count > 0 && !respawn_rebuild_tracking(diag, state)) {
         error_wrap(diag->error, "apply_effect_queue");
@@ -383,12 +406,19 @@ void run_active_frame(Diag *diag,
 {
     if (state->editor_mode) {
         handle_editor_input(diag, state, editor_camera, editor_state, watches, undo_history, input, delta_time);
-        if (editor_state->toast_timer > 0.0F) {
-            editor_state->toast_timer -= delta_time;
-        }
+    }
+    /* Unconditional as of S6.8b: give_item's pickup toast (apply_toast_effects,
+     * below) is the first toast source reachable from pure play mode (no
+     * editor, no menu), so ticking it down only under `state->editor_mode`
+     * (as this used to) would leave it stuck on screen forever during
+     * ordinary gameplay. Mirrors frame_update's menu branch, which already
+     * ticks unconditionally of editor_mode -- gated only by the menu being
+     * open. */
+    if (editor_state->toast_timer > 0.0F) {
+        editor_state->toast_timer -= delta_time;
     }
     game_update(diag, state, input, delta_time);
-    apply_effect_queue(diag, state);
+    apply_effect_queue(diag, state, editor_state);
 }
 
 void handle_transition(Diag *diag, GameState *state, FrameContext *ctx)

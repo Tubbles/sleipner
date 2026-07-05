@@ -1367,6 +1367,67 @@ void test_integration_give_item_then_has_item(void)
     test_game_teardown(&game);
 }
 
+/* S6.8b, D25: give_item enqueues a fire-and-forget toast effect (EffectQueue's
+ * ToastRequest) carrying the raw item name; frame.c's apply_toast_effects
+ * formats "Got <item>" into editor_state->toast_msg_buf and points
+ * toast_text/toast_timer at it, reusing S1.2's existing toast surface.
+ * Verified to fail (toast_timer stays 0, no toast) with the
+ * effect_queue_push_toast call temporarily removed from rule.c's
+ * ACTION_GIVE_ITEM case before writing the fix. */
+void test_integration_give_item_shows_toast(void)
+{
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_items));
+
+    Entity *giver = test_find_entity_by_blueprint(&game.state, "item_giver");
+    TEST_ASSERT_NOT_NULL(giver);
+    (void)walk_player_to(&game, 10.0F, giver->position, 300);
+
+    InputState give = {0};
+    input_state_press_gp_button(&give, GAMEPAD_BUTTON_RIGHT_FACE_DOWN);
+    test_advance_frame(&game, give);
+
+    TEST_ASSERT_TRUE(game.editor_state.toast_timer > 0.0F);
+    TEST_ASSERT_NOT_NULL(strstr(game.editor_state.toast_text.ptr, "key"));
+
+    test_game_teardown(&game);
+}
+
+/* S6.8b, D25: regression test for a toast-tick gating bug this feature
+ * exposed. run_active_frame used to tick toast_timer down only inside
+ * `if (state->editor_mode)`, which happened to be harmless before this
+ * feature because every existing toast source (editor actions, menu
+ * save/reload) was only ever reachable from a code path that also ticked
+ * (the editor_mode branch itself, or frame_update's menu branch, which
+ * ticks unconditionally of editor_mode). give_item is the first toast
+ * source reachable from pure play mode -- no editor, no menu -- so with
+ * the old gating this toast would never decrement and would stay on
+ * screen forever. Verified to fail (toast_timer still > 0 well past
+ * TOAST_DURATION) against the editor_mode-gated tick before moving it out
+ * unconditionally in run_active_frame (frame.c). 130 frames at 1/60s each
+ * is ~2.17s, comfortably past the 2.0s TOAST_DURATION. */
+void test_integration_give_item_toast_fades_in_play_mode(void)
+{
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_items));
+    TEST_ASSERT_FALSE(game.state.editor_mode);
+
+    Entity *giver = test_find_entity_by_blueprint(&game.state, "item_giver");
+    TEST_ASSERT_NOT_NULL(giver);
+    (void)walk_player_to(&game, 10.0F, giver->position, 300);
+
+    InputState give = {0};
+    input_state_press_gp_button(&give, GAMEPAD_BUTTON_RIGHT_FACE_DOWN);
+    test_advance_frame(&game, give);
+    TEST_ASSERT_TRUE(game.editor_state.toast_timer > 0.0F);
+
+    InputState idle = {0};
+    test_advance_frames(&game, idle, 130);
+    TEST_ASSERT_TRUE(game.editor_state.toast_timer <= 0.0F);
+
+    test_game_teardown(&game);
+}
+
 /* S6.8a, D25: remove_item decrements and removes the map entry at 0;
  * give_item increments an existing entry rather than resetting it to 1.
  * "give once, remove once" must clear has_item; "give twice, remove once"
