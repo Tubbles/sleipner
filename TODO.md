@@ -212,6 +212,25 @@ predicate rows and MOVE reparenting).
   treatment (parse + emit + deep-copy on instantiate)
   `blueprint.c`/`level.c`/`toml_emitter.c` already give `collision_region`.
 
+## Animation system follow-ups
+
+- **Editor cannot author `[[blueprint.animation]]` clips (S6.11a, D31).**
+  The new state -> row/frames/speed clip table is TOML-only today --
+  `data/gamedata.toml` was hand-edited to give the "player" blueprint its
+  `walk`/`idle` clips. The existing Animation mode editor
+  (`EDITOR_SUB_ANIM_EDIT`/`_FRAMES`, `editor/anim.c`) still only edits the
+  older single-clip `anim_frames`/`anim_size`/`anim_speed`/`anim_row`
+  attrs (S3.4/S5.5/D20) and has no UI for the new per-state clip list. A
+  visual editor for this would need a clip list UI (add/remove/select
+  state name) alongside the existing frame scrubber.
+- **No per-entity animation clip override.** Clips are looked up live via
+  an entity's blueprint (`entity_resolve_blueprint`/`blueprint_find_anim_clip`),
+  never copied onto the instance, so there is no way for one entity to
+  play a different clip set than its blueprint siblings. Adding one later
+  is a straightforward extension of the same scoped-lookup pattern every
+  other attr already uses (check instance attrs/overrides before falling
+  back to the blueprint's `[[blueprint.animation]]`).
+
 ## Combat follow-ups
 
 - **`behavior_projectile` does not resolve obstacles or destroy on wall

@@ -22,6 +22,7 @@
 
 VEC_IMPL(blueprint_child, BlueprintChild)
 VEC_IMPL(blueprint, Blueprint)
+VEC_IMPL(anim_clip, AnimClip)
 
 static bool parse_float_array(toml_array_t *array, float *out, int expected_count)
 {
@@ -354,6 +355,70 @@ static bool parse_collision_shape(DebugState *dbg, Allocator *alloc, Blueprint *
     return true;
 }
 
+/* Parse one [[blueprint.animation]] entry into `clip`. Returns false (missing
+ * `state`) so the caller can skip just this clip without failing the whole
+ * blueprint load, mirroring parse_single_collision_prim's per-entry
+ * tolerance. `row`/`frames` default to 0/1 when absent; `speed` reuses
+ * parse_collision_scalar so it may be authored as either a TOML int or
+ * float, same as collision's `angle`/`radius`. */
+static bool parse_single_anim_clip(Allocator *alloc, toml_table_t *entry, AnimClip *clip)
+{
+    memset(clip, 0, sizeof(*clip));
+
+    toml_datum_t state = toml_string_in(entry, "state");
+    if (!state.ok) {
+        return false;
+    }
+    clip->state = str_new(*alloc);
+    if (!str_from_toml_datum(&clip->state, &state)) {
+        return false;
+    }
+
+    toml_datum_t row = toml_int_in(entry, "row");
+    clip->row = row.ok ? (int)row.u.i : 0;
+
+    toml_datum_t frames = toml_int_in(entry, "frames");
+    clip->frames = frames.ok ? (int)frames.u.i : 1;
+
+    clip->speed = parse_collision_scalar(entry, "speed", 0.0F);
+
+    return true;
+}
+
+/* Parse the [[blueprint.animation]] array-of-tables into blueprint->animation
+ * (S6.11a, D31). Absent array leaves it empty -- no animation state machine,
+ * the entity renders through the static get_source_rect path (main.c).
+ * Invalid entries (missing `state`) are logged and skipped individually,
+ * mirroring parse_collision_shape's per-entry tolerance; only an allocation
+ * failure aborts the whole blueprint load. */
+static bool parse_animation_clips(DebugState *dbg, Allocator *alloc, Blueprint *blueprint, toml_table_t *entry)
+{
+    toml_array_t *animation_array = toml_array_in(entry, "animation");
+    if (!animation_array) {
+        return true;
+    }
+
+    int count = toml_array_nelem(animation_array);
+    blueprint->animation.alloc = *alloc;
+
+    for (int index = 0; index < count; index++) {
+        toml_table_t *clip_entry = toml_table_at(animation_array, index);
+        if (!clip_entry) {
+            continue;
+        }
+        AnimClip clip;
+        if (!parse_single_anim_clip(alloc, clip_entry, &clip)) {
+            debug_log(dbg, "bp animation[%d]: skipped (invalid)", index);
+            continue;
+        }
+        if (!vec_anim_clip_push(&blueprint->animation, clip)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 static bool parse_health(Allocator *alloc, Blueprint *blueprint, toml_table_t *entry)
 {
     toml_array_t *health = toml_array_in(entry, "health");
@@ -492,6 +557,9 @@ parse_single_blueprint(Diag *diag, Allocator *alloc, Blueprint *blueprint, toml_
     if (!parse_animation(alloc, blueprint, entry)) {
         return false;
     }
+    if (!parse_animation_clips(diag->debug, alloc, blueprint, entry)) {
+        return false;
+    }
     if (!parse_custom_attrs(alloc, blueprint, entry)) {
         return false;
     }
@@ -513,6 +581,10 @@ static void blueprint_cleanup(Allocator *alloc, Blueprint *blp)
     }
     vec_blueprint_child_free(&blp->children);
     vec_collision_prim_free(&blp->collision.prims);
+    for (int clip_index = 0; clip_index < blp->animation.count; clip_index++) {
+        str_free(&blp->animation.data[clip_index].state);
+    }
+    vec_anim_clip_free(&blp->animation);
     attr_set_free(alloc, &blp->attrs);
 }
 
@@ -661,6 +733,16 @@ const Blueprint *blueprint_find(const BlueprintTable *table, const char *name)
         const char *bp_name = attr_get_string(&table->entries.data[index].attrs, "name");
         if (bp_name && strcmp(bp_name, name) == 0) {
             return &table->entries.data[index];
+        }
+    }
+    return nullptr;
+}
+
+const AnimClip *blueprint_find_anim_clip(const Blueprint *blueprint, const char *state)
+{
+    for (int index = 0; index < blueprint->animation.count; index++) {
+        if (strcmp(blueprint->animation.data[index].state.ptr, state) == 0) {
+            return &blueprint->animation.data[index];
         }
     }
     return nullptr;

@@ -218,21 +218,38 @@ static bool entity_flicker_visible(const Entity *entity, const GameState *state)
     return fmodf(state->elapsed, COMBAT_FLICKER_INTERVAL_SECONDS * 2.0F) < COMBAT_FLICKER_INTERVAL_SECONDS;
 }
 
-static void draw_player_entity(const GameState *state, const Entity *player)
+/* Draws any entity whose blueprint authors [[blueprint.animation]] clips
+ * (S6.11a, D31) via frame_index/anim_row/flip -- the row/frame-sheet layout
+ * every clipped entity shares, not just the player. Entities with no clips
+ * at all render through draw_entity's static get_source_rect path instead;
+ * see entity_has_animation_clips below for the dispatch. Was player-only
+ * (draw_player_entity) before the animation state machine made the player
+ * just another clipped entity. */
+static void draw_animated_entity(const GameState *state, const Entity *entity)
 {
-    if (!entity_flicker_visible(player, state)) {
+    if (!entity_flicker_visible(entity, state)) {
         return;
     }
     float source_width = (float)FRAME_SIZE;
-    if (player->flip) {
+    if (entity->flip) {
         source_width = -source_width;
     }
-    Rectangle source = {(float)(player->frame_index * FRAME_SIZE), (float)(player->anim_row * FRAME_SIZE), source_width,
+    Rectangle source = {(float)(entity->frame_index * FRAME_SIZE), (float)(entity->anim_row * FRAME_SIZE), source_width,
                         FRAME_SIZE};
-    const AttrSet *defaults = entity_resolve_defaults(state, player->id);
-    Vector2 draw_pos = entity_draw_position(player, defaults);
+    const AttrSet *defaults = entity_resolve_defaults(state, entity->id);
+    Vector2 draw_pos = entity_draw_position(entity, defaults);
     Rectangle dest = {draw_pos.x, draw_pos.y, FRAME_SIZE, FRAME_SIZE};
-    DrawTexturePro(*player->texture, source, dest, (Vector2){0, 0}, 0.0F, WHITE);
+    DrawTexturePro(*entity->texture, source, dest, (Vector2){0, 0}, 0.0F, WHITE);
+}
+
+/* Whether draw_entities_depth_sorted should route `entity` through
+ * draw_animated_entity (frame_index/anim_row/flip) instead of draw_entity's
+ * static get_source_rect path -- true iff its blueprint authors at least
+ * one [[blueprint.animation]] clip (S6.11a, D31). */
+static bool entity_has_animation_clips(const GameState *state, const Entity *entity)
+{
+    const Blueprint *blueprint = entity_resolve_blueprint(state, entity->id);
+    return blueprint && blueprint->animation.count > 0;
 }
 
 static Rectangle get_source_rect(const AttrSet *instance, const AttrSet *defaults)
@@ -907,10 +924,11 @@ static void draw_entities_depth_sorted(GameState *state)
 
     for (int draw_index = 0; draw_index < level->entities.count; draw_index++) {
         int entity_index = sorted[draw_index];
-        if (entity_index == state->gamedata.player_index) {
-            draw_player_entity(state, &level->entities.data[entity_index]);
+        const Entity *entity = &level->entities.data[entity_index];
+        if (entity_has_animation_clips(state, entity)) {
+            draw_animated_entity(state, entity);
         } else {
-            draw_entity(state, &level->entities.data[entity_index]);
+            draw_entity(state, entity);
         }
     }
 

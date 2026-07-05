@@ -434,6 +434,18 @@ static int emit_collision_prim(char *buffer, int capacity, int offset, const Col
     return emit_append(buffer, capacity, offset, "\n");
 }
 
+/* ---- Animation clip emitter (S6.11a, D31) ---- */
+
+static int emit_anim_clip(char *buffer, int capacity, int offset, const AnimClip *clip)
+{
+    offset = emit_append(buffer, capacity, offset, "[[blueprint.animation]]\n");
+    offset = emit_append(buffer, capacity, offset, "state = \"%s\"\n", clip->state.ptr);
+    offset = emit_append(buffer, capacity, offset, "row = %d\n", clip->row);
+    offset = emit_append(buffer, capacity, offset, "frames = %d\n", clip->frames);
+    offset = emit_append(buffer, capacity, offset, "speed = %d\n", (int)clip->speed);
+    return emit_append(buffer, capacity, offset, "\n");
+}
+
 static int emit_blueprints(char *buffer, int capacity, int offset, const BlueprintTable *blueprints)
 {
     for (int index = 0; index < blueprints->entries.count; index++) {
@@ -485,6 +497,10 @@ static int emit_blueprints(char *buffer, int capacity, int offset, const Bluepri
 
         for (int prim_index = 0; prim_index < blueprint->collision.prims.count; prim_index++) {
             offset = emit_collision_prim(buffer, capacity, offset, &blueprint->collision.prims.data[prim_index]);
+        }
+
+        for (int clip_index = 0; clip_index < blueprint->animation.count; clip_index++) {
+            offset = emit_anim_clip(buffer, capacity, offset, &blueprint->animation.data[clip_index]);
         }
 
         for (int rule_index = 0; rule_index < blueprint->rules.count; rule_index++) {

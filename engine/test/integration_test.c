@@ -6109,3 +6109,149 @@ void test_integration_projectile_expires(void)
 
     test_game_teardown(&game);
 }
+
+/* ---- Integration: S6.11a/D31 data-driven animation state machine. Two
+ * [[blueprint.animation]] clips on the "player" blueprint reproduce the
+ * pre-D31 hardcoded ANIM_WALK_DOWN/SIDE/UP layout: a walk clip (row = 3,
+ * frames = 6, speed = 10) and an idle clip (row = 3, frames = 1, speed = 0,
+ * i.e. holds the standing frame of whichever row the walk clip left
+ * `direction` on). Behaviors set the built-in `state`/`direction` attrs;
+ * advance_entity_animation (game.c) reads them every frame to derive
+ * anim_row/flip/frame_index -- these tests assert on that render-consumed
+ * state, not on any internal plumbing (state/direction attrs, anim_row,
+ * frame_index are all values draw_animated_entity, main.c, reads
+ * directly). */
+static const char *anim_fixture_gamedata = "[[blueprint]]\n"
+                                           "name = \"player\"\n"
+                                           "texture = \"player.png\"\n"
+                                           "src = [0, 0, 32, 32]\n"
+                                           "collision_offset = [-5, 6]\n"
+                                           "collision_size = [10, 10]\n"
+                                           "behavior = \"player\"\n"
+                                           "speed = 80\n"
+                                           "\n"
+                                           "[[blueprint.animation]]\n"
+                                           "state = \"walk\"\n"
+                                           "row = 3\n"
+                                           "frames = 6\n"
+                                           "speed = 10\n"
+                                           "\n"
+                                           "[[blueprint.animation]]\n"
+                                           "state = \"idle\"\n"
+                                           "row = 3\n"
+                                           "frames = 1\n"
+                                           "speed = 0\n"
+                                           "\n"
+                                           "[[level]]\n"
+                                           "name = \"test\"\n"
+                                           "size = [320, 240]\n"
+                                           "\n"
+                                           "[[level.entity]]\n"
+                                           "blueprint = \"player\"\n"
+                                           "pos = [160, 120]\n";
+
+/* Drives one frame of each cardinal direction and asserts anim_row =
+ * clip.row (3) + the direction's row offset (down = 0, side = 1, up = 2),
+ * with flip only for "left". Fails (anim_row stuck at its zero default) if
+ * advance_entity_animation is ever a no-op -- verified by temporarily
+ * commenting out its call site in game_update. */
+void test_integration_anim_walk_direction_rows(void)
+{
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, anim_fixture_gamedata));
+
+    InputState right = {0};
+    input_state_set_gp_axis(&right, GAMEPAD_AXIS_LEFT_X, 1.0F);
+    test_advance_frame(&game, right);
+    const Entity *player = game_get_player_const(&game.state);
+    TEST_ASSERT_EQUAL_STRING("right", attr_get_string(&player->attrs, "direction"));
+    TEST_ASSERT_EQUAL_INT(4, player->anim_row);
+    TEST_ASSERT_FALSE(player->flip);
+
+    InputState left = {0};
+    input_state_set_gp_axis(&left, GAMEPAD_AXIS_LEFT_X, -1.0F);
+    test_advance_frame(&game, left);
+    player = game_get_player_const(&game.state);
+    TEST_ASSERT_EQUAL_STRING("left", attr_get_string(&player->attrs, "direction"));
+    TEST_ASSERT_EQUAL_INT(4, player->anim_row);
+    TEST_ASSERT_TRUE(player->flip);
+
+    InputState face_up = {0};
+    input_state_set_gp_axis(&face_up, GAMEPAD_AXIS_LEFT_Y, -1.0F);
+    test_advance_frame(&game, face_up);
+    player = game_get_player_const(&game.state);
+    TEST_ASSERT_EQUAL_STRING("up", attr_get_string(&player->attrs, "direction"));
+    TEST_ASSERT_EQUAL_INT(5, player->anim_row);
+    TEST_ASSERT_FALSE(player->flip);
+
+    InputState down = {0};
+    input_state_set_gp_axis(&down, GAMEPAD_AXIS_LEFT_Y, 1.0F);
+    test_advance_frame(&game, down);
+    player = game_get_player_const(&game.state);
+    TEST_ASSERT_EQUAL_STRING("down", attr_get_string(&player->attrs, "direction"));
+    TEST_ASSERT_EQUAL_INT(3, player->anim_row);
+    TEST_ASSERT_FALSE(player->flip);
+
+    test_game_teardown(&game);
+}
+
+/* Walk clip speed = 10 frames/sec at the fixed 1/60s test delta_time =>
+ * frame_timer wraps (and frame_index advances) every 6 frames. Checkpoints
+ * at 1 (not yet wrapped), 6 (wrapped once), and 36 (six full wraps, back to
+ * 0) prove frame_index cycles 0..5..0 rather than jumping or free-running.
+ * Switching to no input afterward resolves to the idle clip (frames = 1),
+ * which must hold frame 0 regardless of where the walk cycle left off. */
+void test_integration_anim_frame_progression(void)
+{
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, anim_fixture_gamedata));
+
+    InputState right = {0};
+    input_state_set_gp_axis(&right, GAMEPAD_AXIS_LEFT_X, 1.0F);
+
+    test_advance_frame(&game, right);
+    const Entity *player = game_get_player_const(&game.state);
+    TEST_ASSERT_EQUAL_INT(0, player->frame_index);
+
+    test_advance_frames(&game, right, 5);
+    player = game_get_player_const(&game.state);
+    TEST_ASSERT_EQUAL_INT(1, player->frame_index);
+
+    test_advance_frames(&game, right, 30);
+    player = game_get_player_const(&game.state);
+    TEST_ASSERT_EQUAL_INT(0, player->frame_index);
+
+    InputState idle = {0};
+    test_advance_frame(&game, idle);
+    player = game_get_player_const(&game.state);
+    TEST_ASSERT_EQUAL_INT(0, player->frame_index);
+
+    test_game_teardown(&game);
+}
+
+/* Moving sets state = "walk"; releasing input the very next frame sets
+ * state = "idle" and holds the standing frame (frame_index resets to 0,
+ * matching the idle clip's frames = 1 authoring) instead of freezing
+ * mid-stride. */
+void test_integration_anim_state_switch(void)
+{
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, anim_fixture_gamedata));
+
+    InputState right = {0};
+    input_state_set_gp_axis(&right, GAMEPAD_AXIS_LEFT_X, 1.0F);
+    test_advance_frames(&game, right, 6);
+    const Entity *player = game_get_player_const(&game.state);
+    TEST_ASSERT_EQUAL_STRING("walk", attr_get_string(&player->attrs, "state"));
+    TEST_ASSERT_TRUE(player->moving);
+    TEST_ASSERT_EQUAL_INT(1, player->frame_index);
+
+    InputState idle = {0};
+    test_advance_frame(&game, idle);
+    player = game_get_player_const(&game.state);
+    TEST_ASSERT_EQUAL_STRING("idle", attr_get_string(&player->attrs, "state"));
+    TEST_ASSERT_FALSE(player->moving);
+    TEST_ASSERT_EQUAL_INT(0, player->frame_index);
+
+    test_game_teardown(&game);
+}

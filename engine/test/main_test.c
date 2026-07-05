@@ -136,6 +136,9 @@ void test_integration_projectile_flies_and_hits(void);
 void test_integration_projectile_destroyed_on_hit(void);
 void test_integration_projectile_misses(void);
 void test_integration_projectile_expires(void);
+void test_integration_anim_walk_direction_rows(void);
+void test_integration_anim_frame_progression(void);
+void test_integration_anim_state_switch(void);
 
 /* toml_emitter_test.c */
 void test_toml_emit_blueprints(void);
@@ -155,6 +158,7 @@ void test_toml_emit_rules(void);
 void test_toml_emit_camera_pan_shake_round_trip(void);
 void test_toml_emit_spawn_round_trip(void);
 void test_toml_emit_collision_composite_round_trip(void);
+void test_toml_emit_animation_clips_round_trip(void);
 void test_toml_emit_nested_control_flow_round_trip(void);
 void test_toml_emit_subroutines_round_trip(void);
 void test_toml_emit_tiles_round_trip(void);
@@ -392,6 +396,9 @@ int main(void)
     RUN_TEST(test_integration_projectile_destroyed_on_hit);
     RUN_TEST(test_integration_projectile_misses);
     RUN_TEST(test_integration_projectile_expires);
+    RUN_TEST(test_integration_anim_walk_direction_rows);
+    RUN_TEST(test_integration_anim_frame_progression);
+    RUN_TEST(test_integration_anim_state_switch);
 
     RUN_TEST(test_integration_sprite_offset_edit_updates_entity_live);
     RUN_TEST(test_integration_sprite_offset_edit_emitted_to_toml);
@@ -432,6 +439,7 @@ int main(void)
     RUN_TEST(test_toml_emit_camera_pan_shake_round_trip);
     RUN_TEST(test_toml_emit_spawn_round_trip);
     RUN_TEST(test_toml_emit_collision_composite_round_trip);
+    RUN_TEST(test_toml_emit_animation_clips_round_trip);
     RUN_TEST(test_toml_emit_nested_control_flow_round_trip);
     RUN_TEST(test_toml_emit_subroutines_round_trip);
     RUN_TEST(test_toml_emit_tiles_round_trip);

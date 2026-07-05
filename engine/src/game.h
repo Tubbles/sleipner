@@ -2,6 +2,7 @@
 
 #include "arena.h"
 #include "audio.h"
+#include "blueprint.h"
 #include "diag.h"
 #include "effect.h"
 #include "gamedata.h"
@@ -23,16 +24,6 @@
 
 #define DEFAULT_PLAYER_SPEED 80.0F
 #define FRAME_SIZE 32
-#define WALK_FRAMES 6
-#define ANIM_SPEED 10.0F
-
-enum {
-    ANIM_IDLE_DOWN = 0,
-    ANIM_IDLE_UP = 2,
-    ANIM_WALK_DOWN = 3,
-    ANIM_WALK_SIDE = 4,
-    ANIM_WALK_UP = 5,
-};
 
 typedef struct {
     char filename[MAX_TEXTURE_FILENAME];
@@ -236,6 +227,15 @@ float camera_shake_magnitude(float magnitude, float elapsed, float duration);
 /* Resolve an entity's blueprint defaults via the entity→blueprint map.
  * Returns nullptr if entity has no blueprint mapping or blueprint not found. */
 const AttrSet *entity_resolve_defaults(const GameState *state, int entity_id);
+
+/* Resolve an entity's full Blueprint (not just its attrs) via the same
+ * entity→blueprint map entity_resolve_defaults uses -- needed wherever more
+ * than attrs are required, e.g. the animation state machine's per-entity
+ * clip lookup (advance_entity_animation, game.c) and the renderer's "does
+ * this entity animate" check (main.c). entity_resolve_defaults is a thin
+ * wrapper over this that returns just &blueprint->attrs. Returns nullptr on
+ * the same conditions entity_resolve_defaults does. */
+const Blueprint *entity_resolve_blueprint(const GameState *state, int entity_id);
 
 /* Linear-scan texture lookup against state->assets.textures.
  * Matches the TextureLookupFn callback signature so it can be passed

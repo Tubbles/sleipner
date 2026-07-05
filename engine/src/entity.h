@@ -46,6 +46,13 @@ typedef struct {
 
     /* Scalar fields (4 bytes each, packed together) */
     int id;
+    /* anim_row/frame_timer/frame_index: render-consumed animation state,
+     * written every frame by the generic animation pass (advance_entity_
+     * animation, game.c) for any entity whose blueprint authors
+     * [[blueprint.animation]] clips (S6.11a, D31) -- derived from the
+     * entity's own `state`/`direction` attrs, not written directly by
+     * behaviors any more. NOT emitted to TOML, same footing as
+     * patrol_phase below. */
     int anim_row;
     float frame_timer;
     int frame_index;

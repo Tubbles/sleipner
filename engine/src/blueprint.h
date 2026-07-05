@@ -22,6 +22,20 @@ typedef struct {
 
 VEC_DECL(blueprint_child, BlueprintChild)
 
+/* One row of a blueprint's [[blueprint.animation]] table (S6.11a, D31):
+ * `state` names which built-in `state` attr value this clip plays for
+ * (e.g. "walk", "idle"); `row`/`frames` locate it in the sprite sheet
+ * (row * FRAME_SIZE, frames of FRAME_SIZE each, see game.h); `speed` is
+ * frames per second (0 or frames <= 1 holds frame 0, e.g. an idle clip). */
+typedef struct {
+    Str state;
+    int row;
+    int frames;
+    float speed;
+} AnimClip;
+
+VEC_DECL(anim_clip, AnimClip)
+
 typedef struct {
     AttrSet attrs;
     vec_blueprint_child children;
@@ -33,6 +47,20 @@ typedef struct {
      * collision_offset/collision_w/collision_h attrs (see
      * entity_collision_region). */
     CollisionShape collision;
+
+    /* Animation clips authored via [[blueprint.animation]] (S6.11a, D31):
+     * a state name (matched against an entity's own `state` attr) plus the
+     * sprite-sheet row/frame-count/playback speed to show while in that
+     * state. Looked up live by the entity's blueprint every frame
+     * (advance_entity_animation, game.c) rather than deep-copied onto each
+     * instantiated entity -- unlike collision/hitbox/hurtbox composites,
+     * clips are read-only reference data with no per-instance mutation, so
+     * a live lookup (the same pattern entity_resolve_defaults already uses
+     * for attrs) is simpler and skips an arena copy on every spawn. Empty
+     * (count == 0) means the blueprint has no animation state machine at
+     * all -- entities render through the static get_source_rect path
+     * instead (main.c). */
+    vec_anim_clip animation;
 } Blueprint;
 
 VEC_DECL(blueprint, Blueprint)
@@ -70,3 +98,9 @@ void blueprint_table_free(Allocator *alloc, BlueprintTable *table);
 
 /* Find a blueprint by name. Returns nullptr if not found. */
 const Blueprint *blueprint_find(const BlueprintTable *table, const char *name);
+
+/* Find an animation clip by its `state` name within one blueprint's
+ * [[blueprint.animation]] table (S6.11a, D31). Returns nullptr if the
+ * blueprint has no clip under that name (including having no clips at
+ * all). */
+const AnimClip *blueprint_find_anim_clip(const Blueprint *blueprint, const char *state);

@@ -2,6 +2,15 @@
 #include "game.h"
 #include "diag.h"
 
+/* game_test_gamedata's walk clip authors row = 3 (down); side (left/right)
+ * is row + 1 -- the pre-D31 ANIM_WALK_SIDE constant's value, now derived
+ * from blueprint data instead of a hardcoded enum (S6.11a, D31). */
+#define TEST_PLAYER_WALK_ROW_SIDE 4
+
+/* Walk row 3 (down), 4 (side), 5 (up), 6 frames at speed 10 (S6.11a, D31)
+ * -- the pre-D31 ANIM_WALK_DOWN/SIDE/UP layout, now blueprint data instead
+ * of a hardcoded constant. Idle holds the standing frame of the faced row
+ * (frames = 1). */
 static const char *game_test_gamedata = "[[blueprint]]\n"
                                         "name = \"player\"\n"
                                         "texture = \"player.png\"\n"
@@ -10,6 +19,18 @@ static const char *game_test_gamedata = "[[blueprint]]\n"
                                         "collision_size = [10, 10]\n"
                                         "behavior = \"player\"\n"
                                         "speed = 80\n"
+                                        "\n"
+                                        "[[blueprint.animation]]\n"
+                                        "state = \"walk\"\n"
+                                        "row = 3\n"
+                                        "frames = 6\n"
+                                        "speed = 10\n"
+                                        "\n"
+                                        "[[blueprint.animation]]\n"
+                                        "state = \"idle\"\n"
+                                        "row = 3\n"
+                                        "frames = 1\n"
+                                        "speed = 0\n"
                                         "\n"
                                         "[[level]]\n"
                                         "name = \"test\"\n"
@@ -125,7 +146,7 @@ void test_game_update_player_moves_right(void)
     player = game_get_player_const(&state);
     TEST_ASSERT_TRUE(player->position.x > start_x);
     TEST_ASSERT_TRUE(player->moving);
-    TEST_ASSERT_EQUAL_INT(ANIM_WALK_SIDE, player->anim_row);
+    TEST_ASSERT_EQUAL_INT(TEST_PLAYER_WALK_ROW_SIDE, player->anim_row);
     TEST_ASSERT_FALSE(player->flip);
 
     game_free(&diag, &state);
@@ -147,7 +168,7 @@ void test_game_update_player_moves_left(void)
     const Entity *player = game_get_player_const(&state);
     TEST_ASSERT_NOT_NULL(player);
     TEST_ASSERT_TRUE(player->moving);
-    TEST_ASSERT_EQUAL_INT(ANIM_WALK_SIDE, player->anim_row);
+    TEST_ASSERT_EQUAL_INT(TEST_PLAYER_WALK_ROW_SIDE, player->anim_row);
     TEST_ASSERT_TRUE(player->flip);
 
     game_free(&diag, &state);

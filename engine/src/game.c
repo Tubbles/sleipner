@@ -78,13 +78,18 @@ bool game_init(Diag *diag, GameState *state, RectU32 game_bounds)
     return true;
 }
 
-const AttrSet *entity_resolve_defaults(const GameState *state, int entity_id)
+const Blueprint *entity_resolve_blueprint(const GameState *state, int entity_id)
 {
     const Str *name = map_int_str_get(&state->gamedata.entity_blueprints, entity_id);
     if (!name) {
         return nullptr;
     }
-    const Blueprint *blueprint = blueprint_find(&state->gamedata.blueprints, name->ptr);
+    return blueprint_find(&state->gamedata.blueprints, name->ptr);
+}
+
+const AttrSet *entity_resolve_defaults(const GameState *state, int entity_id)
+{
+    const Blueprint *blueprint = entity_resolve_blueprint(state, entity_id);
     return blueprint ? &blueprint->attrs : nullptr;
 }
 
@@ -320,6 +325,49 @@ const Entity *game_get_player_const(const GameState *state)
     return &state->gamedata.current_level.entities.data[state->gamedata.player_index];
 }
 
+/* Cardinal unit vector for a movement step: the dominant axis by magnitude
+ * wins ties toward the side row, matching the direction picking every
+ * movement behavior below uses. Only ever called from an "actually moving"
+ * branch (step is never the zero vector at the call sites below). */
+static Vector2 facing_from_step(Vector2 step)
+{
+    if (fabsf(step.x) > fabsf(step.y)) {
+        return (Vector2){step.x < 0.0F ? -1.0F : 1.0F, 0.0F};
+    }
+    if (step.y > 0.0F) {
+        return (Vector2){0.0F, 1.0F};
+    }
+    return (Vector2){0.0F, -1.0F};
+}
+
+/* Name of the built-in `direction` attr matching a facing unit vector --
+ * the inverse of facing_from_step's side/down/up cases, splitting side
+ * into left/right by the sign of facing.x. */
+static const char *direction_name_from_facing(Vector2 facing)
+{
+    if (facing.x < 0.0F) {
+        return "left";
+    }
+    if (facing.x > 0.0F) {
+        return "right";
+    }
+    return facing.y > 0.0F ? "down" : "up";
+}
+
+/* Translates an entity's moving/facing (already computed by the caller's
+ * own movement logic) into the built-in `state`/`direction` attrs the
+ * generic animation pass (advance_entity_animation, below the behavior
+ * table) reads every frame -- this is what update_player and
+ * animate_walking_entity now call instead of writing
+ * anim_row/flip/frame_timer/frame_index directly (S6.11a, D31). */
+static void update_entity_anim_attrs(Allocator *alloc, Entity *entity)
+{
+    const char *state_name = entity->moving ? "walk" : "idle";
+    const char *direction = direction_name_from_facing(entity->facing);
+    (void)attr_set_string(alloc, &entity->attrs, (AttrStringPair){.name = "state", .value = state_name});
+    (void)attr_set_string(alloc, &entity->attrs, (AttrStringPair){.name = "direction", .value = direction});
+}
+
 static void update_player(Entity *player,
                           const AttrSet *player_defaults,
                           const InputState *input,
@@ -336,18 +384,7 @@ static void update_player(Entity *player,
         player->position.x += move.x * speed * delta_time;
         player->position.y += move.y * speed * delta_time;
         player->moving = true;
-
-        if (fabsf(move.x) > fabsf(move.y)) {
-            player->anim_row = ANIM_WALK_SIDE;
-            player->flip = move.x < 0.0F;
-            player->facing = (Vector2){move.x < 0.0F ? -1.0F : 1.0F, 0.0F};
-        } else if (move.y > 0.0F) {
-            player->anim_row = ANIM_WALK_DOWN;
-            player->facing = (Vector2){0.0F, 1.0F};
-        } else {
-            player->anim_row = ANIM_WALK_UP;
-            player->facing = (Vector2){0.0F, -1.0F};
-        }
+        player->facing = facing_from_step(move);
     }
 
     /* Clamp to level bounds */
@@ -363,18 +400,6 @@ static void update_player(Entity *player,
     }
     if (player->position.y > (float)level_size.height - half) {
         player->position.y = (float)level_size.height - half;
-    }
-
-    /* Animate walk cycle */
-    if (player->moving) {
-        player->frame_timer += delta_time * ANIM_SPEED;
-        if (player->frame_timer >= 1.0F) {
-            player->frame_timer -= 1.0F;
-            player->frame_index = (player->frame_index + 1) % WALK_FRAMES;
-        }
-    } else {
-        player->frame_index = 0;
-        player->frame_timer = 0.0F;
     }
 }
 
@@ -479,33 +504,23 @@ static void behavior_player(BehaviorContext *context)
     update_player(player, player_defaults, &routed_input, context->bindings, context->delta_time, level_size);
     resolve_entity_obstacles(state, context->entity_index);
     update_player_attack(player, &routed_input, context->bindings);
+    Allocator anim_alloc = allocator_arena(&state->gamedata_arena);
+    update_entity_anim_attrs(&anim_alloc, player);
 }
 
-/* Sets moving/anim_row/flip/frame_timer/frame_index from a per-frame move
- * step, the same walk-cycle rule update_player uses -- shared by
- * behavior_npc_patrol and behavior_chase (S6.9b, D30) so both animate
- * consistently without duplicating the frame-cycling math twice. */
-static void animate_walking_entity(Entity *entity, Vector2 step, float delta_time)
+/* Sets moving/facing and the built-in state/direction attrs from a
+ * per-frame move step -- shared by behavior_npc_patrol and behavior_chase
+ * (S6.9b, D30) so both feed the generic animation pass (advance_entity_
+ * animation, below the behavior table) the same way update_player's own
+ * movement code does, without duplicating the facing/attr-setting logic
+ * twice. Frame cycling itself is no longer done here -- see S6.11a, D31. */
+static void animate_walking_entity(Allocator *alloc, Entity *entity, Vector2 step)
 {
     entity->moving = step.x != 0.0F || step.y != 0.0F;
-    if (!entity->moving) {
-        entity->frame_index = 0;
-        entity->frame_timer = 0.0F;
-        return;
+    if (entity->moving) {
+        entity->facing = facing_from_step(step);
     }
-    if (fabsf(step.x) > fabsf(step.y)) {
-        entity->anim_row = ANIM_WALK_SIDE;
-        entity->flip = step.x < 0.0F;
-    } else if (step.y > 0.0F) {
-        entity->anim_row = ANIM_WALK_DOWN;
-    } else {
-        entity->anim_row = ANIM_WALK_UP;
-    }
-    entity->frame_timer += delta_time * ANIM_SPEED;
-    if (entity->frame_timer >= 1.0F) {
-        entity->frame_timer -= 1.0F;
-        entity->frame_index = (entity->frame_index + 1) % WALK_FRAMES;
-    }
+    update_entity_anim_attrs(alloc, entity);
 }
 
 /* Back-and-forth mover per D30: oscillates along (patrol_dx, patrol_dy)
@@ -523,8 +538,9 @@ static void behavior_npc_patrol(BehaviorContext *context)
     Entity *entity = &state->gamedata.current_level.entities.data[context->entity_index];
     const AttrSet *defaults = entity_resolve_defaults(state, entity->id);
     float patrol_period = attr_get_scoped_float(&entity->attrs, defaults, "patrol_period", 0.0F);
+    Allocator anim_alloc = allocator_arena(&state->gamedata_arena);
     if (patrol_period <= 0.0F || context->delta_time <= 0.0F) {
-        animate_walking_entity(entity, (Vector2){0}, context->delta_time);
+        animate_walking_entity(&anim_alloc, entity, (Vector2){0});
         return;
     }
 
@@ -541,7 +557,7 @@ static void behavior_npc_patrol(BehaviorContext *context)
 
     entity->position.x += step.x;
     entity->position.y += step.y;
-    animate_walking_entity(entity, step, context->delta_time);
+    animate_walking_entity(&anim_alloc, entity, step);
     resolve_entity_obstacles(state, context->entity_index);
 }
 
@@ -595,7 +611,8 @@ static void behavior_chase(BehaviorContext *context)
     Vector2 step = chase_step_toward(entity->position, player->position, speed, context->delta_time);
     entity->position.x += step.x;
     entity->position.y += step.y;
-    animate_walking_entity(entity, step, context->delta_time);
+    Allocator anim_alloc = allocator_arena(&state->gamedata_arena);
+    animate_walking_entity(&anim_alloc, entity, step);
     resolve_entity_obstacles(state, context->entity_index);
 }
 
@@ -1125,6 +1142,114 @@ collect_trigger_events(DebugState *dbg, GameState *state, const InputState *inpu
     }
 }
 
+/* --- Generic animation state machine (S6.11a, D31) ---
+ *
+ * Replaces the player's old hardcoded ANIM_WALK_DOWN/SIDE/UP row constants
+ * and the per-behavior frame-cycling code above: any entity whose blueprint
+ * authors [[blueprint.animation]] clips now animates through this single
+ * pass, keyed off the built-in `state`/`direction` attrs the behaviors
+ * above set via update_entity_anim_attrs. Attack-frame hitbox timing and
+ * hurt/death triggering are S6.11b. */
+
+/* Fallback state/direction for an entity with neither attr authored (no
+ * behavior has run for it yet, or its behavior never sets them) --
+ * standing still, facing down, matching entity_init's default `facing`. */
+#define ANIM_STATE_DEFAULT "idle"
+#define ANIM_DIRECTION_DEFAULT "down"
+
+/* Row offset added to a clip's authored `row` to reach the down/side/up
+ * sub-row within the sprite sheet -- preserves the layout the player's old
+ * ANIM_WALK_DOWN/SIDE/UP constants used (row 3 = down, 4 = side, 5 = up): a
+ * walk clip authored with row = 3 reproduces that exactly. `left` and
+ * `right` share the side row; the caller's `flip` picks the mirror. */
+#define ANIM_ROW_OFFSET_DOWN 0
+#define ANIM_ROW_OFFSET_SIDE 1
+#define ANIM_ROW_OFFSET_UP 2
+
+static int anim_row_offset_for_direction(const char *direction)
+{
+    if (strcmp(direction, "up") == 0) {
+        return ANIM_ROW_OFFSET_UP;
+    }
+    if (strcmp(direction, "left") == 0 || strcmp(direction, "right") == 0) {
+        return ANIM_ROW_OFFSET_SIDE;
+    }
+    return ANIM_ROW_OFFSET_DOWN;
+}
+
+/* Looks up a clip for the entity's exact current state, falling back to
+ * "walk" then "idle" so a blueprint that only authors one or two states
+ * still animates something reasonable (e.g. a not-yet-authored "attack"
+ * state falls back to "walk" rather than freezing). nullptr if the
+ * blueprint has no clip under any of the three names. */
+static const AnimClip *find_entity_anim_clip(const Blueprint *blueprint, const char *state_name)
+{
+    const AnimClip *clip = blueprint_find_anim_clip(blueprint, state_name);
+    if (clip) {
+        return clip;
+    }
+    clip = blueprint_find_anim_clip(blueprint, "walk");
+    if (clip) {
+        return clip;
+    }
+    return blueprint_find_anim_clip(blueprint, "idle");
+}
+
+/* Advances frame_index at clip->speed frames/second, wrapping at
+ * clip->frames -- the same frame_timer-accumulator math update_player used
+ * to do directly. A clip with one frame or non-positive speed (an "idle"
+ * clip's usual authoring: frames = 1) holds frame 0 instead. */
+static void advance_entity_frame(Entity *entity, const AnimClip *clip, float delta_time)
+{
+    if (clip->frames <= 1 || clip->speed <= 0.0F) {
+        entity->frame_index = 0;
+        entity->frame_timer = 0.0F;
+        return;
+    }
+    entity->frame_timer += delta_time * clip->speed;
+    if (entity->frame_timer >= 1.0F) {
+        entity->frame_timer -= 1.0F;
+        entity->frame_index = (entity->frame_index + 1) % clip->frames;
+    }
+}
+
+/* One entity's animation tick: resolve its blueprint's clip for the current
+ * `state` attr (default "idle"), derive anim_row from the clip's row plus
+ * the `direction` attr's (default "down") row offset, set flip for a
+ * left-facing side clip, and advance the frame. A no-op for any entity
+ * whose blueprint authors no [[blueprint.animation]] clips at all -- it
+ * keeps rendering through the static get_source_rect path (main.c). Takes
+ * the already-dereferenced Entity* (the caller's own loop variable) rather
+ * than re-deriving from an index -- safe because the behavior that just ran
+ * only ever mutates the entity's own attrs/collision vecs, never the level's
+ * entities array itself, the same assumption behavior_player already relies
+ * on when it keeps using `player` after resolve_entity_obstacles. */
+static void advance_entity_animation(GameState *state, Entity *entity, float delta_time)
+{
+    const Blueprint *blueprint = entity_resolve_blueprint(state, entity->id);
+    if (!blueprint || blueprint->animation.count == 0) {
+        return;
+    }
+
+    const char *state_name = attr_get_scoped_string(&entity->attrs, &blueprint->attrs, "state");
+    if (!state_name) {
+        state_name = ANIM_STATE_DEFAULT;
+    }
+    const char *direction = attr_get_scoped_string(&entity->attrs, &blueprint->attrs, "direction");
+    if (!direction) {
+        direction = ANIM_DIRECTION_DEFAULT;
+    }
+
+    const AnimClip *clip = find_entity_anim_clip(blueprint, state_name);
+    if (!clip) {
+        return;
+    }
+
+    entity->anim_row = clip->row + anim_row_offset_for_direction(direction);
+    entity->flip = strcmp(direction, "left") == 0;
+    advance_entity_frame(entity, clip, delta_time);
+}
+
 void game_update(Diag *diag, GameState *state, InputState input, float delta_time)
 {
     state->frame++;
@@ -1144,6 +1269,7 @@ void game_update(Diag *diag, GameState *state, InputState input, float delta_tim
                 .delta_time = delta_time,
             };
             update_fn(&context);
+            advance_entity_animation(state, entity, delta_time);
         }
 
         const Entity *player = game_get_player_const(state);

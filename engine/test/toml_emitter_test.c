@@ -1031,6 +1031,95 @@ void test_toml_emit_collision_composite_round_trip(void)
     arena_free(&arena2);
 }
 
+/* S6.11a/D31: [[blueprint.animation]] authors a state -> row/frames/speed
+ * clip table on a blueprint. Two clips (walk + idle) with distinct rows and
+ * frame counts exercises both per-clip field parsing and the multi-row case
+ * in one fixture, mirroring collision_composite_fixture above. */
+static const char *animation_clips_fixture = "[[blueprint]]\n"
+                                             "name = \"hero\"\n"
+                                             "texture = \"hero.png\"\n"
+                                             "src = [0, 0, 32, 32]\n"
+                                             "collision_offset = [0, 0]\n"
+                                             "collision_size = [32, 32]\n"
+                                             "\n"
+                                             "[[blueprint.animation]]\n"
+                                             "state = \"walk\"\n"
+                                             "row = 3\n"
+                                             "frames = 6\n"
+                                             "speed = 10\n"
+                                             "\n"
+                                             "[[blueprint.animation]]\n"
+                                             "state = \"idle\"\n"
+                                             "row = 3\n"
+                                             "frames = 1\n"
+                                             "speed = 0\n"
+                                             "\n"
+                                             "[[level]]\n"
+                                             "name = \"test\"\n"
+                                             "size = [320, 240]\n";
+
+static void assert_animation_clips_structure(const Blueprint *blueprint)
+{
+    TEST_ASSERT_EQUAL_INT(2, blueprint->animation.count);
+
+    const AnimClip *walk_clip = &blueprint->animation.data[0];
+    TEST_ASSERT_EQUAL_STRING("walk", walk_clip->state.ptr);
+    TEST_ASSERT_EQUAL_INT(3, walk_clip->row);
+    TEST_ASSERT_EQUAL_INT(6, walk_clip->frames);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 10.0F, walk_clip->speed);
+
+    const AnimClip *idle_clip = &blueprint->animation.data[1];
+    TEST_ASSERT_EQUAL_STRING("idle", idle_clip->state.ptr);
+    TEST_ASSERT_EQUAL_INT(3, idle_clip->row);
+    TEST_ASSERT_EQUAL_INT(1, idle_clip->frames);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, 0.0F, idle_clip->speed);
+}
+
+void test_toml_emit_animation_clips_round_trip(void)
+{
+    Arena arena;
+    TEST_ASSERT_TRUE(arena_init(&test_err, &arena));
+    BlueprintTable blueprints = {0};
+
+    /* Parse original and sanity-check the fixture actually parses two
+     * distinct clips with distinct rows/frame counts. */
+    toml_table_t *root = parse_toml(animation_clips_fixture);
+    TEST_ASSERT_NOT_NULL(root);
+    blueprints_load(&test_diag, &blueprints, root, &arena);
+    toml_free(root);
+
+    TEST_ASSERT_EQUAL_INT(1, blueprints.entries.count);
+    assert_animation_clips_structure(&blueprints.entries.data[0]);
+
+    /* Emit, then re-parse the emitted TOML into a second tree. */
+    char output[4096];
+    Level empty_level = {0};
+    int written = toml_emit_gamedata(&test_err, output, (int)sizeof(output), &blueprints, &empty_subroutines,
+                                     &empty_tileset, &empty_atlas_regions, &empty_level, 0);
+    TEST_ASSERT_TRUE(written > 0);
+
+    TEST_ASSERT_NOT_NULL(strstr(output, "[[blueprint.animation]]"));
+    TEST_ASSERT_NOT_NULL(strstr(output, "state = \"walk\""));
+    TEST_ASSERT_NOT_NULL(strstr(output, "state = \"idle\""));
+
+    Arena arena2;
+    TEST_ASSERT_TRUE(arena_init(&test_err, &arena2));
+    BlueprintTable blueprints2 = {0};
+
+    toml_table_t *root2 = parse_toml(output);
+    TEST_ASSERT_NOT_NULL(root2);
+    blueprints_load(&test_diag, &blueprints2, root2, &arena2);
+    toml_free(root2);
+
+    /* The round trip must preserve clip count, state names, rows, frame
+     * counts, and speeds for every clip, not just the first. */
+    TEST_ASSERT_EQUAL_INT(1, blueprints2.entries.count);
+    assert_animation_clips_structure(&blueprints2.entries.data[0]);
+
+    arena_free(&arena);
+    arena_free(&arena2);
+}
+
 /* Three levels of control-flow nesting: if -> then=[repeat] -> do=[for_each]
  * -> do=["destroy"]. Regression fixture for F25 (nested control flow inside
  * a control-flow child silently dropped by the one-level-deep emitter). */

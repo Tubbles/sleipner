@@ -9,6 +9,18 @@ behavior = "player"
 speed = 80
 solid = true
 
+[[blueprint.animation]]
+state = "walk"
+row = 3
+frames = 6
+speed = 10
+
+[[blueprint.animation]]
+state = "idle"
+row = 3
+frames = 1
+speed = 0
+
 [[blueprint]]
 name = "tree"
 texture = "tree.png"
