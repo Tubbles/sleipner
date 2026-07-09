@@ -474,6 +474,31 @@ predicate rows and MOVE reparenting).
   coexist on one machine via port reuse. Manual on-hardware QA (host on
   one machine, join from another) is needed before relying on this in
   practice.
+- **No real JOIN accept/reject handshake (S8.4a).** Acceptance is still
+  IMPLICIT: a client assumes it's connected the moment it sends
+  `MSG_JOIN` (`net_session.c`'s `network_client_tick` flips straight to
+  `NET_CLIENT`), and the host separately hash-verifies and registers or
+  silently refuses (`network_host_receive`, `network.c`) without ever
+  replying either way -- a refused client has no way to learn it was
+  refused. `network.h`'s `NetMode` doc comment used to (incorrectly)
+  attribute this fix to "S8.4c"; S8.4c turned out to be the reliable
+  event sub-channel instead (see the bullet below), so a real
+  accept/reject reply is unassigned open work.
+- **S8.4c's reliable event channel carries a session notification
+  (`NETWORK_EVENT_PLAYER_JOINED`), not a real `rule.h` gameplay
+  trigger.** The brief's own suggested candidates (`TRIGGER_DEFEAT`, a
+  level-transition notification) need `game_update`'s `trigger_events`
+  vec (`game.c`) to be observable outside that one function call --
+  today it's built into a `scratch_arena`-backed `vec_trigger_event`
+  and fully drained by `rules_evaluate_batch` in the same call, with no
+  hook any external caller (like `net_session.c`'s `network_host_tick`)
+  can reach. Routing a real trigger over `net_reliable.h`'s
+  `ReliableChannel` needs that hook added first -- e.g. an out-parameter
+  on `game_update`, or a `GameState`-level accumulator the trigger
+  pipeline appends fired events into for the network layer to drain
+  after each hosting tick -- a broader change than the reliable-channel
+  wiring itself (`net_reliable.{h,c}`, `network.{h,c}`,
+  `net_session.{h,c}`).
 
 ## misc
 - for some reason, when running against the walls significantly warps the

@@ -97,7 +97,15 @@ bool packet_writer_write_bytes(PacketWriter *writer, const uint8_t *bytes, size_
     if (!packet_writer_reserve(writer, count)) {
         return false;
     }
-    memcpy(writer->data + writer->cursor, bytes, count);
+    /* A zero-length write is a legitimate no-op (e.g. an empty Strv
+     * argument, EventRecord.argument = (Strv){0}) but `bytes` may then be
+     * a genuine null pointer -- memcpy's `nonnull` parameter attribute
+     * makes calling it with a null source undefined behavior even when
+     * count is 0, so skip the call entirely rather than let UBSan (and
+     * the standard) flag it. */
+    if (count > 0) {
+        memcpy(writer->data + writer->cursor, bytes, count);
+    }
     writer->cursor += count;
     return true;
 }

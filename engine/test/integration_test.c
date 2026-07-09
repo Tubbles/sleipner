@@ -4971,7 +4971,7 @@ void test_integration_client_input_moves_player_on_host(void)
     TEST_ASSERT_TRUE(loopback_transport_create(&loopback, rogue_addr, &rogue_transport));
     NetworkState rogue_network = {.transport = rogue_transport, .join_target = host_addr};
     network_client_send_join(&rogue_network, host.state.gamedata_hash ^ 1);
-    network_host_tick(&host.state);
+    network_host_tick(&host.state, 1.0F / 60.0F);
 
     TEST_ASSERT_EQUAL_INT(1, host.state.network.client_count);
 
@@ -5139,6 +5139,61 @@ void test_integration_join_snapshot_equivalence(void)
     TEST_ASSERT_EQUAL_FLOAT(host_remote_final->position.y, client_remote->position.y);
     TEST_ASSERT_EQUAL_FLOAT(42.0F, attr_get_float(&client_hero->attrs, "health", -1.0F));
     TEST_ASSERT_EQUAL_FLOAT(17.0F, attr_get_float(&client_remote->attrs, "health", -1.0F));
+
+    test_game_teardown(&host);
+    test_game_teardown(&client);
+    loopback_network_free(&loopback);
+}
+
+/* ---- Integration: S8.4c reliable event sub-channel ----
+ *
+ * Same two-TestGame-over-net_loopback.h shape as S8.4a/b's tests above,
+ * reusing host_session_gamedata. Unlike those (which assert on position/
+ * attr convergence), this one asserts on NetworkState.delivered_event_count/
+ * last_delivered_event_* (network.h) -- the S8.4c "apply" of the one
+ * concrete event this slice wires end-to-end, NETWORK_EVENT_PLAYER_JOINED
+ * (net_session.h): the host reliable-sends it to every active client the
+ * moment a new client registers (net_session.c's network_host_tick), and
+ * the client applies it exactly once (net_reliable.h's reliable_on_receive
+ * dedup) across ordinary per-frame ticking. No packet loss is simulated
+ * here, unlike net_reliable_test.c's unit-level resend test -- this test
+ * only proves the wiring reaches the game end to end, not the resend timer
+ * itself. */
+void test_integration_reliable_event_delivers_player_joined_exactly_once(void)
+{
+    LoopbackNetwork loopback;
+    loopback_network_init(&loopback, &test_heap_alloc);
+    NetAddr host_addr = net_addr_make(1, 9000);
+    NetAddr client_addr = net_addr_make(2, 9001);
+    NetTransport host_transport;
+    NetTransport client_transport;
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, host_addr, &host_transport));
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, client_addr, &client_transport));
+
+    TestGame host;
+    TEST_ASSERT_TRUE(test_game_setup(&host, host_session_gamedata));
+    host.state.network.mode = NET_HOSTING;
+    host.state.network.transport = host_transport;
+
+    TestGame client;
+    TEST_ASSERT_TRUE(test_game_setup(&client, host_session_gamedata));
+    client.state.network.mode = NET_JOINING;
+    client.state.network.transport = client_transport;
+    client.state.network.join_target = host_addr;
+
+    InputState no_input = {0};
+    int frames = 20;
+    for (int frame = 0; frame < frames; frame++) {
+        test_advance_frame(&client, no_input);
+        test_advance_frame(&host, no_input);
+    }
+
+    TEST_ASSERT_EQUAL_INT(NET_CLIENT, client.state.network.mode);
+    TEST_ASSERT_EQUAL_INT(1, host.state.network.client_count);
+    TEST_ASSERT_EQUAL_INT(1, client.state.network.delivered_event_count);
+    TEST_ASSERT_EQUAL_INT32(NETWORK_EVENT_PLAYER_JOINED, client.state.network.last_delivered_event_type);
+    TEST_ASSERT_EQUAL_INT32(host.state.network.clients[0].player_id,
+                            client.state.network.last_delivered_event_entity_id);
 
     test_game_teardown(&host);
     test_game_teardown(&client);

@@ -3,6 +3,7 @@
 
 #include "../src/error.c"        // NOLINT(bugprone-suspicious-include)
 #include "../src/net_protocol.c" // NOLINT(bugprone-suspicious-include)
+#include "../src/net_reliable.c" // NOLINT(bugprone-suspicious-include)
 #include "../src/net_udp.c"      // NOLINT(bugprone-suspicious-include)
 #include "../src/network.c"      // NOLINT(bugprone-suspicious-include)
 #include "../src/strv.c"         // NOLINT(bugprone-suspicious-include)
@@ -75,6 +76,13 @@ void test_stop_resets_every_field_to_offline(void)
     join_list_add_or_refresh(&network.join_list, net_addr_make(1, 100), "Host");
     network.join_target = net_addr_make(2, 200);
     strv_copy_to_cstr(strv_from_cstr("Alice"), network.host_name, sizeof(network.host_name));
+    /* S8.4c: pre-seed reliable-channel state a real session would have
+     * accumulated, so network_stop's reset contract is proven for these
+     * fields too, not just the pre-existing ones above. */
+    TEST_ASSERT_TRUE(reliable_on_receive(&network.host_event_channel, 5));
+    network.last_delivered_event_type = 1;
+    network.last_delivered_event_entity_id = 1;
+    network.delivered_event_count = 1;
 
     network_stop(&network);
 
@@ -84,6 +92,10 @@ void test_stop_resets_every_field_to_offline(void)
     TEST_ASSERT_EQUAL_UINT32(0, network.join_target.host);
     TEST_ASSERT_EQUAL_FLOAT(0.0F, network.beacon_timer);
     TEST_ASSERT_EQUAL_STRING("", network.host_name);
+    TEST_ASSERT_FALSE(network.host_event_channel.has_received_any);
+    TEST_ASSERT_EQUAL_INT32(0, network.last_delivered_event_type);
+    TEST_ASSERT_EQUAL_INT32(0, network.last_delivered_event_entity_id);
+    TEST_ASSERT_EQUAL_INT(0, network.delivered_event_count);
 }
 
 void test_stop_is_idempotent_on_already_offline_network(void)

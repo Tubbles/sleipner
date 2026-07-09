@@ -6,6 +6,7 @@
 #include "../src/net_discovery.c" // NOLINT(bugprone-suspicious-include)
 #include "../src/net_loopback.c"  // NOLINT(bugprone-suspicious-include)
 #include "../src/net_protocol.c"  // NOLINT(bugprone-suspicious-include)
+#include "../src/net_reliable.c"  // NOLINT(bugprone-suspicious-include)
 #include "../src/net_udp.c"       // NOLINT(bugprone-suspicious-include)
 #include "../src/network.c"       // NOLINT(bugprone-suspicious-include)
 #include "../src/strv.c"          // NOLINT(bugprone-suspicious-include)

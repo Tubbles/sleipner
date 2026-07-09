@@ -30,6 +30,8 @@
 #include "error.h"
 #include "input.h" // InputState
 #include "net.h"
+#include "net_protocol.h" // EventRecord, AckMessage
+#include "net_reliable.h" // ReliableChannel
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -108,11 +110,14 @@ typedef enum {
      * flipped the mode itself, in the same call). Acceptance in S8.4a is
      * IMPLICIT: the client assumes it's in as soon as it sends JOIN, and
      * the host separately accepts or refuses by hash-verifying the
-     * message (network_host_receive below) without replying either way.
-     * S8.4c tightens this into a real handshake -- an accept/reject reply
-     * that only advances the client to NET_CLIENT once the host confirms.
-     * Distinct from NET_JOINING: NET_JOINING is "picked a host, about to
-     * connect", NET_CLIENT is "connected, sending input every tick". */
+     * message (network_host_receive below) without replying either way. A
+     * real accept/reject handshake (the client only advancing to
+     * NET_CLIENT once the host confirms) remains open work, tracked in
+     * TODO.md -- S8.4c turned out to be the reliable event sub-channel
+     * (net_reliable.h) instead, per the open-work master plan's own S8.4
+     * definition. Distinct from NET_JOINING: NET_JOINING is "picked a
+     * host, about to connect", NET_CLIENT is "connected, sending input
+     * every tick". */
     NET_CLIENT,
 } NetMode;
 
@@ -139,6 +144,11 @@ typedef struct {
     int player_id;
     InputState last_input;
     bool active;
+    /* S8.4c: HOST->this-client reliable event channel (net_reliable.h) --
+     * assigns/resends MSG_EVENT packets this host sends to this specific
+     * client and applies its ACKs. See net_session.h's own doc comment for
+     * what actually flows over it (NETWORK_EVENT_PLAYER_JOINED). */
+    ReliableChannel event_channel;
 } NetClient;
 
 typedef struct {
@@ -171,6 +181,25 @@ typedef struct {
      * Meaningless while mode != NET_HOSTING. */
     NetClient clients[NET_MAX_CLIENTS];
     int client_count;
+    /* S8.4c: CLIENT side only -- this client's own receive-side reliable
+     * channel for events the HOST sends it. network_client_send_ack below
+     * acks whatever it has received so far; network_client_tick
+     * (net_session.c) applies each newly-delivered MSG_EVENT via
+     * reliable_on_receive (net_reliable.h). Meaningless on the HOST's own
+     * NetworkState -- a host's per-client event_channel (NetClient, above)
+     * is what matters there. v1 only wires the host->client direction, see
+     * net_reliable.h's own top doc comment for why. */
+    ReliableChannel host_event_channel;
+    /* S8.4c: CLIENT side only -- bookkeeping for the last reliable event
+     * this client actually delivered (network_client_tick's
+     * network_client_apply_event, net_session.c), plus a running count of
+     * how many have been delivered in total. Not gameplay state -- see
+     * net_session.h's NETWORK_EVENT_PLAYER_JOINED doc comment for why
+     * "applying" an event is currently just this bookkeeping rather than a
+     * game-state mutation. */
+    int32_t last_delivered_event_type;
+    int32_t last_delivered_event_entity_id;
+    int delivered_event_count;
 } NetworkState;
 
 /* Placeholder advertised name until a real player-name setting exists
@@ -212,7 +241,8 @@ network_start_hosting(NetworkState *network, Allocator *alloc, const char *host_
 /* Destroy the transport if one was ever created (safe no-op otherwise),
  * and reset every NetworkState field back to its NET_OFFLINE zero
  * value -- mode, join_list, join_target, beacon_timer, host_name,
- * clients/client_count. Idempotent: safe to call on an already-OFFLINE
+ * clients/client_count, host_event_channel, and the delivered-event
+ * bookkeeping (S8.4c). Idempotent: safe to call on an already-OFFLINE
  * NetworkState. */
 void network_stop(NetworkState *network);
 
@@ -245,7 +275,11 @@ void network_client_send_input(NetworkState *network, const InputState *local_in
  * than adding a second entry), a mismatch is silently refused (no client
  * registered). A decoded MSG_INPUT from an address already present in
  * `clients` overwrites that client's last_input; MSG_INPUT from an
- * unregistered address is ignored. Anything that fails to decode (wrong
+ * unregistered address is ignored. A decoded MSG_ACK (S8.4c) from an
+ * address already present in `clients` is applied to that client's own
+ * event_channel (net_reliable.h's reliable_on_ack), clearing whichever
+ * send-window slots it covers; MSG_ACK from an unregistered address is
+ * ignored, same as MSG_INPUT. Anything that fails to decode (wrong
  * magic/version, truncated, an unrelated message type) is silently
  * ignored, same as discovery_client_tick's own drain loop. Call once per
  * tick, before simulating, so the freshest input reaches this tick's
@@ -256,3 +290,32 @@ void network_host_receive(NetworkState *network, uint64_t local_gamedata_hash);
  * nullptr if no active client currently holds that id -- the "unknown/
  * absent id" case game.c's input_for_entity resolves to idle input. */
 [[nodiscard]] const NetClient *network_find_client_by_player_id(const NetworkState *network, int player_id);
+
+/* ---- S8.4c: reliable event sub-channel primitives, layered on
+ * net_reliable.h's ReliableChannel over the same `network->transport`
+ * S8.4a's JOIN/INPUT flow already uses. See net_session.h's own doc
+ * comment for the one concrete event this wires end-to-end
+ * (NETWORK_EVENT_PLAYER_JOINED) and net_reliable.h's top doc comment for
+ * why only the host->client direction exists in v1. ---- */
+
+/* HOST side. Reliable-send `event` (net_reliable.h's reliable_send) to
+ * every currently active client's own event_channel -- each client gets
+ * its own sequence number and resend timer, so one client's dropped
+ * packet never delays or duplicates delivery to another. */
+void network_broadcast_reliable_event(NetworkState *network, EventRecord event);
+
+/* HOST side. Age every active client's send-side event_channel by
+ * delta_time and resend anything still unacked past
+ * RELIABLE_RESEND_SECONDS (net_reliable.h's reliable_tick). Call once per
+ * hosting tick, after network_host_receive so this tick's incoming ACKs
+ * (handled inline by network_host_receive above) are already applied
+ * before ageing -- an event acked this same tick should not also be
+ * resent this same tick. */
+void network_host_tick_reliable_channels(NetworkState *network, float delta_time);
+
+/* CLIENT side. If host_event_channel has ever received anything
+ * (has_received_any, net_reliable.h), encode the current ack
+ * (reliable_make_ack) and send it as MSG_ACK to join_target. A no-op
+ * before any reliable event has ever arrived -- nothing to ack yet. Same
+ * fire-and-forget contract as network_client_send_join/_send_input above. */
+void network_client_send_ack(NetworkState *network);

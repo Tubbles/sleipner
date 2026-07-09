@@ -52,6 +52,7 @@ add_unit_test(save_screen_test)
 add_unit_test(discovery_screen_test)
 add_unit_test(net_test)
 add_unit_test(net_protocol_test)
+add_unit_test(net_reliable_test)
 add_unit_test(net_discovery_test)
 add_unit_test(network_test)
 

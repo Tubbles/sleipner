@@ -56,7 +56,8 @@
 
 #include "game.h"
 #include "input.h"
-#include "net_protocol.h" // AttrRecord
+#include "net_protocol.h" // AttrRecord, EventRecord
+#include "net_reliable.h" // ReliableChannel
 
 #include <stddef.h> // size_t
 
@@ -66,17 +67,56 @@
 #define NETWORK_ATTR_POS_X "pos_x"
 #define NETWORK_ATTR_POS_Y "pos_y"
 
+/* ---- S8.4c: reliable event sub-channel ----
+ *
+ * net_reliable.h's ReliableChannel (assign/resend on the send side,
+ * dedup via a highest-seq + bitfield window on the receive side) is what
+ * finally lets MSG_EVENT be delivered reliably and exactly once, unlike
+ * S8.4a/b's fire-and-forget INPUT/SNAPSHOT/DELTA. network.h's
+ * NetClient.event_channel/NetworkState.host_event_channel carry the actual
+ * per-connection state; network_broadcast_reliable_event/
+ * network_host_tick_reliable_channels/network_client_send_ack (network.h)
+ * are the transport-level primitives; network_host_tick/network_client_tick
+ * below are what call them at the right point in the tick.
+ *
+ * NETWORK_EVENT_PLAYER_JOINED is the one concrete event S8.4c wires
+ * end-to-end: network_host_tick reliable-sends it to every active client
+ * (including the one that just joined) whenever a new client registers,
+ * carrying the newly-joined player's player_id as EventRecord.entity_id
+ * (argument unused, an empty Strv). A client's network_client_tick applies
+ * each newly-delivered copy (dedup'd via reliable_on_receive) by recording
+ * it on NetworkState (last_delivered_event_type/_entity_id,
+ * delivered_event_count) -- currently session-level bookkeeping, not a
+ * gameplay mutation.
+ *
+ * Deliberately NOT rule.h's TriggerType/TriggerEvent pipeline (the obvious
+ * "real game event" candidates -- TRIGGER_DEFEAT, a transition
+ * notification): game_update's own trigger_events vec (game.c) is
+ * scratch-arena-scoped and fully drained by rules_evaluate_batch inside
+ * that same call, with no hook point any caller outside game.c can
+ * currently observe. Routing an actual TriggerEvent over this reliable
+ * channel needs that hook added first (e.g. an out-parameter or a
+ * GameState-level accumulator game_update appends fired events into) --
+ * broader than S8.4c's own reliable-channel brief, tracked in TODO.md as a
+ * follow-up. */
+#define NETWORK_EVENT_PLAYER_JOINED 1
+
 /* HOSTING only: network_host_receive (network.h) drains every pending
- * JOIN/INPUT packet on state->network.transport, hash-verifying JOINs
- * against state->gamedata_hash and storing the latest InputState for
- * every already-registered client. Call BEFORE game_update so this tick's
- * behavior dispatch (game.c's input_for_entity) sees the freshest input a
- * client sent. Any client newly registered by this call (S8.4b) is sent a
- * full SNAPSHOT of the current level (network_host_send_snapshot below)
- * before returning, so a joining client's very first received packet is
- * always the full state, never a partial DELTA. No-op under any mode
- * other than NET_HOSTING. */
-void network_host_tick(GameState *state);
+ * JOIN/INPUT/ACK packet on state->network.transport, hash-verifying JOINs
+ * against state->gamedata_hash, storing the latest InputState for every
+ * already-registered client, and (S8.4c) applying any incoming MSG_ACK to
+ * the acking client's own event_channel. Call BEFORE game_update so this
+ * tick's behavior dispatch (game.c's input_for_entity) sees the freshest
+ * input a client sent. Any client newly registered by this call (S8.4b) is
+ * sent a full SNAPSHOT of the current level (network_host_send_snapshot
+ * below) before returning, so a joining client's very first received
+ * packet is always the full state, never a partial DELTA -- and (S8.4c) a
+ * NETWORK_EVENT_PLAYER_JOINED is reliable-sent to every active client (see
+ * this header's own "S8.4c: reliable event sub-channel" note). Finally,
+ * every active client's send-side event_channel is aged/resent
+ * (network_host_tick_reliable_channels, network.h) by delta_time. No-op
+ * under any mode other than NET_HOSTING. */
+void network_host_tick(GameState *state, float delta_time);
 
 /* JOINING or NET_CLIENT only. NET_JOINING: sends this session's MSG_JOIN
  * (network_client_send_join, state->gamedata_hash) and advances
@@ -86,7 +126,12 @@ void network_host_tick(GameState *state);
  * call itself just entered): sends local_input as this tick's MSG_INPUT
  * (network_client_send_input), then drains and applies every pending
  * SNAPSHOT/DELTA packet (network_client_apply_state below) -- S8.4b's
- * sync-back. No-op under any other mode. */
+ * sync-back -- and every pending MSG_EVENT (S8.4c: dedup'd via
+ * reliable_on_receive, net_reliable.h, and applied exactly once per
+ * distinct sequence number). Finally sends the current ack for whatever
+ * has been received so far (network_client_send_ack, network.h) -- a
+ * no-op before the first reliable event ever arrives. No-op under any
+ * other mode. */
 void network_client_tick(GameState *state, const InputState *local_input);
 
 /* HOST side (S8.4b): encode the current synced state of state's whole

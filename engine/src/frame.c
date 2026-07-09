@@ -525,20 +525,23 @@ void run_active_frame(Diag *diag,
     InputState game_input = state->fade.phase == TRANSITION_FADE_NONE ? input : (InputState){0};
     /* S8.4a session ticks, right before game_update so this tick's
      * behavior dispatch (game.c's input_for_entity) sees the freshest
-     * data: network_host_tick drains this tick's JOIN/INPUT packets
+     * data: network_host_tick drains this tick's JOIN/INPUT/ACK packets
      * before the host simulates (and, S8.4b, sends a SNAPSHOT to any
-     * client that just joined); network_client_tick sends this tick's
-     * MSG_JOIN/MSG_INPUT and, S8.4b, drains and applies any pending
-     * SNAPSHOT/DELTA onto this GameState's own entities. Both are
-     * self-guarding on state->network.mode (net_session.h) and no-op
-     * under every other mode, so calling both unconditionally here leaves
-     * single-player (NET_OFFLINE) untouched -- same reasoning as game.c's
-     * tick_network running unconditionally of editor_mode. Uses the raw
-     * `input` (this peer's own physical controller reading), not
-     * `game_input`: a client's local fade-to-black transition suppresses
-     * ITS OWN player's movement, but must not also suppress the input it
-     * forwards to the host. */
-    network_host_tick(state);
+     * client that just joined, and, S8.4c, reliable-sends a
+     * NETWORK_EVENT_PLAYER_JOINED notification plus ages/resends every
+     * active client's reliable-event send window by delta_time);
+     * network_client_tick sends this tick's MSG_JOIN/MSG_INPUT and, S8.4b,
+     * drains and applies any pending SNAPSHOT/DELTA onto this GameState's
+     * own entities, and, S8.4c, applies any newly-delivered MSG_EVENT then
+     * sends the current ack. Both are self-guarding on state->network.mode
+     * (net_session.h) and no-op under every other mode, so calling both
+     * unconditionally here leaves single-player (NET_OFFLINE) untouched --
+     * same reasoning as game.c's tick_network running unconditionally of
+     * editor_mode. Uses the raw `input` (this peer's own physical
+     * controller reading), not `game_input`: a client's local
+     * fade-to-black transition suppresses ITS OWN player's movement, but
+     * must not also suppress the input it forwards to the host. */
+    network_host_tick(state, delta_time);
     network_client_tick(state, &input);
     /* S8.4b: a NET_CLIENT frame renders only -- it never runs the
      * authoritative simulation. network_client_tick above already applied

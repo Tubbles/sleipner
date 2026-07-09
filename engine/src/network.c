@@ -6,6 +6,7 @@
 #include "net.h"
 #include "net_discovery.h" // DISCOVERY_PORT
 #include "net_protocol.h"
+#include "net_reliable.h" // ReliableChannel, reliable_on_ack, reliable_send, reliable_tick, reliable_make_ack
 #include "net_udp.h"
 #include "strv.h"
 
@@ -123,6 +124,10 @@ void network_stop(NetworkState *network)
         network->clients[index] = (NetClient){0};
     }
     network->client_count = 0;
+    network->host_event_channel = (ReliableChannel){0};
+    network->last_delivered_event_type = 0;
+    network->last_delivered_event_entity_id = 0;
+    network->delivered_event_count = 0;
 }
 
 /* ---- S8.4a: session JOIN + INPUT flow ---- */
@@ -219,6 +224,23 @@ static void handle_input_datagram(NetworkState *network, NetAddr src, PacketRead
     }
 }
 
+/* Decode one payload as MSG_ACK (S8.4c) and apply it to src's own
+ * event_channel, if src is a registered client -- an ACK from an
+ * unregistered address is ignored, same as handle_input_datagram's own
+ * contract. */
+static void handle_ack_datagram(NetworkState *network, NetAddr src, PacketReader *reader)
+{
+    NetClient *client = find_client_by_addr(network, src);
+    if (client == nullptr) {
+        return;
+    }
+    AckMessage ack = {0};
+    if (!protocol_decode_ack(reader, &ack)) {
+        return;
+    }
+    reliable_on_ack(&client->event_channel, ack);
+}
+
 void network_host_receive(NetworkState *network, uint64_t local_gamedata_hash)
 {
     uint8_t buffer[NET_MAX_PACKET_SIZE];
@@ -232,8 +254,48 @@ void network_host_receive(NetworkState *network, uint64_t local_gamedata_hash)
                 handle_join_datagram(network, src, &packet.reader, local_gamedata_hash);
             } else if (packet.header.type == MSG_INPUT) {
                 handle_input_datagram(network, src, &packet.reader);
+            } else if (packet.header.type == MSG_ACK) {
+                handle_ack_datagram(network, src, &packet.reader);
             }
         }
         received = net_recv(&network->transport, &src, buffer, sizeof(buffer));
     }
+}
+
+/* ---- S8.4c: reliable event sub-channel primitives ---- */
+
+void network_broadcast_reliable_event(NetworkState *network, EventRecord event)
+{
+    for (int index = 0; index < network->client_count; index++) {
+        NetClient *client = &network->clients[index];
+        if (!client->active) {
+            continue;
+        }
+        reliable_send(&client->event_channel, &network->transport, client->addr, event);
+    }
+}
+
+void network_host_tick_reliable_channels(NetworkState *network, float delta_time)
+{
+    for (int index = 0; index < network->client_count; index++) {
+        NetClient *client = &network->clients[index];
+        if (!client->active) {
+            continue;
+        }
+        reliable_tick(&client->event_channel, &network->transport, client->addr, delta_time);
+    }
+}
+
+void network_client_send_ack(NetworkState *network)
+{
+    if (!network->host_event_channel.has_received_any) {
+        return;
+    }
+    AckMessage ack = reliable_make_ack(&network->host_event_channel);
+    uint8_t buffer[NET_MAX_PACKET_SIZE];
+    size_t packet_len = 0;
+    if (!protocol_encode_ack_packet(buffer, sizeof(buffer), 0, ack, &packet_len)) {
+        return;
+    }
+    (void)net_send(&network->transport, network->join_target, buffer, packet_len);
 }

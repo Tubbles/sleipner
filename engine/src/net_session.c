@@ -10,6 +10,7 @@
 #include "level.h"
 #include "net.h"
 #include "net_protocol.h"
+#include "net_reliable.h" // ReliableChannel, reliable_on_receive
 #include "network.h"
 #include "str.h"
 #include "strv.h"
@@ -23,7 +24,7 @@
  * original layout. */
 static void network_client_receive_state(GameState *state);
 
-void network_host_tick(GameState *state)
+void network_host_tick(GameState *state, float delta_time)
 {
     if (state->network.mode != NET_HOSTING) {
         return;
@@ -37,7 +38,16 @@ void network_host_tick(GameState *state)
      * register_client's own doc comment), so it does not re-send. */
     for (int index = clients_before; index < state->network.client_count; index++) {
         network_host_send_snapshot(state, &state->network.clients[index]);
+        /* S8.4c: notify every currently active client (including the one
+         * that just joined) that a new player connected -- the one
+         * concrete event this slice wires end-to-end, see net_session.h's
+         * NETWORK_EVENT_PLAYER_JOINED doc comment. */
+        network_broadcast_reliable_event(&state->network,
+                                         (EventRecord){.event_type = NETWORK_EVENT_PLAYER_JOINED,
+                                                       .entity_id = state->network.clients[index].player_id,
+                                                       .argument = (Strv){0}});
     }
+    network_host_tick_reliable_channels(&state->network, delta_time);
 }
 
 void network_client_tick(GameState *state, const InputState *local_input)
@@ -49,6 +59,7 @@ void network_client_tick(GameState *state, const InputState *local_input)
     if (state->network.mode == NET_CLIENT) {
         network_client_send_input(&state->network, local_input);
         network_client_receive_state(state);
+        network_client_send_ack(&state->network);
     }
 }
 
@@ -240,16 +251,53 @@ void network_client_apply_state(GameState *state, const AttrRecord *records, siz
     }
 }
 
+/* "Apply" one newly-delivered reliable event (S8.4c) -- currently
+ * session-level bookkeeping rather than a gameplay mutation, since
+ * NETWORK_EVENT_PLAYER_JOINED (the one event this slice wires end-to-end,
+ * see net_session.h's own doc comment) is a connection notification with
+ * no game-state effect of its own yet. A future real gameplay trigger
+ * routed over this channel would dispatch on event.event_type here
+ * instead of just recording it. */
+static void network_client_apply_event(NetworkState *network, EventRecord event)
+{
+    network->last_delivered_event_type = event.event_type;
+    network->last_delivered_event_entity_id = event.entity_id;
+    network->delivered_event_count++;
+}
+
+/* Decode one MSG_EVENT payload and dedup it via the client's own
+ * host_event_channel (net_reliable.h's reliable_on_receive), keyed by the
+ * packet header's own seq -- the reliable channel's sequence number, the
+ * same one reliable_send (net_reliable.c) assigned on the host side. Only
+ * a newly-delivered event (is_new) is applied; a duplicate (the original
+ * plus a resend both arriving, or the same packet arriving twice) is
+ * silently dropped -- exactly-once delivery. A payload that fails to
+ * decode as EventRecord is ignored, same as every other malformed-payload
+ * path in this file. */
+static void network_client_receive_event(NetworkState *network, uint32_t seq, PacketReader *reader)
+{
+    EventRecord event = {0};
+    if (!protocol_decode_event(reader, &event)) {
+        return;
+    }
+    if (!reliable_on_receive(&network->host_event_channel, seq)) {
+        return;
+    }
+    network_client_apply_event(network, event);
+}
+
 /* CLIENT side: drain every pending packet on state->network.transport and
- * apply whichever decodes as MSG_SNAPSHOT or MSG_DELTA -- both message
- * types share the exact same attr-list wire shape and this v1 sync sends
- * full state either way (net_session.h's own "SNAPSHOT vs DELTA" note), so
- * there is nothing SNAPSHOT-specific to do here beyond decoding whichever
- * type arrived. Anything that fails to decode, or decodes as an unrelated
- * message type, is silently ignored -- same as network_host_receive's own
- * drain loop (network.c). The decode array cap matches
- * NETWORK_SYNC_RECORDS_PER_PACKET exactly, since that is also the largest
- * chunk send_sync_records ever encodes into one packet. */
+ * apply whichever decodes as MSG_SNAPSHOT, MSG_DELTA, or MSG_EVENT.
+ * MSG_SNAPSHOT/MSG_DELTA share the exact same attr-list wire shape and
+ * this v1 sync sends full state either way (net_session.h's own "SNAPSHOT
+ * vs DELTA" note), so there is nothing SNAPSHOT-specific to do here beyond
+ * decoding whichever type arrived. MSG_EVENT (S8.4c) goes through
+ * network_client_receive_event above for dedup before it is applied.
+ * Anything that fails to decode, or decodes as an unrelated message type,
+ * is silently ignored -- same as network_host_receive's own drain loop
+ * (network.c). The decode array cap matches NETWORK_SYNC_RECORDS_PER_PACKET
+ * exactly, since that is also the largest chunk send_sync_records ever
+ * encodes into one packet. */
 static void network_client_receive_state(GameState *state)
 {
     uint8_t buffer[NET_MAX_PACKET_SIZE];
@@ -266,6 +314,8 @@ static void network_client_receive_state(GameState *state)
                                               &record_count)) {
                     network_client_apply_state(state, records, record_count);
                 }
+            } else if (packet.header.type == MSG_EVENT) {
+                network_client_receive_event(&state->network, packet.header.seq, &packet.reader);
             }
         }
         received = net_recv(&state->network.transport, &src, buffer, sizeof(buffer));
