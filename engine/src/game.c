@@ -15,6 +15,9 @@
 #include "input.h"
 #include "input_func.h"
 #include "level.h"
+#include "net.h"
+#include "net_discovery.h"
+#include "network.h"
 #include "preferences.h"
 #include "random.h"
 #include "rect.h"
@@ -1440,11 +1443,48 @@ static void advance_entity_animation(GameState *state, Entity *entity, float del
     advance_entity_frame(entity, clip, delta_time);
 }
 
+/* IPv4 limited-broadcast address (255.255.255.255) in host byte order --
+ * net_udp.c's net_addr_to_sockaddr htonl()s it at the socket boundary,
+ * so this is the same bit pattern either way (all-ones). */
+#define NETWORK_BROADCAST_HOST UINT32_C(0xFFFFFFFF)
+
+/* Multiplayer LAN discovery tick (S8.3b). NET_HOSTING beacons via
+ * discovery_host_tick (net_discovery.h) to the LAN broadcast address on
+ * DISCOVERY_PORT; NET_DISCOVERING/NET_JOINING keep draining/aging/
+ * evicting state->network.join_list via discovery_client_tick so the
+ * discovery screen's list stays live while open (frame.c's
+ * run_discovery_screen_frame drives the same tick again while the world
+ * is frozen -- see its own doc comment for why this call here is not
+ * enough by itself) and so a client that already picked a host
+ * (NET_JOINING) keeps its list current while S8.4's connect logic is
+ * still unwritten. NET_OFFLINE (the zero-init default) reaches neither
+ * branch -- single-player play is byte-for-byte unaffected.
+ *
+ * listen_port is DISCOVERY_PORT itself, a placeholder: S8.4 has not yet
+ * introduced a separate game-session socket/port for a beacon to
+ * legitimately advertise, so the discovery socket's own port stands in
+ * until one exists (TODO.md tracks replacing this once S8.4 lands).
+ *
+ * Runs unconditionally of state->editor_mode, same as the frame/elapsed/
+ * music ticks above: hosting/discovering a LAN session doesn't care
+ * whether the player happens to be in the level editor right now. */
+static void tick_network(GameState *state, float delta_time)
+{
+    if (state->network.mode == NET_HOSTING) {
+        NetAddr broadcast_target = net_addr_make(NETWORK_BROADCAST_HOST, DISCOVERY_PORT);
+        discovery_host_tick(&state->network.transport, broadcast_target, state->network.host_name, DISCOVERY_PORT,
+                            &state->network.beacon_timer, delta_time);
+    } else if (state->network.mode == NET_DISCOVERING || state->network.mode == NET_JOINING) {
+        discovery_client_tick(&state->network.transport, &state->network.join_list, delta_time);
+    }
+}
+
 void game_update(Diag *diag, GameState *state, InputState input, float delta_time)
 {
     state->frame++;
     state->elapsed += delta_time;
     music_state_tick(&state->music, delta_time);
+    tick_network(state, delta_time);
 
     if (!state->editor_mode) {
         for (int index = 0; index < state->gamedata.current_level.entities.count; index++) {
@@ -1575,6 +1615,14 @@ void game_free(Diag *diag, GameState *state)
 
 void game_reset_progression(GameState *state)
 {
+    /* network_start_hosting/discovering (network.c) allocate the
+     * transport's state via an Allocator over THIS arena (see
+     * network_start_hosting's doc comment, network.h, for why
+     * progression_arena specifically) -- close the socket before
+     * arena_reset wipes it out from under net_udp_destroy's reach, or
+     * the fd leaks silently (arena_reset only reclaims memory, never
+     * calls close()). A no-op when NetworkState is already NET_OFFLINE. */
+    network_stop(&state->network);
     arena_reset(&state->progression_arena);
     state->progression = (ProgressionState){0};
     effect_queue_init(&state->effects, allocator_arena(&state->progression_arena));

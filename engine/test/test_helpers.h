@@ -4,6 +4,7 @@
 #include "attribute.h"
 #include "blueprint.h"
 #include "diag.h"
+#include "discovery_screen.h"
 #include "editor/editor.h"
 #include "entity.h"
 #include "frame.h"
@@ -56,6 +57,7 @@ typedef struct {
     SettingsState settings;
     InventoryScreen inventory;
     SaveScreen save_screen;
+    DiscoveryScreen discovery_screen;
     EditorState editor_state;
     Camera2D editor_camera;
     WatchList watches;

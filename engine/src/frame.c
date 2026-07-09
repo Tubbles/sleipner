@@ -8,6 +8,7 @@
 #include "collision.h"
 #include "debug.h"
 #include "diag.h"
+#include "discovery_screen.h"
 #include "editor/editor.h"
 #include "effect.h"
 #include "entity.h"
@@ -19,6 +20,8 @@
 #include "level.h"
 #include "map.h"
 #include "menu.h"
+#include "net_discovery.h"
+#include "network.h"
 #include "platform_paths.h"
 #include "preferences.h"
 #include "progression.h"
@@ -78,6 +81,29 @@ static void open_save_screen(MenuDispatchCtx ctx, SaveScreenMode mode)
     save_screen_open(ctx.save_screen, mode, str_to_strv(saves_dir), scratch_alloc);
 }
 
+/* Bind a real listen socket and open ctx.discovery_screen in
+ * NET_DISCOVERING (network_start_discovering, network.h). A socket
+ * creation failure (no permission, port already bound, sandboxed CI --
+ * see network_start_hosting's doc comment for the full best-effort
+ * contract network_start_discovering shares) logs and leaves the screen
+ * closed rather than opening it against a dead transport; the pause
+ * menu closes regardless (dispatch_menu_action's JOIN_GAME case below),
+ * same "menu closes either way" shape open_save_screen's callers already
+ * settle for on their own resolution failure. */
+static void open_discovery_screen(MenuDispatchCtx ctx)
+{
+    if (!ctx.discovery_screen) {
+        return;
+    }
+    Allocator alloc = allocator_arena(&ctx.state->progression_arena);
+    if (!network_start_discovering(&ctx.state->network, &alloc, ctx.diag->error)) {
+        debug_log(ctx.diag->debug, "join game: %s", error_get(ctx.diag->error));
+        error_clear(ctx.diag->error);
+        return;
+    }
+    discovery_screen_open(ctx.discovery_screen);
+}
+
 void dispatch_menu_action(MenuDispatchCtx ctx, MenuAction action)
 {
     switch (action) {
@@ -102,6 +128,19 @@ void dispatch_menu_action(MenuDispatchCtx ctx, MenuAction action)
         break;
     case MENU_ACTION_OPEN_LOAD_MENU:
         open_save_screen(ctx, SAVE_SCREEN_MODE_LOAD);
+        menu_close(ctx.menu);
+        break;
+    case MENU_ACTION_HOST_GAME: {
+        Allocator alloc = allocator_arena(&ctx.state->progression_arena);
+        if (!network_start_hosting(&ctx.state->network, &alloc, NETWORK_DEFAULT_HOST_NAME, ctx.diag->error)) {
+            debug_log(ctx.diag->debug, "host game: %s", error_get(ctx.diag->error));
+            error_clear(ctx.diag->error);
+        }
+        menu_close(ctx.menu);
+        break;
+    }
+    case MENU_ACTION_JOIN_GAME:
+        open_discovery_screen(ctx);
         menu_close(ctx.menu);
         break;
     case MENU_ACTION_OPEN_INVENTORY:
@@ -723,6 +762,54 @@ static void run_save_screen_frame(Diag *diag, GameState *state, FrameContext *ct
     }
 }
 
+/* Modal LAN discovery list (S8.3b): mirrors run_save_screen_frame's
+ * world-freeze shape above -- the world is frozen (game_update does not
+ * run) while the screen is open. Unlike every other modal screen here,
+ * the row list backing it (state->network.join_list) is NOT a snapshot
+ * taken once at open time: discovery_client_tick (net_discovery.h) must
+ * keep draining the transport and aging/evicting the list every frame
+ * the screen is open, or it would never populate at all -- game.c's
+ * tick_network only runs from inside game_update, which run_active_frame
+ * calls and this screen's world-freeze skips entirely (same as every
+ * other modal branch in frame_update below). So this is the second of
+ * two places state->network.mode == NET_DISCOVERING/NET_JOINING is ever
+ * ticked (see game.c's tick_network doc comment for the first, which
+ * covers "screen closed but still DISCOVERING/JOINING") -- exactly one
+ * of the two runs on any given frame, since frame_update returns
+ * immediately after whichever modal branch it takes, so neither
+ * double-processes a frame the other already handled.
+ *
+ * CONFIRM on a populated row resolves straight back to active play (like
+ * save_screen's successful CONFIRM): sets join_target to the chosen
+ * host's addr, flips mode to NET_JOINING (S8.4 completes the actual
+ * connection), and closes the screen without reopening the pause menu.
+ * CANCEL calls network_stop -- closing the transport, clearing
+ * join_list, returning to NET_OFFLINE -- and reopens the pause menu,
+ * same as every other modal screen's CANCEL. */
+static void run_discovery_screen_frame(GameState *state, FrameContext *ctx, InputState input, float delta_time)
+{
+    discovery_client_tick(&state->network.transport, &state->network.join_list, delta_time);
+
+    bool close_requested = false;
+    int confirmed_index = -1;
+    discovery_screen_handle_input(ctx->discovery_screen, &input, &state->bindings, &state->network.join_list,
+                                  &close_requested, &confirmed_index);
+
+    if (confirmed_index >= 0) {
+        state->network.join_target = state->network.join_list.hosts[confirmed_index].addr;
+        state->network.mode = NET_JOINING;
+        discovery_screen_close(ctx->discovery_screen);
+        return;
+    }
+    if (close_requested) {
+        network_stop(&state->network);
+        discovery_screen_close(ctx->discovery_screen);
+        if (ctx->menu) {
+            menu_open(ctx->menu);
+        }
+    }
+}
+
 /* Modal dialogue frame (S6.7c, D24): the world is frozen -- game_update is
  * never called -- while a dialogue is open, mirroring frame_update's
  * settings-open branch above. Ticks the typewriter reveal by delta_time
@@ -756,6 +843,11 @@ void frame_update(Diag *diag, GameState *state, FrameContext *ctx, InputState in
         return;
     }
 
+    if (ctx->discovery_screen && discovery_screen_is_open(ctx->discovery_screen)) {
+        run_discovery_screen_frame(state, ctx, input, delta_time);
+        return;
+    }
+
     /* Dialogue is modal over the world but never opens over the menu (a
      * rule only fires dialogue: from active play, i.e. run_active_frame
      * below, never while the menu branch is running) -- so it's enough to
@@ -786,6 +878,7 @@ void frame_update(Diag *diag, GameState *state, FrameContext *ctx, InputState in
             .settings = ctx->settings,
             .inventory = ctx->inventory,
             .save_screen = ctx->save_screen,
+            .discovery_screen = ctx->discovery_screen,
             .quit_requested = ctx->quit_requested,
             .save_fn = ctx->save_fn,
             .restore_fn = ctx->restore_fn,

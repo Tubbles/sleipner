@@ -430,18 +430,24 @@ predicate rows and MOVE reparenting).
 
 ## Multiplayer follow-ups
 
-- **`NetworkState.transport_initialized` has no teardown consumer yet
-  (S8.3a).** `network.h`'s `NetworkState` carries the flag so a real
-  transport's socket is destroyed exactly once, but no code path in
-  S8.3a ever creates a real transport (only the loopback one its own
-  tests construct locally), and `game_free`'s blanket
-  `*state = (GameState){0}` cannot itself call `net_udp_destroy` --
-  loopback and UDP transports have different teardown shapes (a
-  `LoopbackNetwork` frees all its endpoints together via
-  `loopback_network_free`; a UDP transport is destroyed individually).
-  S8.3b, which is the first slice to actually create a transport for
-  `NetworkState.transport`, needs to decide and wire the real
-  destroy-on-teardown path.
+- **`discovery_host_tick`'s `listen_port` argument is a placeholder
+  (S8.3b).** `game.c`'s `tick_network` passes `DISCOVERY_PORT` itself as
+  the beacon's advertised `BeaconMessage.listen_port` because S8.4 has
+  not yet introduced a separate game-session socket/port for a host to
+  legitimately advertise. Once S8.4 adds that socket, `tick_network`
+  needs to advertise its real port instead -- otherwise a joining
+  client's `DiscoveredHost.addr` (net_discovery.c's
+  `discovery_client_tick`, assembled from the beacon's source IP plus
+  this `listen_port`) points at the discovery socket, not the session
+  socket S8.4 will actually dial.
+- **Real LAN discovery across two physical machines is unverified by
+  any automated test (S8.3b).** A headless test cannot observe a UDP
+  broadcast actually reaching another host on the LAN -- `net_test.c`
+  and `network_test.c` only prove the `SO_BROADCAST`/`SO_REUSEADDR`/
+  `SO_REUSEPORT` setsockopt calls succeed and that two sockets can
+  coexist on one machine via port reuse. Manual on-hardware QA (host on
+  one machine, join from another) is needed before relying on this in
+  practice.
 
 ## misc
 - for some reason, when running against the walls significantly warps the

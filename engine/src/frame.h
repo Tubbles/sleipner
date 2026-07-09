@@ -1,6 +1,7 @@
 #pragma once
 
 #include "diag.h"
+#include "discovery_screen.h"
 #include "editor/editor.h"
 #include "game.h"
 #include "input.h"
@@ -75,6 +76,7 @@ typedef struct {
     SettingsState *settings;
     InventoryScreen *inventory;
     SaveScreen *save_screen;
+    DiscoveryScreen *discovery_screen;
     bool *quit_requested;
     MenuSaveFn save_fn;
     MenuRestoreFn restore_fn;
@@ -87,7 +89,18 @@ typedef struct {
  * Inventory overlay, snapshotting state->progression.items;
  * OPEN_SAVE_MENU / OPEN_LOAD_MENU (S6.15d2, D33) hand control to the
  * Save/Load slot-picker overlay, resolving the platform saves
- * directory and scanning which slots exist before opening it. */
+ * directory and scanning which slots exist before opening it.
+ * HOST_GAME / JOIN_GAME (S8.3b) call network_start_hosting /
+ * network_start_discovering (network.h) against an Allocator over
+ * state->progression_arena -- HOST_GAME just closes the menu and
+ * resumes play (the host keeps beaconing via game_update's
+ * tick_network while the player keeps playing); JOIN_GAME hands
+ * control to the discovery-list overlay instead. Either socket call
+ * failing (best-effort, see network_start_hosting's doc comment) logs
+ * via ctx.diag and closes the menu with NetworkState untouched (still
+ * NET_OFFLINE) -- same "log and close, no screen opens" shape
+ * OPEN_SAVE_MENU/OPEN_LOAD_MENU already fall back to on their own
+ * platform_saves_dir resolution failure, never a hard failure. */
 void dispatch_menu_action(MenuDispatchCtx ctx, MenuAction action);
 
 /* Editor-or-play step + simulation step. Does NOT call
@@ -128,6 +141,7 @@ typedef struct {
     SettingsState *settings;
     InventoryScreen *inventory;
     SaveScreen *save_screen;
+    DiscoveryScreen *discovery_screen;
     bool *font_preview_enabled;
     bool *quit_requested;
     MenuSaveFn save_fn;

@@ -43,6 +43,7 @@ const char *__lsan_default_suppressions(void)
 #include "collision.h"
 #include "debug.h"
 #include "depth_sort.h"
+#include "discovery_screen.h"
 #include "editor/editor.h"
 #include "entity.h"
 #include "diag.h"
@@ -61,6 +62,7 @@ const char *__lsan_default_suppressions(void)
 #include "level.h"
 #include "map.h"
 #include "menu.h"
+#include "network.h"
 #include "platform_paths.h"
 #include "preferences.h"
 #include "progression.h"
@@ -1018,18 +1020,20 @@ typedef struct {
     bool is_dirty;
     EditorState editor_state;
     const WatchList *watches;
-    /* menu, settings, inventory, save_screen, and blur are mutable:
-     * render_frame lazily calls blur_capture the first frame any overlay
-     * is open and flips the corresponding blur_captured flag. */
+    /* menu, settings, inventory, save_screen, discovery_screen, and blur
+     * are mutable: render_frame lazily calls blur_capture the first
+     * frame any overlay is open and flips the corresponding
+     * blur_captured flag. */
     MenuState *menu;
     SettingsState *settings;
     InventoryScreen *inventory;
     SaveScreen *save_screen;
+    DiscoveryScreen *discovery_screen;
     BlurPipeline *blur;
 } RenderParams;
 
 /* Capture the current scene into the blur pipeline if any overlay is
- * open and none has captured yet. Sets the captured flag on all four
+ * open and none has captured yet. Sets the captured flag on all five
  * so a single capture serves all of them (which share the backdrop). */
 static void capture_overlay_blur_if_needed(RenderParams params)
 {
@@ -1037,7 +1041,8 @@ static void capture_overlay_blur_if_needed(RenderParams params)
     bool settings_open = params.settings && params.settings->open;
     bool inventory_open = params.inventory && params.inventory->open;
     bool save_screen_open_flag = params.save_screen && params.save_screen->open;
-    if (!menu_open && !settings_open && !inventory_open && !save_screen_open_flag) {
+    bool discovery_screen_open_flag = params.discovery_screen && params.discovery_screen->open;
+    if (!menu_open && !settings_open && !inventory_open && !save_screen_open_flag && !discovery_screen_open_flag) {
         return;
     }
     if (params.menu->blur_captured) {
@@ -1052,6 +1057,9 @@ static void capture_overlay_blur_if_needed(RenderParams params)
     if (params.save_screen && params.save_screen->blur_captured) {
         return;
     }
+    if (params.discovery_screen && params.discovery_screen->blur_captured) {
+        return;
+    }
     blur_capture(params.blur, params.target.texture);
     params.menu->blur_captured = true;
     if (params.settings) {
@@ -1062,6 +1070,9 @@ static void capture_overlay_blur_if_needed(RenderParams params)
     }
     if (params.save_screen) {
         params.save_screen->blur_captured = true;
+    }
+    if (params.discovery_screen) {
+        params.discovery_screen->blur_captured = true;
     }
 }
 
@@ -1263,6 +1274,10 @@ static void render_frame(GameState *state, RenderParams params)
         save_screen_render(params.save_screen, state->assets.ui_font, params.blur, state->screen_width,
                            state->screen_height);
     }
+    if (params.discovery_screen && params.discovery_screen->open) {
+        discovery_screen_render(params.discovery_screen, &state->network.join_list, state->assets.ui_font, params.blur,
+                                state->screen_width, state->screen_height);
+    }
     EndDrawing();
 }
 
@@ -1436,6 +1451,11 @@ int main(void)
     SaveScreen save_screen = {0};
     save_screen_init(&save_screen);
 
+    /* LAN discovery list (S8.3b) shares the same blur backdrop and has no
+     * dedicated font either, same reasoning as SaveScreen above. */
+    DiscoveryScreen discovery_screen = {0};
+    discovery_screen_init(&discovery_screen);
+
     BlurPipeline blur = {0};
     blur_init(&blur, (int)game_bounds.width, (int)game_bounds.height);
     bool quit_requested = false;
@@ -1449,6 +1469,7 @@ int main(void)
         .settings = &settings,
         .inventory = &inventory,
         .save_screen = &save_screen,
+        .discovery_screen = &discovery_screen,
         .font_preview_enabled = &font_preview_enabled,
         .quit_requested = &quit_requested,
         .save_fn = menu_dispatch_save,
@@ -1496,6 +1517,7 @@ int main(void)
                                 .settings = &settings,
                                 .inventory = &inventory,
                                 .save_screen = &save_screen,
+                                .discovery_screen = &discovery_screen,
                                 .blur = &blur,
                             });
     }
@@ -1514,6 +1536,7 @@ int main(void)
 
     blur_cleanup(&blur);
     save_screen_cleanup(&save_screen);
+    discovery_screen_cleanup(&discovery_screen);
     inventory_screen_cleanup(&inventory);
     settings_cleanup(&settings);
     menu_cleanup(&menu);
@@ -1524,6 +1547,12 @@ int main(void)
     unload_music_registry(state);
     font_preview_cleanup(state);
     font_cache_cleanup(&state->assets.font_cache);
+    /* Close any real UDP socket a Host/Join session left open (S8.3b) --
+     * game_free's arena_free below would otherwise reclaim the transport
+     * struct's memory without ever calling close() on its fd. Mirrors
+     * game_reset_progression's own network_stop call (game.c) for the
+     * RESTORE action; this is the equivalent for full process shutdown. */
+    network_stop(&state->network);
     game_free(diag, state);
     audio_shutdown(&state->audio);
     debug_shutdown(&state->debug);

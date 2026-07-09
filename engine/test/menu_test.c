@@ -203,6 +203,22 @@ void test_menu_confirm_on_load_game_returns_open_load_menu(void)
     TEST_ASSERT_EQUAL_INT(MENU_ACTION_OPEN_LOAD_MENU, menu_handle_input(&menu, &input, &store));
 }
 
+void test_menu_confirm_on_host_game_returns_host_game(void)
+{
+    MenuState menu = {.open = true, .selected = MENU_ENTRY_HOST_GAME};
+    InputState input = {0};
+    input_state_press_key(&input, KEY_ENTER);
+    TEST_ASSERT_EQUAL_INT(MENU_ACTION_HOST_GAME, menu_handle_input(&menu, &input, &store));
+}
+
+void test_menu_confirm_on_join_game_returns_join_game(void)
+{
+    MenuState menu = {.open = true, .selected = MENU_ENTRY_JOIN_GAME};
+    InputState input = {0};
+    input_state_press_key(&input, KEY_ENTER);
+    TEST_ASSERT_EQUAL_INT(MENU_ACTION_JOIN_GAME, menu_handle_input(&menu, &input, &store));
+}
+
 void test_menu_confirm_on_toggle_debug_returns_toggle_debug(void)
 {
     MenuState menu = {.open = true, .selected = MENU_ENTRY_TOGGLE_DEBUG_OVERLAY};
@@ -249,6 +265,8 @@ int main(void)
     RUN_TEST(test_menu_confirm_on_restore_returns_restore);
     RUN_TEST(test_menu_confirm_on_save_game_returns_open_save_menu);
     RUN_TEST(test_menu_confirm_on_load_game_returns_open_load_menu);
+    RUN_TEST(test_menu_confirm_on_host_game_returns_host_game);
+    RUN_TEST(test_menu_confirm_on_join_game_returns_join_game);
     RUN_TEST(test_menu_confirm_on_toggle_debug_returns_toggle_debug);
     RUN_TEST(test_menu_confirm_on_quit_returns_quit);
     RUN_TEST(test_menu_cancel_returns_resume_regardless_of_selection);

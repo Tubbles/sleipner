@@ -1,19 +1,32 @@
 #pragma once
 
-/* network.h -- NetworkState (S8.3a): the runtime multiplayer session state
- * that rides on GameState, offline by default -- nothing networked
- * happens unless a mode is explicitly set. Zero-initialized to
- * NET_OFFLINE, and reset back to that same zero value by game_free's
- * blanket `*state = (GameState){0}` -- like MusicState/CameraEffect
- * (game.h), NetworkState is transient session state, not part of
- * GamedataState, so it is never undo-snapshotted.
+/* network.h -- NetworkState (S8.3a) plus the lifecycle helpers that
+ * actually create/destroy a real transport (S8.3b): the runtime
+ * multiplayer session state that rides on GameState, offline by default
+ * -- nothing networked happens unless a mode is explicitly set.
+ * Zero-initialized to NET_OFFLINE, and reset back to that same zero
+ * value by game_free's blanket `*state = (GameState){0}` -- like
+ * MusicState/CameraEffect (game.h), NetworkState is transient session
+ * state, not part of GamedataState, so it is never undo-snapshotted.
  *
  * Pairs with net.h's NetTransport (S8.1, the send/recv/poll ops struct)
  * and net_discovery.h (S8.3a, the beacon-send / join-list-collect logic
- * driven over that transport). The pause-menu Host/Join UI and the real
- * UDP broadcast wiring that actually flip `mode` and populate `transport`
- * are S8.3b; the networked game session itself is S8.4. */
+ * driven over that transport, plus DISCOVERY_PORT). The pause-menu
+ * Host/Join UI (menu.h/frame.c) calls network_start_hosting /
+ * network_start_discovering below to flip `mode` and populate
+ * `transport` with a real net_udp.h socket; the networked game session
+ * itself is S8.4.
+ *
+ * Deliberately decoupled from GameState/Diag (network.c has no
+ * dependency on game.h) -- same boundary save_screen.h documents for
+ * itself, and for the same reason: game.h already includes this header
+ * (GameState.network), so the reverse include would cycle. Callers that
+ * need to log a network_start_* failure (frame.c's dispatch_menu_action)
+ * do so themselves via the returned ErrorState, the same pattern
+ * frame.c's open_save_screen already uses for platform_saves_dir. */
 
+#include "alloc.h"
+#include "error.h"
 #include "net.h"
 
 #include <stdbool.h>
@@ -93,15 +106,13 @@ typedef struct {
     /* net.h's null-op-safe wrappers (net_send/net_recv/net_poll) already
      * tolerate an all-zero NetTransport, but a real transport (net_udp.h)
      * owns a socket that must be destroyed exactly once. This flag is
-     * what future teardown code checks before calling net_udp_destroy, so
-     * a zero-initialized (never-created) transport is never double-freed.
-     * Nothing sets it yet -- S8.3a never creates a real transport, only
-     * the loopback one its tests construct locally. */
+     * what network_stop checks before calling net_udp_destroy, so a
+     * zero-initialized (never-started) transport is never double-freed. */
     bool transport_initialized;
     JoinList join_list;
-    /* The host a client chose to join from the join list (S8.3b UI
-     * selection), consumed by S8.4's connect/session logic. Meaningless
-     * while mode != NET_JOINING. */
+    /* The host a client chose to join from the join list (discovery_screen.c's
+     * CONFIRM handling, frame.c), consumed by S8.4's connect/session logic.
+     * Meaningless while mode != NET_JOINING. */
     NetAddr join_target;
     /* This peer's advertised name: sent as BeaconMessage.host_name while
      * NET_HOSTING, shown to clients in their join list. */
@@ -111,3 +122,45 @@ typedef struct {
      * while mode != NET_HOSTING. */
     float beacon_timer;
 } NetworkState;
+
+/* Placeholder advertised name until a real player-name setting exists
+ * (no such field in preferences.h yet) -- passed by frame.c's
+ * dispatch_menu_action as network_start_hosting's host_name. */
+#define NETWORK_DEFAULT_HOST_NAME "Sleipner Host"
+
+/* Create a real UDP socket (net_udp.h) bound to DISCOVERY_PORT with
+ * broadcast enabled, and set `network` to NET_HOSTING beaconing under
+ * `host_name` (truncated to NET_NAME_MAX-1 bytes). `alloc` backs the
+ * transport's internal state -- production passes an arena Allocator
+ * over GameState.progression_arena specifically because that arena
+ * survives level transitions/hot-reloads (game_load_gamedata's
+ * arena_restore only ever touches gamedata_arena), so hosting keeps
+ * beaconing across a `transition:` the same way it does across ordinary
+ * gameplay frames. See game_reset_progression's network_stop call
+ * (game.c) for the one existing path that DOES wipe progression_arena
+ * (the pause-menu RESTORE action) and why it must close the socket
+ * first.
+ *
+ * Best-effort: socket creation can fail (no permission, port already
+ * bound with no working SO_REUSEPORT, sandboxed environment). On
+ * failure this returns false with `err` populated and leaves `network`
+ * completely untouched (still whatever it was before the call, normally
+ * NET_OFFLINE) -- the caller logs and the pause menu simply stays
+ * usable, matching every other best-effort I/O path in this codebase
+ * (platform_saves_dir, save_write, autosave). Never crashes. */
+[[nodiscard]] bool
+network_start_hosting(NetworkState *network, Allocator *alloc, const char *host_name, ErrorState *err);
+
+/* Create a real UDP socket bound to DISCOVERY_PORT (no broadcast needed
+ * -- this socket only listens for beacons, never sends to one) and set
+ * `network` to NET_DISCOVERING with a freshly cleared join_list. Same
+ * best-effort/never-crashes contract as network_start_hosting: a
+ * failure returns false with `err` populated and leaves `network`
+ * untouched. */
+[[nodiscard]] bool network_start_discovering(NetworkState *network, Allocator *alloc, ErrorState *err);
+
+/* Destroy the transport if one was ever created (safe no-op otherwise),
+ * and reset every NetworkState field back to its NET_OFFLINE zero
+ * value -- mode, join_list, join_target, beacon_timer, host_name.
+ * Idempotent: safe to call on an already-OFFLINE NetworkState. */
+void network_stop(NetworkState *network);

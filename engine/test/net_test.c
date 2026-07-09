@@ -247,13 +247,58 @@ void test_net_udp_create_destroy_ephemeral_port(void)
 {
     NetTransport transport;
     ErrorState err = {0};
-    if (!net_udp_create(&test_heap_alloc, 0, &transport, &err)) {
+    if (!net_udp_create(&test_heap_alloc, 0, false, &transport, &err)) {
         TEST_IGNORE_MESSAGE("net_udp_create failed in this sandbox (socket()/bind() likely blocked)");
         return;
     }
     TEST_ASSERT_NOT_NULL(transport.state);
     net_udp_destroy(&transport);
     TEST_ASSERT_NULL(transport.state);
+}
+
+/* allow_broadcast just flips a setsockopt best-effort (see net_udp.c's
+ * net_udp_set_broadcast_option) -- there is no way to headlessly observe
+ * SO_BROADCAST actually taking effect (that would require a real
+ * broadcast reaching another host on the LAN), so this only proves
+ * create/destroy still succeeds with the flag set. */
+void test_net_udp_create_with_broadcast_succeeds(void)
+{
+    NetTransport transport;
+    ErrorState err = {0};
+    if (!net_udp_create(&test_heap_alloc, 0, true, &transport, &err)) {
+        TEST_IGNORE_MESSAGE("net_udp_create failed in this sandbox (socket()/bind() likely blocked)");
+        return;
+    }
+    TEST_ASSERT_NOT_NULL(transport.state);
+    net_udp_destroy(&transport);
+}
+
+/* S8.3b's discovery host and client sockets both bind the same fixed
+ * DISCOVERY_PORT. On a real LAN that's two different machines, no
+ * conflict -- but two engine unit tests in this same process (or a
+ * developer running host+client on one box) both bind it too. Proves
+ * net_udp_create's SO_REUSEADDR/SO_REUSEPORT (net_udp.c) actually lets a
+ * second socket bind the identical port the first one is still holding,
+ * rather than failing with EADDRINUSE. */
+void test_net_udp_create_same_port_twice_succeeds_via_reuse(void)
+{
+    NetTransport first;
+    NetTransport second;
+    ErrorState err = {0};
+    uint16_t shared_port = 45210;
+
+    if (!net_udp_create(&test_heap_alloc, shared_port, false, &first, &err)) {
+        TEST_IGNORE_MESSAGE("net_udp_create failed in this sandbox (socket()/bind() likely blocked)");
+        return;
+    }
+    bool second_ok = net_udp_create(&test_heap_alloc, shared_port, false, &second, &err);
+    net_udp_destroy(&first);
+    if (!second_ok) {
+        TEST_IGNORE_MESSAGE("second bind to the same port failed in this sandbox (SO_REUSEPORT unavailable?)");
+        return;
+    }
+    TEST_ASSERT_NOT_NULL(second.state);
+    net_udp_destroy(&second);
 }
 
 void test_net_udp_localhost_round_trip(void)
@@ -264,11 +309,11 @@ void test_net_udp_localhost_round_trip(void)
     uint16_t receiver_port = 45201;
     uint16_t sender_port = 45202;
 
-    if (!net_udp_create(&test_heap_alloc, receiver_port, &receiver, &err)) {
+    if (!net_udp_create(&test_heap_alloc, receiver_port, false, &receiver, &err)) {
         TEST_IGNORE_MESSAGE("UDP sockets unavailable in this sandbox (receiver bind failed)");
         return;
     }
-    if (!net_udp_create(&test_heap_alloc, sender_port, &sender, &err)) {
+    if (!net_udp_create(&test_heap_alloc, sender_port, false, &sender, &err)) {
         net_udp_destroy(&receiver);
         TEST_IGNORE_MESSAGE("UDP sockets unavailable in this sandbox (sender bind failed)");
         return;
@@ -318,6 +363,8 @@ int main(void)
     RUN_TEST(test_loopback_duplicate_endpoint_registration_fails);
     RUN_TEST(test_loopback_send_to_unknown_destination_is_silently_dropped);
     RUN_TEST(test_net_udp_create_destroy_ephemeral_port);
+    RUN_TEST(test_net_udp_create_with_broadcast_succeeds);
+    RUN_TEST(test_net_udp_create_same_port_twice_succeeds_via_reuse);
     RUN_TEST(test_net_udp_localhost_round_trip);
     return UNITY_END();
 }

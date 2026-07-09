@@ -3,6 +3,7 @@
 #include "atlas.h"
 #include "attribute.h"
 #include "blueprint.h"
+#include "discovery_screen.h"
 #include "editor/editor.h"
 #include "entity.h"
 #include "error.h"
@@ -12,6 +13,8 @@
 #include "inventory_screen.h"
 #include "level.h"
 #include "menu.h"
+#include "net_discovery.h"
+#include "network.h"
 #include "rule.h"
 #include "save_screen.h"
 #include "strv.h"
@@ -2051,8 +2054,8 @@ void test_integration_inventory_screen_open_close_freezes_world(void)
     TEST_ASSERT_TRUE(game.menu.open);
 
     /* Walk to INVENTORY: RESUME, SAVE, RESTORE, SAVE_GAME, LOAD_GAME,
-     * INVENTORY -- 5 down-presses. */
-    for (int step = 0; step < 5; step++) {
+     * HOST_GAME, JOIN_GAME, INVENTORY -- 7 down-presses. */
+    for (int step = 0; step < 7; step++) {
         InputState down = {0};
         input_state_press_key(&down, KEY_DOWN);
         test_advance_frame(&game, down);
@@ -4558,10 +4561,11 @@ void test_integration_menu_navigation_and_quit(void)
     TEST_ASSERT_TRUE(game.menu.open);
     TEST_ASSERT_EQUAL_INT(MENU_ENTRY_RESUME, game.menu.selected);
 
-    /* Walk to QUIT. The menu has nine entries: RESUME, SAVE, RESTORE,
-     * SAVE_GAME, LOAD_GAME, INVENTORY, SETTINGS, TOGGLE_DEBUG_OVERLAY,
-     * QUIT — 8 down-presses from RESUME. One tap per frame. */
-    for (int step = 0; step < 8; step++) {
+    /* Walk to QUIT. The menu has eleven entries: RESUME, SAVE, RESTORE,
+     * SAVE_GAME, LOAD_GAME, HOST_GAME, JOIN_GAME, INVENTORY, SETTINGS,
+     * TOGGLE_DEBUG_OVERLAY, QUIT — 10 down-presses from RESUME. One tap
+     * per frame. */
+    for (int step = 0; step < 10; step++) {
         InputState down = {0};
         input_state_press_key(&down, KEY_DOWN);
         test_advance_frame(&game, down);
@@ -4580,6 +4584,237 @@ void test_integration_menu_navigation_and_quit(void)
     input_state_press_key(&confirm_input, KEY_ENTER);
     test_advance_frame(&game, confirm_input);
     TEST_ASSERT_TRUE(game.quit_requested);
+
+    test_game_teardown(&game);
+}
+
+/* S8.3b: with NetworkState left at its zero-init default (NET_OFFLINE),
+ * plain single-player frames must never touch discovery at all --
+ * game.c's tick_network only reaches discovery_host_tick/
+ * discovery_client_tick under NET_HOSTING/NET_DISCOVERING/NET_JOINING.
+ * beacon_timer and join_list are exactly the fields those two ticks
+ * mutate on every call regardless of whether a packet actually went
+ * anywhere (see net_discovery_test.c's own tick tests), so them staying
+ * untouched after many frames is a direct, deterministic proof that
+ * neither tick ran -- the regression guard for "offline play is
+ * byte-for-byte unchanged" the S8.3b brief calls for. */
+void test_integration_network_offline_never_ticks_discovery(void)
+{
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_gamedata));
+    TEST_ASSERT_EQUAL_INT(NET_OFFLINE, game.state.network.mode);
+
+    InputState no_input = {0};
+    test_advance_frames(&game, no_input, 200);
+
+    TEST_ASSERT_EQUAL_INT(NET_OFFLINE, game.state.network.mode);
+    TEST_ASSERT_EQUAL_FLOAT(0.0F, game.state.network.beacon_timer);
+    TEST_ASSERT_EQUAL_INT(0, game.state.network.join_list.count);
+    TEST_ASSERT_FALSE(game.state.network.transport_initialized);
+
+    test_game_teardown(&game);
+}
+
+/* Proves game_update's tick_network (game.c) actually calls
+ * discovery_host_tick every frame while NET_HOSTING, driven through the
+ * real frame loop (test_advance_frame -> frame_update -> run_active_frame
+ * -> game_update), not by calling discovery_host_tick directly. The
+ * transport is left all-zero -- net.h's send/recv/poll wrappers are
+ * null-op-safe against that, so this needs no real socket and is fully
+ * deterministic: pre-seed beacon_timer to just under the interval, drive
+ * exactly one frame at test_advance_frame's fixed 1/60s delta, and check
+ * the exact post-tick value discovery_host_tick's own accumulate-then-
+ * wrap arithmetic predicts. */
+void test_integration_network_hosting_ticks_beacon_timer_via_game_update(void)
+{
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_gamedata));
+
+    float frame_delta = 1.0F / 60.0F;
+    game.state.network.mode = NET_HOSTING;
+    game.state.network.beacon_timer = DISCOVERY_BEACON_INTERVAL_SECONDS - (frame_delta / 2.0F);
+
+    InputState no_input = {0};
+    test_advance_frame(&game, no_input);
+
+    TEST_ASSERT_EQUAL_FLOAT(frame_delta / 2.0F, game.state.network.beacon_timer);
+
+    test_game_teardown(&game);
+}
+
+/* Same proof as above for the NET_DISCOVERING/NET_JOINING side of
+ * tick_network: discovery_client_tick ages and evicts join_list every
+ * frame regardless of whether any packet ever arrives (transport is
+ * all-zero, net_recv always returns 0), so a pre-seeded stale host
+ * disappearing after DISCOVERY_TIMEOUT_SECONDS of real frames is proof
+ * the tick ran on every one of them -- nothing else in the engine ever
+ * touches join_list. */
+static void assert_network_mode_ticks_client_and_evicts_stale_host(NetMode mode)
+{
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_gamedata));
+
+    game.state.network.mode = mode;
+    join_list_add_or_refresh(&game.state.network.join_list, net_addr_make(1, 9000), "StaleHost");
+    TEST_ASSERT_EQUAL_INT(1, game.state.network.join_list.count);
+
+    InputState no_input = {0};
+    int frames_needed = (int)((DISCOVERY_TIMEOUT_SECONDS + 0.5F) * 60.0F);
+    test_advance_frames(&game, no_input, frames_needed);
+
+    TEST_ASSERT_EQUAL_INT(0, game.state.network.join_list.count);
+
+    test_game_teardown(&game);
+}
+
+void test_integration_network_discovering_ticks_client_and_evicts_stale_host(void)
+{
+    assert_network_mode_ticks_client_and_evicts_stale_host(NET_DISCOVERING);
+}
+
+void test_integration_network_joining_still_ticks_client_and_evicts_stale_host(void)
+{
+    assert_network_mode_ticks_client_and_evicts_stale_host(NET_JOINING);
+}
+
+/* Drives the real pause-menu Host Game entry end to end: F3 -> down to
+ * HOST_GAME -> confirm. network_start_hosting (network.h) creates a real
+ * UDP socket -- best-effort, per its own doc comment -- so a sandboxed
+ * CI could block socket()/bind() entirely; this asserts the wiring
+ * either way rather than assuming the socket call succeeds (the mode-
+ * transition logic itself is proven independent of any real socket by
+ * network_test.c's test_apply_hosting_* tests). The menu closing and
+ * resuming play (not opening any screen) is unconditional either way --
+ * HOST_GAME never hands off to a modal overlay, per its own doc comment
+ * (menu.h). */
+void test_integration_menu_host_game_starts_hosting_and_resumes_play(void)
+{
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_gamedata));
+
+    InputState open_menu = {0};
+    input_state_press_key(&open_menu, KEY_F3);
+    test_advance_frame(&game, open_menu);
+    TEST_ASSERT_TRUE(game.menu.open);
+
+    for (int step = 0; step < 5; step++) {
+        InputState down = {0};
+        input_state_press_key(&down, KEY_DOWN);
+        test_advance_frame(&game, down);
+    }
+    TEST_ASSERT_EQUAL_INT(MENU_ENTRY_HOST_GAME, game.menu.selected);
+
+    InputState confirm = {0};
+    input_state_press_key(&confirm, KEY_ENTER);
+    test_advance_frame(&game, confirm);
+
+    TEST_ASSERT_FALSE(game.menu.open);
+    if (game.state.network.mode == NET_HOSTING) {
+        TEST_ASSERT_TRUE(game.state.network.transport_initialized);
+        TEST_ASSERT_EQUAL_STRING(NETWORK_DEFAULT_HOST_NAME, game.state.network.host_name);
+    } else {
+        TEST_IGNORE_MESSAGE("network_start_hosting failed in this sandbox (socket()/bind() likely blocked)");
+    }
+
+    test_game_teardown(&game);
+}
+
+/* Mirrors test_integration_menu_host_game_starts_hosting_and_resumes_play
+ * above for Join Game: F3 -> down to JOIN_GAME -> confirm.
+ * network_start_discovering creates the real listen socket; on success
+ * the discovery screen opens over the (now frozen) world, on failure
+ * open_discovery_screen (frame.c) leaves it closed. */
+void test_integration_menu_join_game_opens_discovery_screen(void)
+{
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_gamedata));
+
+    InputState open_menu = {0};
+    input_state_press_key(&open_menu, KEY_F3);
+    test_advance_frame(&game, open_menu);
+    TEST_ASSERT_TRUE(game.menu.open);
+
+    for (int step = 0; step < 6; step++) {
+        InputState down = {0};
+        input_state_press_key(&down, KEY_DOWN);
+        test_advance_frame(&game, down);
+    }
+    TEST_ASSERT_EQUAL_INT(MENU_ENTRY_JOIN_GAME, game.menu.selected);
+
+    InputState confirm = {0};
+    input_state_press_key(&confirm, KEY_ENTER);
+    test_advance_frame(&game, confirm);
+
+    TEST_ASSERT_FALSE(game.menu.open);
+    if (game.state.network.mode == NET_DISCOVERING) {
+        TEST_ASSERT_TRUE(discovery_screen_is_open(&game.discovery_screen));
+    } else {
+        TEST_ASSERT_EQUAL_INT(NET_OFFLINE, game.state.network.mode);
+        TEST_ASSERT_FALSE(discovery_screen_is_open(&game.discovery_screen));
+        TEST_IGNORE_MESSAGE("network_start_discovering failed in this sandbox (socket()/bind() likely blocked)");
+    }
+
+    test_game_teardown(&game);
+}
+
+/* Discovery screen with an injected join_list (arrange step mirrors
+ * test_integration_save_screen_save_and_load_round_trip_via_menu's own
+ * direct-state-mutation arrange step above) -- deterministic host
+ * entries a real socket could never guarantee in a unit test. The act/
+ * assert portion drives only the real input layer: NAV_DOWN once, then
+ * CONFIRM. Proves the CONFIRM -> join_target/NET_JOINING wiring
+ * (frame.c's run_discovery_screen_frame) actually runs -- verified to
+ * fail (join_target stays zero, mode stays NET_DISCOVERING) against a
+ * temporary stub of that wiring that closes the screen without setting
+ * either field; reverted before committing. */
+void test_integration_discovery_screen_confirm_sets_join_target_and_joining(void)
+{
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_gamedata));
+
+    game.state.network.mode = NET_DISCOVERING;
+    join_list_add_or_refresh(&game.state.network.join_list, net_addr_make(10, 9001), "Alice");
+    NetAddr bob_addr = net_addr_make(20, 9002);
+    join_list_add_or_refresh(&game.state.network.join_list, bob_addr, "Bob");
+    discovery_screen_open(&game.discovery_screen);
+
+    InputState down = {0};
+    input_state_press_key(&down, KEY_DOWN);
+    test_advance_frame(&game, down);
+
+    InputState confirm = {0};
+    input_state_press_key(&confirm, KEY_ENTER);
+    test_advance_frame(&game, confirm);
+
+    TEST_ASSERT_TRUE(net_addr_eq(bob_addr, game.state.network.join_target));
+    TEST_ASSERT_EQUAL_INT(NET_JOINING, game.state.network.mode);
+    TEST_ASSERT_FALSE(discovery_screen_is_open(&game.discovery_screen));
+    TEST_ASSERT_FALSE(game.menu.open);
+
+    test_game_teardown(&game);
+}
+
+/* CANCEL out of the discovery screen: network_stop tears the (here,
+ * never-real) transport down, clears join_list, returns to NET_OFFLINE,
+ * and the pause menu reopens -- same "CANCEL returns to the menu" shape
+ * every other modal screen's CANCEL already takes. */
+void test_integration_discovery_screen_cancel_stops_network_and_reopens_menu(void)
+{
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_gamedata));
+
+    game.state.network.mode = NET_DISCOVERING;
+    join_list_add_or_refresh(&game.state.network.join_list, net_addr_make(10, 9001), "Alice");
+    discovery_screen_open(&game.discovery_screen);
+
+    InputState cancel = {0};
+    input_state_press_key(&cancel, KEY_ESCAPE);
+    test_advance_frame(&game, cancel);
+
+    TEST_ASSERT_EQUAL_INT(NET_OFFLINE, game.state.network.mode);
+    TEST_ASSERT_EQUAL_INT(0, game.state.network.join_list.count);
+    TEST_ASSERT_FALSE(discovery_screen_is_open(&game.discovery_screen));
+    TEST_ASSERT_TRUE(game.menu.open);
 
     test_game_teardown(&game);
 }
@@ -4656,13 +4891,13 @@ void test_integration_settings_tab_switch(void)
     TestGame game;
     TEST_ASSERT_TRUE(test_game_setup(&game, fixture_gamedata));
 
-    /* Open menu (F3) → walk to SETTINGS (6 down-presses from RESUME) → confirm. */
+    /* Open menu (F3) → walk to SETTINGS (8 down-presses from RESUME) → confirm. */
     InputState menu_open = {0};
     input_state_press_key(&menu_open, KEY_F3);
     test_advance_frame(&game, menu_open);
     TEST_ASSERT_TRUE(game.menu.open);
 
-    for (int step = 0; step < 6; step++) {
+    for (int step = 0; step < 8; step++) {
         InputState down = {0};
         input_state_press_key(&down, KEY_DOWN);
         test_advance_frame(&game, down);
@@ -4714,11 +4949,11 @@ void test_integration_settings_path_edit_commit(void)
     TestGame game;
     TEST_ASSERT_TRUE(test_game_setup(&game, fixture_gamedata));
 
-    /* Open menu → SETTINGS (6 down-presses) → confirm. */
+    /* Open menu → SETTINGS (8 down-presses) → confirm. */
     InputState menu_open = {0};
     input_state_press_key(&menu_open, KEY_F3);
     test_advance_frame(&game, menu_open);
-    for (int step = 0; step < 6; step++) {
+    for (int step = 0; step < 8; step++) {
         InputState down = {0};
         input_state_press_key(&down, KEY_DOWN);
         test_advance_frame(&game, down);
@@ -4789,7 +5024,7 @@ void test_integration_settings_path_edit_parent_lists_contents(void)
     InputState menu_open = {0};
     input_state_press_key(&menu_open, KEY_F3);
     test_advance_frame(&game, menu_open);
-    for (int step = 0; step < 6; step++) {
+    for (int step = 0; step < 8; step++) {
         InputState down = {0};
         input_state_press_key(&down, KEY_DOWN);
         test_advance_frame(&game, down);
@@ -4837,7 +5072,7 @@ void test_integration_settings_path_edit_drive_select_round_trip(void)
     InputState menu_open = {0};
     input_state_press_key(&menu_open, KEY_F3);
     test_advance_frame(&game, menu_open);
-    for (int step = 0; step < 6; step++) {
+    for (int step = 0; step < 8; step++) {
         InputState down = {0};
         input_state_press_key(&down, KEY_DOWN);
         test_advance_frame(&game, down);
@@ -4898,7 +5133,7 @@ void test_integration_settings_path_edit_commit_normalizes_separators(void)
     InputState menu_open = {0};
     input_state_press_key(&menu_open, KEY_F3);
     test_advance_frame(&game, menu_open);
-    for (int step = 0; step < 6; step++) {
+    for (int step = 0; step < 8; step++) {
         InputState down = {0};
         input_state_press_key(&down, KEY_DOWN);
         test_advance_frame(&game, down);
@@ -5078,7 +5313,7 @@ void test_integration_settings_path_edit_buffer_row_enters_keyboard_mode(void)
     InputState menu_open = {0};
     input_state_press_key(&menu_open, KEY_F3);
     test_advance_frame(&game, menu_open);
-    for (int step = 0; step < 6; step++) {
+    for (int step = 0; step < 8; step++) {
         InputState down = {0};
         input_state_press_key(&down, KEY_DOWN);
         test_advance_frame(&game, down);

@@ -48,6 +48,43 @@ typedef struct {
     Allocator alloc; /* stored so net_udp_destroy can free this struct itself */
 } NetUdpState;
 
+#define NET_UDP_SOCK_OPT_ENABLE 1
+
+/* Best-effort SO_REUSEADDR (+ SO_REUSEPORT where the platform defines
+ * it) so two sockets on the same machine can both bind DISCOVERY_PORT --
+ * see net_udp_create's doc comment (net_udp.h) for why this matters.
+ * setsockopt failures are silently ignored: worst case, a same-box
+ * second bind fails later at bind() with its own error, which IS
+ * reported by the caller. Called before bind(), the only point POSIX
+ * honors these options. */
+static void net_udp_set_reuse_options(NetSocket socket_handle)
+{
+    int enable = NET_UDP_SOCK_OPT_ENABLE;
+    /* SOL_SOCKET/SO_REUSEADDR/SO_REUSEPORT come from sys/socket.h via the
+     * glibc chain sys/socket.h -> bits/socket.h -> asm-generic/socket.h;
+     * <sys/socket.h> (included above) is the correct portable include,
+     * clang's mapping just doesn't attribute through that many hops --
+     * same false-positive class as this file's own EWOULDBLOCK/EAGAIN
+     * note above (confirmed via `clang -E -dM -x c` against
+     * <sys/socket.h>, same verification method). */
+    // NOLINTNEXTLINE(misc-include-cleaner)
+    (void)setsockopt(socket_handle, SOL_SOCKET, SO_REUSEADDR, (const char *)&enable, sizeof(enable));
+#if defined(SO_REUSEPORT)
+    (void)setsockopt(socket_handle, SOL_SOCKET, SO_REUSEPORT, (const char *)&enable, sizeof(enable));
+#endif
+}
+
+/* Best-effort SO_BROADCAST -- see net_udp_create's doc comment (net_udp.h)
+ * for why a beaconing host socket needs this before sendto() will accept
+ * a broadcast destination. Silently ignored on failure, same tolerant
+ * contract as net_udp_set_reuse_options above. */
+static void net_udp_set_broadcast_option(NetSocket socket_handle)
+{
+    int enable = NET_UDP_SOCK_OPT_ENABLE;
+    // NOLINTNEXTLINE(misc-include-cleaner) -- see net_udp_set_reuse_options above
+    (void)setsockopt(socket_handle, SOL_SOCKET, SO_BROADCAST, (const char *)&enable, sizeof(enable));
+}
+
 static void net_addr_to_sockaddr(NetAddr addr, struct sockaddr_in *out)
 {
     memset(out, 0, sizeof(*out));
@@ -110,7 +147,7 @@ static void net_udp_poll(void *state)
 
 #if defined(_WIN32)
 
-bool net_udp_create(Allocator *alloc, uint16_t bind_port, NetTransport *out, ErrorState *err)
+bool net_udp_create(Allocator *alloc, uint16_t bind_port, bool allow_broadcast, NetTransport *out, ErrorState *err)
 {
     WSADATA wsa_data;
     int startup_result = WSAStartup(MAKEWORD(2, 2), &wsa_data);
@@ -132,6 +169,11 @@ bool net_udp_create(Allocator *alloc, uint16_t bind_port, NetTransport *out, Err
         closesocket(socket_handle);
         WSACleanup();
         return false;
+    }
+
+    net_udp_set_reuse_options(socket_handle);
+    if (allow_broadcast) {
+        net_udp_set_broadcast_option(socket_handle);
     }
 
     struct sockaddr_in bind_addr;
@@ -167,7 +209,7 @@ void net_udp_destroy(NetTransport *transport)
 
 #else /* POSIX */
 
-bool net_udp_create(Allocator *alloc, uint16_t bind_port, NetTransport *out, ErrorState *err)
+bool net_udp_create(Allocator *alloc, uint16_t bind_port, bool allow_broadcast, NetTransport *out, ErrorState *err)
 {
     int socket_handle = socket(AF_INET, SOCK_DGRAM, 0);
     if (socket_handle < 0) {
@@ -180,6 +222,11 @@ bool net_udp_create(Allocator *alloc, uint16_t bind_port, NetTransport *out, Err
         error_set(err, "net_udp_create: fcntl(O_NONBLOCK) failed: %s", strerror(errno));
         close(socket_handle);
         return false;
+    }
+
+    net_udp_set_reuse_options(socket_handle);
+    if (allow_broadcast) {
+        net_udp_set_broadcast_option(socket_handle);
     }
 
     struct sockaddr_in bind_addr;

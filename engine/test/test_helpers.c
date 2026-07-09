@@ -3,6 +3,7 @@
 #include "attribute.h"
 #include "collision.h"
 #include "diag.h"
+#include "discovery_screen.h"
 #include "editor/editor.h"
 #include "editor/internal.h"
 #include "entity.h"
@@ -11,6 +12,7 @@
 #include "input.h"
 #include "inventory_screen.h"
 #include "menu.h"
+#include "network.h"
 #include "raylib.h"
 #include "rect.h"
 #include "save_screen.h"
@@ -235,6 +237,7 @@ bool test_game_setup_with_level(TestGame *out, const char *toml_string, const ch
     settings_init(&out->settings);
     inventory_screen_init(&out->inventory);
     save_screen_init(&out->save_screen);
+    discovery_screen_init(&out->discovery_screen);
     out->editor_state = (EditorState){.top_mode = EDITOR_TOP_SCENE,
                                       .selected_entity_id = -1,
                                       .sub_mode = EDITOR_SUB_BROWSE,
@@ -257,6 +260,7 @@ bool test_game_setup_with_level(TestGame *out, const char *toml_string, const ch
         .settings = &out->settings,
         .inventory = &out->inventory,
         .save_screen = &out->save_screen,
+        .discovery_screen = &out->discovery_screen,
         .font_preview_enabled = &out->font_preview_enabled,
         .quit_requested = &out->quit_requested,
         .save_fn = nullptr,
@@ -276,6 +280,14 @@ void test_game_teardown(TestGame *game)
     settings_cleanup(&game->settings);
     inventory_screen_cleanup(&game->inventory);
     save_screen_cleanup(&game->save_screen);
+    discovery_screen_cleanup(&game->discovery_screen);
+    /* Close any real UDP socket a Host/Join integration test left open
+     * (S8.3b) -- game_free's arena_free below would otherwise reclaim the
+     * transport struct's memory without ever calling close() on its fd,
+     * and unlike a single production process, this test binary runs many
+     * TestGame instances in one process, so a leaked fd per test adds up.
+     * Mirrors main.c's own pre-game_free network_stop call. */
+    network_stop(&game->state.network);
     game_free(&game->diag, &game->state);
 }
 
