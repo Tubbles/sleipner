@@ -49,6 +49,7 @@ add_unit_test(settings_general_test)
 add_unit_test(hud_test)
 add_unit_test(inventory_screen_test)
 add_unit_test(save_screen_test)
+add_unit_test(net_test)
 
 add_executable(engine_tests
     main_test.c

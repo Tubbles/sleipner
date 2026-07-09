@@ -14,7 +14,16 @@
  *
  * Create a vec with vec_<name>_new(alloc) — the allocator is stored
  * in the struct and used by all subsequent push/free calls.
- * Access elements directly via vec.data[index] — it is a typed pointer. */
+ * Access elements directly via vec.data[index] — it is a typed pointer.
+ *
+ * type may itself be a pointer type (e.g. VEC_DECL(foo_ptr, Foo *)) for a
+ * vec of stable, individually-allocated elements referenced by pointer —
+ * see "Vec growth and pointer stability" in CLAUDE.md for when that shape
+ * is preferred over a vec of values. VEC_IMPL's Allocator calls cast
+ * explicitly through void * for this case: vec->data is then a
+ * multi-level pointer (Foo **), and an implicit conversion between a
+ * multi-level pointer and void * is exactly what
+ * bugprone-multi-level-implicit-pointer-conversion exists to catch. */
 
 #include "alloc.h"
 
@@ -51,8 +60,8 @@
             int    new_cap   = vec->capacity == 0 ? VEC_INITIAL_CAPACITY              \
                                                   : vec->capacity * VEC_GROWTH_FACTOR;\
             size_t new_bytes = (size_t)new_cap * sizeof(type);                       \
-            typeof(type) *new_data = vec->alloc.realloc_fn(                           \
-                vec->alloc.ctx, vec->data, new_bytes);                                \
+            typeof(type) *new_data = (typeof(type) *)vec->alloc.realloc_fn(           \
+                vec->alloc.ctx, (void *)vec->data, new_bytes);                        \
             if (!new_data) {                                                          \
                 return false;                                                         \
             }                                                                         \
@@ -66,7 +75,7 @@
     void vec_##name##_clear(vec_##name *vec) { vec->count = 0; }                     \
     void vec_##name##_free(vec_##name *vec) {                                        \
         if (vec->alloc.free_fn) {                                                      \
-            vec->alloc.free_fn(vec->alloc.ctx, vec->data);                             \
+            vec->alloc.free_fn(vec->alloc.ctx, (void *)vec->data);                     \
         }                                                                             \
         vec->data     = nullptr;                                                      \
         vec->count    = 0;                                                            \

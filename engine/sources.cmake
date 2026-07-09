@@ -67,6 +67,9 @@ set(ENGINE_SOURCE_FILES
     level.c
     map.c
     menu.c
+    net.c
+    net_loopback.c
+    net_udp.c
     particle.c
     platform_paths.c
     preferences.c
