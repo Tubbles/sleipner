@@ -8,6 +8,7 @@
 #include "gamedata.h"
 #include "input.h"
 #include "input_func.h"
+#include "network.h"
 #include "preferences.h"
 #include "progression.h"
 #include "random.h"
@@ -216,6 +217,11 @@ typedef struct {
     /* Fade-to-black state machine driving level transitions (S6.14,
      * D27) -- see TransitionFade's doc comment above. */
     TransitionFade fade;
+    /* Multiplayer session state (S8.3a) -- see network.h's NetworkState
+     * doc comment. Not part of GamedataState: not undo-snapshotted, and
+     * zero-initializes to NET_OFFLINE so nothing networked happens unless
+     * a caller explicitly sets a mode (S8.3b). */
+    NetworkState network;
 } GameState;
 
 typedef struct {

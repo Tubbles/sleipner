@@ -51,6 +51,7 @@ add_unit_test(inventory_screen_test)
 add_unit_test(save_screen_test)
 add_unit_test(net_test)
 add_unit_test(net_protocol_test)
+add_unit_test(net_discovery_test)
 
 add_executable(engine_tests
     main_test.c

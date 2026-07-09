@@ -428,6 +428,21 @@ predicate rows and MOVE reparenting).
   `embed_asset`'s generated template to append a
   `.section .note.GNU-stack,"",%progbits` marker to silence it for good.
 
+## Multiplayer follow-ups
+
+- **`NetworkState.transport_initialized` has no teardown consumer yet
+  (S8.3a).** `network.h`'s `NetworkState` carries the flag so a real
+  transport's socket is destroyed exactly once, but no code path in
+  S8.3a ever creates a real transport (only the loopback one its own
+  tests construct locally), and `game_free`'s blanket
+  `*state = (GameState){0}` cannot itself call `net_udp_destroy` --
+  loopback and UDP transports have different teardown shapes (a
+  `LoopbackNetwork` frees all its endpoints together via
+  `loopback_network_free`; a UDP transport is destroyed individually).
+  S8.3b, which is the first slice to actually create a transport for
+  `NetworkState.transport`, needs to decide and wire the real
+  destroy-on-teardown path.
+
 ## misc
 - for some reason, when running against the walls significantly warps the
   sprite. could be related to float position not scaling up correctly or other
