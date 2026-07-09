@@ -4,11 +4,14 @@
 #include "error.h"
 #include "input.h"
 #include "strv.h"
+#include "vec.h"
 
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
+
+VEC_IMPL(attr_record, AttrRecord)
 
 #define BITS_PER_BYTE 8
 

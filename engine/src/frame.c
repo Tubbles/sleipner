@@ -526,19 +526,43 @@ void run_active_frame(Diag *diag,
     /* S8.4a session ticks, right before game_update so this tick's
      * behavior dispatch (game.c's input_for_entity) sees the freshest
      * data: network_host_tick drains this tick's JOIN/INPUT packets
-     * before the host simulates; network_client_tick sends this tick's
-     * MSG_JOIN/MSG_INPUT. Both are self-guarding on state->network.mode
-     * (net_session.h) and no-op under every other mode, so calling both
-     * unconditionally here leaves single-player (NET_OFFLINE) untouched --
-     * same reasoning as game.c's tick_network running unconditionally of
-     * editor_mode. Uses the raw `input` (this peer's own physical
-     * controller reading), not `game_input`: a client's local fade-to-
-     * black transition suppresses ITS OWN player's movement, but must not
-     * also suppress the input it forwards to the host. */
+     * before the host simulates (and, S8.4b, sends a SNAPSHOT to any
+     * client that just joined); network_client_tick sends this tick's
+     * MSG_JOIN/MSG_INPUT and, S8.4b, drains and applies any pending
+     * SNAPSHOT/DELTA onto this GameState's own entities. Both are
+     * self-guarding on state->network.mode (net_session.h) and no-op
+     * under every other mode, so calling both unconditionally here leaves
+     * single-player (NET_OFFLINE) untouched -- same reasoning as game.c's
+     * tick_network running unconditionally of editor_mode. Uses the raw
+     * `input` (this peer's own physical controller reading), not
+     * `game_input`: a client's local fade-to-black transition suppresses
+     * ITS OWN player's movement, but must not also suppress the input it
+     * forwards to the host. */
     network_host_tick(state);
     network_client_tick(state, &input);
+    /* S8.4b: a NET_CLIENT frame renders only -- it never runs the
+     * authoritative simulation. network_client_tick above already applied
+     * this tick's host state onto state's entities, so game_update_client_render
+     * (game.c) only needs to advance render-derived state (animation,
+     * camera) on top of it; running the full game_update here would
+     * duplicate the host's own behavior dispatch/combat/rules against data
+     * the host already owns, and could fire side effects (sounds, toasts,
+     * dialogue) the host never intended. Menu/UI handling is unaffected --
+     * frame_update (above this call in the stack) already branches away
+     * from run_active_frame entirely whenever a menu or modal screen is
+     * open, for every mode including NET_CLIENT. Offline (NET_OFFLINE) and
+     * hosting (NET_HOSTING) frames are unchanged: game_update runs as
+     * before, followed by a DELTA broadcast to every connected client once
+     * this tick's simulation has produced its freshest state. */
+    if (state->network.mode == NET_CLIENT) {
+        game_update_client_render(state, delta_time);
+        return;
+    }
     game_update(diag, state, game_input, delta_time);
     apply_effect_queue(diag, state, editor_state);
+    if (state->network.mode == NET_HOSTING) {
+        network_host_broadcast_delta(state);
+    }
 }
 
 /* THE SWAP: the fully-black-midpoint body of a level transition -- capture

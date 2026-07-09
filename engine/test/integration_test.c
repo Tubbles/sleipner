@@ -4863,10 +4863,14 @@ void test_integration_discovery_screen_cancel_stops_network_and_reopens_menu(voi
  * driven only through test_advance_frame (the real frame_update ->
  * run_active_frame path), so network_client_tick/network_host_tick
  * (net_session.h) run exactly where frame.c wires them in, not called
- * directly from the test body. The CLIENT's own local simulation also
- * runs every frame (test_advance_frame drives a full frame on it, same as
- * the HOST) but is never asserted on -- S8.4a doesn't sync state back to
- * the client yet, only this slice's HOST-side authoritative movement. */
+ * directly from the test body. As of S8.4b the CLIENT no longer runs its
+ * own local simulation at all once NET_CLIENT (run_active_frame calls
+ * game_update_client_render instead of game_update, see frame.c) -- its
+ * entity state comes solely from applied host SNAPSHOT/DELTA packets. This
+ * particular test still only asserts on the HOST's own authoritative
+ * movement; the two S8.4b tests right below (test_integration_delta_converges_client_view,
+ * test_integration_join_snapshot_equivalence) are what assert on the
+ * CLIENT's synced view. */
 
 static const char *host_session_gamedata = "[[blueprint]]\n"
                                            "name = \"hero\"\n"
@@ -4970,6 +4974,171 @@ void test_integration_client_input_moves_player_on_host(void)
     network_host_tick(&host.state);
 
     TEST_ASSERT_EQUAL_INT(1, host.state.network.client_count);
+
+    test_game_teardown(&host);
+    test_game_teardown(&client);
+    loopback_network_free(&loopback);
+}
+
+/* ---- Integration: S8.4b state sync (SNAPSHOT on join + per-tick DELTA) ----
+ *
+ * Same two-TestGame-over-net_loopback.h shape as test_integration_client_input_moves_player_on_host
+ * above, reusing its host_session_gamedata fixture. Both tests below are
+ * driven only through test_advance_frame -- network_host_send_snapshot/
+ * _broadcast_delta/network_client_apply_state (net_session.h) run exactly
+ * where net_session.c/frame.c wire them in, never called directly from the
+ * test body. */
+
+/* Deltas converge the client's view: the HOST's own local:0 "hero" is
+ * driven by held-right input on the HOST's machine every tick;
+ * network_host_broadcast_delta (net_session.c) sends the freshest
+ * position + attrs after every host game_update, and the CLIENT -- which
+ * runs no local simulation of its own once NET_CLIENT (game_update_client_render,
+ * not game_update, see frame.c) -- applies each DELTA it receives. After
+ * enough ticks (plus one final client-only frame to drain the last
+ * in-flight DELTA) the client's copy of "hero" matches the host's exactly:
+ * both position (bit-exact, since ATTR_FLOAT rides the wire as an
+ * IEEE-754 bit pattern with no precision loss) and a synced ATTR
+ * (update_entity_anim_attrs, game.c, writes state="walk" onto the moving
+ * entity's own instance attrs -- confirming attrs converge, not just
+ * position). */
+void test_integration_delta_converges_client_view(void)
+{
+    LoopbackNetwork loopback;
+    loopback_network_init(&loopback, &test_heap_alloc);
+    NetAddr host_addr = net_addr_make(1, 9000);
+    NetAddr client_addr = net_addr_make(2, 9001);
+    NetTransport host_transport;
+    NetTransport client_transport;
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, host_addr, &host_transport));
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, client_addr, &client_transport));
+
+    TestGame host;
+    TEST_ASSERT_TRUE(test_game_setup(&host, host_session_gamedata));
+    host.state.network.mode = NET_HOSTING;
+    host.state.network.transport = host_transport;
+
+    TestGame client;
+    TEST_ASSERT_TRUE(test_game_setup(&client, host_session_gamedata));
+    client.state.network.mode = NET_JOINING;
+    client.state.network.transport = client_transport;
+    client.state.network.join_target = host_addr;
+
+    Entity *host_hero_before = test_find_entity_by_blueprint(&host.state, "hero");
+    TEST_ASSERT_NOT_NULL(host_hero_before);
+    Vector2 host_hero_start = host_hero_before->position;
+
+    InputState move_right = {0};
+    input_state_hold_key(&move_right, KEY_RIGHT);
+    InputState no_input = {0};
+
+    int frames = 20;
+    for (int frame = 0; frame < frames; frame++) {
+        /* Client sends idle input every tick (irrelevant to its own
+         * render -- it applies host state instead -- and only routed on
+         * the host to "remote_hero", left untouched here). */
+        test_advance_frame(&client, no_input);
+        /* Host moves "hero" (local:0, its own machine's input) and, after
+         * this tick's game_update, broadcasts a DELTA with the fresh
+         * position/attrs. */
+        test_advance_frame(&host, move_right);
+    }
+    /* One more client-only tick to drain and apply the final DELTA the
+     * host's last loop iteration broadcast -- without this the client is
+     * exactly one tick behind (see net_session.c's drain-then-simulate-
+     * then-broadcast ordering), which the epsilon-free exact-equality
+     * assertions below would otherwise fail on. */
+    test_advance_frame(&client, no_input);
+
+    TEST_ASSERT_EQUAL_INT(NET_CLIENT, client.state.network.mode);
+
+    Entity *host_hero_after = test_find_entity_by_blueprint(&host.state, "hero");
+    Entity *client_hero_after = test_find_entity_by_blueprint(&client.state, "hero");
+    TEST_ASSERT_NOT_NULL(host_hero_after);
+    TEST_ASSERT_NOT_NULL(client_hero_after);
+
+    float frame_delta = 1.0F / 60.0F;
+    float expected_dx = 80.0F * frame_delta * (float)frames;
+    TEST_ASSERT_FLOAT_WITHIN(1.0F, host_hero_start.x + expected_dx, host_hero_after->position.x);
+
+    TEST_ASSERT_EQUAL_FLOAT(host_hero_after->position.x, client_hero_after->position.x);
+    TEST_ASSERT_EQUAL_FLOAT(host_hero_after->position.y, client_hero_after->position.y);
+    TEST_ASSERT_EQUAL_STRING("walk", attr_get_string(&host_hero_after->attrs, "state"));
+    TEST_ASSERT_EQUAL_STRING("walk", attr_get_string(&client_hero_after->attrs, "state"));
+
+    test_game_teardown(&host);
+    test_game_teardown(&client);
+    loopback_network_free(&loopback);
+}
+
+/* Join-snapshot equivalence: the host's state is diverged from the
+ * authored fixture -- both entities moved, both given a "health" instance
+ * attr -- BEFORE a client ever joins, so a match can only come from
+ * actually receiving the SNAPSHOT network_host_tick sends the moment
+ * register_client (network.c) accepts the join, not from coincidentally
+ * matching the authored starting positions. Asserts full-state equivalence
+ * for EVERY entity in the level (both "hero" and "remote_hero"), not just
+ * the player -- proving the snapshot builder walks the whole level, not
+ * just whichever entity happens to be the local player. */
+void test_integration_join_snapshot_equivalence(void)
+{
+    LoopbackNetwork loopback;
+    loopback_network_init(&loopback, &test_heap_alloc);
+    NetAddr host_addr = net_addr_make(1, 9000);
+    NetAddr client_addr = net_addr_make(2, 9001);
+    NetTransport host_transport;
+    NetTransport client_transport;
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, host_addr, &host_transport));
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, client_addr, &client_transport));
+
+    TestGame host;
+    TEST_ASSERT_TRUE(test_game_setup(&host, host_session_gamedata));
+    host.state.network.mode = NET_HOSTING;
+    host.state.network.transport = host_transport;
+
+    Entity *host_hero = test_find_entity_by_blueprint(&host.state, "hero");
+    Entity *host_remote = test_find_entity_by_blueprint(&host.state, "remote_hero");
+    TEST_ASSERT_NOT_NULL(host_hero);
+    TEST_ASSERT_NOT_NULL(host_remote);
+    host_hero->position = (Vector2){150.0F, 120.0F};
+    host_remote->position = (Vector2){250.0F, 140.0F};
+    Allocator host_gamedata_alloc = allocator_arena(&host.state.gamedata_arena);
+    TEST_ASSERT_TRUE(attr_set_float(&host_gamedata_alloc, &host_hero->attrs, "health", 42.0F));
+    TEST_ASSERT_TRUE(attr_set_float(&host_gamedata_alloc, &host_remote->attrs, "health", 17.0F));
+
+    TestGame client;
+    TEST_ASSERT_TRUE(test_game_setup(&client, host_session_gamedata));
+    client.state.network.mode = NET_JOINING;
+    client.state.network.transport = client_transport;
+    client.state.network.join_target = host_addr;
+
+    InputState no_input = {0};
+    int frames = 3;
+    for (int frame = 0; frame < frames; frame++) {
+        test_advance_frame(&client, no_input);
+        test_advance_frame(&host, no_input);
+    }
+    /* Drain whatever the host's final loop iteration broadcast. */
+    test_advance_frame(&client, no_input);
+
+    TEST_ASSERT_EQUAL_INT(NET_CLIENT, client.state.network.mode);
+    TEST_ASSERT_EQUAL_INT(1, host.state.network.client_count);
+
+    Entity *host_hero_final = test_find_entity_by_blueprint(&host.state, "hero");
+    Entity *host_remote_final = test_find_entity_by_blueprint(&host.state, "remote_hero");
+    Entity *client_hero = test_find_entity_by_blueprint(&client.state, "hero");
+    Entity *client_remote = test_find_entity_by_blueprint(&client.state, "remote_hero");
+    TEST_ASSERT_NOT_NULL(host_hero_final);
+    TEST_ASSERT_NOT_NULL(host_remote_final);
+    TEST_ASSERT_NOT_NULL(client_hero);
+    TEST_ASSERT_NOT_NULL(client_remote);
+
+    TEST_ASSERT_EQUAL_FLOAT(host_hero_final->position.x, client_hero->position.x);
+    TEST_ASSERT_EQUAL_FLOAT(host_hero_final->position.y, client_hero->position.y);
+    TEST_ASSERT_EQUAL_FLOAT(host_remote_final->position.x, client_remote->position.x);
+    TEST_ASSERT_EQUAL_FLOAT(host_remote_final->position.y, client_remote->position.y);
+    TEST_ASSERT_EQUAL_FLOAT(42.0F, attr_get_float(&client_hero->attrs, "health", -1.0F));
+    TEST_ASSERT_EQUAL_FLOAT(17.0F, attr_get_float(&client_remote->attrs, "health", -1.0F));
 
     test_game_teardown(&host);
     test_game_teardown(&client);

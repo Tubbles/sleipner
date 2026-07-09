@@ -243,6 +243,23 @@ typedef struct {
 [[nodiscard]] bool game_init(Diag *diag, GameState *state, RectU32 game_bounds);
 [[nodiscard]] bool game_load_gamedata(Diag *diag, GameState *state, GamedataParams params);
 void game_update(Diag *diag, GameState *state, InputState input, float delta_time);
+
+/* NET_CLIENT-only per-frame update (S8.4b): a client's entity state
+ * (position, instance attrs) is authoritative from the host, applied by
+ * network_client_apply_state (net_session.h) before this runs -- see
+ * run_active_frame's NET_CLIENT branch (frame.c). Running the full
+ * game_update simulation on top of that would duplicate the host's
+ * authority (behavior dispatch, combat, collision, rule evaluation) and
+ * could fire side effects -- sounds, toasts, dialogue, spawns -- the host
+ * never intended. This advances only what rendering needs: the generic
+ * animation pass (advance_entity_animation, driven by the just-applied
+ * `state`/`direction` attrs) and the camera follow target, mirroring
+ * game_update's own calls to both but skipping everything else --
+ * behavior dispatch, combat timers, collision, rule evaluation, the
+ * effect queue. No-op while state->editor_mode (same guard game_update's
+ * own per-entity loop uses). */
+void game_update_client_render(GameState *state, float delta_time);
+
 Entity *game_get_player(GameState *state);
 const Entity *game_get_player_const(const GameState *state);
 void game_free(Diag *diag, GameState *state);

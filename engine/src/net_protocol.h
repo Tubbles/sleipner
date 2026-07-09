@@ -26,6 +26,7 @@
 #include "error.h"     // ErrorState
 #include "input.h"     // InputState
 #include "strv.h"      // Strv
+#include "vec.h"       // VEC_DECL
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -136,15 +137,32 @@ typedef union {
     Strv str;
 } AttrRecordValue;
 
+/* Field order (name, value, entity_id, type -- not declaration order
+ * entity_id/name/type/value) is deliberate, not cosmetic: name and value
+ * are both 16 bytes with 8-byte alignment (Strv/AttrRecordValue each embed
+ * a pointer), so grouping them first and packing the two 4-byte fields
+ * (entity_id, type) at the end leaves zero padding bytes. The
+ * entity_id/name/type/value order clang-analyzer's optin.performance.Padding
+ * check flagged left 8 padding bytes (4 after entity_id, 4 after type) --
+ * every construction site already uses designated initializers
+ * (net_session.c, net_protocol.c, net_protocol_test.c), so this reorder
+ * changes memory layout only, never call-site behavior. */
 typedef struct {
-    int32_t entity_id;
     Strv name;
-    AttrType type;
     AttrRecordValue value;
+    int32_t entity_id;
+    AttrType type;
 } AttrRecord;
 
 [[nodiscard]] bool protocol_encode_attr_record(PacketWriter *writer, AttrRecord record);
 [[nodiscard]] bool protocol_decode_attr_record(PacketReader *reader, AttrRecord *out);
+
+/* Dynamically-sized collection of AttrRecords (S8.4b): the count a host
+ * needs to sync -- every entity's position plus instance attrs, see
+ * net_session.h's own doc comment -- is bounded by level content, not by
+ * frame count or any fixed cap, so a vec (not a MAX_*-sized array) is the
+ * right shape here per CLAUDE.md's vec-over-MAX_* rule. */
+VEC_DECL(attr_record, AttrRecord)
 
 /* MSG_SNAPSHOT (full) and MSG_DELTA (changed-only) share this exact wire
  * shape -- a u16 count followed by that many attr records; only the

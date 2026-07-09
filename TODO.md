@@ -444,6 +444,28 @@ predicate rows and MOVE reparenting).
   assembled from the beacon's source IP plus this `listen_port`) points
   at the discovery socket, not the session socket S8.4a's `join_target`
   actually dials.
+- **S8.4b's DELTA broadcast sends full synced state every tick, not a
+  diff.** `network_host_broadcast_delta` (net_session.c) re-serializes
+  every entity's position + attrs on every hosting tick regardless of
+  whether anything actually changed since the last tick -- correct
+  (a client's view can only lag by a tick, never permanently drift)
+  but wastes bandwidth that scales with level size. Real per-attr
+  diffing (track the last value sent per entity/attr, only emit
+  a record when it changed) is deferred; fine for the LAN-only
+  pre-alpha this targets, revisit once bandwidth actually matters
+  (real UDP across a real LAN, or much larger levels).
+- **S8.4b's multi-packet SNAPSHOT/DELTA splitting is unexercised by
+  any test.** `send_sync_records` (net_session.c) chunks a level's
+  sync records into `NETWORK_SYNC_RECORDS_PER_PACKET`-sized (20)
+  packets, but neither `test_integration_delta_converges_client_view`
+  nor `test_integration_join_snapshot_equivalence` has enough
+  entities/attrs to force a second packet -- both fixtures stay well
+  under the cap. Overflow safety doesn't depend on the split actually
+  being exercised (`protocol_encode_snapshot_packet`/`_delta_packet`
+  bounds-check and fail closed, and a failed chunk is silently dropped
+  rather than written out of bounds), but the chunking logic itself
+  has no direct test. A fixture with enough entities to force more
+  than 20 records would close this gap.
 - **Real LAN discovery across two physical machines is unverified by
   any automated test (S8.3b).** A headless test cannot observe a UDP
   broadcast actually reaching another host on the LAN -- `net_test.c`

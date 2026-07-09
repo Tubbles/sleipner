@@ -150,6 +150,8 @@ void test_integration_menu_join_game_opens_discovery_screen(void);
 void test_integration_discovery_screen_confirm_sets_join_target_and_joining(void);
 void test_integration_discovery_screen_cancel_stops_network_and_reopens_menu(void);
 void test_integration_client_input_moves_player_on_host(void);
+void test_integration_delta_converges_client_view(void);
+void test_integration_join_snapshot_equivalence(void);
 void test_integration_menu_escape_returns_resume(void);
 void test_integration_menu_gamepad_navigation(void);
 void test_integration_settings_tab_switch(void);
@@ -404,6 +406,8 @@ int main(void)
     RUN_TEST(test_integration_discovery_screen_confirm_sets_join_target_and_joining);
     RUN_TEST(test_integration_discovery_screen_cancel_stops_network_and_reopens_menu);
     RUN_TEST(test_integration_client_input_moves_player_on_host);
+    RUN_TEST(test_integration_delta_converges_client_view);
+    RUN_TEST(test_integration_join_snapshot_equivalence);
     RUN_TEST(test_integration_menu_escape_returns_resume);
     RUN_TEST(test_integration_menu_gamepad_navigation);
     RUN_TEST(test_integration_settings_tab_switch);
