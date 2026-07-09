@@ -17,6 +17,7 @@
 #include "level.h"
 #include "net.h"
 #include "net_discovery.h"
+#include "net_protocol.h" // gamedata_content_hash
 #include "network.h"
 #include "preferences.h"
 #include "random.h"
@@ -31,6 +32,7 @@
 
 #include <math.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
@@ -187,6 +189,12 @@ static int find_player_entity(const GameState *state)
 
 bool game_load_gamedata(Diag *diag, GameState *state, GamedataParams params)
 {
+    /* Computed unconditionally, ahead of the parse attempt below: S8.4a's
+     * JOIN handshake (net_session.h) needs a stable "what gamedata is this
+     * GameState running" answer regardless of whether the parse that
+     * follows actually succeeds. */
+    state->gamedata_hash = gamedata_content_hash(params.toml_string);
+
     size_t length = strlen(params.toml_string);
     char *buffer = arena_alloc(&state->gamedata_arena, length + 1);
     if (!buffer) {
@@ -454,18 +462,41 @@ typedef struct {
 
 typedef void (*BehaviorUpdateFn)(BehaviorContext *context);
 
-/* D39's multiplayer input seam: an entity's `input_source` attr (default
- * "local:0") selects where its input comes from. Only "local:0" resolves to
- * the real local input today -- every other source (a second local gamepad,
- * or a future networked player) yields idle input, since no other input
- * providers exist yet. This is the sole point behaviors read input through,
- * so plugging in real multi-source routing later (S8) means changing only
- * this function. */
-static InputState input_for_entity(const Entity *entity, const AttrSet *defaults, const InputState *local_input)
+/* Prefix an entity's `input_source` attr uses to name a network player:
+ * "network:<player_id>", player_id matching a NetClient.player_id
+ * (network.h) the host has registered via JOIN. sizeof(...)-1 (not
+ * strlen) so the offset into `source` below is a compile-time constant. */
+#define NETWORK_INPUT_SOURCE_PREFIX "network:"
+#define RADIX_DECIMAL 10
+
+/* D39/S8.4a's multiplayer input seam: an entity's `input_source` attr
+ * (default "local:0") selects where its input comes from.
+ * - "local:0" resolves to the real local input.
+ * - "network:<id>" resolves to the InputState the client running as
+ *   player_id <id> most recently sent (network_find_client_by_player_id,
+ *   network.h) -- meaningful on a HOSTING GameState only, since `network`
+ *   is only ever populated with clients there; idle input if no such
+ *   client is currently registered (not yet joined, wrong id, or this
+ *   GameState isn't hosting at all).
+ * - anything else (a second local gamepad, or an unrecognized source)
+ *   yields idle input, since no other providers exist yet.
+ * This is the sole point behaviors read input through, so plugging in
+ * further sources later means changing only this function. */
+static InputState input_for_entity(const Entity *entity,
+                                   const AttrSet *defaults,
+                                   const NetworkState *network,
+                                   const InputState *local_input)
 {
     const char *source = attr_get_scoped_string(&entity->attrs, defaults, "input_source");
     if (!source || strcmp(source, "local:0") == 0) {
         return *local_input;
+    }
+    if (strv_starts_with_cstr(strv_from_cstr(source), NETWORK_INPUT_SOURCE_PREFIX)) {
+        int player_id = (int)strtol(source + (sizeof(NETWORK_INPUT_SOURCE_PREFIX) - 1), nullptr, RADIX_DECIMAL);
+        const NetClient *client = network_find_client_by_player_id(network, player_id);
+        if (client) {
+            return client->last_input;
+        }
     }
     return (InputState){0};
 }
@@ -534,7 +565,7 @@ static void behavior_player(BehaviorContext *context)
     GameState *state = context->state;
     Entity *player = &state->gamedata.current_level.entities.data[context->entity_index];
     const AttrSet *player_defaults = entity_resolve_defaults(state, player->id);
-    InputState routed_input = input_for_entity(player, player_defaults, context->input);
+    InputState routed_input = input_for_entity(player, player_defaults, &state->network, context->input);
     RectU32 level_size = {(uint32_t)state->gamedata.current_level.width,
                           (uint32_t)state->gamedata.current_level.height};
     update_player(player, player_defaults, &routed_input, context->bindings, context->delta_time, level_size);

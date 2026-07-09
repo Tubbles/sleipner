@@ -1,10 +1,11 @@
 #include "fff.h"
 #include "unity.h"
 
-#include "../src/error.c"   // NOLINT(bugprone-suspicious-include)
-#include "../src/net_udp.c" // NOLINT(bugprone-suspicious-include)
-#include "../src/network.c" // NOLINT(bugprone-suspicious-include)
-#include "../src/strv.c"    // NOLINT(bugprone-suspicious-include)
+#include "../src/error.c"        // NOLINT(bugprone-suspicious-include)
+#include "../src/net_protocol.c" // NOLINT(bugprone-suspicious-include)
+#include "../src/net_udp.c"      // NOLINT(bugprone-suspicious-include)
+#include "../src/network.c"      // NOLINT(bugprone-suspicious-include)
+#include "../src/strv.c"         // NOLINT(bugprone-suspicious-include)
 
 DEFINE_FFF_GLOBALS;
 

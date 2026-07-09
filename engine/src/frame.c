@@ -21,6 +21,7 @@
 #include "map.h"
 #include "menu.h"
 #include "net_discovery.h"
+#include "net_session.h"
 #include "network.h"
 #include "platform_paths.h"
 #include "preferences.h"
@@ -522,6 +523,20 @@ void run_active_frame(Diag *diag,
      * the toast timer (above) are untouched -- D27 only asks for player
      * input to be suppressed, not the editor or UI feedback. */
     InputState game_input = state->fade.phase == TRANSITION_FADE_NONE ? input : (InputState){0};
+    /* S8.4a session ticks, right before game_update so this tick's
+     * behavior dispatch (game.c's input_for_entity) sees the freshest
+     * data: network_host_tick drains this tick's JOIN/INPUT packets
+     * before the host simulates; network_client_tick sends this tick's
+     * MSG_JOIN/MSG_INPUT. Both are self-guarding on state->network.mode
+     * (net_session.h) and no-op under every other mode, so calling both
+     * unconditionally here leaves single-player (NET_OFFLINE) untouched --
+     * same reasoning as game.c's tick_network running unconditionally of
+     * editor_mode. Uses the raw `input` (this peer's own physical
+     * controller reading), not `game_input`: a client's local fade-to-
+     * black transition suppresses ITS OWN player's movement, but must not
+     * also suppress the input it forwards to the host. */
+    network_host_tick(state);
+    network_client_tick(state, &input);
     game_update(diag, state, game_input, delta_time);
     apply_effect_queue(diag, state, editor_state);
 }

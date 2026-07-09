@@ -431,15 +431,19 @@ predicate rows and MOVE reparenting).
 ## Multiplayer follow-ups
 
 - **`discovery_host_tick`'s `listen_port` argument is a placeholder
-  (S8.3b).** `game.c`'s `tick_network` passes `DISCOVERY_PORT` itself as
-  the beacon's advertised `BeaconMessage.listen_port` because S8.4 has
-  not yet introduced a separate game-session socket/port for a host to
-  legitimately advertise. Once S8.4 adds that socket, `tick_network`
-  needs to advertise its real port instead -- otherwise a joining
-  client's `DiscoveredHost.addr` (net_discovery.c's
-  `discovery_client_tick`, assembled from the beacon's source IP plus
-  this `listen_port`) points at the discovery socket, not the session
-  socket S8.4 will actually dial.
+  (S8.3b), still true after S8.4a.** `game.c`'s `tick_network` passes
+  `DISCOVERY_PORT` itself as the beacon's advertised
+  `BeaconMessage.listen_port` because no separate game-session
+  socket/port exists yet -- S8.4a's JOIN/INPUT flow (`network.c`'s
+  `network_client_send_join`/`_send_input`/`network_host_receive`)
+  reuses whatever transport `network_start_hosting`/`_discovering`
+  already bound to `DISCOVERY_PORT`, rather than opening a dedicated
+  one. Once a real session socket exists, `tick_network` needs to
+  advertise its real port instead -- otherwise a joining client's
+  `DiscoveredHost.addr` (net_discovery.c's `discovery_client_tick`,
+  assembled from the beacon's source IP plus this `listen_port`) points
+  at the discovery socket, not the session socket S8.4a's `join_target`
+  actually dials.
 - **Real LAN discovery across two physical machines is unverified by
   any automated test (S8.3b).** A headless test cannot observe a UDP
   broadcast actually reaching another host on the LAN -- `net_test.c`

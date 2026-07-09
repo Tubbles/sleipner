@@ -2,12 +2,15 @@
 
 #include "alloc.h"
 #include "error.h"
+#include "input.h"
 #include "net.h"
 #include "net_discovery.h" // DISCOVERY_PORT
+#include "net_protocol.h"
 #include "net_udp.h"
 #include "strv.h"
 
 #include <stddef.h>
+#include <stdint.h>
 
 DiscoveredHost *join_list_find(JoinList *list, NetAddr addr)
 {
@@ -116,4 +119,121 @@ void network_stop(NetworkState *network)
     network->join_target = (NetAddr){0};
     network->beacon_timer = 0.0F;
     network->host_name[0] = '\0';
+    for (int index = 0; index < NET_MAX_CLIENTS; index++) {
+        network->clients[index] = (NetClient){0};
+    }
+    network->client_count = 0;
+}
+
+/* ---- S8.4a: session JOIN + INPUT flow ---- */
+
+const NetClient *network_find_client_by_player_id(const NetworkState *network, int player_id)
+{
+    for (int index = 0; index < network->client_count; index++) {
+        if (network->clients[index].active && network->clients[index].player_id == player_id) {
+            return &network->clients[index];
+        }
+    }
+    return nullptr;
+}
+
+static NetClient *find_client_by_addr(NetworkState *network, NetAddr addr)
+{
+    for (int index = 0; index < network->client_count; index++) {
+        if (network->clients[index].active && net_addr_eq(network->clients[index].addr, addr)) {
+            return &network->clients[index];
+        }
+    }
+    return nullptr;
+}
+
+/* Register a newly-JOINed client at addr with the next player_id (1..N in
+ * join order). A no-op (not an error) if addr is already registered --
+ * re-JOIN refreshes rather than duplicating, and S8.4a has nothing else on
+ * NetClient worth refreshing yet. Silently drops a genuinely new client
+ * past NET_MAX_CLIENTS, the same bounded-capacity contract
+ * join_list_add_or_refresh already uses for JoinList. */
+static void register_client(NetworkState *network, NetAddr addr)
+{
+    if (find_client_by_addr(network, addr) != nullptr) {
+        return;
+    }
+    if (network->client_count >= NET_MAX_CLIENTS) {
+        return;
+    }
+    network->clients[network->client_count] = (NetClient){
+        .addr = addr,
+        .player_id = network->client_count + 1,
+        .active = true,
+    };
+    network->client_count++;
+}
+
+void network_client_send_join(NetworkState *network, uint64_t local_gamedata_hash)
+{
+    JoinMessage message = {.gamedata_hash = local_gamedata_hash, .client_name = strv_from_cstr(network->host_name)};
+    uint8_t buffer[NET_MAX_PACKET_SIZE];
+    size_t packet_len = 0;
+    if (!protocol_encode_join_packet(buffer, sizeof(buffer), 0, message, &packet_len)) {
+        return;
+    }
+    (void)net_send(&network->transport, network->join_target, buffer, packet_len);
+}
+
+void network_client_send_input(NetworkState *network, const InputState *local_input)
+{
+    uint8_t buffer[NET_MAX_PACKET_SIZE];
+    size_t packet_len = 0;
+    if (!protocol_encode_input_packet(buffer, sizeof(buffer), 0, local_input, &packet_len)) {
+        return;
+    }
+    (void)net_send(&network->transport, network->join_target, buffer, packet_len);
+}
+
+/* Decode one payload as MSG_JOIN and either register or refuse the
+ * sender, per network_host_receive's own doc comment. */
+static void handle_join_datagram(NetworkState *network, NetAddr src, PacketReader *reader, uint64_t local_gamedata_hash)
+{
+    JoinMessage message = {0};
+    if (!protocol_decode_join(reader, &message)) {
+        return;
+    }
+    JoinVerifyResult verify = protocol_join_verify(local_gamedata_hash, message.gamedata_hash);
+    if (!verify.ok) {
+        return;
+    }
+    register_client(network, src);
+}
+
+/* Decode one payload as MSG_INPUT and store it as src's last_input, if src
+ * is a registered client. Input from an unregistered address is ignored
+ * (a client must JOIN before its INPUT is honored). */
+static void handle_input_datagram(NetworkState *network, NetAddr src, PacketReader *reader)
+{
+    NetClient *client = find_client_by_addr(network, src);
+    if (client == nullptr) {
+        return;
+    }
+    if (!protocol_decode_input(reader, &client->last_input)) {
+        return;
+    }
+}
+
+void network_host_receive(NetworkState *network, uint64_t local_gamedata_hash)
+{
+    uint8_t buffer[NET_MAX_PACKET_SIZE];
+    NetAddr src = {0};
+    int received = net_recv(&network->transport, &src, buffer, sizeof(buffer));
+    while (received > 0) {
+        DecodedPacket packet;
+        ErrorState decode_err = {0};
+        if (protocol_decode_packet(buffer, (size_t)received, &packet, &decode_err)) {
+            if (packet.header.type == MSG_JOIN) {
+                handle_join_datagram(network, src, &packet.reader, local_gamedata_hash);
+            } else if (packet.header.type == MSG_INPUT) {
+                handle_input_datagram(network, src, &packet.reader);
+            }
+        }
+        received = net_recv(&network->transport, &src, buffer, sizeof(buffer));
+    }
 }

@@ -14,6 +14,8 @@
 #include "level.h"
 #include "menu.h"
 #include "net_discovery.h"
+#include "net_loopback.h"
+#include "net_session.h"
 #include "network.h"
 #include "rule.h"
 #include "save_screen.h"
@@ -4642,13 +4644,19 @@ void test_integration_network_hosting_ticks_beacon_timer_via_game_update(void)
     test_game_teardown(&game);
 }
 
-/* Same proof as above for the NET_DISCOVERING/NET_JOINING side of
- * tick_network: discovery_client_tick ages and evicts join_list every
- * frame regardless of whether any packet ever arrives (transport is
- * all-zero, net_recv always returns 0), so a pre-seeded stale host
- * disappearing after DISCOVERY_TIMEOUT_SECONDS of real frames is proof
- * the tick ran on every one of them -- nothing else in the engine ever
- * touches join_list. */
+/* Same proof as above for the NET_DISCOVERING side of tick_network:
+ * discovery_client_tick ages and evicts join_list every frame regardless
+ * of whether any packet ever arrives (transport is all-zero, net_recv
+ * always returns 0), so a pre-seeded stale host disappearing after
+ * DISCOVERY_TIMEOUT_SECONDS of real frames is proof the tick ran on every
+ * one of them -- nothing else in the engine ever touches join_list.
+ *
+ * NET_JOINING used to share this exact proof (see
+ * test_integration_network_joining_immediately_connects_and_stops_discovering
+ * below for why it no longer does, as of S8.4a) -- this helper now only
+ * has one caller, kept as a named helper anyway since a future
+ * NET_DISCOVERING variant (e.g. a second host appearing) would want the
+ * same shape. */
 static void assert_network_mode_ticks_client_and_evicts_stale_host(NetMode mode)
 {
     TestGame game;
@@ -4672,9 +4680,38 @@ void test_integration_network_discovering_ticks_client_and_evicts_stale_host(voi
     assert_network_mode_ticks_client_and_evicts_stale_host(NET_DISCOVERING);
 }
 
-void test_integration_network_joining_still_ticks_client_and_evicts_stale_host(void)
+/* S8.4a changed what NET_JOINING means for tick_network: frame.c's
+ * run_active_frame now calls net_session.c's network_client_tick BEFORE
+ * game_update on every frame, and network_client_tick sends this
+ * session's MSG_JOIN and advances state->network.mode to NET_CLIENT the
+ * very first time it observes NET_JOINING (S8.4a's implicit-acceptance
+ * model -- see NetMode's doc comment, network.h). So by the time
+ * game_update's own tick_network runs its NET_DISCOVERING/NET_JOINING
+ * branch, the mode has already moved past NET_JOINING to NET_CLIENT --
+ * discovery_client_tick's join_list ageing/eviction never fires for a
+ * JOINING client again, on this or any later frame. This replaces the old
+ * test_integration_network_joining_still_ticks_client_and_evicts_stale_host
+ * (which asserted the opposite: eviction after DISCOVERY_TIMEOUT_SECONDS,
+ * true before S8.4a existed) with the new reality: mode is NET_CLIENT
+ * after the first frame, and the stale host is never evicted because
+ * discovery stopped ticking -- the client isn't discovering anymore, it's
+ * connected. */
+void test_integration_network_joining_immediately_connects_and_stops_discovering(void)
 {
-    assert_network_mode_ticks_client_and_evicts_stale_host(NET_JOINING);
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_gamedata));
+
+    game.state.network.mode = NET_JOINING;
+    join_list_add_or_refresh(&game.state.network.join_list, net_addr_make(1, 9000), "StaleHost");
+
+    InputState no_input = {0};
+    int frames_needed = (int)((DISCOVERY_TIMEOUT_SECONDS + 0.5F) * 60.0F);
+    test_advance_frames(&game, no_input, frames_needed);
+
+    TEST_ASSERT_EQUAL_INT(NET_CLIENT, game.state.network.mode);
+    TEST_ASSERT_EQUAL_INT(1, game.state.network.join_list.count);
+
+    test_game_teardown(&game);
 }
 
 /* Drives the real pause-menu Host Game entry end to end: F3 -> down to
@@ -4817,6 +4854,126 @@ void test_integration_discovery_screen_cancel_stops_network_and_reopens_menu(voi
     TEST_ASSERT_TRUE(game.menu.open);
 
     test_game_teardown(&game);
+}
+
+/* ---- Integration: S8.4a host-authoritative session skeleton (JOIN + INPUT) ----
+ *
+ * Two full TestGames (HOST, CLIENT) wired together over one net_loopback.h
+ * switchboard -- no real sockets, deterministic FIFO delivery. Both are
+ * driven only through test_advance_frame (the real frame_update ->
+ * run_active_frame path), so network_client_tick/network_host_tick
+ * (net_session.h) run exactly where frame.c wires them in, not called
+ * directly from the test body. The CLIENT's own local simulation also
+ * runs every frame (test_advance_frame drives a full frame on it, same as
+ * the HOST) but is never asserted on -- S8.4a doesn't sync state back to
+ * the client yet, only this slice's HOST-side authoritative movement. */
+
+static const char *host_session_gamedata = "[[blueprint]]\n"
+                                           "name = \"hero\"\n"
+                                           "texture = \"t.png\"\n"
+                                           "src = [0, 0, 16, 16]\n"
+                                           "behavior = \"player\"\n"
+                                           "speed = 80\n"
+                                           "\n"
+                                           "[[blueprint]]\n"
+                                           "name = \"remote_hero\"\n"
+                                           "texture = \"t.png\"\n"
+                                           "src = [0, 0, 16, 16]\n"
+                                           "behavior = \"player\"\n"
+                                           "input_source = \"network:1\"\n"
+                                           "speed = 80\n"
+                                           "\n"
+                                           "[[level]]\n"
+                                           "name = \"test\"\n"
+                                           "size = [400, 300]\n"
+                                           "\n"
+                                           "[[level.entity]]\n"
+                                           "blueprint = \"hero\"\n"
+                                           "pos = [100, 100]\n"
+                                           "\n"
+                                           "[[level.entity]]\n"
+                                           "blueprint = \"remote_hero\"\n"
+                                           "pos = [200, 100]\n";
+
+void test_integration_client_input_moves_player_on_host(void)
+{
+    LoopbackNetwork loopback;
+    loopback_network_init(&loopback, &test_heap_alloc);
+    NetAddr host_addr = net_addr_make(1, 9000);
+    NetAddr client_addr = net_addr_make(2, 9001);
+    NetTransport host_transport;
+    NetTransport client_transport;
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, host_addr, &host_transport));
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, client_addr, &client_transport));
+
+    TestGame host;
+    TEST_ASSERT_TRUE(test_game_setup(&host, host_session_gamedata));
+    host.state.network.mode = NET_HOSTING;
+    host.state.network.transport = host_transport; /* transport_initialized left false: fabricated, not net_udp */
+
+    TestGame client;
+    TEST_ASSERT_TRUE(test_game_setup(&client, host_session_gamedata));
+    client.state.network.mode = NET_JOINING;
+    client.state.network.transport = client_transport;
+    client.state.network.join_target = host_addr;
+
+    Entity *local_before = test_find_entity_by_blueprint(&host.state, "hero");
+    Entity *remote_before = test_find_entity_by_blueprint(&host.state, "remote_hero");
+    TEST_ASSERT_NOT_NULL(local_before);
+    TEST_ASSERT_NOT_NULL(remote_before);
+    Vector2 local_start = local_before->position;
+    Vector2 remote_start = remote_before->position;
+
+    InputState move_right = {0};
+    input_state_hold_key(&move_right, KEY_RIGHT);
+    InputState no_input = {0};
+
+    int frames = 20;
+    for (int frame = 0; frame < frames; frame++) {
+        /* Client's own frame: JOINING -> sends MSG_JOIN and flips to
+         * NET_CLIENT on the first iteration (net_session.c's
+         * network_client_tick), then sends this frame's held-right
+         * InputState as MSG_INPUT every iteration including this one. */
+        test_advance_frame(&client, move_right);
+        /* Host's own frame: network_host_tick drains whatever the client
+         * just sent (both packets, in order, over the loopback FIFO
+         * inbox) before game_update simulates -- so the host's "hero"
+         * (local:0, fed `no_input` here) stays put while "remote_hero"
+         * (network:1) is driven by the client's last_input. */
+        test_advance_frame(&host, no_input);
+    }
+
+    TEST_ASSERT_EQUAL_INT(NET_CLIENT, client.state.network.mode);
+    TEST_ASSERT_EQUAL_INT(1, host.state.network.client_count);
+    TEST_ASSERT_EQUAL_INT(1, host.state.network.clients[0].player_id);
+    TEST_ASSERT_TRUE(net_addr_eq(client_addr, host.state.network.clients[0].addr));
+
+    Entity *local_after = test_find_entity_by_blueprint(&host.state, "hero");
+    Entity *remote_after = test_find_entity_by_blueprint(&host.state, "remote_hero");
+    TEST_ASSERT_EQUAL_FLOAT(local_start.x, local_after->position.x);
+    TEST_ASSERT_EQUAL_FLOAT(local_start.y, local_after->position.y);
+
+    float frame_delta = 1.0F / 60.0F;
+    float expected_dx = 80.0F * frame_delta * (float)frames;
+    TEST_ASSERT_FLOAT_WITHIN(1.0F, remote_start.x + expected_dx, remote_after->position.x);
+
+    /* A JOIN with a mismatched gamedata hash must be refused: no new
+     * client registered, host.client_count stays at 1. A separate rogue
+     * endpoint (not a full second TestGame -- only the raw NetworkState-
+     * level JOIN primitive is under test here) sends one MSG_JOIN with a
+     * deliberately wrong hash straight at the host. */
+    NetAddr rogue_addr = net_addr_make(3, 9002);
+    NetTransport rogue_transport;
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, rogue_addr, &rogue_transport));
+    NetworkState rogue_network = {.transport = rogue_transport, .join_target = host_addr};
+    network_client_send_join(&rogue_network, host.state.gamedata_hash ^ 1);
+    network_host_tick(&host.state);
+
+    TEST_ASSERT_EQUAL_INT(1, host.state.network.client_count);
+
+    test_game_teardown(&host);
+    test_game_teardown(&client);
+    loopback_network_free(&loopback);
 }
 
 /* Cancel (Escape) returns from the menu regardless of where the

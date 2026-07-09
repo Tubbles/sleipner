@@ -72,6 +72,7 @@ set(ENGINE_SOURCE_FILES
     net_discovery.c
     net_loopback.c
     net_protocol.c
+    net_session.c
     net_udp.c
     network.c
     particle.c

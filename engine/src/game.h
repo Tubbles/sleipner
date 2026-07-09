@@ -17,6 +17,7 @@
 #include "strv.h"
 
 #include <stdbool.h>
+#include <stdint.h>
 
 #define MAX_TEXTURE_FILENAME 64
 #define FONT_NAME_LEN 64
@@ -171,6 +172,14 @@ typedef struct {
     int frame;
     float elapsed;
     bool gamedata_loaded;
+    /* FNV-1a content hash of the currently-loaded gamedata TOML
+     * (net_protocol.h's gamedata_content_hash), recomputed by
+     * game_load_gamedata on every call regardless of parse success. The
+     * JOIN handshake's source of truth for "local gamedata" on both sides
+     * (net_session.h's network_host_tick/network_client_tick) -- a host
+     * and a client running different gamedata must not simulate a shared
+     * session together. */
+    uint64_t gamedata_hash;
     bool editor_mode;
     bool debug_enabled;
     bool prev_interact;
