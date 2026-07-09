@@ -8,6 +8,7 @@ sprite_offset = [16, 16]
 behavior = "player"
 speed = 80
 solid = true
+health = [6, 6]
 attack_hit_frame_start = 1
 attack_hit_frame_end = 2
 
