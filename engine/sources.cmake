@@ -69,6 +69,7 @@ set(ENGINE_SOURCE_FILES
     menu.c
     net.c
     net_loopback.c
+    net_protocol.c
     net_udp.c
     particle.c
     platform_paths.c
