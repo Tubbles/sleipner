@@ -118,6 +118,18 @@ typedef struct {
      * false), so a projectile fired into empty space eventually
      * disappears instead of flying forever. */
     float projectile_lifetime_timer;
+    /* Render-interp progress in seconds since interp_from/interp_to were
+     * last shifted (S8.5), clamped to NETWORK_INTERP_INTERVAL_SECONDS by
+     * entity_render_position below -- same runtime-only footing as
+     * knockback_timer above, NOT emitted to TOML. entity_init seeds this
+     * to ENTITY_INTERP_NEVER_SYNCED (a sentinel below any real elapsed
+     * time) rather than 0, so shift_interp_window (net_session.c) can
+     * tell "never synced yet" apart from "synced, currently mid-lerp":
+     * the former renders exactly at interp_from/interp_to (both the spawn
+     * position until a first sync arrives) instead of lerping from 0.
+     * Meaningless outside NET_CLIENT -- host/offline draw calls read
+     * entity->position directly and never touch this field. */
+    float interp_elapsed;
 
     /* Vectors (8 bytes each) */
     Vector2 position;
@@ -138,6 +150,19 @@ typedef struct {
      * knockback tick pass (game.c) for the per-frame integration. Zeroed
      * by entity_init's memset. */
     Vector2 knockback_velocity;
+    /* Render-interp window (S8.5): the last two positions
+     * network_client_apply_state (net_session.c) has applied to this
+     * entity, bracketing the lerp entity_render_position (below)
+     * interpolates between so a NET_CLIENT's rendering doesn't visibly
+     * snap every time a fresh SNAPSHOT/DELTA arrives (entity->position
+     * itself is written straight to the new value every time -- it stays
+     * the authoritative position non-render logic reads, only rendering
+     * consults this window). Same runtime-only footing as
+     * knockback_velocity above -- NOT emitted to TOML. entity_init seeds
+     * both to the spawn position (see interp_elapsed's own doc comment
+     * for why). */
+    Vector2 interp_from;
+    Vector2 interp_to;
 
     /* Bools (1 byte each, packed at end) */
     bool flip;
@@ -285,8 +310,45 @@ bool entity_is_visible(int entity_index, const Entity *entities, const AttrSet *
 /* Effective active state: own active AND all ancestors active. */
 bool entity_is_active(int entity_index, const Entity *entities, const AttrSet *const *entity_defaults);
 
-/* Compute the draw position for an entity. Uses scoped attr lookup so
- * blueprint edits to sprite_offset are reflected immediately. */
-Vector2 entity_draw_position(const Entity *entity, const AttrSet *defaults);
+/* Compute the draw position for an entity, given its BASE position --
+ * entity->position on a host/offline draw call, or the network-interpolated
+ * entity_render_position (below) on a NET_CLIENT one (see main.c's draw
+ * call sites, S8.5). Uses scoped attr lookup so blueprint edits to
+ * sprite_offset are reflected immediately. */
+Vector2 entity_draw_position(const Entity *entity, Vector2 base_position, const AttrSet *defaults);
+
+/* Sentinel value for entity->interp_elapsed meaning "no synced position has
+ * ever been applied to this entity" (S8.5) -- entity_init's own seed value,
+ * distinct from any real elapsed time (which only ever accumulates upward
+ * from 0). Below any value NETWORK_INTERP_INTERVAL_SECONDS clamps against,
+ * so entity_render_position naturally reports interp_from/interp_to (both
+ * the spawn position at this point) unchanged rather than lerping from a
+ * bogus origin. */
+#define ENTITY_INTERP_NEVER_SYNCED (-1.0F)
+
+/* Render-interp window (S8.5, see interp_from/interp_to's own doc comment):
+ * how long, in seconds, a NET_CLIENT's rendering takes to catch up to a
+ * freshly synced position. Chosen rather than measured: S8.4b's
+ * network_host_broadcast_delta sends a DELTA every single hosting frame
+ * (no dedicated network tick rate exists yet to size this against), so this
+ * is a deliberately conservative upper bound -- comfortably longer than one
+ * frame at any plausible host frame rate -- that smooths over host
+ * frame-time jitter and occasional UDP reordering/loss without ever
+ * extrapolating (entity_render_position clamps at interp_to, it never
+ * predicts past the latest known position). If a dedicated network tick
+ * rate is ever introduced, this constant should track it. */
+#define NETWORK_INTERP_INTERVAL_SECONDS 0.1F
+
+/* Render position for a NET_CLIENT entity (S8.5): lerp(interp_from,
+ * interp_to, clamp01(interp_elapsed / NETWORK_INTERP_INTERVAL_SECONDS)) --
+ * pure function of entity's own three interp fields, unit-testable without
+ * a window (construct a bare Entity, set the fields, call). Once
+ * interp_elapsed reaches the interval the lerp clamps at interp_to and
+ * holds there -- no extrapolation past the latest known synced position,
+ * per S8.5's "no prediction in v1" brief. entity->position (below) is
+ * always the authoritative value; this is only ever consulted by
+ * NET_CLIENT draw calls (main.c) and the NET_CLIENT-only camera follow
+ * target (game_update_client_render, game.c). */
+Vector2 entity_render_position(const Entity *entity);
 
 VEC_DECL(entity, Entity)

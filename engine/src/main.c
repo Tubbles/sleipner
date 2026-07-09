@@ -250,7 +250,11 @@ static void draw_animated_entity(const GameState *state, const Entity *entity)
     Rectangle source = {(float)(entity->frame_index * FRAME_SIZE), (float)(entity->anim_row * FRAME_SIZE), source_width,
                         FRAME_SIZE};
     const AttrSet *defaults = entity_resolve_defaults(state, entity->id);
-    Vector2 draw_pos = entity_draw_position(entity, defaults);
+    /* S8.5: a NET_CLIENT renders the interpolated position, never the
+     * possibly-just-snapped entity->position -- host/offline rendering is
+     * untouched (byte-for-byte identical to pre-S8.5). */
+    Vector2 base_position = state->network.mode == NET_CLIENT ? entity_render_position(entity) : entity->position;
+    Vector2 draw_pos = entity_draw_position(entity, base_position, defaults);
     Rectangle dest = {draw_pos.x, draw_pos.y, FRAME_SIZE, FRAME_SIZE};
     DrawTexturePro(*entity->texture, source, dest, (Vector2){0, 0}, 0.0F, WHITE);
 }
@@ -284,7 +288,9 @@ static void draw_entity(const GameState *state, const Entity *entity)
         return;
     }
     const AttrSet *defaults = entity_resolve_defaults(state, entity->id);
-    Vector2 draw_pos = entity_draw_position(entity, defaults);
+    /* S8.5: see draw_animated_entity's own comment on this same switch. */
+    Vector2 base_position = state->network.mode == NET_CLIENT ? entity_render_position(entity) : entity->position;
+    Vector2 draw_pos = entity_draw_position(entity, base_position, defaults);
     DrawTextureRec(*entity->texture, get_source_rect(&entity->attrs, defaults), draw_pos, WHITE);
 }
 
@@ -380,7 +386,9 @@ static void draw_debug_collision_boxes(const GameState *state, const Level *leve
     if (player_index >= 0 && player_index < level->entities.count) {
         const Entity *player = &level->entities.data[player_index];
         const AttrSet *defaults = entity_resolve_defaults(state, player->id);
-        Vector2 draw_pos = entity_draw_position(player, defaults);
+        /* S8.5: see draw_animated_entity's own comment on this same switch. */
+        Vector2 base_position = state->network.mode == NET_CLIENT ? entity_render_position(player) : player->position;
+        Vector2 draw_pos = entity_draw_position(player, base_position, defaults);
         Rectangle sprite = {draw_pos.x, draw_pos.y, FRAME_SIZE, FRAME_SIZE};
         DrawRectangleLinesEx(sprite, 1, GRAY);
     }

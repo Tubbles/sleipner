@@ -420,6 +420,68 @@ void test_entity_collision_region_prefers_authored_composite(void)
     free_test_entity(&entity);
 }
 
+/* S8.5: entity_render_position lerps interp_from -> interp_to over
+ * NETWORK_INTERP_INTERVAL_SECONDS. At elapsed 0 it reports interp_from
+ * unchanged -- the entity hasn't moved on screen yet, only the
+ * authoritative interp_to has. */
+void test_entity_render_position_at_zero_elapsed(void)
+{
+    Entity entity = {0};
+    entity.interp_from = (Vector2){100.0F, 50.0F};
+    entity.interp_to = (Vector2){200.0F, 50.0F};
+    entity.interp_elapsed = 0.0F;
+
+    Vector2 render = entity_render_position(&entity);
+    TEST_ASSERT_FLOAT_WITHIN(0.01F, 100.0F, render.x);
+    TEST_ASSERT_FLOAT_WITHIN(0.01F, 50.0F, render.y);
+}
+
+/* Halfway through the interval, the render position sits exactly halfway
+ * between interp_from and interp_to. */
+void test_entity_render_position_at_half_interval(void)
+{
+    Entity entity = {0};
+    entity.interp_from = (Vector2){100.0F, 50.0F};
+    entity.interp_to = (Vector2){200.0F, 50.0F};
+    entity.interp_elapsed = NETWORK_INTERP_INTERVAL_SECONDS / 2.0F;
+
+    Vector2 render = entity_render_position(&entity);
+    TEST_ASSERT_FLOAT_WITHIN(0.01F, 150.0F, render.x);
+    TEST_ASSERT_FLOAT_WITHIN(0.01F, 50.0F, render.y);
+}
+
+/* Past the interval, the lerp clamps at interp_to and holds -- no
+ * extrapolation, per S8.5's "no prediction in v1" brief. Sampled at 2x the
+ * interval to prove it doesn't overshoot past interp_to either. */
+void test_entity_render_position_clamps_past_interval(void)
+{
+    Entity entity = {0};
+    entity.interp_from = (Vector2){100.0F, 50.0F};
+    entity.interp_to = (Vector2){200.0F, 50.0F};
+    entity.interp_elapsed = NETWORK_INTERP_INTERVAL_SECONDS * 2.0F;
+
+    Vector2 render = entity_render_position(&entity);
+    TEST_ASSERT_FLOAT_WITHIN(0.01F, 200.0F, render.x);
+    TEST_ASSERT_FLOAT_WITHIN(0.01F, 50.0F, render.y);
+}
+
+/* The first-synced-position case (net_session.c's shift_interp_window):
+ * interp_from and interp_to collapse onto the same position, so the render
+ * position is exactly that position regardless of elapsed -- no
+ * lerp-from-spawn artifact. Uses the ENTITY_INTERP_NEVER_SYNCED sentinel
+ * entity_init itself seeds, to also prove the function tolerates it. */
+void test_entity_render_position_first_snapshot_renders_exactly(void)
+{
+    Entity entity = {0};
+    entity.interp_from = (Vector2){300.0F, 400.0F};
+    entity.interp_to = (Vector2){300.0F, 400.0F};
+    entity.interp_elapsed = ENTITY_INTERP_NEVER_SYNCED;
+
+    Vector2 render = entity_render_position(&entity);
+    TEST_ASSERT_FLOAT_WITHIN(0.01F, 300.0F, render.x);
+    TEST_ASSERT_FLOAT_WITHIN(0.01F, 400.0F, render.y);
+}
+
 int main(void)
 {
     test_helpers_init();
@@ -444,5 +506,9 @@ int main(void)
     RUN_TEST(test_entity_is_active_both_active);
     RUN_TEST(test_entity_collision_region_reconstructs_rect);
     RUN_TEST(test_entity_collision_region_prefers_authored_composite);
+    RUN_TEST(test_entity_render_position_at_zero_elapsed);
+    RUN_TEST(test_entity_render_position_at_half_interval);
+    RUN_TEST(test_entity_render_position_clamps_past_interval);
+    RUN_TEST(test_entity_render_position_first_snapshot_renders_exactly);
     return UNITY_END();
 }

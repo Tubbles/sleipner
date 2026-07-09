@@ -152,6 +152,7 @@ void test_integration_discovery_screen_cancel_stops_network_and_reopens_menu(voi
 void test_integration_client_input_moves_player_on_host(void);
 void test_integration_delta_converges_client_view(void);
 void test_integration_join_snapshot_equivalence(void);
+void test_integration_client_interpolates_between_snapshots(void);
 void test_integration_reliable_event_delivers_player_joined_exactly_once(void);
 void test_integration_menu_escape_returns_resume(void);
 void test_integration_menu_gamepad_navigation(void);
@@ -409,6 +410,7 @@ int main(void)
     RUN_TEST(test_integration_client_input_moves_player_on_host);
     RUN_TEST(test_integration_delta_converges_client_view);
     RUN_TEST(test_integration_join_snapshot_equivalence);
+    RUN_TEST(test_integration_client_interpolates_between_snapshots);
     RUN_TEST(test_integration_reliable_event_delivers_player_joined_exactly_once);
     RUN_TEST(test_integration_menu_escape_returns_resume);
     RUN_TEST(test_integration_menu_gamepad_navigation);

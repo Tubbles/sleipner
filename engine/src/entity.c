@@ -26,6 +26,15 @@ bool entity_init(Entity *entity, EntitySpec spec, Vector2 position, Allocator *a
     entity->texture = spec.texture;
     entity->facing = (Vector2){0.0F, 1.0F}; /* default down (S6.10b, D26) */
 
+    /* Render-interp window (S8.5) starts at the spawn position with the
+     * "never synced" sentinel -- see interp_elapsed/interp_from/interp_to's
+     * own doc comments (entity.h). Meaningless outside NET_CLIENT, but
+     * still seeded here so a client entity renders sanely at its spawn
+     * position even before its first synced update arrives. */
+    entity->interp_from = position;
+    entity->interp_to = position;
+    entity->interp_elapsed = ENTITY_INTERP_NEVER_SYNCED;
+
     entity->parent_index = -1;
     return true;
 }
@@ -282,9 +291,32 @@ bool entity_is_active(int entity_index, const Entity *entities, const AttrSet *c
     return true;
 }
 
-Vector2 entity_draw_position(const Entity *entity, const AttrSet *defaults)
+Vector2 entity_draw_position(const Entity *entity, Vector2 base_position, const AttrSet *defaults)
 {
     float offset_x = attr_get_scoped_float(&entity->attrs, defaults, "sprite_offset_x", 0.0F);
     float offset_y = attr_get_scoped_float(&entity->attrs, defaults, "sprite_offset_y", 0.0F);
-    return (Vector2){entity->position.x - offset_x, entity->position.y - offset_y};
+    return (Vector2){base_position.x - offset_x, base_position.y - offset_y};
+}
+
+/* clamp01(interp_elapsed / NETWORK_INTERP_INTERVAL_SECONDS) -- entity_render_
+ * position's own doc comment (entity.h) covers the "why". */
+static float interp_progress(float interp_elapsed)
+{
+    float progress = interp_elapsed / NETWORK_INTERP_INTERVAL_SECONDS;
+    if (progress < 0.0F) {
+        return 0.0F;
+    }
+    if (progress > 1.0F) {
+        return 1.0F;
+    }
+    return progress;
+}
+
+Vector2 entity_render_position(const Entity *entity)
+{
+    float progress = interp_progress(entity->interp_elapsed);
+    return (Vector2){
+        entity->interp_from.x + ((entity->interp_to.x - entity->interp_from.x) * progress),
+        entity->interp_from.y + ((entity->interp_to.y - entity->interp_from.y) * progress),
+    };
 }

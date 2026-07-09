@@ -163,5 +163,11 @@ void network_host_broadcast_delta(GameState *state);
  * name/value is a view into the caller's own receive buffer -- this
  * function copies each one out (via attr_set_*'s own internal
  * str_from_cstr) into state->gamedata_arena before returning, so nothing
- * borrowed from the packet buffer is ever retained. */
+ * borrowed from the packet buffer is ever retained. As of S8.5, a
+ * NETWORK_ATTR_POS_Y record also shifts entity->interp_from/interp_to/
+ * interp_elapsed (net_session.c's shift_interp_window, entity.h's own
+ * doc comments) so entity_render_position can smoothly lerp a NET_CLIENT's
+ * rendering toward each freshly synced position instead of snapping --
+ * entity->position itself is unaffected, it is written on every call same
+ * as before S8.5. */
 void network_client_apply_state(GameState *state, const AttrRecord *records, size_t count);

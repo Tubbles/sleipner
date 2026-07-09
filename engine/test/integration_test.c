@@ -5145,6 +5145,108 @@ void test_integration_join_snapshot_equivalence(void)
     loopback_network_free(&loopback);
 }
 
+/* ---- Integration: S8.5 client render-side interpolation ----
+ *
+ * Same two-TestGame-over-net_loopback.h shape as S8.4b's tests above,
+ * reusing host_session_gamedata. Unlike those (which assert on convergence
+ * after draining every in-flight DELTA), this test deliberately PARKS the
+ * client -- stops calling test_advance_frame on it entirely -- while the
+ * host ticks alone for several frames, so net_loopback.h's inbox (32-slot
+ * ring buffer, well above the frame count parked here) queues up every
+ * DELTA the host broadcasts without the client draining any of them. The
+ * client's own render-interp elapsed timer (entity->interp_elapsed,
+ * entity.h) is frozen for the same reason: it only ever advances inside
+ * game_update_client_render (game.c), which only runs on a client's own
+ * tick. The client is then woken for exactly one tick: network_client_
+ * receive_state (net_session.c) drains the whole queued burst in one pass,
+ * and because interp_elapsed never advanced mid-drain, every intermediate
+ * shift_interp_window call anchors interp_from to the SAME pre-park
+ * position -- only the last queued position survives as interp_to. This
+ * collapses the burst into exactly the "snapshot A / snapshot B" two-point
+ * window S8.5's own brief describes, letting the test assert a precise,
+ * strictly-between render position instead of a fuzzy one. */
+void test_integration_client_interpolates_between_snapshots(void)
+{
+    LoopbackNetwork loopback;
+    loopback_network_init(&loopback, &test_heap_alloc);
+    NetAddr host_addr = net_addr_make(1, 9000);
+    NetAddr client_addr = net_addr_make(2, 9001);
+    NetTransport host_transport;
+    NetTransport client_transport;
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, host_addr, &host_transport));
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, client_addr, &client_transport));
+
+    TestGame host;
+    TEST_ASSERT_TRUE(test_game_setup(&host, host_session_gamedata));
+    host.state.network.mode = NET_HOSTING;
+    host.state.network.transport = host_transport;
+
+    TestGame client;
+    TEST_ASSERT_TRUE(test_game_setup(&client, host_session_gamedata));
+    client.state.network.mode = NET_JOINING;
+    client.state.network.transport = client_transport;
+    client.state.network.join_target = host_addr;
+
+    InputState no_input = {0};
+    InputState move_right = {0};
+    input_state_hold_key(&move_right, KEY_RIGHT);
+
+    /* Warmup: join completes and the client applies its first-ever SNAPSHOT
+     * of "hero" at the authored spawn position (100, 100) -- host stays
+     * idle (no_input) so that spawn position is still exact once warmup
+     * ends. */
+    for (int frame = 0; frame < 3; frame++) {
+        test_advance_frame(&client, no_input);
+        test_advance_frame(&host, no_input);
+    }
+    TEST_ASSERT_EQUAL_INT(NET_CLIENT, client.state.network.mode);
+
+    Entity *client_hero = test_find_entity_by_blueprint(&client.state, "hero");
+    TEST_ASSERT_NOT_NULL(client_hero);
+    Vector2 pre_park_render = entity_render_position(client_hero);
+    TEST_ASSERT_FLOAT_WITHIN(0.5F, 100.0F, pre_park_render.x);
+
+    /* Park the client (no test_advance_frame calls on it at all) while the
+     * host alone moves "hero" right for 15 frames -- speed 80 * 1/60 * 15
+     * = 20px, comfortably under net_loopback.h's 32-slot inbox cap so
+     * every broadcast DELTA queues up rather than getting tail-dropped. */
+    int parked_frames = 15;
+    for (int frame = 0; frame < parked_frames; frame++) {
+        test_advance_frame(&host, move_right);
+    }
+    Entity *host_hero = test_find_entity_by_blueprint(&host.state, "hero");
+    TEST_ASSERT_NOT_NULL(host_hero);
+    float frame_delta = 1.0F / 60.0F;
+    float expected_x = 100.0F + (80.0F * frame_delta * (float)parked_frames);
+    TEST_ASSERT_FLOAT_WITHIN(0.5F, expected_x, host_hero->position.x);
+
+    /* Wake the client for one tick: drains the whole 15-packet burst (see
+     * this test's own doc comment for why that collapses to a single
+     * two-point interp window), then game_update_client_render advances
+     * interp_elapsed by exactly one frame_delta -- short of
+     * NETWORK_INTERP_INTERVAL_SECONDS, so the render position must sit
+     * strictly between the pre-park position and the newly-synced one. */
+    test_advance_frame(&client, no_input);
+
+    TEST_ASSERT_EQUAL_FLOAT(host_hero->position.x, client_hero->position.x);
+    Vector2 mid_interp_render = entity_render_position(client_hero);
+    TEST_ASSERT_GREATER_THAN_FLOAT(pre_park_render.x, mid_interp_render.x);
+    TEST_ASSERT_LESS_THAN_FLOAT(client_hero->position.x, mid_interp_render.x);
+
+    /* Let interp_elapsed run out the rest of the interval with no further
+     * host ticks (no new packets at all) -- the render position must
+     * converge on, and never overshoot past, the authoritative position. */
+    for (int frame = 0; frame < 10; frame++) {
+        test_advance_frame(&client, no_input);
+    }
+    Vector2 settled_render = entity_render_position(client_hero);
+    TEST_ASSERT_FLOAT_WITHIN(0.01F, client_hero->position.x, settled_render.x);
+
+    test_game_teardown(&host);
+    test_game_teardown(&client);
+    loopback_network_free(&loopback);
+}
+
 /* ---- Integration: S8.4c reliable event sub-channel ----
  *
  * Same two-TestGame-over-net_loopback.h shape as S8.4a/b's tests above,

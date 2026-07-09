@@ -109,7 +109,7 @@ void test_integration_sprite_offset_edit_updates_entity_live(void)
     const Entity *tree = find_tree_entity(&state);
     TEST_ASSERT_NOT_NULL(tree);
     const AttrSet *defaults = entity_resolve_defaults(&state, tree->id);
-    Vector2 pos_before = entity_draw_position(tree, defaults);
+    Vector2 pos_before = entity_draw_position(tree, tree->position, defaults);
     TEST_ASSERT_FLOAT_WITHIN(0.01F, 50.0F, pos_before.x);
     TEST_ASSERT_FLOAT_WITHIN(0.01F, 50.0F, pos_before.y);
 
@@ -127,7 +127,7 @@ void test_integration_sprite_offset_edit_updates_entity_live(void)
     /* The draw position must now be offset: (50 - 5, 50 - 10) = (45, 40).
      * entity_draw_position uses the scoped attr lookup, so the blueprint
      * change is reflected immediately — no propagation needed. */
-    Vector2 pos_after = entity_draw_position(tree, defaults);
+    Vector2 pos_after = entity_draw_position(tree, tree->position, defaults);
     TEST_ASSERT_FLOAT_WITHIN(0.01F, 45.0F, pos_after.x);
     TEST_ASSERT_FLOAT_WITHIN(0.01F, 40.0F, pos_after.y);
 

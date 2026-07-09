@@ -1641,11 +1641,13 @@ void game_update_client_render(GameState *state, float delta_time)
         return;
     }
     for (int index = 0; index < state->gamedata.current_level.entities.count; index++) {
-        advance_entity_animation(state, &state->gamedata.current_level.entities.data[index], delta_time);
+        Entity *entity = &state->gamedata.current_level.entities.data[index];
+        advance_entity_animation(state, entity, delta_time);
+        entity->interp_elapsed += delta_time; /* S8.5 -- entity_render_position clamps it */
     }
     const Entity *player = game_get_player_const(state);
     if (player) {
-        camera_update_target(state, player->position, delta_time);
+        camera_update_target(state, entity_render_position(player), delta_time);
         camera_update_shake(state, delta_time);
     }
 }

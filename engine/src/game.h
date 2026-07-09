@@ -253,11 +253,17 @@ void game_update(Diag *diag, GameState *state, InputState input, float delta_tim
  * could fire side effects -- sounds, toasts, dialogue, spawns -- the host
  * never intended. This advances only what rendering needs: the generic
  * animation pass (advance_entity_animation, driven by the just-applied
- * `state`/`direction` attrs) and the camera follow target, mirroring
- * game_update's own calls to both but skipping everything else --
- * behavior dispatch, combat timers, collision, rule evaluation, the
- * effect queue. No-op while state->editor_mode (same guard game_update's
- * own per-entity loop uses). */
+ * `state`/`direction` attrs), every entity's render-interp elapsed timer
+ * (S8.5, entity.h's interp_elapsed doc comment -- entity_render_position
+ * derives the actual lerp from it on demand, nothing else needs advancing
+ * here), and the camera follow target -- which, as of S8.5, follows the
+ * interpolated entity_render_position rather than the player's raw
+ * (possibly just-snapped) entity->position, so the camera doesn't jitter
+ * in lockstep with SNAPSHOT/DELTA arrival -- mirroring game_update's own
+ * calls to animation/camera but skipping everything else -- behavior
+ * dispatch, combat timers, collision, rule evaluation, the effect queue.
+ * No-op while state->editor_mode (same guard game_update's own per-entity
+ * loop uses). */
 void game_update_client_render(GameState *state, float delta_time);
 
 Entity *game_get_player(GameState *state);

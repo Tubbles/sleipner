@@ -193,6 +193,33 @@ void network_host_broadcast_delta(GameState *state)
     }
 }
 
+/* Shift entity's render-interp window (S8.5, entity.h's interp_from/
+ * interp_to/interp_elapsed doc comments) to bracket a freshly synced
+ * position: interp_from becomes whatever is CURRENTLY ON SCREEN (the
+ * clamped lerp result at this instant, entity_render_position) so a
+ * NET_CLIENT never visibly snaps when a new SNAPSHOT/DELTA lands,
+ * interp_to becomes entity->position (already holding the complete new
+ * (x, y) pair -- see this function's own call site below), and
+ * interp_elapsed resets to 0 to start a fresh lerp. The very first synced
+ * position this entity ever receives (interp_elapsed still negative,
+ * entity_init's ENTITY_INTERP_NEVER_SYNCED seed) is a special case: there
+ * is no "currently displayed" position worth lerping from yet, so both
+ * ends of the window collapse onto the new position and interp_elapsed is
+ * set to the interval itself -- entity_render_position then reports
+ * exactly the new position, no lerp-from-spawn artifact. */
+static void shift_interp_window(Entity *entity)
+{
+    if (entity->interp_elapsed < 0.0F) {
+        entity->interp_from = entity->position;
+        entity->interp_to = entity->position;
+        entity->interp_elapsed = NETWORK_INTERP_INTERVAL_SECONDS;
+        return;
+    }
+    entity->interp_from = entity_render_position(entity);
+    entity->interp_to = entity->position;
+    entity->interp_elapsed = 0.0F;
+}
+
 /* Apply one decoded record onto entity: NETWORK_ATTR_POS_X/_Y write
  * entity->position (see net_session.h's own "How position rides the
  * AttrRecord stream" note); every other record deep-copies its name (and,
@@ -213,7 +240,13 @@ static void apply_sync_record(Allocator *gamedata_alloc, Entity *entity, const A
         return;
     }
     if (strv_eq_cstr(record->name, NETWORK_ATTR_POS_Y)) {
+        /* entity->position now holds the complete new (x, y) pair --
+         * push_entity_sync_records (above) always pushes POS_X immediately
+         * before POS_Y for the same entity, so POS_Y is where the shift
+         * belongs. See shift_interp_window's own doc comment for the S8.5
+         * window-shift/first-sync logic. */
         entity->position.y = record->value.f;
+        shift_interp_window(entity);
         return;
     }
 
