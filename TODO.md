@@ -474,16 +474,6 @@ predicate rows and MOVE reparenting).
   coexist on one machine via port reuse. Manual on-hardware QA (host on
   one machine, join from another) is needed before relying on this in
   practice.
-- **No real JOIN accept/reject handshake (S8.4a).** Acceptance is still
-  IMPLICIT: a client assumes it's connected the moment it sends
-  `MSG_JOIN` (`net_session.c`'s `network_client_tick` flips straight to
-  `NET_CLIENT`), and the host separately hash-verifies and registers or
-  silently refuses (`network_host_receive`, `network.c`) without ever
-  replying either way -- a refused client has no way to learn it was
-  refused. `network.h`'s `NetMode` doc comment used to (incorrectly)
-  attribute this fix to "S8.4c"; S8.4c turned out to be the reliable
-  event sub-channel instead (see the bullet below), so a real
-  accept/reject reply is unassigned open work.
 - **S8.4c's reliable event channel carries a session notification
   (`NETWORK_EVENT_PLAYER_JOINED`), not a real `rule.h` gameplay
   trigger.** The brief's own suggested candidates (`TRIGGER_DEFEAT`, a
@@ -499,6 +489,40 @@ predicate rows and MOVE reparenting).
   after each hosting tick -- a broader change than the reliable-channel
   wiring itself (`net_reliable.{h,c}`, `network.{h,c}`,
   `net_session.{h,c}`).
+- **Only the host's own local:0 player triggers interact/enter-overlap
+  events (S8.6).** `collect_trigger_events` (`game.c`) is still keyed to
+  `game_get_player`/`state->gamedata.player_index` -- the single
+  first-authored player entity -- not every connected player, so a
+  joining client's character can stand on a trigger zone or press
+  interact next to a chest and nothing fires; only the host's own
+  movements/input reach `detect_interact_targets`/`detect_enter_targets`.
+  `prev_player_overlaps` (`game.c`) would need to become per-player (not
+  one flat per-entity vec) to track enter/exit edges against more than
+  one player at once before this can be fixed.
+- **S8.6's per-join spawn always places a new player at the host's own
+  current position, so multiple joining clients stack exactly on top of
+  the host and each other.** `spawn_network_player` (`net_session.c`)
+  picks this over an authored player-start attr or a level spawn-point
+  system as the simplest always-valid choice (documented in its own doc
+  comment) -- fine for the LAN-only pre-alpha this targets, revisit once
+  a level wants to separate spawn points.
+- **A client materializing a host-spawned entity (S8.6's
+  `NETWORK_ATTR_BLUEPRINT_NAME` convention, `net_session.c`) assumes that
+  record arrives before any other record for the same `entity_id` in the
+  same drain pass.** True by construction over `net_loopback.h`'s FIFO
+  (`push_entity_sync_records` always pushes blueprint_name first, and
+  packets are consumed in send order) and true within a single UDP
+  datagram, but a real lossy/reordering UDP path could in principle
+  deliver a later chunk (e.g. `pos_x`) before an earlier one carrying
+  `blueprint_name`, if a large sync happens to straddle a
+  `NETWORK_SYNC_RECORDS_PER_PACKET` chunk boundary right at that entity.
+  `ensure_synced_entity_exists` silently no-ops on an out-of-order
+  `pos_x`/`pos_y` for a still-unmaterialized entity (same "eventually
+  converges" contract every other v1 sync record already has, since the
+  very next full-state DELTA resends everything) rather than crashing or
+  misapplying it, so this is a convergence-latency gap, not a
+  correctness one -- unexercised by any test, since loopback never
+  reorders.
 
 ## misc
 - for some reason, when running against the walls significantly warps the

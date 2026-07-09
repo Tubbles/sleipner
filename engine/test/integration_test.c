@@ -4644,19 +4644,18 @@ void test_integration_network_hosting_ticks_beacon_timer_via_game_update(void)
     test_game_teardown(&game);
 }
 
-/* Same proof as above for the NET_DISCOVERING side of tick_network:
- * discovery_client_tick ages and evicts join_list every frame regardless
- * of whether any packet ever arrives (transport is all-zero, net_recv
- * always returns 0), so a pre-seeded stale host disappearing after
- * DISCOVERY_TIMEOUT_SECONDS of real frames is proof the tick ran on every
- * one of them -- nothing else in the engine ever touches join_list.
- *
- * NET_JOINING used to share this exact proof (see
- * test_integration_network_joining_immediately_connects_and_stops_discovering
- * below for why it no longer does, as of S8.4a) -- this helper now only
- * has one caller, kept as a named helper anyway since a future
- * NET_DISCOVERING variant (e.g. a second host appearing) would want the
- * same shape. */
+/* Proof, shared by both NET_DISCOVERING and (as of S8.6, once more --
+ * see test_integration_network_joining_without_accept_keeps_discovering
+ * below) NET_JOINING: discovery_client_tick ages and evicts join_list
+ * every frame regardless of whether any packet ever arrives (transport is
+ * all-zero, net_recv always returns 0), so a pre-seeded stale host
+ * disappearing after DISCOVERY_TIMEOUT_SECONDS of real frames is proof the
+ * tick ran on every one of them -- nothing else in the engine ever touches
+ * join_list. Between S8.4a and S8.6, NET_JOINING flipped to NET_CLIENT the
+ * instant a MSG_JOIN was sent (no accept needed), so it briefly stopped
+ * sharing this proof -- S8.6's real accept/reject handshake means a
+ * NET_JOINING client with no responding host now behaves exactly like
+ * NET_DISCOVERING again. */
 static void assert_network_mode_ticks_client_and_evicts_stale_host(NetMode mode)
 {
     TestGame game;
@@ -4680,38 +4679,28 @@ void test_integration_network_discovering_ticks_client_and_evicts_stale_host(voi
     assert_network_mode_ticks_client_and_evicts_stale_host(NET_DISCOVERING);
 }
 
-/* S8.4a changed what NET_JOINING means for tick_network: frame.c's
- * run_active_frame now calls net_session.c's network_client_tick BEFORE
- * game_update on every frame, and network_client_tick sends this
- * session's MSG_JOIN and advances state->network.mode to NET_CLIENT the
- * very first time it observes NET_JOINING (S8.4a's implicit-acceptance
- * model -- see NetMode's doc comment, network.h). So by the time
- * game_update's own tick_network runs its NET_DISCOVERING/NET_JOINING
- * branch, the mode has already moved past NET_JOINING to NET_CLIENT --
- * discovery_client_tick's join_list ageing/eviction never fires for a
- * JOINING client again, on this or any later frame. This replaces the old
- * test_integration_network_joining_still_ticks_client_and_evicts_stale_host
- * (which asserted the opposite: eviction after DISCOVERY_TIMEOUT_SECONDS,
- * true before S8.4a existed) with the new reality: mode is NET_CLIENT
- * after the first frame, and the stale host is never evicted because
- * discovery stopped ticking -- the client isn't discovering anymore, it's
- * connected. */
-void test_integration_network_joining_immediately_connects_and_stops_discovering(void)
+/* S8.6 changed what NET_JOINING means for tick_network: mode no longer
+ * flips to NET_CLIENT the instant a MSG_JOIN is sent -- it only advances
+ * once an actual MSG_JOIN_ACCEPT reply arrives (see NetMode's own doc
+ * comment, network.h). This test's own join_target is never a real
+ * listening host (no transport wired to a peer at all, matching the
+ * NET_DISCOVERING case right above via the same shared helper), so no
+ * accept ever arrives and mode stays NET_JOINING for the whole run --
+ * game.c's tick_network keeps routing NET_JOINING through
+ * discovery_client_tick exactly like NET_DISCOVERING, so the stale host in
+ * the join list ages out and gets evicted after DISCOVERY_TIMEOUT_SECONDS,
+ * the same as NET_DISCOVERING. This replaces the old S8.4a-era
+ * test_integration_network_joining_immediately_connects_and_stops_discovering
+ * (which asserted the opposite: an immediate, response-free flip to
+ * NET_CLIENT that stopped discovery ticking -- true only under S8.4a's now-
+ * gone implicit-acceptance model). A NET_JOINING client that DOES receive
+ * an accept and reach NET_CLIENT is covered by the S8.4/S8.6 host+client
+ * tests further down (e.g. test_integration_client_learns_its_player_id) --
+ * tick_network's own NET_CLIENT branch (neither NET_DISCOVERING nor
+ * NET_JOINING) never calls discovery_client_tick at all once that happens. */
+void test_integration_network_joining_without_accept_keeps_discovering(void)
 {
-    TestGame game;
-    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_gamedata));
-
-    game.state.network.mode = NET_JOINING;
-    join_list_add_or_refresh(&game.state.network.join_list, net_addr_make(1, 9000), "StaleHost");
-
-    InputState no_input = {0};
-    int frames_needed = (int)((DISCOVERY_TIMEOUT_SECONDS + 0.5F) * 60.0F);
-    test_advance_frames(&game, no_input, frames_needed);
-
-    TEST_ASSERT_EQUAL_INT(NET_CLIENT, game.state.network.mode);
-    TEST_ASSERT_EQUAL_INT(1, game.state.network.join_list.count);
-
-    test_game_teardown(&game);
+    assert_network_mode_ticks_client_and_evicts_stale_host(NET_JOINING);
 }
 
 /* Drives the real pause-menu Host Game entry end to end: F3 -> down to
@@ -4870,21 +4859,26 @@ void test_integration_discovery_screen_cancel_stops_network_and_reopens_menu(voi
  * particular test still only asserts on the HOST's own authoritative
  * movement; the two S8.4b tests right below (test_integration_delta_converges_client_view,
  * test_integration_join_snapshot_equivalence) are what assert on the
- * CLIENT's synced view. */
+ * CLIENT's synced view. As of S8.6, NET_JOINING -> NET_CLIENT is no longer
+ * immediate (see NetMode's doc comment, network.h) -- reaching NET_CLIENT
+ * takes one extra host+client round trip for the MSG_JOIN_ACCEPT reply, so
+ * this test (and every other one below reusing this shape) runs a short
+ * no-input warmup loop first and only starts its timed measurement once
+ * the handshake has actually completed. */
 
+/* S8.6 onward: exactly ONE authored player entity ("hero", local:0) --
+ * no pre-authored "remote_hero"/network:1 entity, since the host now
+ * dynamically spawns one per join (net_session.c's spawn_network_player,
+ * cloning this SAME "hero" blueprint) instead of a test fixture standing
+ * in for that connection. Every test below that needs "the client's
+ * player" locates it via test_find_entity_by_blueprint_excluding_id
+ * (defined above, S5.7's copy-paste tests) against hero's own id, once a
+ * join has actually happened. */
 static const char *host_session_gamedata = "[[blueprint]]\n"
                                            "name = \"hero\"\n"
                                            "texture = \"t.png\"\n"
                                            "src = [0, 0, 16, 16]\n"
                                            "behavior = \"player\"\n"
-                                           "speed = 80\n"
-                                           "\n"
-                                           "[[blueprint]]\n"
-                                           "name = \"remote_hero\"\n"
-                                           "texture = \"t.png\"\n"
-                                           "src = [0, 0, 16, 16]\n"
-                                           "behavior = \"player\"\n"
-                                           "input_source = \"network:1\"\n"
                                            "speed = 80\n"
                                            "\n"
                                            "[[level]]\n"
@@ -4893,11 +4887,7 @@ static const char *host_session_gamedata = "[[blueprint]]\n"
                                            "\n"
                                            "[[level.entity]]\n"
                                            "blueprint = \"hero\"\n"
-                                           "pos = [100, 100]\n"
-                                           "\n"
-                                           "[[level.entity]]\n"
-                                           "blueprint = \"remote_hero\"\n"
-                                           "pos = [200, 100]\n";
+                                           "pos = [100, 100]\n";
 
 void test_integration_client_input_moves_player_on_host(void)
 {
@@ -4922,38 +4912,49 @@ void test_integration_client_input_moves_player_on_host(void)
     client.state.network.join_target = host_addr;
 
     Entity *local_before = test_find_entity_by_blueprint(&host.state, "hero");
-    Entity *remote_before = test_find_entity_by_blueprint(&host.state, "remote_hero");
     TEST_ASSERT_NOT_NULL(local_before);
-    TEST_ASSERT_NOT_NULL(remote_before);
     Vector2 local_start = local_before->position;
-    Vector2 remote_start = remote_before->position;
+    int local_id = local_before->id;
 
     InputState move_right = {0};
     input_state_hold_key(&move_right, KEY_RIGHT);
     InputState no_input = {0};
 
-    int frames = 20;
-    for (int frame = 0; frame < frames; frame++) {
-        /* Client's own frame: JOINING -> sends MSG_JOIN and flips to
-         * NET_CLIENT on the first iteration (net_session.c's
-         * network_client_tick), then sends this frame's held-right
-         * InputState as MSG_INPUT every iteration including this one. */
-        test_advance_frame(&client, move_right);
-        /* Host's own frame: network_host_tick drains whatever the client
-         * just sent (both packets, in order, over the loopback FIFO
-         * inbox) before game_update simulates -- so the host's "hero"
-         * (local:0, fed `no_input` here) stays put while "remote_hero"
-         * (network:1) is driven by the client's last_input. */
+    /* Warmup: let the MSG_JOIN_ACCEPT round trip complete and the host's
+     * S8.6 per-join spawn (spawn_network_player, net_session.c) create
+     * this client's own player entity, before starting the timed
+     * held-right measurement below -- see this section's own top doc
+     * comment for why this is needed as of S8.6. */
+    int warmup_frames = 3;
+    for (int frame = 0; frame < warmup_frames; frame++) {
+        test_advance_frame(&client, no_input);
         test_advance_frame(&host, no_input);
     }
-
     TEST_ASSERT_EQUAL_INT(NET_CLIENT, client.state.network.mode);
     TEST_ASSERT_EQUAL_INT(1, host.state.network.client_count);
     TEST_ASSERT_EQUAL_INT(1, host.state.network.clients[0].player_id);
     TEST_ASSERT_TRUE(net_addr_eq(client_addr, host.state.network.clients[0].addr));
 
+    Entity *remote_before = test_find_entity_by_blueprint_excluding_id(&host.state, "hero", local_id);
+    TEST_ASSERT_NOT_NULL(remote_before);
+    TEST_ASSERT_EQUAL_STRING("network:1", attr_get_string(&remote_before->attrs, "input_source"));
+    Vector2 remote_start = remote_before->position;
+
+    int frames = 20;
+    for (int frame = 0; frame < frames; frame++) {
+        /* Client's own frame: already NET_CLIENT (warmup above), sends
+         * this frame's held-right InputState as MSG_INPUT. */
+        test_advance_frame(&client, move_right);
+        /* Host's own frame: network_host_tick drains whatever the client
+         * just sent (over the loopback FIFO inbox) before game_update
+         * simulates -- so the host's "hero" (local:0, fed `no_input` here)
+         * stays put while the dynamically spawned "network:1" entity is
+         * driven by the client's last_input. */
+        test_advance_frame(&host, no_input);
+    }
+
     Entity *local_after = test_find_entity_by_blueprint(&host.state, "hero");
-    Entity *remote_after = test_find_entity_by_blueprint(&host.state, "remote_hero");
+    Entity *remote_after = test_find_entity_by_blueprint_excluding_id(&host.state, "hero", local_id);
     TEST_ASSERT_EQUAL_FLOAT(local_start.x, local_after->position.x);
     TEST_ASSERT_EQUAL_FLOAT(local_start.y, local_after->position.y);
 
@@ -4962,10 +4963,11 @@ void test_integration_client_input_moves_player_on_host(void)
     TEST_ASSERT_FLOAT_WITHIN(1.0F, remote_start.x + expected_dx, remote_after->position.x);
 
     /* A JOIN with a mismatched gamedata hash must be refused: no new
-     * client registered, host.client_count stays at 1. A separate rogue
-     * endpoint (not a full second TestGame -- only the raw NetworkState-
-     * level JOIN primitive is under test here) sends one MSG_JOIN with a
-     * deliberately wrong hash straight at the host. */
+     * client registered, host.client_count stays at 1, and no
+     * MSG_JOIN_ACCEPT is ever sent (network.c's handle_join_datagram). A
+     * separate rogue endpoint (not a full second TestGame -- only the raw
+     * NetworkState-level JOIN primitive is under test here) sends one
+     * MSG_JOIN with a deliberately wrong hash straight at the host. */
     NetAddr rogue_addr = net_addr_make(3, 9002);
     NetTransport rogue_transport;
     TEST_ASSERT_TRUE(loopback_transport_create(&loopback, rogue_addr, &rogue_transport));
@@ -5071,15 +5073,20 @@ void test_integration_delta_converges_client_view(void)
     loopback_network_free(&loopback);
 }
 
-/* Join-snapshot equivalence: the host's state is diverged from the
- * authored fixture -- both entities moved, both given a "health" instance
- * attr -- BEFORE a client ever joins, so a match can only come from
- * actually receiving the SNAPSHOT network_host_tick sends the moment
- * register_client (network.c) accepts the join, not from coincidentally
- * matching the authored starting positions. Asserts full-state equivalence
- * for EVERY entity in the level (both "hero" and "remote_hero"), not just
- * the player -- proving the snapshot builder walks the whole level, not
- * just whichever entity happens to be the local player. */
+/* Join-snapshot equivalence: hero's state is diverged from the authored
+ * fixture (moved, given a "health" instance attr) BEFORE a client ever
+ * joins, so a match can only come from actually receiving the SNAPSHOT
+ * network_host_tick sends the moment register_client (network.c) accepts
+ * the join, not from coincidentally matching the authored starting
+ * position. Once the join completes, the S8.6 per-join spawn has created a
+ * SECOND entity on the host (network:1, cloned from hero's own blueprint)
+ * -- diverge ITS state too, then let a few more ticks sync it across.
+ * Asserts full-state equivalence for BOTH entities, not just the local
+ * player -- proving the snapshot/delta builder walks the whole level,
+ * including an entity that didn't even exist at either side's own
+ * load-time parse (S8.6's own NETWORK_ATTR_BLUEPRINT_NAME materialization,
+ * net_session.c's ensure_synced_entity_exists), not just whichever entity
+ * happens to be hero. */
 void test_integration_join_snapshot_equivalence(void)
 {
     LoopbackNetwork loopback;
@@ -5097,14 +5104,11 @@ void test_integration_join_snapshot_equivalence(void)
     host.state.network.transport = host_transport;
 
     Entity *host_hero = test_find_entity_by_blueprint(&host.state, "hero");
-    Entity *host_remote = test_find_entity_by_blueprint(&host.state, "remote_hero");
     TEST_ASSERT_NOT_NULL(host_hero);
-    TEST_ASSERT_NOT_NULL(host_remote);
+    int host_hero_id = host_hero->id;
     host_hero->position = (Vector2){150.0F, 120.0F};
-    host_remote->position = (Vector2){250.0F, 140.0F};
     Allocator host_gamedata_alloc = allocator_arena(&host.state.gamedata_arena);
     TEST_ASSERT_TRUE(attr_set_float(&host_gamedata_alloc, &host_hero->attrs, "health", 42.0F));
-    TEST_ASSERT_TRUE(attr_set_float(&host_gamedata_alloc, &host_remote->attrs, "health", 17.0F));
 
     TestGame client;
     TEST_ASSERT_TRUE(test_game_setup(&client, host_session_gamedata));
@@ -5118,16 +5122,26 @@ void test_integration_join_snapshot_equivalence(void)
         test_advance_frame(&client, no_input);
         test_advance_frame(&host, no_input);
     }
-    /* Drain whatever the host's final loop iteration broadcast. */
-    test_advance_frame(&client, no_input);
-
     TEST_ASSERT_EQUAL_INT(NET_CLIENT, client.state.network.mode);
     TEST_ASSERT_EQUAL_INT(1, host.state.network.client_count);
 
-    Entity *host_hero_final = test_find_entity_by_blueprint(&host.state, "hero");
-    Entity *host_remote_final = test_find_entity_by_blueprint(&host.state, "remote_hero");
-    Entity *client_hero = test_find_entity_by_blueprint(&client.state, "hero");
-    Entity *client_remote = test_find_entity_by_blueprint(&client.state, "remote_hero");
+    Entity *host_remote = test_find_entity_by_blueprint_excluding_id(&host.state, "hero", host_hero_id);
+    TEST_ASSERT_NOT_NULL(host_remote);
+    int host_remote_id = host_remote->id;
+    host_remote->position = (Vector2){250.0F, 140.0F};
+    TEST_ASSERT_TRUE(attr_set_float(&host_gamedata_alloc, &host_remote->attrs, "health", 17.0F));
+
+    for (int frame = 0; frame < frames; frame++) {
+        test_advance_frame(&client, no_input);
+        test_advance_frame(&host, no_input);
+    }
+    /* Drain whatever the host's final loop iteration broadcast. */
+    test_advance_frame(&client, no_input);
+
+    Entity *host_hero_final = test_find_entity_by_id(&host.state, host_hero_id);
+    Entity *host_remote_final = test_find_entity_by_id(&host.state, host_remote_id);
+    Entity *client_hero = test_find_entity_by_id(&client.state, host_hero_id);
+    Entity *client_remote = test_find_entity_by_id(&client.state, host_remote_id);
     TEST_ASSERT_NOT_NULL(host_hero_final);
     TEST_ASSERT_NOT_NULL(host_remote_final);
     TEST_ASSERT_NOT_NULL(client_hero);
@@ -5300,6 +5314,397 @@ void test_integration_reliable_event_delivers_player_joined_exactly_once(void)
     test_game_teardown(&host);
     test_game_teardown(&client);
     loopback_network_free(&loopback);
+}
+
+/* ---- Integration: S8.6 dynamic per-join player spawn + per-peer camera ----
+ *
+ * host_session_gamedata (above) already authors ONLY a local:0 "hero" as of
+ * S8.6 -- every network player entity in the tests below comes exclusively
+ * from the host's per-join spawn (net_session.c's spawn_network_player),
+ * never a pre-authored fixture entity, proving the spawn is genuinely
+ * dynamic. Same two/three-TestGame-over-net_loopback.h shape as S8.4's own
+ * tests above; a stubbed-out spawn_network_player (no-op) fails
+ * test_integration_host_spawns_player_per_join's entity-count/input_source
+ * assertions directly, and a game_get_local_player stubbed to
+ * game_get_player fails both test_integration_client_learns_its_player_id
+ * (would resolve the client's OWN locally-parsed hero, not its dynamically
+ * spawned network player) and test_integration_per_peer_camera_follows_own_player
+ * (every client's camera would then follow the host's hero instead of its
+ * own player). */
+
+/* Squared distance -- avoids a sqrtf just to compare which of two
+ * candidates a camera_target sits closer to (below). */
+static float test_distance_squared(Vector2 first, Vector2 second)
+{
+    float delta_x = first.x - second.x;
+    float delta_y = first.y - second.y;
+    return (delta_x * delta_x) + (delta_y * delta_y);
+}
+
+/* Two clients join in sequence: the host gains a second player entity
+ * (input_source="network:1") for the first, and a THIRD
+ * (input_source="network:2") for the second -- each driven only by its
+ * own client's input, never the other's or the host's own local:0 hero. */
+void test_integration_host_spawns_player_per_join(void)
+{
+    LoopbackNetwork loopback;
+    loopback_network_init(&loopback, &test_heap_alloc);
+    NetAddr host_addr = net_addr_make(1, 9000);
+    NetAddr client1_addr = net_addr_make(2, 9001);
+    NetAddr client2_addr = net_addr_make(3, 9002);
+    NetTransport host_transport;
+    NetTransport client1_transport;
+    NetTransport client2_transport;
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, host_addr, &host_transport));
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, client1_addr, &client1_transport));
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, client2_addr, &client2_transport));
+
+    TestGame host;
+    TEST_ASSERT_TRUE(test_game_setup(&host, host_session_gamedata));
+    host.state.network.mode = NET_HOSTING;
+    host.state.network.transport = host_transport;
+
+    Entity *hero = test_find_entity_by_blueprint(&host.state, "hero");
+    TEST_ASSERT_NOT_NULL(hero);
+    int hero_id = hero->id;
+    Vector2 hero_start = hero->position;
+    /* Fixture has ONLY local:0 -- no pre-authored network player. */
+    TEST_ASSERT_EQUAL_INT(1, host.state.gamedata.current_level.entities.count);
+
+    TestGame client1;
+    TEST_ASSERT_TRUE(test_game_setup(&client1, host_session_gamedata));
+    client1.state.network.mode = NET_JOINING;
+    client1.state.network.transport = client1_transport;
+    client1.state.network.join_target = host_addr;
+
+    InputState no_input = {0};
+    InputState move_right = {0};
+    input_state_hold_key(&move_right, KEY_RIGHT);
+
+    int warmup_frames = 3;
+    for (int frame = 0; frame < warmup_frames; frame++) {
+        test_advance_frame(&client1, no_input);
+        test_advance_frame(&host, no_input);
+    }
+    TEST_ASSERT_EQUAL_INT(NET_CLIENT, client1.state.network.mode);
+    TEST_ASSERT_EQUAL_INT(1, host.state.network.client_count);
+    TEST_ASSERT_EQUAL_INT(2, host.state.gamedata.current_level.entities.count);
+
+    Entity *player_one = test_find_entity_by_blueprint_excluding_id(&host.state, "hero", hero_id);
+    TEST_ASSERT_NOT_NULL(player_one);
+    TEST_ASSERT_EQUAL_STRING("network:1", attr_get_string(&player_one->attrs, "input_source"));
+    int player_one_id = player_one->id;
+    Vector2 player_one_start = player_one->position;
+
+    int move_frames = 10;
+    for (int frame = 0; frame < move_frames; frame++) {
+        test_advance_frame(&client1, move_right);
+        test_advance_frame(&host, no_input);
+    }
+
+    Entity *hero_after_client1 = test_find_entity_by_id(&host.state, hero_id);
+    Entity *player_one_after_client1 = test_find_entity_by_id(&host.state, player_one_id);
+    TEST_ASSERT_EQUAL_FLOAT(hero_start.x, hero_after_client1->position.x);
+    TEST_ASSERT_TRUE(player_one_after_client1->position.x > player_one_start.x);
+    Vector2 player_one_settled = player_one_after_client1->position;
+
+    /* A second client joins -- the host gains a THIRD player entity
+     * (network:2), leaving hero and network:1 untouched. */
+    TestGame client2;
+    TEST_ASSERT_TRUE(test_game_setup(&client2, host_session_gamedata));
+    client2.state.network.mode = NET_JOINING;
+    client2.state.network.transport = client2_transport;
+    client2.state.network.join_target = host_addr;
+
+    for (int frame = 0; frame < warmup_frames; frame++) {
+        test_advance_frame(&client2, no_input);
+        test_advance_frame(&client1, no_input);
+        test_advance_frame(&host, no_input);
+    }
+    TEST_ASSERT_EQUAL_INT(NET_CLIENT, client2.state.network.mode);
+    TEST_ASSERT_EQUAL_INT(2, host.state.network.client_count);
+    TEST_ASSERT_EQUAL_INT(3, host.state.gamedata.current_level.entities.count);
+
+    Entity *player_two = nullptr;
+    for (int index = 0; index < host.state.gamedata.current_level.entities.count; index++) {
+        Entity *candidate = &host.state.gamedata.current_level.entities.data[index];
+        if (candidate->id != hero_id && candidate->id != player_one_id) {
+            player_two = candidate;
+            break;
+        }
+    }
+    TEST_ASSERT_NOT_NULL(player_two);
+    TEST_ASSERT_EQUAL_STRING("network:2", attr_get_string(&player_two->attrs, "input_source"));
+    int player_two_id = player_two->id;
+    Vector2 player_two_start = player_two->position;
+
+    for (int frame = 0; frame < move_frames; frame++) {
+        test_advance_frame(&client2, move_right);
+        test_advance_frame(&client1, no_input);
+        test_advance_frame(&host, no_input);
+    }
+
+    Entity *hero_final = test_find_entity_by_id(&host.state, hero_id);
+    Entity *player_one_final = test_find_entity_by_id(&host.state, player_one_id);
+    Entity *player_two_final = test_find_entity_by_id(&host.state, player_two_id);
+    TEST_ASSERT_EQUAL_FLOAT(hero_start.x, hero_final->position.x);
+    /* client1 sent no_input while client2 moved -- network:1 stayed put. */
+    TEST_ASSERT_EQUAL_FLOAT(player_one_settled.x, player_one_final->position.x);
+    TEST_ASSERT_TRUE(player_two_final->position.x > player_two_start.x);
+
+    test_game_teardown(&host);
+    test_game_teardown(&client1);
+    test_game_teardown(&client2);
+    loopback_network_free(&loopback);
+}
+
+/* After the JOIN-accept handshake, the client independently knows which
+ * player_id the host assigned it (NetworkState.local_player_id, S8.6) --
+ * matching the host's own record for that connection -- and
+ * game_get_local_player on the CLIENT resolves the dynamically spawned
+ * network:<that id> entity, distinct from the client's own locally-parsed
+ * "hero" (its copy of the host's local:0 player, synced but never its OWN
+ * player). */
+void test_integration_client_learns_its_player_id(void)
+{
+    LoopbackNetwork loopback;
+    loopback_network_init(&loopback, &test_heap_alloc);
+    NetAddr host_addr = net_addr_make(1, 9000);
+    NetAddr client_addr = net_addr_make(2, 9001);
+    NetTransport host_transport;
+    NetTransport client_transport;
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, host_addr, &host_transport));
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, client_addr, &client_transport));
+
+    TestGame host;
+    TEST_ASSERT_TRUE(test_game_setup(&host, host_session_gamedata));
+    host.state.network.mode = NET_HOSTING;
+    host.state.network.transport = host_transport;
+
+    TestGame client;
+    TEST_ASSERT_TRUE(test_game_setup(&client, host_session_gamedata));
+    client.state.network.mode = NET_JOINING;
+    client.state.network.transport = client_transport;
+    client.state.network.join_target = host_addr;
+
+    InputState no_input = {0};
+    int frames = 5;
+    for (int frame = 0; frame < frames; frame++) {
+        test_advance_frame(&client, no_input);
+        test_advance_frame(&host, no_input);
+    }
+
+    TEST_ASSERT_EQUAL_INT(NET_CLIENT, client.state.network.mode);
+    TEST_ASSERT_EQUAL_INT(1, host.state.network.client_count);
+    TEST_ASSERT_EQUAL_INT(host.state.network.clients[0].player_id, client.state.network.local_player_id);
+    TEST_ASSERT_EQUAL_INT(1, client.state.network.local_player_id);
+
+    Entity *client_own_hero = test_find_entity_by_blueprint(&client.state, "hero");
+    TEST_ASSERT_NOT_NULL(client_own_hero);
+
+    const Entity *local_player = game_get_local_player_const(&client.state);
+    TEST_ASSERT_NOT_NULL(local_player);
+    TEST_ASSERT_EQUAL_STRING("network:1", attr_get_string(&local_player->attrs, "input_source"));
+    TEST_ASSERT_NOT_EQUAL_INT(client_own_hero->id, local_player->id);
+
+    test_game_teardown(&host);
+    test_game_teardown(&client);
+    loopback_network_free(&loopback);
+}
+
+/* A level big enough, with hero spawning far enough from every edge, that
+ * camera_clamp_target (game.c) never clips ANY of the three peers' camera
+ * targets computed below -- test_game_setup's fixed 320x240 game_bounds
+ * (test_helpers.c) clamps a camera target to within half that (160x120) of
+ * the level edge, so host_session_gamedata's own 400x300 level (used by
+ * every OTHER S8.4/S8.6 test above) would clip a hero spawned near its
+ * (100, 100) corner hard enough to pull the host's own camera target
+ * noticeably CLOSER to a diverged client player than to hero's own true
+ * position -- exactly the false failure this dedicated fixture avoids, by
+ * giving every position below comfortable headroom on all four sides. */
+static const char *camera_test_gamedata = "[[blueprint]]\n"
+                                          "name = \"hero\"\n"
+                                          "texture = \"t.png\"\n"
+                                          "src = [0, 0, 16, 16]\n"
+                                          "behavior = \"player\"\n"
+                                          "speed = 80\n"
+                                          "\n"
+                                          "[[level]]\n"
+                                          "name = \"test\"\n"
+                                          "size = [1200, 900]\n"
+                                          "\n"
+                                          "[[level.entity]]\n"
+                                          "blueprint = \"hero\"\n"
+                                          "pos = [600, 450]\n";
+
+/* Each peer's camera targets ITS OWN player: the host's follows local:0
+ * hero; each client's (game_update_client_render's follow, S8.5's
+ * entity_render_position) follows its own dynamically spawned network:<id>
+ * player -- never the host's hero, never another client's player. Diverges
+ * all three players in different directions so the three ground-truth
+ * positions (read off the HOST's own authoritative copies -- the single
+ * source of truth this test compares every peer's camera against) are
+ * unambiguous, then compares each peer's own camera_target by proximity
+ * rather than an exact value (camera_update_target's own follow-speed lerp,
+ * game.c, would otherwise make the exact numbers timing-dependent). */
+void test_integration_per_peer_camera_follows_own_player(void)
+{
+    LoopbackNetwork loopback;
+    loopback_network_init(&loopback, &test_heap_alloc);
+    NetAddr host_addr = net_addr_make(1, 9000);
+    NetAddr client1_addr = net_addr_make(2, 9001);
+    NetAddr client2_addr = net_addr_make(3, 9002);
+    NetTransport host_transport;
+    NetTransport client1_transport;
+    NetTransport client2_transport;
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, host_addr, &host_transport));
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, client1_addr, &client1_transport));
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, client2_addr, &client2_transport));
+
+    TestGame host;
+    TEST_ASSERT_TRUE(test_game_setup(&host, camera_test_gamedata));
+    host.state.network.mode = NET_HOSTING;
+    host.state.network.transport = host_transport;
+
+    TestGame client1;
+    TEST_ASSERT_TRUE(test_game_setup(&client1, camera_test_gamedata));
+    client1.state.network.mode = NET_JOINING;
+    client1.state.network.transport = client1_transport;
+    client1.state.network.join_target = host_addr;
+
+    TestGame client2;
+    TEST_ASSERT_TRUE(test_game_setup(&client2, camera_test_gamedata));
+    client2.state.network.mode = NET_JOINING;
+    client2.state.network.transport = client2_transport;
+    client2.state.network.join_target = host_addr;
+
+    InputState no_input = {0};
+    InputState move_right = {0};
+    input_state_hold_key(&move_right, KEY_RIGHT);
+    InputState move_down = {0};
+    input_state_hold_key(&move_down, KEY_DOWN);
+
+    int warmup_frames = 5;
+    for (int frame = 0; frame < warmup_frames; frame++) {
+        test_advance_frame(&client1, no_input);
+        test_advance_frame(&client2, no_input);
+        test_advance_frame(&host, no_input);
+    }
+    TEST_ASSERT_EQUAL_INT(NET_CLIENT, client1.state.network.mode);
+    TEST_ASSERT_EQUAL_INT(NET_CLIENT, client2.state.network.mode);
+    TEST_ASSERT_EQUAL_INT(2, host.state.network.client_count);
+
+    Entity *host_hero = test_find_entity_by_blueprint(&host.state, "hero");
+    TEST_ASSERT_NOT_NULL(host_hero);
+    int hero_id = host_hero->id;
+    Entity *host_player1 = test_find_entity_by_blueprint_excluding_id(&host.state, "hero", hero_id);
+    TEST_ASSERT_NOT_NULL(host_player1);
+    TEST_ASSERT_EQUAL_STRING("network:1", attr_get_string(&host_player1->attrs, "input_source"));
+    int player1_id = host_player1->id;
+    Entity *host_player2 = nullptr;
+    for (int index = 0; index < host.state.gamedata.current_level.entities.count; index++) {
+        Entity *candidate = &host.state.gamedata.current_level.entities.data[index];
+        if (candidate->id != hero_id && candidate->id != player1_id) {
+            host_player2 = candidate;
+            break;
+        }
+    }
+    TEST_ASSERT_NOT_NULL(host_player2);
+    TEST_ASSERT_EQUAL_STRING("network:2", attr_get_string(&host_player2->attrs, "input_source"));
+
+    /* hero stays put (no_input on the host throughout); network:1 walks
+     * right (client1's own input); network:2 walks down (client2's own
+     * input) -- three well-separated ground-truth positions, read from the
+     * host's own authoritative entities after everyone settles. */
+    int move_frames = 60;
+    for (int frame = 0; frame < move_frames; frame++) {
+        test_advance_frame(&client1, move_right);
+        test_advance_frame(&client2, move_down);
+        test_advance_frame(&host, no_input);
+    }
+    int settle_frames = 30;
+    for (int frame = 0; frame < settle_frames; frame++) {
+        test_advance_frame(&client1, no_input);
+        test_advance_frame(&client2, no_input);
+        test_advance_frame(&host, no_input);
+    }
+
+    Vector2 hero_position = host_hero->position;
+    Vector2 player1_position = host_player1->position;
+    Vector2 player2_position = host_player2->position;
+    /* Confirm the three ground-truth positions actually diverged -- the
+     * proximity comparisons below are meaningless otherwise. */
+    TEST_ASSERT_TRUE(player1_position.x > hero_position.x + 10.0F);
+    TEST_ASSERT_TRUE(player2_position.y > hero_position.y + 10.0F);
+
+    Vector2 host_camera = host.state.gamedata.camera_target;
+    Vector2 client1_camera = client1.state.gamedata.camera_target;
+    Vector2 client2_camera = client2.state.gamedata.camera_target;
+
+    /* Host's camera follows ITS OWN local:0 hero. */
+    TEST_ASSERT_TRUE(test_distance_squared(host_camera, hero_position) <
+                     test_distance_squared(host_camera, player1_position));
+    TEST_ASSERT_TRUE(test_distance_squared(host_camera, hero_position) <
+                     test_distance_squared(host_camera, player2_position));
+
+    /* client1's camera follows ITS OWN network:1 player. */
+    TEST_ASSERT_TRUE(test_distance_squared(client1_camera, player1_position) <
+                     test_distance_squared(client1_camera, hero_position));
+    TEST_ASSERT_TRUE(test_distance_squared(client1_camera, player1_position) <
+                     test_distance_squared(client1_camera, player2_position));
+
+    /* client2's camera follows ITS OWN network:2 player. */
+    TEST_ASSERT_TRUE(test_distance_squared(client2_camera, player2_position) <
+                     test_distance_squared(client2_camera, hero_position));
+    TEST_ASSERT_TRUE(test_distance_squared(client2_camera, player2_position) <
+                     test_distance_squared(client2_camera, player1_position));
+
+    test_game_teardown(&host);
+    test_game_teardown(&client1);
+    test_game_teardown(&client2);
+    loopback_network_free(&loopback);
+}
+
+/* Offline single-player is unaffected by S8.6: game_get_local_player
+ * resolves to the exact same entity as game_get_player (the sole local:0
+ * player, pointer-identical, not just equal by value) since
+ * state->network.mode stays NET_OFFLINE (zero-init default) the whole
+ * time -- no NetworkState scan ever runs. camera_update_target's switch to
+ * game_get_local_player_const (game.c) therefore follows the player
+ * exactly as before: moved right for long enough to clear the level's own
+ * camera-clamp deadzone, then settled with no input so the camera's own
+ * lerp fully catches up, proving the follow behavior itself, not just the
+ * pointer equality. */
+void test_integration_offline_local_player_matches_player(void)
+{
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, host_session_gamedata));
+
+    TEST_ASSERT_EQUAL_INT(NET_OFFLINE, game.state.network.mode);
+
+    Entity *player = game_get_player(&game.state);
+    Entity *local_player = game_get_local_player(&game.state);
+    TEST_ASSERT_NOT_NULL(player);
+    TEST_ASSERT_EQUAL_PTR(player, local_player);
+
+    InputState move_right = {0};
+    input_state_hold_key(&move_right, KEY_RIGHT);
+    InputState no_input = {0};
+    int move_frames = 90;
+    for (int frame = 0; frame < move_frames; frame++) {
+        test_advance_frame(&game, move_right);
+    }
+    int settle_frames = 20;
+    for (int frame = 0; frame < settle_frames; frame++) {
+        test_advance_frame(&game, no_input);
+    }
+
+    const Entity *player_after = game_get_player_const(&game.state);
+    TEST_ASSERT_EQUAL_PTR(player_after, game_get_local_player_const(&game.state));
+    TEST_ASSERT_TRUE(player_after->position.x > 200.0F);
+    TEST_ASSERT_FLOAT_WITHIN(2.0F, player_after->position.x, game.state.gamedata.camera_target.x);
+
+    test_game_teardown(&game);
 }
 
 /* Cancel (Escape) returns from the menu regardless of where the

@@ -67,6 +67,34 @@
 #define NETWORK_ATTR_POS_X "pos_x"
 #define NETWORK_ATTR_POS_Y "pos_y"
 
+/* S8.6: a THIRD reserved AttrRecord name, always ATTR_STRING, pushed FIRST
+ * for every entity (push_entity_sync_records, net_session.c) -- ahead of
+ * POS_X/POS_Y and every real attr -- carrying entity->blueprint_name over
+ * the exact same stream. Where POS_X/POS_Y let an ALREADY-KNOWN entity's
+ * position ride the attr stream instead of a dedicated wire shape, this
+ * lets a client MATERIALIZE an entity it doesn't have yet: a client's own
+ * level.entities is fixed at its own load-time parse, so a player the host
+ * spawns mid-session (net_session.c's per-join spawn) has no local
+ * counterpart until a sync record for its id arrives. network_client_apply_
+ * state's ensure_synced_entity_exists recognizes this record, and if
+ * level_find_entity_by_id already fails for that id, spawns a placeholder
+ * via level_spawn_entity (the SAME "add an entity at runtime and fix up
+ * tracking" primitive S6.6's editor spawn and S8.6's host-side per-join
+ * spawn both use) then FORCES its id to match the record's entity_id --
+ * necessary, not optional: level_spawn_entity's own id auto-assignment has
+ * no cross-peer coordination, so only an explicit force keeps the new
+ * entity resolvable by every later record naming the same entity_id. Every
+ * later record for that same entity_id in this and future syncs (POS_X/
+ * POS_Y, input_source, health, ...) then resolves and applies exactly like
+ * an entity the client had from its own initial parse -- no further special
+ * casing needed anywhere else in this file. A record with this name for an
+ * entity_id the client ALREADY has is a no-op (already exists, nothing to
+ * spawn) -- sent unconditionally every sync alongside POS_X/POS_Y rather
+ * than only once at an entity's first appearance, the same "full state
+ * every tick, simple over bandwidth-optimal" v1 tradeoff this header's own
+ * "SNAPSHOT vs DELTA" note already documents. */
+#define NETWORK_ATTR_BLUEPRINT_NAME "blueprint_name"
+
 /* ---- S8.4c: reliable event sub-channel ----
  *
  * net_reliable.h's ReliableChannel (assign/resend on the send side,
@@ -102,31 +130,40 @@
 #define NETWORK_EVENT_PLAYER_JOINED 1
 
 /* HOSTING only: network_host_receive (network.h) drains every pending
- * JOIN/INPUT/ACK packet on state->network.transport, hash-verifying JOINs
- * against state->gamedata_hash, storing the latest InputState for every
- * already-registered client, and (S8.4c) applying any incoming MSG_ACK to
- * the acking client's own event_channel. Call BEFORE game_update so this
- * tick's behavior dispatch (game.c's input_for_entity) sees the freshest
- * input a client sent. Any client newly registered by this call (S8.4b) is
- * sent a full SNAPSHOT of the current level (network_host_send_snapshot
- * below) before returning, so a joining client's very first received
- * packet is always the full state, never a partial DELTA -- and (S8.4c) a
- * NETWORK_EVENT_PLAYER_JOINED is reliable-sent to every active client (see
- * this header's own "S8.4c: reliable event sub-channel" note). Finally,
- * every active client's send-side event_channel is aged/resent
- * (network_host_tick_reliable_channels, network.h) by delta_time. No-op
- * under any mode other than NET_HOSTING. */
+ * JOIN/INPUT/ACK/JOIN_ACCEPT-triggering packet on state->network.transport,
+ * hash-verifying JOINs against state->gamedata_hash (replying with
+ * MSG_JOIN_ACCEPT on a match, network.c's handle_join_datagram), storing
+ * the latest InputState for every already-registered client, and (S8.4c)
+ * applying any incoming MSG_ACK to the acking client's own event_channel.
+ * Call BEFORE game_update so this tick's behavior dispatch (game.c's
+ * input_for_entity) sees the freshest input a client sent. Any client
+ * newly registered by this call gets (S8.6) a player entity spawned for it
+ * -- the same blueprint as this host's own local player, input_source
+ * stamped "network:<its id>" (see spawn_network_player below) -- BEFORE
+ * (S8.4b) a full SNAPSHOT of the current level (network_host_send_snapshot
+ * below), so a joining client's very first received packet already
+ * includes its own freshly spawned player, never a partial SNAPSHOT missing
+ * it. Also (S8.4c) a NETWORK_EVENT_PLAYER_JOINED is reliable-sent to every
+ * active client (see this header's own "S8.4c: reliable event sub-channel"
+ * note). Finally, every active client's send-side event_channel is
+ * aged/resent (network_host_tick_reliable_channels, network.h) by
+ * delta_time. No-op under any mode other than NET_HOSTING. */
 void network_host_tick(GameState *state, float delta_time);
 
-/* JOINING or NET_CLIENT only. NET_JOINING: sends this session's MSG_JOIN
- * (network_client_send_join, state->gamedata_hash) and advances
- * state->network.mode to NET_CLIENT in the same call -- S8.4a's implicit
- * acceptance model, see NetMode's doc comment (network.h) for why there is
- * no accept/reject reply yet. NET_CLIENT (including the NET_CLIENT this
- * call itself just entered): sends local_input as this tick's MSG_INPUT
- * (network_client_send_input), then drains and applies every pending
- * SNAPSHOT/DELTA packet (network_client_apply_state below) -- S8.4b's
- * sync-back -- and every pending MSG_EVENT (S8.4c: dedup'd via
+/* JOINING or NET_CLIENT only. NET_JOINING: (re)sends this session's
+ * MSG_JOIN (network_client_send_join, state->gamedata_hash) -- every tick,
+ * not just once, since a dropped first JOIN or its accept reply must not
+ * strand the client -- then drains for a MSG_JOIN_ACCEPT (S8.6): a decoded
+ * one stores its player_id onto state->network.local_player_id and
+ * advances state->network.mode to NET_CLIENT, in the same call, so the
+ * NET_CLIENT branch below also runs THIS tick once accepted (see NetMode's
+ * doc comment, network.h, for the full handshake). NET_CLIENT (including
+ * the NET_CLIENT this call itself just entered): sends local_input as this
+ * tick's MSG_INPUT (network_client_send_input, skipped the very tick the
+ * accept arrived -- input starts flowing the tick after), then drains and
+ * applies every pending SNAPSHOT/DELTA packet (network_client_apply_state
+ * below) -- S8.4b's sync-back, S8.6's own entity-materializing extension
+ * included -- and every pending MSG_EVENT (S8.4c: dedup'd via
  * reliable_on_receive, net_reliable.h, and applied exactly once per
  * distinct sequence number). Finally sends the current ack for whatever
  * has been received so far (network_client_send_ack, network.h) -- a
@@ -152,13 +189,18 @@ void network_host_broadcast_delta(GameState *state);
 
 /* CLIENT side (S8.4b): apply a decoded batch of AttrRecords (from either a
  * SNAPSHOT or a DELTA -- identical handling, see this header's own
- * "SNAPSHOT vs DELTA" note) onto state->gamedata.current_level. Each
- * record's entity_id is resolved via level_find_entity_by_id; a record for
- * an entity id the client's level doesn't have (a level the client hasn't
- * loaded yet, or an id mismatch) is silently skipped -- v1 requires both
- * sides to already be on the same level/gamedata for ids to line up
- * (verified once at JOIN via the gamedata hash, network_host_receive).
- * NETWORK_ATTR_POS_X/_Y write entity->position; every other record calls
+ * "SNAPSHOT vs DELTA" note) onto state->gamedata.current_level. A
+ * NETWORK_ATTR_BLUEPRINT_NAME record (S8.6, see that macro's own doc
+ * comment above) is handled first and specially: it materializes a
+ * placeholder entity for a not-yet-seen entity_id, or is a no-op if that id
+ * already resolves. Every other record's entity_id is resolved via
+ * level_find_entity_by_id; one for an entity id the client's level still
+ * doesn't have (its BLUEPRINT_NAME record hasn't arrived yet, or genuinely
+ * never will -- a level the client hasn't loaded, or an id mismatch) is
+ * silently skipped -- v1 requires both sides to already be on the same
+ * level/gamedata for ids to line up (verified once at JOIN via the
+ * gamedata hash, network_host_receive). NETWORK_ATTR_POS_X/_Y write
+ * entity->position; every other record calls
  * attr_set_float/_int/_bool/_string on entity->attrs. Every record's Strv
  * name/value is a view into the caller's own receive buffer -- this
  * function copies each one out (via attr_set_*'s own internal

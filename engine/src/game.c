@@ -187,6 +187,54 @@ static int find_player_entity(const GameState *state)
     return true;
 }
 
+/* Rebuild the count-parallel tracking after a spawn changed entity count,
+ * WITHOUT losing the temporal overlap edge state -- moved here from frame.c
+ * (S6.6's apply_spawn_effects call site, unchanged below) so S8.6's
+ * host-side per-join player spawn (net_session.c) can share it instead of
+ * duplicating the reindex logic.
+ *
+ * setup_current_level_runtime above reinitializes prev_player_overlaps and
+ * prev_solid_collisions to all-false for the new entity count. That is
+ * correct for a fresh load/transition (nothing was overlapping "last frame"
+ * yet), but for a mid-gameplay spawn it would wipe the "overlapped last
+ * frame" state that game.c's detect_enter_targets/detect_solid_collisions
+ * diff against -- refiring enter for the entity the player is still standing
+ * in, and collide for any still-touching solid pair, on the very next frame.
+ * A for_each-driven spawn compounds this into runaway spawning.
+ *
+ * So: snapshot the pre-spawn edge vecs (by value -- copies the data pointer,
+ * still valid arena memory: setup allocates the fresh vecs at the arena top,
+ * orphaning but never overwriting the old blocks, and nothing restores/resets
+ * the arena in between, so reading old while writing new is safe), let setup
+ * rebuild everything from scratch, then copy the pre-existing entities' edge
+ * state back into the freshly-rebuilt (larger) vecs. Newly-spawned entities
+ * keep setup's fresh false in both vecs -- correct, they weren't overlapping
+ * anything last frame. The solid matrix is entity_count², so the restore is
+ * the entity_count² reindex F24 called for, done as a copy into setup's
+ * proven rebuild rather than a hand-rolled resize. new_count >= old_count
+ * always (spawn only adds), so every (a,b) with a,b < old_count is in range
+ * of the new_count² matrix. */
+[[nodiscard]] bool game_respawn_rebuild_tracking(Diag *diag, GameState *state)
+{
+    vec_bool old_player_overlaps = state->gamedata.prev_player_overlaps;
+    vec_bool old_solid_collisions = state->gamedata.prev_solid_collisions;
+    int old_count = old_player_overlaps.count;
+    if (!setup_current_level_runtime(diag, state)) {
+        return false;
+    }
+    int new_count = state->gamedata.prev_player_overlaps.count;
+    for (int index = 0; index < old_count; index++) {
+        state->gamedata.prev_player_overlaps.data[index] = old_player_overlaps.data[index];
+    }
+    for (int entity_a = 0; entity_a < old_count; entity_a++) {
+        for (int entity_b = 0; entity_b < old_count; entity_b++) {
+            state->gamedata.prev_solid_collisions.data[(entity_a * new_count) + entity_b] =
+                old_solid_collisions.data[(entity_a * old_count) + entity_b];
+        }
+    }
+    return true;
+}
+
 bool game_load_gamedata(Diag *diag, GameState *state, GamedataParams params)
 {
     /* Computed unconditionally, ahead of the parse attempt below: S8.4a's
@@ -462,11 +510,10 @@ typedef struct {
 
 typedef void (*BehaviorUpdateFn)(BehaviorContext *context);
 
-/* Prefix an entity's `input_source` attr uses to name a network player:
- * "network:<player_id>", player_id matching a NetClient.player_id
- * (network.h) the host has registered via JOIN. sizeof(...)-1 (not
- * strlen) so the offset into `source` below is a compile-time constant. */
-#define NETWORK_INPUT_SOURCE_PREFIX "network:"
+/* NETWORK_INPUT_SOURCE_PREFIX itself lives in network.h (shared with
+ * net_session.c's S8.6 per-join spawn, the write side of this same
+ * convention). sizeof(...)-1 (not strlen) so the offset into `source`
+ * below is a compile-time constant. */
 #define RADIX_DECIMAL 10
 
 /* D39/S8.4a's multiplayer input seam: an entity's `input_source` attr
@@ -499,6 +546,59 @@ static InputState input_for_entity(const Entity *entity,
         }
     }
     return (InputState){0};
+}
+
+/* S8.6: find THIS peer's own player entity, as opposed to game_get_player's
+ * "the" player (the first behavior==player entity, which is always the
+ * host/offline local:0 player -- dynamically spawned network players are
+ * always appended after it, never inserted before, so player_index can
+ * never drift onto one of them). Host/offline: the local player IS "the"
+ * player, so this is exactly game_get_player -- no scan needed, and
+ * game_get_local_player == game_get_player for single-player, unchanged.
+ * NET_CLIENT: scan for the entity whose scoped input_source is
+ * "network:<local_player_id>" (network.h), the same prefix+id convention
+ * input_for_entity parses above -- this peer's own dynamically host-spawned
+ * player, once its blueprint_name/input_source sync records have arrived
+ * (net_session.c's ensure_synced_entity_exists/network_client_apply_state).
+ * Returns -1 before that sync arrives (no matching entity yet) or if this
+ * client's local_player_id has no match for any other reason. */
+static int find_local_player_entity(const GameState *state)
+{
+    if (state->network.mode != NET_CLIENT) {
+        return state->gamedata.player_index;
+    }
+    const Level *level = &state->gamedata.current_level;
+    for (int index = 0; index < level->entities.count; index++) {
+        const Entity *entity = &level->entities.data[index];
+        const AttrSet *defaults = entity_resolve_defaults(state, entity->id);
+        const char *source = attr_get_scoped_string(&entity->attrs, defaults, "input_source");
+        if (!source || !strv_starts_with_cstr(strv_from_cstr(source), NETWORK_INPUT_SOURCE_PREFIX)) {
+            continue;
+        }
+        int player_id = (int)strtol(source + (sizeof(NETWORK_INPUT_SOURCE_PREFIX) - 1), nullptr, RADIX_DECIMAL);
+        if (player_id == state->network.local_player_id) {
+            return index;
+        }
+    }
+    return -1;
+}
+
+Entity *game_get_local_player(GameState *state)
+{
+    int index = find_local_player_entity(state);
+    if (index < 0 || index >= state->gamedata.current_level.entities.count) {
+        return nullptr;
+    }
+    return &state->gamedata.current_level.entities.data[index];
+}
+
+const Entity *game_get_local_player_const(const GameState *state)
+{
+    int index = find_local_player_entity(state);
+    if (index < 0 || index >= state->gamedata.current_level.entities.count) {
+        return nullptr;
+    }
+    return &state->gamedata.current_level.entities.data[index];
 }
 
 static void behavior_static(BehaviorContext *context)
@@ -1534,7 +1634,7 @@ void game_update(Diag *diag, GameState *state, InputState input, float delta_tim
             advance_entity_animation(state, entity, delta_time);
         }
 
-        const Entity *player = game_get_player_const(state);
+        const Entity *player = game_get_local_player_const(state);
         if (player) {
             camera_update_target(state, player->position, delta_time);
             camera_update_shake(state, delta_time);
@@ -1645,7 +1745,7 @@ void game_update_client_render(GameState *state, float delta_time)
         advance_entity_animation(state, entity, delta_time);
         entity->interp_elapsed += delta_time; /* S8.5 -- entity_render_position clamps it */
     }
-    const Entity *player = game_get_player_const(state);
+    const Entity *player = game_get_local_player_const(state);
     if (player) {
         camera_update_target(state, entity_render_position(player), delta_time);
         camera_update_shake(state, delta_time);

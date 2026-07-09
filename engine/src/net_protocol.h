@@ -122,6 +122,10 @@ typedef enum {
     MSG_JOIN,
     MSG_BEACON,
     MSG_ACK,
+    /* S8.6: HOST->client reply to a verified MSG_JOIN, carrying the
+     * player_id network.c's register_client just assigned the sender. See
+     * JoinAcceptMessage below. */
+    MSG_JOIN_ACCEPT,
 } MessageType;
 
 /* ---- Attr record: entity_id + name + typed value.
@@ -233,6 +237,22 @@ typedef struct {
 [[nodiscard]] bool protocol_encode_ack(PacketWriter *writer, AckMessage message);
 [[nodiscard]] bool protocol_decode_ack(PacketReader *reader, AckMessage *out);
 
+/* ---- MSG_JOIN_ACCEPT: the S8.6 reply half of the JOIN handshake.
+ * Sent by the host once (network.c's handle_join_datagram) for every
+ * MSG_JOIN it accepts (a hash match, whether a brand-new registration or a
+ * re-JOIN refresh -- see register_client's own doc comment), so a client
+ * that resends JOIN while still waiting eventually gets an accept even if
+ * the first one was lost. Never sent for a refused (hash-mismatched) JOIN
+ * -- a client that never receives one simply never leaves NET_JOINING,
+ * same silent-refusal contract protocol_join_verify already documents. ---- */
+
+typedef struct {
+    int32_t player_id;
+} JoinAcceptMessage;
+
+[[nodiscard]] bool protocol_encode_join_accept(PacketWriter *writer, JoinAcceptMessage message);
+[[nodiscard]] bool protocol_decode_join_accept(PacketReader *reader, JoinAcceptMessage *out);
+
 /* ---- Whole-packet convenience: header + payload in one call, with
  * `length` back-patched once the payload's actual size is known. Each
  * writes into a caller-owned buffer (e.g. a NET_MAX_PACKET_SIZE stack
@@ -255,6 +275,8 @@ protocol_encode_join_packet(uint8_t *buffer, size_t capacity, uint32_t seq, Join
 protocol_encode_beacon_packet(uint8_t *buffer, size_t capacity, uint32_t seq, BeaconMessage message, size_t *out_len);
 [[nodiscard]] bool
 protocol_encode_ack_packet(uint8_t *buffer, size_t capacity, uint32_t seq, AckMessage message, size_t *out_len);
+[[nodiscard]] bool protocol_encode_join_accept_packet(
+    uint8_t *buffer, size_t capacity, uint32_t seq, JoinAcceptMessage message, size_t *out_len);
 
 /* Decoded header plus a reader already positioned at the payload, bounded
  * to exactly header.length bytes -- a payload decode call can never read

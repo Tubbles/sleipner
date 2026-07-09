@@ -546,6 +546,23 @@ bool protocol_decode_ack(PacketReader *reader, AckMessage *out)
     return true;
 }
 
+/* ---- MSG_JOIN_ACCEPT ---- */
+
+bool protocol_encode_join_accept(PacketWriter *writer, JoinAcceptMessage message)
+{
+    return packet_writer_write_i32(writer, message.player_id);
+}
+
+bool protocol_decode_join_accept(PacketReader *reader, JoinAcceptMessage *out)
+{
+    JoinAcceptMessage message = {0};
+    if (!packet_reader_read_i32(reader, &message.player_id)) {
+        return false;
+    }
+    *out = message;
+    return true;
+}
+
 /* ---- Whole-packet convenience ---- */
 
 /* Constructs *writer over (buffer, capacity) and writes the packet header
@@ -668,6 +685,19 @@ bool protocol_encode_ack_packet(uint8_t *buffer, size_t capacity, uint32_t seq, 
         return false;
     }
     if (!protocol_encode_ack(&writer, message)) {
+        return false;
+    }
+    return packet_end(&writer, out_len);
+}
+
+bool protocol_encode_join_accept_packet(
+    uint8_t *buffer, size_t capacity, uint32_t seq, JoinAcceptMessage message, size_t *out_len)
+{
+    PacketWriter writer;
+    if (!packet_begin(capacity, &writer, MSG_JOIN_ACCEPT, buffer, seq)) {
+        return false;
+    }
+    if (!protocol_encode_join_accept(&writer, message)) {
         return false;
     }
     return packet_end(&writer, out_len);

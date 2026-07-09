@@ -268,6 +268,21 @@ void game_update_client_render(GameState *state, float delta_time);
 
 Entity *game_get_player(GameState *state);
 const Entity *game_get_player_const(const GameState *state);
+
+/* S8.6: THIS peer's own player entity -- host/offline resolves to exactly
+ * game_get_player (the local:0 entity, since a dynamically host-spawned
+ * network player is always appended after it and so can never become "the"
+ * player); NET_CLIENT resolves to the entity whose scoped input_source is
+ * "network:<local_player_id>" (network.h's NetworkState.local_player_id,
+ * learned from the host's MSG_JOIN_ACCEPT). Returns nullptr if that entity
+ * hasn't synced onto this client yet. Use this, not game_get_player, for
+ * anything peer-local: camera follow, HUD. game_get_player itself stays
+ * the right call for host-authoritative concerns that intentionally mean
+ * "the" (first-authored) player regardless of who's connected -- e.g.
+ * behavior_chase's AI aggro target (game.c). */
+Entity *game_get_local_player(GameState *state);
+const Entity *game_get_local_player_const(const GameState *state);
+
 void game_free(Diag *diag, GameState *state);
 
 /* Discard all play progression (flags, global vars, inventory items):
@@ -335,6 +350,17 @@ float transition_fade_alpha(TransitionFade fade);
  * rule_table per spawn and leaving prev_player_overlaps/prev_solid_collisions
  * under-sized until the next full reload. */
 [[nodiscard]] bool setup_current_level_runtime(Diag *diag, GameState *state);
+
+/* Rebuild the same count-parallel tracking as setup_current_level_runtime
+ * above, but preserving prev_player_overlaps/prev_solid_collisions' edge
+ * state for every pre-existing entity instead of wiping it to all-false --
+ * the right call after a MID-GAMEPLAY spawn (setup_current_level_runtime
+ * alone is only correct for a fresh load/transition, where "nothing
+ * overlapped last frame" is actually true). Shared by frame.c's S6.6
+ * apply_spawn_effects (the editor/rule-driven `spawn:` action) and
+ * net_session.c's S8.6 per-join player spawn -- see either call site's own
+ * doc comment for the full reindex rationale. */
+[[nodiscard]] bool game_respawn_rebuild_tracking(Diag *diag, GameState *state);
 
 /* Resolve an entity's blueprint defaults via the entity→blueprint map.
  * Returns nullptr if entity has no blueprint mapping or blueprint not found. */

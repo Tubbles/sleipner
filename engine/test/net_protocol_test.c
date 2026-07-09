@@ -364,6 +364,26 @@ void test_protocol_ack_packet_round_trip(void)
     TEST_ASSERT_EQUAL_UINT32(message.ack_bitfield, out.ack_bitfield);
 }
 
+/* ---- MSG_JOIN_ACCEPT ---- */
+
+void test_protocol_join_accept_packet_round_trip(void)
+{
+    JoinAcceptMessage message = {.player_id = 3};
+
+    uint8_t buffer[NET_PROTOCOL_TEST_BUFFER_SIZE];
+    size_t total_len = 0;
+    TEST_ASSERT_TRUE(protocol_encode_join_accept_packet(buffer, sizeof(buffer), 2, message, &total_len));
+
+    DecodedPacket decoded;
+    ErrorState err = {0};
+    TEST_ASSERT_TRUE(protocol_decode_packet(buffer, total_len, &decoded, &err));
+    TEST_ASSERT_EQUAL_INT(MSG_JOIN_ACCEPT, decoded.header.type);
+
+    JoinAcceptMessage out;
+    TEST_ASSERT_TRUE(protocol_decode_join_accept(&decoded.reader, &out));
+    TEST_ASSERT_EQUAL_INT32(message.player_id, out.player_id);
+}
+
 /* ---- Malformed whole packets ---- */
 
 void test_protocol_decode_packet_rejects_length_mismatch(void)
@@ -434,6 +454,7 @@ int main(void)
     RUN_TEST(test_protocol_join_packet_round_trip);
     RUN_TEST(test_protocol_beacon_packet_round_trip);
     RUN_TEST(test_protocol_ack_packet_round_trip);
+    RUN_TEST(test_protocol_join_accept_packet_round_trip);
     RUN_TEST(test_protocol_decode_packet_rejects_length_mismatch);
     RUN_TEST(test_gamedata_content_hash_same_string_same_hash);
     RUN_TEST(test_gamedata_content_hash_one_byte_change_different_hash);

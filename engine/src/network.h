@@ -103,21 +103,21 @@ typedef enum {
     NET_HOSTING,
     NET_DISCOVERING,
     NET_JOINING,
-    /* S8.4a: a client that has sent MSG_JOIN and is being treated as
-     * connected to a host. Lifecycle: NET_JOINING (join_target chosen via
-     * the discovery screen or set directly, nothing sent yet) ->
-     * NET_CLIENT (net_session.c's network_client_tick sent MSG_JOIN and
-     * flipped the mode itself, in the same call). Acceptance in S8.4a is
-     * IMPLICIT: the client assumes it's in as soon as it sends JOIN, and
-     * the host separately accepts or refuses by hash-verifying the
-     * message (network_host_receive below) without replying either way. A
-     * real accept/reject handshake (the client only advancing to
-     * NET_CLIENT once the host confirms) remains open work, tracked in
-     * TODO.md -- S8.4c turned out to be the reliable event sub-channel
-     * (net_reliable.h) instead, per the open-work master plan's own S8.4
-     * definition. Distinct from NET_JOINING: NET_JOINING is "picked a
-     * host, about to connect", NET_CLIENT is "connected, sending input
-     * every tick". */
+    /* S8.4a/S8.6: a client that has received a MSG_JOIN_ACCEPT reply to its
+     * own MSG_JOIN and is now connected to a host. Lifecycle: NET_JOINING
+     * (join_target chosen via the discovery screen or set directly,
+     * resending MSG_JOIN every tick via net_session.c's network_client_tick)
+     * -> NET_CLIENT (a MSG_JOIN_ACCEPT arrived, network_client_tick decoded
+     * it, stored local_player_id below, and flipped the mode itself, in the
+     * same call). Acceptance is EXPLICIT as of S8.6: the host hash-verifies
+     * every MSG_JOIN (network_host_receive below) and, on a match, replies
+     * with MSG_JOIN_ACCEPT (network.c's handle_join_datagram) carrying the
+     * player_id it just assigned -- resent on every re-JOIN, so a client
+     * that never sees the first accept (dropped packet) still converges
+     * once it resends. A hash-mismatched JOIN gets no reply at all: a
+     * refused client simply never leaves NET_JOINING. Distinct from
+     * NET_JOINING: NET_JOINING is "picked a host, about to connect",
+     * NET_CLIENT is "connected, sending input every tick". */
     NET_CLIENT,
 } NetMode;
 
@@ -126,6 +126,17 @@ typedef enum {
  * count -- the same justified fixed-cap-array exception JoinList/
  * BindingStore already rely on. */
 #define NET_MAX_CLIENTS 4
+
+/* Prefix an entity's `input_source` attr uses to name a network player:
+ * "network:<player_id>", player_id matching a NetClient.player_id below.
+ * Shared between game.c's input_for_entity/game_get_local_player (the read
+ * side: resolve THIS attr value to an input provider or "is this MY
+ * player") and net_session.c's S8.6 per-join spawn (the write side: stamp
+ * a freshly spawned player entity's input_source with this prefix plus the
+ * id register_client just assigned). Lives here, not game.c, so both
+ * files -- neither of which includes the other -- can share one literal
+ * rather than risking two copies drifting apart. */
+#define NETWORK_INPUT_SOURCE_PREFIX "network:"
 
 /* One client connected to a hosted session -- host-side only, populated by
  * network_host_receive below (a client's own NetworkState never fills out
@@ -181,6 +192,17 @@ typedef struct {
      * Meaningless while mode != NET_HOSTING. */
     NetClient clients[NET_MAX_CLIENTS];
     int client_count;
+    /* S8.6: CLIENT side only -- the player_id this client learned from the
+     * host's MSG_JOIN_ACCEPT (net_session.c's network_client_tick sets this
+     * the moment one arrives, in the same call that flips mode to
+     * NET_CLIENT). Meaningless on the HOST's own NetworkState, and on a
+     * client still NET_JOINING (no accept received yet) -- 0 is the
+     * zero-init "not yet assigned" value, which also happens to be the id
+     * reserved for a host's own local player, but that overlap is harmless
+     * since this field is never read except on a NET_CLIENT NetworkState.
+     * game.c's game_get_local_player resolves this peer's own player
+     * entity via NETWORK_INPUT_SOURCE_PREFIX + this id. */
+    int local_player_id;
     /* S8.4c: CLIENT side only -- this client's own receive-side reliable
      * channel for events the HOST sends it. network_client_send_ack below
      * acks whatever it has received so far; network_client_tick
@@ -241,9 +263,9 @@ network_start_hosting(NetworkState *network, Allocator *alloc, const char *host_
 /* Destroy the transport if one was ever created (safe no-op otherwise),
  * and reset every NetworkState field back to its NET_OFFLINE zero
  * value -- mode, join_list, join_target, beacon_timer, host_name,
- * clients/client_count, host_event_channel, and the delivered-event
- * bookkeeping (S8.4c). Idempotent: safe to call on an already-OFFLINE
- * NetworkState. */
+ * clients/client_count, local_player_id (S8.6), host_event_channel, and
+ * the delivered-event bookkeeping (S8.4c). Idempotent: safe to call on an
+ * already-OFFLINE NetworkState. */
 void network_stop(NetworkState *network);
 
 /* ---- S8.4a: session JOIN + INPUT flow, over an already-established
@@ -258,8 +280,11 @@ void network_stop(NetworkState *network);
  * and network->host_name (as JoinMessage.client_name) to network->join_target.
  * Fire-and-forget, like discovery_host_tick's beacon send -- a failed
  * encode/send is silently dropped, there is no error channel here. Does
- * NOT change network->mode itself; net_session.c's network_client_tick
- * does that immediately after calling this. */
+ * NOT change network->mode itself -- as of S8.6, net_session.c's
+ * network_client_tick calls this every tick while still NET_JOINING (a
+ * resend, not a one-shot) and only advances to NET_CLIENT once a
+ * MSG_JOIN_ACCEPT reply actually arrives, see NetMode's own doc comment
+ * (above) for the full handshake. */
 void network_client_send_join(NetworkState *network, uint64_t local_gamedata_hash);
 
 /* CLIENT side: encode and send this frame's local_input as MSG_INPUT to
@@ -272,8 +297,11 @@ void network_client_send_input(NetworkState *network, const InputState *local_in
  * (net_protocol.h's protocol_join_verify) -- a match registers the
  * sender's NetAddr in `clients` with the next player_id (a no-op, not a
  * duplicate, if that addr is already registered: re-JOIN refreshes rather
- * than adding a second entry), a mismatch is silently refused (no client
- * registered). A decoded MSG_INPUT from an address already present in
+ * than adding a second entry) and replies with a MSG_JOIN_ACCEPT carrying
+ * that player_id (S8.6, sent on every accepted JOIN including a refresh,
+ * so a client whose first accept was lost still converges once it
+ * resends), a mismatch is silently refused (no client registered, no
+ * reply sent). A decoded MSG_INPUT from an address already present in
  * `clients` overwrites that client's last_input; MSG_INPUT from an
  * unregistered address is ignored. A decoded MSG_ACK (S8.4c) from an
  * address already present in `clients` is applied to that client's own

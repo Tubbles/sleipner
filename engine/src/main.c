@@ -406,10 +406,12 @@ static void draw_debug_collision_boxes(const GameState *state, const Level *leve
  * `health = [current, max]` pair, see blueprint.c's parse_health) and
  * falls back to the blueprint's own default `health` attr -- the
  * un-damaged value a fresh instance starts at -- for a blueprint that
- * never authored a max_health at all. */
+ * never authored a max_health at all. game_get_local_player_const (S8.6):
+ * this peer's OWN player, so a client's HUD shows its own health, not
+ * whichever player happens to be first-authored in the level. */
 static void draw_player_hud(const GameState *state)
 {
-    const Entity *player = game_get_player_const(state);
+    const Entity *player = game_get_local_player_const(state);
     if (!player) {
         return;
     }
@@ -422,7 +424,9 @@ static void draw_player_hud(const GameState *state)
 
 static void draw_debug_info(GameState *state, RectU32 game_bounds)
 {
-    const Entity *player = game_get_player_const(state);
+    /* S8.6: this peer's own player (game_get_local_player_const), matching
+     * draw_player_hud above -- the debug panel is per-peer display too. */
+    const Entity *player = game_get_local_player_const(state);
     int line = 0;
     int screen_w = GetScreenWidth();
     int screen_h = GetScreenHeight();

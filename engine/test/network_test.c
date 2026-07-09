@@ -83,6 +83,9 @@ void test_stop_resets_every_field_to_offline(void)
     network.last_delivered_event_type = 1;
     network.last_delivered_event_entity_id = 1;
     network.delivered_event_count = 1;
+    /* S8.6: pre-seed local_player_id too, so its reset is proven the same
+     * way as the fields above. */
+    network.local_player_id = 3;
 
     network_stop(&network);
 
@@ -92,6 +95,7 @@ void test_stop_resets_every_field_to_offline(void)
     TEST_ASSERT_EQUAL_UINT32(0, network.join_target.host);
     TEST_ASSERT_EQUAL_FLOAT(0.0F, network.beacon_timer);
     TEST_ASSERT_EQUAL_STRING("", network.host_name);
+    TEST_ASSERT_EQUAL_INT(0, network.local_player_id);
     TEST_ASSERT_FALSE(network.host_event_channel.has_received_any);
     TEST_ASSERT_EQUAL_INT32(0, network.last_delivered_event_type);
     TEST_ASSERT_EQUAL_INT32(0, network.last_delivered_event_entity_id);

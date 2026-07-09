@@ -124,6 +124,7 @@ void network_stop(NetworkState *network)
         network->clients[index] = (NetClient){0};
     }
     network->client_count = 0;
+    network->local_player_id = 0;
     network->host_event_channel = (ReliableChannel){0};
     network->last_delivered_event_type = 0;
     network->last_delivered_event_entity_id = 0;
@@ -195,8 +196,23 @@ void network_client_send_input(NetworkState *network, const InputState *local_in
     (void)net_send(&network->transport, network->join_target, buffer, packet_len);
 }
 
-/* Decode one payload as MSG_JOIN and either register or refuse the
- * sender, per network_host_receive's own doc comment. */
+/* HOST side (S8.6): reply to an accepted JOIN with MSG_JOIN_ACCEPT carrying
+ * player_id, fire-and-forget like every other network_* send in this file.
+ * Called for every verified JOIN (new registration or re-JOIN refresh),
+ * never for a refused one -- see handle_join_datagram below. */
+static void send_join_accept(const NetworkState *network, NetAddr dest, int player_id)
+{
+    JoinAcceptMessage message = {.player_id = player_id};
+    uint8_t buffer[NET_MAX_PACKET_SIZE];
+    size_t packet_len = 0;
+    if (!protocol_encode_join_accept_packet(buffer, sizeof(buffer), 0, message, &packet_len)) {
+        return;
+    }
+    (void)net_send(&network->transport, dest, buffer, packet_len);
+}
+
+/* Decode one payload as MSG_JOIN and either register-and-accept or refuse
+ * the sender, per network_host_receive's own doc comment. */
 static void handle_join_datagram(NetworkState *network, NetAddr src, PacketReader *reader, uint64_t local_gamedata_hash)
 {
     JoinMessage message = {0};
@@ -208,6 +224,10 @@ static void handle_join_datagram(NetworkState *network, NetAddr src, PacketReade
         return;
     }
     register_client(network, src);
+    const NetClient *client = find_client_by_addr(network, src);
+    if (client) {
+        send_join_accept(network, src, client->player_id);
+    }
 }
 
 /* Decode one payload as MSG_INPUT and store it as src's last_input, if src

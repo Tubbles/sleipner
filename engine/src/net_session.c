@@ -3,6 +3,8 @@
 #include "alloc.h"
 #include "arena.h"
 #include "attribute.h"
+#include "blueprint.h"
+#include "diag.h"
 #include "entity.h"
 #include "error.h"
 #include "game.h"
@@ -15,8 +17,11 @@
 #include "str.h"
 #include "strv.h"
 
+#include "raylib.h" // Vector2
+
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h> // snprintf
 
 /* Defined below, alongside the rest of S8.4b's state-sync machinery --
  * forward-declared here since network_client_tick (right below) is kept
@@ -24,19 +29,73 @@
  * original layout. */
 static void network_client_receive_state(GameState *state);
 
+/* Bound for the stack buffer spawn_network_player formats
+ * "network:<player_id>" into: NETWORK_INPUT_SOURCE_PREFIX (8 bytes) + up to
+ * an int32's worth of digits + sign + nul -- comfortably under 32 even
+ * though player_id in practice never exceeds NET_MAX_CLIENTS (network.h). */
+#define NETWORK_INPUT_SOURCE_VALUE_MAX 32
+
+/* HOST side (S8.6): spawn a player entity for a client that just registered
+ * (network_host_tick's own newly-joined loop below), cloning the SAME
+ * blueprint this host's own local player uses -- game_get_player always
+ * resolves to the local:0 entity here, never one of the network players
+ * this function itself appends after it (player_index is fixed at the
+ * first behavior=="player" entity; see game_get_local_player's own doc
+ * comment, game.h). Spawn position: the local player's CURRENT position --
+ * the simplest choice that's always valid even for a level authoring no
+ * dedicated multiplayer spawn markers. Documented choice, not the only one
+ * considered (an authored player-start attr or a level spawn-point system
+ * are the alternatives) -- revisit once a level actually needs to
+ * distinguish "where the host is standing" from "where a joining player
+ * should appear". Stamps the new entity's input_source instance attr
+ * "network:<player_id>" so the existing input routing (game.c's
+ * input_for_entity) picks it up unchanged, then rebuilds the count-parallel
+ * tracking via game_respawn_rebuild_tracking (game.c) -- the same S6.6 "add
+ * an entity at runtime and fix up tracking" primitive the editor's spawn
+ * action uses, preserving overlap edge-state exactly like that path does.
+ * A missing local player or its blueprint (never expected in practice --
+ * every fixture this runs against authors exactly one behavior=="player"
+ * blueprint) is a silent no-op, same fire-and-forget posture as every other
+ * network_* helper in this file. */
+static void spawn_network_player(Diag *diag, GameState *state, int player_id)
+{
+    Entity *local_player = game_get_player(state);
+    if (!local_player) {
+        return;
+    }
+    const Blueprint *player_blueprint = entity_resolve_blueprint(state, local_player->id);
+    if (!player_blueprint) {
+        return;
+    }
+    Allocator gamedata_alloc = allocator_arena(&state->gamedata_arena);
+    if (!level_spawn_entity(diag, &state->gamedata.current_level, player_blueprint, local_player->position,
+                            &state->gamedata.blueprints, texture_registry_lookup, state, &gamedata_alloc)) {
+        return;
+    }
+    Entity *spawned = &state->gamedata.current_level.entities.data[state->gamedata.current_level.entities.count - 1];
+    char input_source[NETWORK_INPUT_SOURCE_VALUE_MAX];
+    (void)snprintf(input_source, sizeof(input_source), "%s%d", NETWORK_INPUT_SOURCE_PREFIX, player_id);
+    (void)attr_set_string(&gamedata_alloc, &spawned->attrs,
+                          (AttrStringPair){.name = "input_source", .value = input_source});
+    (void)game_respawn_rebuild_tracking(diag, state);
+}
+
 void network_host_tick(GameState *state, float delta_time)
 {
     if (state->network.mode != NET_HOSTING) {
         return;
     }
+    Diag diag = {&state->error, &state->debug};
     int clients_before = state->network.client_count;
     network_host_receive(&state->network, state->gamedata_hash);
     /* Every client register_client (network.c) added THIS call -- the
-     * newly-joined tail of the clients array -- gets a full SNAPSHOT of
-     * the current level before anything else reaches it. A re-JOIN from
-     * an already-registered address is a no-op on client_count (see
-     * register_client's own doc comment), so it does not re-send. */
+     * newly-joined tail of the clients array -- gets (S8.6) a player entity
+     * spawned for it BEFORE a full SNAPSHOT of the current level, so the
+     * snapshot already includes it. A re-JOIN from an already-registered
+     * address is a no-op on client_count (see register_client's own doc
+     * comment), so neither the spawn nor the snapshot re-runs for it. */
     for (int index = clients_before; index < state->network.client_count; index++) {
+        spawn_network_player(&diag, state, state->network.clients[index].player_id);
         network_host_send_snapshot(state, &state->network.clients[index]);
         /* S8.4c: notify every currently active client (including the one
          * that just joined) that a new player connected -- the one
@@ -52,13 +111,23 @@ void network_host_tick(GameState *state, float delta_time)
 
 void network_client_tick(GameState *state, const InputState *local_input)
 {
+    if (state->network.mode != NET_JOINING && state->network.mode != NET_CLIENT) {
+        return;
+    }
     if (state->network.mode == NET_JOINING) {
         network_client_send_join(&state->network, state->gamedata_hash);
-        state->network.mode = NET_CLIENT;
     }
     if (state->network.mode == NET_CLIENT) {
         network_client_send_input(&state->network, local_input);
-        network_client_receive_state(state);
+    }
+    /* Unconditional (JOINING or CLIENT): a MSG_JOIN_ACCEPT can arrive while
+     * still JOINING (network_client_receive_state below applies it and
+     * flips mode to NET_CLIENT itself), and draining here rather than only
+     * once already-CLIENT means an accept and a SNAPSHOT that both landed
+     * before this tick are both applied in the SAME pass -- no packet is
+     * ever discarded by a narrower "just look for the accept" drain. */
+    network_client_receive_state(state);
+    if (state->network.mode == NET_CLIENT) {
         network_client_send_ack(&state->network);
     }
 }
@@ -105,13 +174,19 @@ static AttrRecordValue attr_value_to_record_value(AttrType type, AttrValue value
     return (AttrRecordValue){0};
 }
 
-/* Push one entity's synced state (position as the two reserved records,
- * then every entry in entity->attrs) onto *out. Every pushed record's
- * name/value Strv is a view into entity's own gamedata_arena-backed Str
- * data -- valid for the lifetime of the caller's send, per net_session.h's
- * own ownership note; nothing here allocates or copies. */
+/* Push one entity's synced state (blueprint_name, S8.6, first -- see that
+ * reserved name's own doc comment, net_session.h -- then position as the
+ * two reserved records, then every entry in entity->attrs) onto *out.
+ * Every pushed record's name/value Strv is a view into entity's own
+ * gamedata_arena-backed Str data -- valid for the lifetime of the caller's
+ * send, per net_session.h's own ownership note; nothing here allocates or
+ * copies. */
 static void push_entity_sync_records(vec_attr_record *out, const Entity *entity)
 {
+    (void)vec_attr_record_push(out, (AttrRecord){.entity_id = entity->id,
+                                                 .name = strv_from_cstr(NETWORK_ATTR_BLUEPRINT_NAME),
+                                                 .type = ATTR_STRING,
+                                                 .value = {.str = str_to_strv(entity->blueprint_name)}});
     (void)vec_attr_record_push(out, (AttrRecord){.entity_id = entity->id,
                                                  .name = strv_from_cstr(NETWORK_ATTR_POS_X),
                                                  .type = ATTR_FLOAT,
@@ -271,11 +346,64 @@ static void apply_sync_record(Allocator *gamedata_alloc, Entity *entity, const A
     }
 }
 
+/* CLIENT side (S8.6): materialize a placeholder entity for record's
+ * entity_id if this client's level doesn't already have one -- see
+ * NETWORK_ATTR_BLUEPRINT_NAME's own doc comment (net_session.h) for why
+ * this is necessary at all (a host-side runtime spawn has no local
+ * counterpart from this client's own load-time parse) and why the id must
+ * be FORCED rather than left to level_spawn_entity's own auto-assignment --
+ * cross-peer id agreement is what lets every later record for this same
+ * entity_id resolve normally, the same way it already does for an entity
+ * both sides parsed identically at load time. No-op if record->entity_id
+ * already resolves (already materialized, nothing to do), record isn't
+ * actually an ATTR_STRING (malformed/reordered wire content -- must not
+ * crash on it), or blueprint_find can't find the named blueprint (a
+ * level/gamedata mismatch the JOIN hash check already guards against in
+ * practice). Spawn position (0, 0) is a throwaway: push_entity_sync_records'
+ * own push order always follows this record with NETWORK_ATTR_POS_X/_Y for
+ * the SAME entity_id, in the SAME batch, which overwrite it immediately --
+ * and entity_init's ENTITY_INTERP_NEVER_SYNCED seed means the first
+ * shift_interp_window call (apply_sync_record's POS_Y branch) collapses the
+ * render-interp window onto that real position too, so this placeholder
+ * position is never actually rendered. */
+static void ensure_synced_entity_exists(GameState *state, const AttrRecord *record)
+{
+    if (level_find_entity_by_id(&state->gamedata.current_level, record->entity_id) >= 0) {
+        return;
+    }
+    if (record->type != ATTR_STRING) {
+        return;
+    }
+    char blueprint_name[NETWORK_ATTR_NAME_MAX];
+    strv_copy_to_cstr(record->value.str, blueprint_name, sizeof(blueprint_name));
+    const Blueprint *blueprint = blueprint_find(&state->gamedata.blueprints, blueprint_name);
+    if (!blueprint) {
+        return;
+    }
+    Diag diag = {&state->error, &state->debug};
+    Allocator gamedata_alloc = allocator_arena(&state->gamedata_arena);
+    if (!level_spawn_entity(&diag, &state->gamedata.current_level, blueprint, (Vector2){0}, &state->gamedata.blueprints,
+                            texture_registry_lookup, state, &gamedata_alloc)) {
+        return;
+    }
+    Level *level = &state->gamedata.current_level;
+    Entity *spawned = &level->entities.data[level->entities.count - 1];
+    spawned->id = record->entity_id;
+    if (level->next_entity_id <= record->entity_id) {
+        level->next_entity_id = record->entity_id + 1;
+    }
+    (void)game_respawn_rebuild_tracking(&diag, state);
+}
+
 void network_client_apply_state(GameState *state, const AttrRecord *records, size_t count)
 {
     Allocator gamedata_alloc = allocator_arena(&state->gamedata_arena);
     for (size_t index = 0; index < count; index++) {
         const AttrRecord *record = &records[index];
+        if (strv_eq_cstr(record->name, NETWORK_ATTR_BLUEPRINT_NAME)) {
+            ensure_synced_entity_exists(state, record);
+            continue;
+        }
         int entity_index = level_find_entity_by_id(&state->gamedata.current_level, record->entity_id);
         if (entity_index < 0) {
             continue;
@@ -320,14 +448,20 @@ static void network_client_receive_event(NetworkState *network, uint32_t seq, Pa
 }
 
 /* CLIENT side: drain every pending packet on state->network.transport and
- * apply whichever decodes as MSG_SNAPSHOT, MSG_DELTA, or MSG_EVENT.
- * MSG_SNAPSHOT/MSG_DELTA share the exact same attr-list wire shape and
- * this v1 sync sends full state either way (net_session.h's own "SNAPSHOT
- * vs DELTA" note), so there is nothing SNAPSHOT-specific to do here beyond
- * decoding whichever type arrived. MSG_EVENT (S8.4c) goes through
- * network_client_receive_event above for dedup before it is applied.
- * Anything that fails to decode, or decodes as an unrelated message type,
- * is silently ignored -- same as network_host_receive's own drain loop
+ * apply whichever decodes as MSG_SNAPSHOT, MSG_DELTA, MSG_EVENT, or (S8.6)
+ * MSG_JOIN_ACCEPT. MSG_SNAPSHOT/MSG_DELTA share the exact same attr-list
+ * wire shape and this v1 sync sends full state either way (net_session.h's
+ * own "SNAPSHOT vs DELTA" note), so there is nothing SNAPSHOT-specific to
+ * do here beyond decoding whichever type arrived. MSG_EVENT (S8.4c) goes
+ * through network_client_receive_event above for dedup before it is
+ * applied. MSG_JOIN_ACCEPT stores its player_id onto
+ * state->network.local_player_id and advances state->network.mode to
+ * NET_CLIENT -- called unconditionally of mode by network_client_tick
+ * (above), so this can run, and does run, while still NET_JOINING; a
+ * duplicate accept (the host resends on every re-JOIN, network.c's
+ * handle_join_datagram) just re-applies the same values, harmless. Anything
+ * that fails to decode, or decodes as an unrelated message type, is
+ * silently ignored -- same as network_host_receive's own drain loop
  * (network.c). The decode array cap matches NETWORK_SYNC_RECORDS_PER_PACKET
  * exactly, since that is also the largest chunk send_sync_records ever
  * encodes into one packet. */
@@ -349,6 +483,12 @@ static void network_client_receive_state(GameState *state)
                 }
             } else if (packet.header.type == MSG_EVENT) {
                 network_client_receive_event(&state->network, packet.header.seq, &packet.reader);
+            } else if (packet.header.type == MSG_JOIN_ACCEPT) {
+                JoinAcceptMessage accept = {0};
+                if (protocol_decode_join_accept(&packet.reader, &accept)) {
+                    state->network.local_player_id = accept.player_id;
+                    state->network.mode = NET_CLIENT;
+                }
             }
         }
         received = net_recv(&state->network.transport, &src, buffer, sizeof(buffer));

@@ -392,51 +392,6 @@ static int apply_spawn_effects(Diag *diag, GameState *state, const vec_spawn_req
     return spawned_count;
 }
 
-/* Rebuild the count-parallel tracking after a spawn changed entity count,
- * WITHOUT losing the temporal overlap edge state.
- *
- * setup_current_level_runtime (game.c) reinitializes prev_player_overlaps
- * and prev_solid_collisions to all-false for the new entity count. That is
- * correct for a fresh load/transition (nothing was overlapping "last frame"
- * yet), but for a mid-gameplay spawn it would wipe the "overlapped last
- * frame" state that game.c's detect_enter_targets/detect_solid_collisions
- * diff against -- refiring enter for the entity the player is still standing
- * in, and collide for any still-touching solid pair, on the very next frame.
- * A for_each-driven spawn compounds this into runaway spawning.
- *
- * So: snapshot the pre-spawn edge vecs (by value -- copies the data pointer,
- * still valid arena memory: setup allocates the fresh vecs at the arena top,
- * orphaning but never overwriting the old blocks, and nothing restores/resets
- * the arena in between, so reading old while writing new is safe), let setup
- * rebuild everything from scratch, then copy the pre-existing entities' edge
- * state back into the freshly-rebuilt (larger) vecs. Newly-spawned entities
- * keep setup's fresh false in both vecs -- correct, they weren't overlapping
- * anything last frame. The solid matrix is entity_count², so the restore is
- * the entity_count² reindex F24 called for, done as a copy into setup's
- * proven rebuild rather than a hand-rolled resize. new_count >= old_count
- * always (spawn only adds), so every (a,b) with a,b < old_count is in range
- * of the new_count² matrix. */
-static bool respawn_rebuild_tracking(Diag *diag, GameState *state)
-{
-    vec_bool old_player_overlaps = state->gamedata.prev_player_overlaps;
-    vec_bool old_solid_collisions = state->gamedata.prev_solid_collisions;
-    int old_count = old_player_overlaps.count;
-    if (!setup_current_level_runtime(diag, state)) {
-        return false;
-    }
-    int new_count = state->gamedata.prev_player_overlaps.count;
-    for (int index = 0; index < old_count; index++) {
-        state->gamedata.prev_player_overlaps.data[index] = old_player_overlaps.data[index];
-    }
-    for (int entity_a = 0; entity_a < old_count; entity_a++) {
-        for (int entity_b = 0; entity_b < old_count; entity_b++) {
-            state->gamedata.prev_solid_collisions.data[(entity_a * new_count) + entity_b] =
-                old_solid_collisions.data[(entity_a * old_count) + entity_b];
-        }
-    }
-    return true;
-}
-
 /* toast has a real handler as of S6.8b (D25): give_item enqueues the raw
  * item name (see rule.c's ACTION_GIVE_ITEM case), and this formats it into
  * editor_state->toast_msg_buf -- a fixed owned buffer, not the pushed Strv
@@ -471,10 +426,10 @@ static void apply_toast_effects(Diag *diag, EditorState *editor_state, const vec
  * effect here that can change entity count, so it alone needs the
  * follow-up count-parallel rebuild (rule_table, entity_blueprints,
  * player_index, prev_player_overlaps/prev_solid_collisions) -- via
- * respawn_rebuild_tracking, which preserves the overlap edge state across
- * the rebuild so enter/collide triggers don't spuriously refire. Guarded
- * on spawned_count > 0 so a frame with no spawns (the common case) pays
- * nothing beyond the empty-vec loop. */
+ * game.c's game_respawn_rebuild_tracking, which preserves the overlap edge
+ * state across the rebuild so enter/collide triggers don't spuriously
+ * refire. Guarded on spawned_count > 0 so a frame with no spawns (the
+ * common case) pays nothing beyond the empty-vec loop. */
 static void apply_effect_queue(Diag *diag, GameState *state, EditorState *editor_state)
 {
     apply_sound_effects(diag, state, &state->effects.sounds);
@@ -482,7 +437,7 @@ static void apply_effect_queue(Diag *diag, GameState *state, EditorState *editor
     apply_camera_shake_effects(diag, state, &state->effects.camera_shakes);
     apply_toast_effects(diag, editor_state, &state->effects.toasts);
     int spawned_count = apply_spawn_effects(diag, state, &state->effects.spawns);
-    if (spawned_count > 0 && !respawn_rebuild_tracking(diag, state)) {
+    if (spawned_count > 0 && !game_respawn_rebuild_tracking(diag, state)) {
         error_wrap(diag->error, "apply_effect_queue");
         debug_log(diag->debug, "error: %s", error_get(diag->error));
         error_clear(diag->error);
