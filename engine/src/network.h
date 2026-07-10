@@ -170,6 +170,13 @@ typedef enum {
 #define NETWORK_RESYNC_LEVEL_NAME_MAX 64
 #define NETWORK_RESYNC_SEND_INTERVAL_SECONDS 0.1F
 
+/* S8.7f2: seconds the host's editor-driven structural-resync trigger waits
+ * before it fires, restarted on every new structural mutation. Debouncing
+ * coalesces an edit burst -- e.g. a multi-cell tile-paint stroke, each cell a
+ * separate undo entry -- into a SINGLE resync barrier rather than one full
+ * gamedata re-emit + stream per cell. */
+#define NETWORK_STRUCTURAL_RESYNC_DEBOUNCE_SECONDS 0.5F
+
 /* One client connected to a hosted session -- host-side only, populated by
  * network_host_receive below (a client's own NetworkState never fills out
  * its own `clients`). player_id is assigned 1..NET_MAX_CLIENTS in join
@@ -465,6 +472,17 @@ typedef struct {
     size_t resync_total_bytes;
     char resync_level_name[NETWORK_RESYNC_LEVEL_NAME_MAX];
     float resync_send_timer;
+    /* S8.7f2 HOST side. The editor-driven structural-resync debounce. 0 = idle;
+     * the frame layer (run_active_frame) sets it to
+     * NETWORK_STRUCTURAL_RESYNC_DEBOUNCE_SECONDS whenever the host's editor
+     * commits a structural mutation or performs an undo/redo restore, counts it
+     * down by delta_time each frame, and fires network_host_begin_structural_resync
+     * when it reaches 0 (or immediately if the host leaves editor mode while it is
+     * still armed -- leaving editor mode resumes the entity delta stream, which
+     * cannot carry structural changes). Re-arming while already armed just resets
+     * the timer, which is how the burst coalescing happens. Meaningless on a
+     * CLIENT's own NetworkState; reset to 0 by network_stop. */
+    float structural_resync_debounce_timer;
     /* S8.7f1 CLIENT side reassembly bookkeeping. resync_incoming_generation is
      * the generation currently being reassembled (a strictly newer one
      * supersedes it mid-stream, resetting the bitmap). resync_failed_generation

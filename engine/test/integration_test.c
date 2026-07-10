@@ -10399,3 +10399,424 @@ void test_integration_structural_resync_realigns_entity_ids(void)
     test_game_teardown(&client);
     loopback_network_free(&loopback);
 }
+
+/* ---- Integration: S8.7f2 structural-resync editor trigger + client blocking ----
+ *
+ * S8.7f1 built the resync mechanism but only tests invoked it. These drive the
+ * REAL trigger black-box: the host's editor commits a structural mutation (a
+ * tile paint) or performs an undo/redo restore, and the frame layer arms a
+ * debounced full-gamedata resync that converges every client -- without any
+ * test calling network_host_begin_structural_resync directly. The client side
+ * proves the mirror rule: a connected client is refused entry to the six
+ * structural editor modes entirely (v1 structural editing is host-only).
+ *
+ * Reuses fixture_gamedata_tileset (a paintable 2x2 tile grid plus a
+ * behavior="player" blueprint the session needs) driven through the same
+ * two-TestGame-over-net_loopback.h shape the S8.7f1 tests use. */
+
+/* Scene-mode fixture for the undo-restore trigger: a behavior="player" hero the
+ * session spawns network players from, plus a distinct non-player "rock" the
+ * host grabs and moves. The rock sits closest to the editor camera's (0,0)
+ * origin so a plain CONFIRM selects it deterministically (same nearest-root
+ * selection the S5.7 undo tests rely on). */
+static const char *resync_scene_gamedata = "[[blueprint]]\n"
+                                           "name = \"hero\"\n"
+                                           "texture = \"t.png\"\n"
+                                           "src = [0, 0, 16, 16]\n"
+                                           "behavior = \"player\"\n"
+                                           "speed = 80\n"
+                                           "\n"
+                                           "[[blueprint]]\n"
+                                           "name = \"rock\"\n"
+                                           "texture = \"t.png\"\n"
+                                           "src = [0, 0, 16, 16]\n"
+                                           "\n"
+                                           "[[level]]\n"
+                                           "name = \"field\"\n"
+                                           "size = [400, 300]\n"
+                                           "\n"
+                                           "[[level.entity]]\n"
+                                           "blueprint = \"hero\"\n"
+                                           "pos = [150, 150]\n"
+                                           "\n"
+                                           "[[level.entity]]\n"
+                                           "blueprint = \"rock\"\n"
+                                           "pos = [30, 30]\n";
+
+/* Drive the host's editor -- already in editor_mode, already NET_HOSTING -- into
+ * TILE mode with paint tile id 2 selected and the cursor at (1, 1), mirroring
+ * the S5.3b tile-paint driving. Advances host-only frames (the caller ticks the
+ * client separately). Leaves the host in EDITOR_SUB_TILE_PAINT, ready to CONFIRM
+ * a paint. */
+static void host_enter_tile_paint_mode(TestGame *host)
+{
+    InputState open_tools = {0};
+    input_state_press_key(&open_tools, KEY_TAB);
+    test_advance_frame(host, open_tools);
+    test_radial_select_item(host, EDITOR_TOOLS_TILE_INDEX);
+    InputState no_input = {0};
+    test_advance_frame(host, no_input);
+
+    InputState open_palette = {0};
+    input_state_press_key(&open_palette, KEY_P);
+    test_advance_frame(host, open_palette);
+    InputState palette_down = {0};
+    input_state_press_key(&palette_down, KEY_DOWN);
+    test_advance_frame(host, palette_down);
+    InputState confirm = {0};
+    input_state_press_key(&confirm, KEY_ENTER);
+    test_advance_frame(host, confirm);
+
+    InputState nav_right = {0};
+    input_state_press_key(&nav_right, KEY_RIGHT);
+    test_advance_frame(host, nav_right);
+    InputState nav_down = {0};
+    input_state_press_key(&nav_down, KEY_DOWN);
+    test_advance_frame(host, nav_down);
+}
+
+/* A host tile paint -- a structural edit with no fine-grained wire encoding --
+ * auto-arms the debounced resync and converges the client without any test
+ * calling network_host_begin_structural_resync: the painted ground cell appears
+ * on the client, its undo history is cleared to the resync baseline, the host's
+ * resync generation reaches 1, and the client confirms it. */
+void test_integration_host_tile_paint_auto_resyncs(void)
+{
+    LoopbackNetwork loopback;
+    loopback_network_init(&loopback, &test_heap_alloc);
+    NetAddr host_addr = net_addr_make(1, 9000);
+    NetAddr client_addr = net_addr_make(2, 9001);
+    NetTransport host_transport;
+    NetTransport client_transport;
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, host_addr, &host_transport));
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, client_addr, &client_transport));
+
+    TestGame host;
+    TEST_ASSERT_TRUE(test_game_setup(&host, fixture_gamedata_tileset));
+    host.state.network.mode = NET_HOSTING;
+    host.state.network.transport = host_transport;
+    host.state.network.next_op_seq = 1;
+
+    TestGame client;
+    TEST_ASSERT_TRUE(test_game_setup(&client, fixture_gamedata_tileset));
+    client.state.network.mode = NET_JOINING;
+    client.state.network.transport = client_transport;
+    client.state.network.join_target = host_addr;
+
+    InputState no_input = {0};
+    for (int frame = 0; frame < 5; frame++) {
+        test_advance_frame(&client, no_input);
+        test_advance_frame(&host, no_input);
+    }
+    TEST_ASSERT_EQUAL_INT(NET_CLIENT, client.state.network.mode);
+    TEST_ASSERT_EQUAL_INT(1, host.state.network.client_count);
+
+    /* Host paints one cell at (1, 1). No test call to begin_structural_resync --
+     * the frame layer must arm it off the tile-paint undo entry. */
+    host.state.editor_mode = true;
+    host_enter_tile_paint_mode(&host);
+    InputState confirm = {0};
+    input_state_press_key(&confirm, KEY_ENTER);
+    test_advance_frame(&host, confirm);
+    int wide = host.state.gamedata.current_level.tiles_wide;
+    TEST_ASSERT_EQUAL_INT(2, host.state.gamedata.current_level.tiles_ground.data[level_tile_index(1, 1, wide)]);
+    TEST_ASSERT_EQUAL_UINT32(0, host.state.network.resync_generation);
+
+    /* Past the 0.5s debounce plus the stream/confirm round trip. */
+    for (int frame = 0; frame < 70; frame++) {
+        test_advance_frame(&client, no_input);
+        test_advance_frame(&host, no_input);
+    }
+
+    TEST_ASSERT_EQUAL_UINT32(1, host.state.network.resync_generation);
+    const Level *client_level = &client.state.gamedata.current_level;
+    TEST_ASSERT_EQUAL_INT(2, client_level->tiles_ground.data[level_tile_index(1, 1, client_level->tiles_wide)]);
+    TEST_ASSERT_TRUE(strv_eq_cstr(undo_history_description(&client.undo_history), "Structural resync"));
+    TEST_ASSERT_EQUAL_UINT32(host.state.network.resync_generation,
+                             host.state.network.clients[0].resync_confirmed_generation);
+
+    test_game_teardown(&host);
+    test_game_teardown(&client);
+    loopback_network_free(&loopback);
+}
+
+/* The debounce coalesces an edit burst: two tile paints within the 0.5s window
+ * produce exactly ONE resync barrier (generation lands at 1, not 2) and both
+ * painted cells reach the client. */
+void test_integration_host_tile_paint_debounce_coalesces(void)
+{
+    LoopbackNetwork loopback;
+    loopback_network_init(&loopback, &test_heap_alloc);
+    NetAddr host_addr = net_addr_make(1, 9000);
+    NetAddr client_addr = net_addr_make(2, 9001);
+    NetTransport host_transport;
+    NetTransport client_transport;
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, host_addr, &host_transport));
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, client_addr, &client_transport));
+
+    TestGame host;
+    TEST_ASSERT_TRUE(test_game_setup(&host, fixture_gamedata_tileset));
+    host.state.network.mode = NET_HOSTING;
+    host.state.network.transport = host_transport;
+    host.state.network.next_op_seq = 1;
+
+    TestGame client;
+    TEST_ASSERT_TRUE(test_game_setup(&client, fixture_gamedata_tileset));
+    client.state.network.mode = NET_JOINING;
+    client.state.network.transport = client_transport;
+    client.state.network.join_target = host_addr;
+
+    InputState no_input = {0};
+    for (int frame = 0; frame < 5; frame++) {
+        test_advance_frame(&client, no_input);
+        test_advance_frame(&host, no_input);
+    }
+    TEST_ASSERT_EQUAL_INT(NET_CLIENT, client.state.network.mode);
+
+    host.state.editor_mode = true;
+    host_enter_tile_paint_mode(&host);
+    InputState confirm = {0};
+    input_state_press_key(&confirm, KEY_ENTER);
+    /* Paint (1, 1), step LEFT to (0, 1), paint again -- a two-cell burst well
+     * inside the 0.5s debounce (three host frames ~= 0.05s). */
+    test_advance_frame(&host, confirm);
+    InputState nav_left = {0};
+    input_state_press_key(&nav_left, KEY_LEFT);
+    test_advance_frame(&host, nav_left);
+    test_advance_frame(&host, confirm);
+
+    for (int frame = 0; frame < 70; frame++) {
+        test_advance_frame(&client, no_input);
+        test_advance_frame(&host, no_input);
+    }
+
+    /* One barrier for the whole burst, not one per cell. */
+    TEST_ASSERT_EQUAL_UINT32(1, host.state.network.resync_generation);
+    const Level *client_level = &client.state.gamedata.current_level;
+    int client_wide = client_level->tiles_wide;
+    TEST_ASSERT_EQUAL_INT(2, client_level->tiles_ground.data[level_tile_index(1, 1, client_wide)]);
+    TEST_ASSERT_EQUAL_INT(2, client_level->tiles_ground.data[level_tile_index(1, 0, client_wide)]);
+
+    test_game_teardown(&host);
+    test_game_teardown(&client);
+    loopback_network_free(&loopback);
+}
+
+/* An undo/redo restore replaces the host's whole gamedata but emits no editor
+ * op (networked per-player undo does not exist yet), so it must arm a resync
+ * REGARDLESS of editor mode. The host moves the rock in SCENE mode (which rides
+ * the op stream, not the resync), the client sees the move, then the host
+ * undoes: the resync stopgap fires and reverts the rock on the client too. */
+void test_integration_host_undo_restore_resyncs_client(void)
+{
+    LoopbackNetwork loopback;
+    loopback_network_init(&loopback, &test_heap_alloc);
+    NetAddr host_addr = net_addr_make(1, 9000);
+    NetAddr client_addr = net_addr_make(2, 9001);
+    NetTransport host_transport;
+    NetTransport client_transport;
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, host_addr, &host_transport));
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, client_addr, &client_transport));
+
+    TestGame host;
+    TEST_ASSERT_TRUE(test_game_setup(&host, resync_scene_gamedata));
+    host.state.network.mode = NET_HOSTING;
+    host.state.network.transport = host_transport;
+    host.state.network.next_op_seq = 1;
+
+    TestGame client;
+    TEST_ASSERT_TRUE(test_game_setup(&client, resync_scene_gamedata));
+    client.state.network.mode = NET_JOINING;
+    client.state.network.transport = client_transport;
+    client.state.network.join_target = host_addr;
+
+    InputState no_input = {0};
+    for (int frame = 0; frame < 5; frame++) {
+        test_advance_frame(&client, no_input);
+        test_advance_frame(&host, no_input);
+    }
+    TEST_ASSERT_EQUAL_INT(NET_CLIENT, client.state.network.mode);
+
+    Entity *rock = test_find_entity_by_blueprint(&host.state, "rock");
+    TEST_ASSERT_NOT_NULL(rock);
+    int rock_id = rock->id;
+    float original_x = rock->position.x;
+
+    host.state.editor_mode = true;
+    client.state.editor_mode = true;
+
+    /* Select the rock (nearest root to the (0,0) editor camera), grab it, move
+     * right, and confirm -- a scene move that propagates over the op stream. */
+    InputState select = {0};
+    input_state_press_key(&select, KEY_ENTER);
+    test_advance_frame(&host, select);
+    TEST_ASSERT_EQUAL_INT(rock_id, host.editor_state.selected_entity_id);
+    InputState grab = {0};
+    input_state_press_key(&grab, KEY_G);
+    test_advance_frame(&host, grab);
+    for (int step = 0; step < 5; step++) {
+        InputState move = {0};
+        input_state_hold_key(&move, KEY_RIGHT);
+        test_advance_frame(&host, move);
+    }
+    InputState confirm_move = {0};
+    input_state_press_key(&confirm_move, KEY_ENTER);
+    test_advance_frame(&host, confirm_move);
+    float moved_x = host.state.gamedata.current_level.entities
+                        .data[level_find_entity_by_id(&host.state.gamedata.current_level, rock_id)]
+                        .position.x;
+    TEST_ASSERT_TRUE_MESSAGE(moved_x > original_x + 1.0F, "host grab+move should have shifted the rock right");
+
+    /* Let the move op reach the client (a scene edit, not yet a resync). */
+    for (int frame = 0; frame < 10; frame++) {
+        test_advance_frame(&client, no_input);
+        test_advance_frame(&host, no_input);
+    }
+    Entity *client_rock = test_find_entity_by_id(&client.state, rock_id);
+    TEST_ASSERT_NOT_NULL(client_rock);
+    TEST_ASSERT_TRUE_MESSAGE(client_rock->position.x > original_x + 1.0F, "move op should have reached the client");
+
+    /* Undo on the host: reverts its rock and arms the resync via restore_counter. */
+    InputState undo = {0};
+    input_state_hold_key(&undo, KEY_LEFT_CONTROL);
+    input_state_press_key(&undo, KEY_Z);
+    test_advance_frame(&host, undo);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, original_x,
+                             host.state.gamedata.current_level.entities
+                                 .data[level_find_entity_by_id(&host.state.gamedata.current_level, rock_id)]
+                                 .position.x);
+
+    for (int frame = 0; frame < 70; frame++) {
+        test_advance_frame(&client, no_input);
+        test_advance_frame(&host, no_input);
+    }
+
+    TEST_ASSERT_EQUAL_UINT32(1, host.state.network.resync_generation);
+    Entity *client_rock_reverted = test_find_entity_by_blueprint(&client.state, "rock");
+    TEST_ASSERT_NOT_NULL(client_rock_reverted);
+    TEST_ASSERT_FLOAT_WITHIN(0.1F, original_x, client_rock_reverted->position.x);
+
+    test_game_teardown(&host);
+    test_game_teardown(&client);
+    loopback_network_free(&loopback);
+}
+
+/* Leaving editor mode while the debounce is still armed flushes the resync
+ * IMMEDIATELY: leaving editor mode resumes the entity delta stream, which can't
+ * carry structural changes, so a pending structural edit must fire before the
+ * timer would otherwise elapse. The client converges to the painted cell. */
+void test_integration_host_editor_exit_flushes_resync(void)
+{
+    LoopbackNetwork loopback;
+    loopback_network_init(&loopback, &test_heap_alloc);
+    NetAddr host_addr = net_addr_make(1, 9000);
+    NetAddr client_addr = net_addr_make(2, 9001);
+    NetTransport host_transport;
+    NetTransport client_transport;
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, host_addr, &host_transport));
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, client_addr, &client_transport));
+
+    TestGame host;
+    TEST_ASSERT_TRUE(test_game_setup(&host, fixture_gamedata_tileset));
+    host.state.network.mode = NET_HOSTING;
+    host.state.network.transport = host_transport;
+    host.state.network.next_op_seq = 1;
+
+    TestGame client;
+    TEST_ASSERT_TRUE(test_game_setup(&client, fixture_gamedata_tileset));
+    client.state.network.mode = NET_JOINING;
+    client.state.network.transport = client_transport;
+    client.state.network.join_target = host_addr;
+
+    InputState no_input = {0};
+    for (int frame = 0; frame < 5; frame++) {
+        test_advance_frame(&client, no_input);
+        test_advance_frame(&host, no_input);
+    }
+    TEST_ASSERT_EQUAL_INT(NET_CLIENT, client.state.network.mode);
+
+    host.state.editor_mode = true;
+    host_enter_tile_paint_mode(&host);
+    InputState confirm = {0};
+    input_state_press_key(&confirm, KEY_ENTER);
+    test_advance_frame(&host, confirm);
+    TEST_ASSERT_TRUE(host.state.network.structural_resync_debounce_timer > 0.0F);
+    TEST_ASSERT_EQUAL_UINT32(0, host.state.network.resync_generation);
+
+    /* Leave editor mode well before the 0.5s debounce would elapse. The next
+     * host frame must flush the resync rather than wait out the timer. */
+    host.state.editor_mode = false;
+    for (int frame = 0; frame < 30; frame++) {
+        test_advance_frame(&client, no_input);
+        test_advance_frame(&host, no_input);
+    }
+
+    TEST_ASSERT_EQUAL_UINT32(1, host.state.network.resync_generation);
+    TEST_ASSERT_EQUAL_FLOAT(0.0F, host.state.network.structural_resync_debounce_timer);
+    const Level *client_level = &client.state.gamedata.current_level;
+    TEST_ASSERT_EQUAL_INT(2, client_level->tiles_ground.data[level_tile_index(1, 1, client_level->tiles_wide)]);
+
+    test_game_teardown(&host);
+    test_game_teardown(&client);
+    loopback_network_free(&loopback);
+}
+
+/* A connected client is refused entry to every structural editor mode: driving
+ * the Tools radial to Tiles and to Blueprints leaves top_mode at SCENE both
+ * times and shows the "host only" toast. Scene tools stay reachable (not
+ * exercised here -- the block is keyed purely on the structural entries). */
+void test_integration_client_structural_modes_blocked(void)
+{
+    TestGame client;
+    TEST_ASSERT_TRUE(test_game_setup(&client, fixture_gamedata_tileset));
+    client.state.network.mode = NET_CLIENT;
+    client.state.network.local_player_id = 1;
+    client.state.editor_mode = true;
+
+    InputState no_input = {0};
+    InputState open_tools = {0};
+    input_state_press_key(&open_tools, KEY_TAB);
+
+    /* Tiles: refused. */
+    test_advance_frame(&client, open_tools);
+    TEST_ASSERT_EQUAL_INT(EDITOR_SUB_RADIAL, client.editor_state.sub_mode);
+    test_radial_select_item(&client, EDITOR_TOOLS_TILE_INDEX);
+    test_advance_frame(&client, no_input);
+    TEST_ASSERT_EQUAL_INT(EDITOR_TOP_SCENE, client.editor_state.top_mode);
+    TEST_ASSERT_TRUE(strv_eq_cstr(client.editor_state.toast_text, "Host only while connected"));
+
+    /* Blueprints: refused. */
+    test_advance_frame(&client, open_tools);
+    TEST_ASSERT_EQUAL_INT(EDITOR_SUB_RADIAL, client.editor_state.sub_mode);
+    test_radial_select_item(&client, 4);
+    test_advance_frame(&client, no_input);
+    TEST_ASSERT_EQUAL_INT(EDITOR_TOP_SCENE, client.editor_state.top_mode);
+    TEST_ASSERT_TRUE(strv_eq_cstr(client.editor_state.toast_text, "Host only while connected"));
+
+    test_game_teardown(&client);
+}
+
+/* Offline is untouched: a structural edit with no session never arms a resync,
+ * so the generation stays 0 (the trigger is gated on NET_HOSTING). */
+void test_integration_offline_structural_edit_no_resync(void)
+{
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, fixture_gamedata_tileset));
+    game.state.editor_mode = true;
+
+    host_enter_tile_paint_mode(&game);
+    InputState confirm = {0};
+    input_state_press_key(&confirm, KEY_ENTER);
+    test_advance_frame(&game, confirm);
+    int wide = game.state.gamedata.current_level.tiles_wide;
+    TEST_ASSERT_EQUAL_INT(2, game.state.gamedata.current_level.tiles_ground.data[level_tile_index(1, 1, wide)]);
+
+    InputState no_input = {0};
+    for (int frame = 0; frame < 40; frame++) {
+        test_advance_frame(&game, no_input);
+    }
+    TEST_ASSERT_EQUAL_UINT32(0, game.state.network.resync_generation);
+    TEST_ASSERT_EQUAL_FLOAT(0.0F, game.state.network.structural_resync_debounce_timer);
+
+    test_game_teardown(&game);
+}

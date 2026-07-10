@@ -37,6 +37,7 @@
 #include "raylib.h"
 
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 
 void handle_global_toggles(GameState *state, const InputState *input, bool *font_preview_enabled)
@@ -449,6 +450,48 @@ static void apply_effect_queue(Diag *diag, GameState *state, EditorState *editor
     effect_queue_clear(&state->effects);
 }
 
+/* S8.7f2: the host's structural-resync trigger, run once per hosting frame
+ * BEFORE network_host_tick so a resync that fires this frame starts streaming
+ * the same tick. `arm` is true when this frame's editor input committed a
+ * structural mutation or performed an undo/redo restore (computed by
+ * run_active_frame from undo_history's mutation counters); a true `arm` restarts
+ * the debounce. The armed timer counts down by delta_time and fires
+ * network_host_begin_structural_resync when it reaches 0 -- OR immediately if the
+ * host has left editor mode while still armed, because leaving editor mode
+ * resumes the entity delta stream, which cannot carry structural changes, so a
+ * pending structural edit would otherwise never reach clients. A failed emit is
+ * logged (the established fallible-call pattern) and leaves the timer at 0: no
+ * retry loop, the next edit re-arms. No-op unless NET_HOSTING. */
+static void host_structural_resync_tick(Diag *diag,
+                                        GameState *state,
+                                        UndoHistory *undo_history,
+                                        TextureLookupFn resync_texture_lookup,
+                                        void *resync_texture_user_data,
+                                        bool arm,
+                                        float delta_time)
+{
+    if (state->network.mode != NET_HOSTING) {
+        return;
+    }
+    if (arm) {
+        state->network.structural_resync_debounce_timer = NETWORK_STRUCTURAL_RESYNC_DEBOUNCE_SECONDS;
+    }
+    if (state->network.structural_resync_debounce_timer <= 0.0F) {
+        return;
+    }
+    state->network.structural_resync_debounce_timer -= delta_time;
+    if (state->network.structural_resync_debounce_timer > 0.0F && state->editor_mode) {
+        return;
+    }
+    state->network.structural_resync_debounce_timer = 0.0F;
+    if (!network_host_begin_structural_resync(diag, state, undo_history, resync_texture_lookup,
+                                              resync_texture_user_data)) {
+        error_wrap(diag->error, "structural resync");
+        debug_log(diag->debug, "error: %s", error_get(diag->error));
+        error_clear(diag->error);
+    }
+}
+
 void run_active_frame(Diag *diag,
                       GameState *state,
                       Camera2D *editor_camera,
@@ -460,6 +503,12 @@ void run_active_frame(Diag *diag,
                       InputState input,
                       float delta_time)
 {
+    /* S8.7f2: sample the undo mutation counters around handle_editor_input so
+     * the host's structural-resync trigger below can tell whether this frame's
+     * editor input committed a structural mutation or performed an undo/redo
+     * restore (see host_structural_resync_tick). */
+    uint32_t entry_counter_before = undo_history->entry_counter;
+    uint32_t restore_counter_before = undo_history->restore_counter;
     if (state->editor_mode) {
         handle_editor_input(diag, state, editor_camera, editor_state, watches, undo_history, input, delta_time);
     }
@@ -517,6 +566,18 @@ void run_active_frame(Diag *diag,
         state->network.local_cursor_selected_entity_id = editor_state->selected_entity_id;
         state->network.local_cursor_valid = true;
     }
+    /* S8.7f2: arm/fire the host's structural-resync trigger. A restore (undo/redo
+     * replaces the host's whole gamedata, and networked per-player undo does not
+     * exist yet -- S8.7h) arms REGARDLESS of editor mode; a plain snapshot
+     * (entry_counter bump) arms only in a structural top mode, because scene-mode
+     * commits ride the fine-grained editor-op stream instead (scene-op coverage
+     * of delete/place/attr-edit is a known gap owned by the scene-op completion
+     * slice, so the top_mode gate here is deliberate, not an oversight). */
+    bool restore_happened = undo_history->restore_counter != restore_counter_before;
+    bool structural_commit_happened =
+        undo_history->entry_counter != entry_counter_before && editor_state->top_mode != EDITOR_TOP_SCENE;
+    host_structural_resync_tick(diag, state, undo_history, resync_texture_lookup, resync_texture_user_data,
+                                restore_happened || structural_commit_happened, delta_time);
     network_host_tick(state, delta_time);
     network_client_tick(state, &input, delta_time);
     /* S8.7f1: a NET_CLIENT that just finished reassembling a full structural

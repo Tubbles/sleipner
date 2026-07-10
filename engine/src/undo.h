@@ -7,6 +7,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 typedef struct UndoEntry {
     struct UndoEntry *prev;
@@ -24,6 +25,19 @@ typedef struct {
     UndoEntry *current;   /* cursor in the doubly-linked list */
     int current_position; /* 0-based index of current entry, -1 if empty */
     int saved_position;   /* position at last save, -1 if never saved */
+    /* S8.7f2: monotonic observability seams for the frame layer, NOT undo
+     * semantics. entry_counter counts undo_history_new_entry calls (a snapshot
+     * pushed); restore_counter counts undo_history_step_back/_forward calls that
+     * actually restored (an edge no-op does not bump it). frame.c's
+     * run_active_frame samples them around handle_editor_input to detect that
+     * the host's editor committed a structural mutation or performed an
+     * undo/redo restore, and arms the networked structural-resync debounce
+     * accordingly. Zero-initialized like the rest of the struct; deliberately
+     * NOT reset by undo_history_clear (staying monotonic across clears keeps
+     * the frame layer's before/after comparison a plain inequality with no
+     * generation-wrap special case). */
+    uint32_t entry_counter;
+    uint32_t restore_counter;
 } UndoHistory;
 
 /* Initialize the undo arena. */

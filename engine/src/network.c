@@ -177,6 +177,8 @@ void network_stop(NetworkState *network)
     network->resync_total_bytes = 0;
     memset(network->resync_level_name, 0, sizeof(network->resync_level_name));
     network->resync_send_timer = 0.0F;
+    /* S8.7f2: the editor-driven structural-resync debounce is session state. */
+    network->structural_resync_debounce_timer = 0.0F;
     network->resync_incoming_generation = 0;
     network->resync_failed_generation = 0;
     network->resync_incoming_total_bytes = 0;

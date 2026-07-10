@@ -64,6 +64,7 @@ void undo_history_new_entry(UndoHistory *history,
     }
     history->current = entry;
     history->current_position++;
+    history->entry_counter++;
 }
 
 static void
@@ -96,6 +97,7 @@ void undo_history_step_back(UndoHistory *history,
     history->current = history->current->prev;
     history->current_position--;
     restore_entry(history->current, gamedata, gamedata_arena, gamedata_base);
+    history->restore_counter++;
 }
 
 void undo_history_step_forward(UndoHistory *history,
@@ -109,6 +111,7 @@ void undo_history_step_forward(UndoHistory *history,
     history->current = history->current->next;
     history->current_position++;
     restore_entry(history->current, gamedata, gamedata_arena, gamedata_base);
+    history->restore_counter++;
 }
 
 void undo_history_discard(UndoHistory *history)
@@ -130,6 +133,9 @@ void undo_history_clear(UndoHistory *history)
     history->current = nullptr;
     history->current_position = -1;
     history->saved_position = -1;
+    /* entry_counter/restore_counter (S8.7f2) are deliberately NOT reset here --
+     * they stay monotonic across clears so the frame layer's before/after
+     * sampling never wraps (see their doc comment in undo.h). */
 }
 
 void undo_history_mark_saved(UndoHistory *history)

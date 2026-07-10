@@ -889,65 +889,109 @@ static void enter_atlas_mode(EditorState *editor_state)
     editor_state->multiselect_count = 0;
 }
 
+/* S8.7f2: v1 structural editing is host-only. A client structural edit would
+ * require a client-to-host full-gamedata upload that does not exist yet (the
+ * inverse of the host-to-client resync stream), so the Tools radial's six
+ * structural entries -- Blueprints / Levels / Tiles / Atlas / Animation / Rules
+ * -- are refused for a connected client with a toast and no mode change; the
+ * scene tools (Grab / Place / Handles / Delete / Watch list) stay available.
+ * Called once at the top of dispatch_tools_radial_confirm, gated on
+ * tools_entry_is_structural, so it returns true and short-circuits only under
+ * NET_CLIENT. The structural token returns when the client-to-host upload
+ * mechanism lands. */
+static bool structural_mode_blocked_for_client(const GameState *state, EditorState *editor_state)
+{
+    if (state->network.mode != NET_CLIENT) {
+        return false;
+    }
+    editor_state->toast_text = strv_from_cstr("Host only while connected");
+    editor_state->toast_timer = TOAST_DURATION;
+    return true;
+}
+
+/* True for the six structural entries of the RADIAL_CTX_TOOLS picker (see
+ * structural_mode_blocked_for_client above); false for the scene tools
+ * interleaved with them in the confirmed-index order. */
+static bool tools_entry_is_structural(int confirmed)
+{
+    return confirmed == 4 /* Blueprints */ || confirmed == EDITOR_TOOLS_LEVELS_INDEX ||
+           confirmed == EDITOR_TOOLS_TILE_INDEX || confirmed == EDITOR_TOOLS_ATLAS_INDEX ||
+           confirmed == EDITOR_TOOLS_ANIM_INDEX || confirmed == EDITOR_TOOLS_RULE_INDEX;
+}
+
+/* The RADIAL_CTX_TOOLS branch of dispatch_radial_confirm. Split out to keep
+ * that function's cognitive complexity under the
+ * readability-function-cognitive-complexity threshold, the same
+ * extract-for-complexity rationale as try_enter_drag_mode/enter_tile_mode/
+ * enter_atlas_mode above. */
+static void dispatch_tools_radial_confirm(
+    GameState *state, EditorState *editor_state, WatchList *watches, UndoHistory *undo_history, int confirmed)
+{
+    if (tools_entry_is_structural(confirmed) && structural_mode_blocked_for_client(state, editor_state)) {
+        return;
+    }
+    int sel = level_find_entity_by_id(&state->gamedata.current_level, editor_state->selected_entity_id);
+    if (confirmed == 0 && sel >= 0) { /* Grab */
+        try_enter_drag_mode(state, editor_state);
+    } else if (confirmed == 1) { /* Place */
+        if (state->gamedata.blueprints.entries.count > 0) {
+            editor_state->place_blueprint_index = find_place_blueprint_index(state, editor_state);
+            editor_state->sub_mode = EDITOR_SUB_PLACE;
+        }
+    } else if (confirmed == 2 && sel >= 0) { /* Handles */
+        const Entity *handle_entity = &state->gamedata.current_level.entities.data[sel];
+        const AttrSet *handle_defaults = entity_resolve_defaults(state, handle_entity->id);
+        editor_state->saved_col_offset = (Vector2){
+            attr_get_scoped_float(&handle_entity->attrs, handle_defaults, "collision_offset_x", 0.0F),
+            attr_get_scoped_float(&handle_entity->attrs, handle_defaults, "collision_offset_y", 0.0F),
+        };
+        editor_state->saved_col_size = (Vector2){
+            attr_get_scoped_float(&handle_entity->attrs, handle_defaults, "collision_w", 0.0F),
+            attr_get_scoped_float(&handle_entity->attrs, handle_defaults, "collision_h", 0.0F),
+        };
+        editor_state->sub_mode = EDITOR_SUB_HANDLES;
+    } else if (confirmed == 2) { /* Handles, nothing selected */
+        editor_state->toast_text = strv_from_cstr("Select an entity first");
+        editor_state->toast_timer = TOAST_DURATION;
+    } else if (confirmed == 3) { /* Delete */
+        delete_selected_entity(state, editor_state, watches);
+        undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
+                               strv_from_cstr("Delete entity"));
+    } else if (confirmed == 4) { /* Blueprints */
+        editor_state->top_mode = EDITOR_TOP_BLUEPRINT;
+        editor_state->selected_blueprint_index = -1;
+        editor_state->blueprint_list_scroll = 0;
+        editor_state->blueprint_attr_index = -1;
+        editor_state->blueprint_tree_index = -1;
+        editor_state->selected_entity_id = -1;
+        editor_state->multiselect_count = 0;
+    } else if (confirmed == EDITOR_TOOLS_WATCH_LIST_INDEX && watches->count > 0) { /* Watch list */
+        editor_state->watch_list_scroll = 0;
+        editor_state->sub_mode = EDITOR_SUB_WATCH_LIST;
+    } else if (confirmed == EDITOR_TOOLS_LEVELS_INDEX) { /* Levels */
+        editor_state->top_mode = EDITOR_TOP_LEVEL;
+        editor_state->level_list_scroll = 0;
+        editor_state->level_switch_confirm_pending = false;
+        editor_state->selected_entity_id = -1;
+        editor_state->multiselect_count = 0;
+    } else if (confirmed == EDITOR_TOOLS_TILE_INDEX) { /* Tiles */
+        enter_tile_mode(state, editor_state);
+    } else if (confirmed == EDITOR_TOOLS_ATLAS_INDEX) { /* Atlas */
+        enter_atlas_mode(editor_state);
+    } else if (confirmed == EDITOR_TOOLS_ANIM_INDEX) { /* Animation */
+        enter_anim_mode(state, editor_state);
+    } else if (confirmed == EDITOR_TOOLS_RULE_INDEX) { /* Rules */
+        enter_rule_mode(state, editor_state);
+    }
+}
+
 static void
 dispatch_radial_confirm(GameState *state, EditorState *editor_state, WatchList *watches, UndoHistory *undo_history)
 {
     int confirmed = editor_state->radial_confirmed;
     editor_state->radial_confirmed = -1;
     if (editor_state->radial_context == RADIAL_CTX_TOOLS) {
-        int sel = level_find_entity_by_id(&state->gamedata.current_level, editor_state->selected_entity_id);
-        if (confirmed == 0 && sel >= 0) { /* Grab */
-            try_enter_drag_mode(state, editor_state);
-        } else if (confirmed == 1) { /* Place */
-            if (state->gamedata.blueprints.entries.count > 0) {
-                editor_state->place_blueprint_index = find_place_blueprint_index(state, editor_state);
-                editor_state->sub_mode = EDITOR_SUB_PLACE;
-            }
-        } else if (confirmed == 2 && sel >= 0) { /* Handles */
-            const Entity *handle_entity = &state->gamedata.current_level.entities.data[sel];
-            const AttrSet *handle_defaults = entity_resolve_defaults(state, handle_entity->id);
-            editor_state->saved_col_offset = (Vector2){
-                attr_get_scoped_float(&handle_entity->attrs, handle_defaults, "collision_offset_x", 0.0F),
-                attr_get_scoped_float(&handle_entity->attrs, handle_defaults, "collision_offset_y", 0.0F),
-            };
-            editor_state->saved_col_size = (Vector2){
-                attr_get_scoped_float(&handle_entity->attrs, handle_defaults, "collision_w", 0.0F),
-                attr_get_scoped_float(&handle_entity->attrs, handle_defaults, "collision_h", 0.0F),
-            };
-            editor_state->sub_mode = EDITOR_SUB_HANDLES;
-        } else if (confirmed == 2) { /* Handles, nothing selected */
-            editor_state->toast_text = strv_from_cstr("Select an entity first");
-            editor_state->toast_timer = TOAST_DURATION;
-        } else if (confirmed == 3) { /* Delete */
-            delete_selected_entity(state, editor_state, watches);
-            undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
-                                   strv_from_cstr("Delete entity"));
-        } else if (confirmed == 4) { /* Blueprints */
-            editor_state->top_mode = EDITOR_TOP_BLUEPRINT;
-            editor_state->selected_blueprint_index = -1;
-            editor_state->blueprint_list_scroll = 0;
-            editor_state->blueprint_attr_index = -1;
-            editor_state->blueprint_tree_index = -1;
-            editor_state->selected_entity_id = -1;
-            editor_state->multiselect_count = 0;
-        } else if (confirmed == EDITOR_TOOLS_WATCH_LIST_INDEX && watches->count > 0) { /* Watch list */
-            editor_state->watch_list_scroll = 0;
-            editor_state->sub_mode = EDITOR_SUB_WATCH_LIST;
-        } else if (confirmed == EDITOR_TOOLS_LEVELS_INDEX) { /* Levels */
-            editor_state->top_mode = EDITOR_TOP_LEVEL;
-            editor_state->level_list_scroll = 0;
-            editor_state->level_switch_confirm_pending = false;
-            editor_state->selected_entity_id = -1;
-            editor_state->multiselect_count = 0;
-        } else if (confirmed == EDITOR_TOOLS_TILE_INDEX) { /* Tiles */
-            enter_tile_mode(state, editor_state);
-        } else if (confirmed == EDITOR_TOOLS_ATLAS_INDEX) { /* Atlas */
-            enter_atlas_mode(editor_state);
-        } else if (confirmed == EDITOR_TOOLS_ANIM_INDEX) { /* Animation */
-            enter_anim_mode(state, editor_state);
-        } else if (confirmed == EDITOR_TOOLS_RULE_INDEX) { /* Rules */
-            enter_rule_mode(state, editor_state);
-        }
+        dispatch_tools_radial_confirm(state, editor_state, watches, undo_history, confirmed);
     } else if (editor_state->radial_context == RADIAL_CTX_ATTR_TYPE) {
         dispatch_attr_type_change(state, editor_state, confirmed, undo_history);
     } else if (editor_state->radial_context == RADIAL_CTX_CHILD_PROPS) {
