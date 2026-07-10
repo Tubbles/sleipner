@@ -148,6 +148,16 @@ void network_stop(NetworkState *network)
         network->held_ops[index] = (HeldEditorOp){0};
     }
     network->next_expected_op_seq = 0;
+    /* S8.7d1: the lock table and the client deny list are session state --
+     * back to the offline zero (host re-fills locks as clients acquire,
+     * clients re-mirror from echoes). */
+    for (int index = 0; index < NETWORK_LOCKS_MAX; index++) {
+        network->locks[index] = (EntityLock){0};
+    }
+    for (int index = 0; index < NETWORK_LOCK_DENIED_MAX; index++) {
+        network->lock_denied_entity_ids[index] = 0;
+    }
+    network->lock_denied_count = 0;
 }
 
 /* ---- S8.4a: session JOIN + INPUT flow ---- */
@@ -170,6 +180,65 @@ static NetClient *find_client_by_addr(NetworkState *network, NetAddr addr)
         }
     }
     return nullptr;
+}
+
+/* ---- S8.7d1: entity lock table helpers ---- */
+
+EntityLock *network_lock_find(NetworkState *network, int entity_id)
+{
+    for (int index = 0; index < NETWORK_LOCKS_MAX; index++) {
+        if (network->locks[index].active && network->locks[index].entity_id == entity_id) {
+            return &network->locks[index];
+        }
+    }
+    return nullptr;
+}
+
+bool network_lock_acquire(NetworkState *network, int entity_id, int holder_player_id)
+{
+    EntityLock *existing = network_lock_find(network, entity_id);
+    if (existing != nullptr) {
+        if (existing->holder_player_id != holder_player_id) {
+            return false;
+        }
+        existing->seconds_since_refresh = 0.0F;
+        return true;
+    }
+    for (int index = 0; index < NETWORK_LOCKS_MAX; index++) {
+        if (!network->locks[index].active) {
+            network->locks[index] = (EntityLock){.entity_id = entity_id,
+                                                 .holder_player_id = holder_player_id,
+                                                 .seconds_since_refresh = 0.0F,
+                                                 .active = true};
+            return true;
+        }
+    }
+    return false;
+}
+
+bool network_lock_release(NetworkState *network, int entity_id, int holder_player_id)
+{
+    /* Scan for the entry owned by exactly (entity_id, holder_player_id) --
+     * matching both keys in one condition keeps the two int parameters
+     * distinguished at the point of use (a release you do not own is a
+     * no-op). */
+    for (int index = 0; index < NETWORK_LOCKS_MAX; index++) {
+        EntityLock *lock = &network->locks[index];
+        if (lock->active && lock->entity_id == entity_id && lock->holder_player_id == holder_player_id) {
+            lock->active = false;
+            return true;
+        }
+    }
+    return false;
+}
+
+void network_lock_refresh_holder(NetworkState *network, int holder_player_id)
+{
+    for (int index = 0; index < NETWORK_LOCKS_MAX; index++) {
+        if (network->locks[index].active && network->locks[index].holder_player_id == holder_player_id) {
+            network->locks[index].seconds_since_refresh = 0.0F;
+        }
+    }
 }
 
 /* Register a newly-JOINed client at addr with the next player_id (1..N in
@@ -361,6 +430,15 @@ void network_host_receive(NetworkState *network, uint64_t local_gamedata_hash, P
         DecodedPacket packet;
         ErrorState decode_err = {0};
         if (protocol_decode_packet(buffer, (size_t)received, &packet, &decode_err)) {
+            /* S8.7d1: any datagram from a registered client is proof of life --
+             * refresh that client's locks so the silence timeout only fires on
+             * a peer that has genuinely gone quiet. A single lookup here (the
+             * handlers below still do their own) keeps this independent of the
+             * per-type dispatch. */
+            const NetClient *sender = find_client_by_addr(network, src);
+            if (sender != nullptr) {
+                network_lock_refresh_holder(network, sender->player_id);
+            }
             if (packet.header.type == MSG_JOIN) {
                 handle_join_datagram(network, src, &packet.reader, local_gamedata_hash);
             } else if (packet.header.type == MSG_INPUT) {

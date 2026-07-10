@@ -279,11 +279,26 @@ typedef struct {
  * ops on the reliable sub-channel and apply them to game state. ---- */
 
 /* Wire-encoded as a single u8. Appended-to only, same wire-byte caveat as
- * MessageType: enumerators are never reordered or renumbered. */
+ * MessageType: enumerators are never reordered or renumbered.
+ *
+ * S8.7d1 lock kinds (all header-only payloads, exactly like
+ * EDITOR_OP_DELETE_ENTITY):
+ *  - EDITOR_OP_LOCK_ACQUIRE -- client->host: request to lock entity_id;
+ *    host->clients echo: the lock was GRANTED to author_player_id.
+ *  - EDITOR_OP_LOCK_RELEASE -- client->host: release my lock; host->clients
+ *    echo: the lock is gone (also emitted by the host on silence timeout,
+ *    author = the former holder).
+ *  - EDITOR_OP_LOCK_DENY -- host->clients echo only (clients never
+ *    originate it): author_player_id's acquire on entity_id was refused.
+ *    Broadcast like every other echo, so every replica observes it in the
+ *    one same total order; only the named requester acts on it. */
 typedef enum {
     EDITOR_OP_MOVE_ENTITY,
     EDITOR_OP_SET_ATTR,
     EDITOR_OP_DELETE_ENTITY,
+    EDITOR_OP_LOCK_ACQUIRE,
+    EDITOR_OP_LOCK_RELEASE,
+    EDITOR_OP_LOCK_DENY,
 } EditorOpKind;
 
 /* A single editor op. Flat fields (not a union), matching EventRecord's
@@ -301,8 +316,9 @@ typedef enum {
  * meaningful only for EDITOR_OP_SET_ATTR, and the embedded record's own
  * entity_id mirrors this header's entity_id: the encoder overwrites it from
  * entity_id before writing (see point 4 / protocol_encode_op_packet), so
- * the two can never disagree on the wire. EDITOR_OP_DELETE_ENTITY has no
- * payload beyond the header.
+ * the two can never disagree on the wire. EDITOR_OP_DELETE_ENTITY and the
+ * three S8.7d1 lock kinds (LOCK_ACQUIRE/RELEASE/DENY) have no payload beyond
+ * the header.
  *
  * Decoded Strv fields (level_name, and any string inside attr) view into
  * the caller's packet buffer, with the same lifetime contract every other
@@ -321,7 +337,7 @@ typedef struct {
 
 /* Decodes an MSG_OP payload after the caller already decoded the header
  * (same division of labor as protocol_decode_event). Rejects an unknown
- * kind byte (anything > EDITOR_OP_DELETE_ENTITY) and fails closed on any
+ * kind byte (anything > EDITOR_OP_LOCK_DENY) and fails closed on any
  * truncated read. */
 [[nodiscard]] bool protocol_decode_op(PacketReader *reader, EditorOp *out);
 

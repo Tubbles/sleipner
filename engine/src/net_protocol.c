@@ -601,6 +601,9 @@ static bool write_op_payload(PacketWriter *writer, const EditorOp *operation)
         return protocol_encode_attr_record(writer, record);
     }
     case EDITOR_OP_DELETE_ENTITY:
+    case EDITOR_OP_LOCK_ACQUIRE:
+    case EDITOR_OP_LOCK_RELEASE:
+    case EDITOR_OP_LOCK_DENY:
         return true;
     }
     return false;
@@ -612,7 +615,7 @@ bool protocol_decode_op(PacketReader *reader, EditorOp *out)
     if (!packet_reader_read_u8(reader, &kind_byte)) {
         return false;
     }
-    if (kind_byte > EDITOR_OP_DELETE_ENTITY) {
+    if (kind_byte > EDITOR_OP_LOCK_DENY) {
         return false;
     }
     EditorOp operation = {.kind = (EditorOpKind)kind_byte};
@@ -634,6 +637,9 @@ bool protocol_decode_op(PacketReader *reader, EditorOp *out)
         }
         break;
     case EDITOR_OP_DELETE_ENTITY:
+    case EDITOR_OP_LOCK_ACQUIRE:
+    case EDITOR_OP_LOCK_RELEASE:
+    case EDITOR_OP_LOCK_DENY:
         break;
     }
     *out = operation;

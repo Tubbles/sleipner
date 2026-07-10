@@ -506,6 +506,36 @@ void test_protocol_op_delete_packet_round_trip(void)
     TEST_ASSERT_EQUAL_UINT32(operation.op_seq, out.op_seq);
 }
 
+void test_protocol_op_lock_acquire_packet_round_trip(void)
+{
+    /* S8.7d1: a lock kind is a header-only payload, exactly like DELETE. One
+     * round-trip covering a lock kind proves the appended enumerators encode
+     * and decode; the corrupt-kind test below still exercises the moved
+     * validity bound via magic byte 200. */
+    EditorOp operation = {.kind = EDITOR_OP_LOCK_ACQUIRE,
+                          .level_name = strv_from_cstr("overworld"),
+                          .entity_id = 9,
+                          .author_player_id = 2,
+                          .op_seq = 33};
+
+    uint8_t buffer[NET_PROTOCOL_TEST_BUFFER_SIZE];
+    size_t total_len = 0;
+    TEST_ASSERT_TRUE(protocol_encode_op_packet(buffer, sizeof(buffer), 7, &operation, &total_len));
+
+    DecodedPacket decoded;
+    ErrorState err = {0};
+    TEST_ASSERT_TRUE(protocol_decode_packet(buffer, total_len, &decoded, &err));
+    TEST_ASSERT_EQUAL_INT(MSG_OP, decoded.header.type);
+
+    EditorOp out;
+    TEST_ASSERT_TRUE(protocol_decode_op(&decoded.reader, &out));
+    TEST_ASSERT_EQUAL_INT(EDITOR_OP_LOCK_ACQUIRE, out.kind);
+    TEST_ASSERT_TRUE(strv_eq(operation.level_name, out.level_name));
+    TEST_ASSERT_EQUAL_INT32(operation.entity_id, out.entity_id);
+    TEST_ASSERT_EQUAL_INT32(operation.author_player_id, out.author_player_id);
+    TEST_ASSERT_EQUAL_UINT32(operation.op_seq, out.op_seq);
+}
+
 void test_protocol_op_empty_level_name_round_trip(void)
 {
     EditorOp operation = {.kind = EDITOR_OP_DELETE_ENTITY,
@@ -646,6 +676,7 @@ int main(void)
     RUN_TEST(test_protocol_op_set_attr_string_packet_round_trip);
     RUN_TEST(test_protocol_op_set_attr_float_packet_round_trip);
     RUN_TEST(test_protocol_op_delete_packet_round_trip);
+    RUN_TEST(test_protocol_op_lock_acquire_packet_round_trip);
     RUN_TEST(test_protocol_op_empty_level_name_round_trip);
     RUN_TEST(test_protocol_decode_op_rejects_unknown_kind);
     RUN_TEST(test_protocol_decode_op_rejects_truncated_buffer);

@@ -163,14 +163,26 @@
  * back to it (network_host_send_acks, network.h) -- a no-op per client
  * before that client's first reliable event ever arrives. (S8.7c) Any
  * MSG_OP network_host_receive drained into its PendingEditorOps this tick
- * is decoded and, for an EDITOR_OP_MOVE_ENTITY naming the current level and
- * a known entity id, applied authoritatively (entity->position set), then
- * stamped op_seq = next_op_seq++ (author overwritten with the sender's
- * player_id) and echoed to every client via network_host_broadcast_reliable_op
- * -- the echo is what makes the move authoritative on every replica,
- * including the originator's. Non-move, cross-level, or unknown-id ops are
- * silently dropped (tolerant-skip, same convention as the state appliers).
- * No-op under any mode other than NET_HOSTING. */
+ * is decoded and dispatched by kind. An EDITOR_OP_MOVE_ENTITY naming the
+ * current level and a known entity id is applied authoritatively
+ * (entity->position set), then stamped op_seq = next_op_seq++ (author
+ * overwritten with the sender's player_id) and echoed to every client via
+ * network_host_broadcast_reliable_op -- the echo is what makes the move
+ * authoritative on every replica, including the originator's. (S8.7d1) A move
+ * of an entity locked by someone OTHER than the sender is silently dropped
+ * (no apply, no echo); unlocked or held-by-sender moves apply as above. An
+ * EDITOR_OP_LOCK_ACQUIRE is granted (echoed as LOCK_ACQUIRE) when it names a
+ * known entity in the current level and network_lock_acquire claims it for
+ * the sender, or DENIED (echoed as LOCK_DENY) otherwise; an
+ * EDITOR_OP_LOCK_RELEASE the sender actually holds is echoed as LOCK_RELEASE.
+ * Cross-level, unknown-id, or out-of-scope ops (SET_ATTR/DELETE_ENTITY, and a
+ * client-originated LOCK_DENY) are silently dropped (tolerant-skip, same
+ * convention as the state appliers). Finally (S8.7d1) the host ages its lock
+ * table by delta_time and force-releases any lock whose holder has gone
+ * silent past NETWORK_LOCK_TIMEOUT_SECONDS, echoing a LOCK_RELEASE authored by
+ * the former holder -- ageing runs AFTER network_host_receive so this tick's
+ * incoming refreshes land first. No-op under any mode other than
+ * NET_HOSTING. */
 void network_host_tick(GameState *state, float delta_time);
 
 /* JOINING or NET_CLIENT only. NET_JOINING: (re)sends this session's
@@ -199,8 +211,11 @@ void network_host_tick(GameState *state, float delta_time);
  * echo drained here is applied in strict op_seq order (network_client_receive_state
  * below): one whose op_seq equals next_expected_op_seq applies immediately
  * and then drains any consecutive op_seqs parked in held_ops, one ahead is
- * held, one behind is a duplicate and dropped. No-op under any other
- * mode. */
+ * held, one behind is a duplicate and dropped. (S8.7d1) An applied echo is
+ * dispatched by kind: MOVE writes the entity position, LOCK_ACQUIRE/RELEASE
+ * maintain this client's replica lock table, and a LOCK_DENY addressed to
+ * this peer appends its entity id to lock_denied_entity_ids for the editor to
+ * drain (S8.7d2). No-op under any other mode. */
 void network_client_tick(GameState *state, const InputState *local_input, float delta_time);
 
 /* HOST side (S8.4b): encode the current synced state of state's whole

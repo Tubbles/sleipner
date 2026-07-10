@@ -6156,6 +6156,457 @@ void test_integration_join_after_ops_stamped_carries_baseline(void)
     loopback_network_free(&loopback);
 }
 
+/* ---- Integration: S8.7d1 host-authoritative entity locks ----
+ *
+ * The editor UI hooks for grab/release are the NEXT slice (S8.7d2), so a real
+ * client cannot yet acquire a lock through a gesture -- these tests inject the
+ * lock op REQUESTS directly onto a client's reliable channel (the exact bytes
+ * the editor will later send), then drive the session over net_loopback.h the
+ * same two/three-TestGame way the S8.4/S8.6/S8.7c tests do. Both peers are put
+ * in editor mode so the host's every-tick DELTA broadcast is suspended and the
+ * op echo stream is the sole entity-state / lock channel. */
+
+/* Send a lock/move op REQUEST from `client` to its host, stamping the author
+ * with the client's own player_id and op_seq 0 (the host stamps the real
+ * serialization number on its echo). Takes the op by value so callers pass a
+ * compound literal with just the kind/level/entity/move fields set. */
+static void client_send_lock_op(TestGame *client, EditorOp operation)
+{
+    operation.author_player_id = client->state.network.local_player_id;
+    operation.op_seq = 0;
+    network_client_send_reliable_op(&client->state.network, &operation);
+}
+
+/* Drain every packet on `transport`, decoding each MSG_OP echo into the two
+ * parallel out arrays (kind, op_seq) and returning how many were seen.
+ * Non-op traffic (acks, snapshots, events) is skipped -- lets a test inspect
+ * exactly what op echoes reached a client, and in what order. */
+static int drain_op_echoes(NetTransport *transport, EditorOpKind *out_kinds, uint32_t *out_op_seqs, int cap)
+{
+    uint8_t buffer[NET_MAX_PACKET_SIZE];
+    NetAddr src = {0};
+    int count = 0;
+    int received = net_recv(transport, &src, buffer, sizeof(buffer));
+    while (received > 0) {
+        DecodedPacket packet;
+        ErrorState decode_err = {0};
+        if (protocol_decode_packet(buffer, (size_t)received, &packet, &decode_err) && packet.header.type == MSG_OP &&
+            count < cap) {
+            EditorOp operation = {0};
+            if (protocol_decode_op(&packet.reader, &operation)) {
+                out_kinds[count] = operation.kind;
+                out_op_seqs[count] = operation.op_seq;
+                count++;
+            }
+        }
+        received = net_recv(transport, &src, buffer, sizeof(buffer));
+    }
+    return count;
+}
+
+/* (a) Client A's ACQUIRE on the hero is granted and its echo reaches BOTH
+ * clients' replicas (both show holder A). Client B's ACQUIRE on the same
+ * entity is then DENIED: B's deny list gains the entity id, A's does not, and
+ * both replicas still show holder A. */
+void test_integration_lock_acquire_granted_second_holder_denied(void)
+{
+    LoopbackNetwork loopback;
+    loopback_network_init(&loopback, &test_heap_alloc);
+    NetAddr host_addr = net_addr_make(1, 9000);
+    NetAddr client_a_addr = net_addr_make(2, 9001);
+    NetAddr client_b_addr = net_addr_make(3, 9002);
+    NetTransport host_transport;
+    NetTransport client_a_transport;
+    NetTransport client_b_transport;
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, host_addr, &host_transport));
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, client_a_addr, &client_a_transport));
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, client_b_addr, &client_b_transport));
+
+    TestGame host;
+    TEST_ASSERT_TRUE(test_game_setup(&host, host_session_gamedata));
+    host.state.network.mode = NET_HOSTING;
+    host.state.network.transport = host_transport;
+    host.state.network.next_op_seq = 1;
+
+    TestGame client_a;
+    TEST_ASSERT_TRUE(test_game_setup(&client_a, host_session_gamedata));
+    client_a.state.network.mode = NET_JOINING;
+    client_a.state.network.transport = client_a_transport;
+    client_a.state.network.join_target = host_addr;
+
+    TestGame client_b;
+    TEST_ASSERT_TRUE(test_game_setup(&client_b, host_session_gamedata));
+    client_b.state.network.mode = NET_JOINING;
+    client_b.state.network.transport = client_b_transport;
+    client_b.state.network.join_target = host_addr;
+
+    Entity *host_hero = test_find_entity_by_blueprint(&host.state, "hero");
+    TEST_ASSERT_NOT_NULL(host_hero);
+    int host_hero_id = host_hero->id;
+
+    InputState no_input = {0};
+    /* A joins first (player_id 1), then B (player_id 2) -- sequential joins
+     * keep the id assignment deterministic, mirroring the S8.6 per-join test. */
+    for (int frame = 0; frame < 3; frame++) {
+        test_advance_frame(&client_a, no_input);
+        test_advance_frame(&host, no_input);
+    }
+    TEST_ASSERT_EQUAL_INT(NET_CLIENT, client_a.state.network.mode);
+    for (int frame = 0; frame < 3; frame++) {
+        test_advance_frame(&client_b, no_input);
+        test_advance_frame(&client_a, no_input);
+        test_advance_frame(&host, no_input);
+    }
+    TEST_ASSERT_EQUAL_INT(NET_CLIENT, client_b.state.network.mode);
+
+    int player_a = client_a.state.network.local_player_id;
+    int player_b = client_b.state.network.local_player_id;
+    host.state.editor_mode = true;
+    client_a.state.editor_mode = true;
+    client_b.state.editor_mode = true;
+
+    /* A acquires the hero: host grants (op_seq 1), broadcasts a LOCK_ACQUIRE
+     * echo to both clients. */
+    client_send_lock_op(
+        &client_a,
+        (EditorOp){.kind = EDITOR_OP_LOCK_ACQUIRE, .level_name = strv_from_cstr("test"), .entity_id = host_hero_id});
+    test_advance_frame(&host, no_input);
+    for (int frame = 0; frame < 3; frame++) {
+        test_advance_frame(&client_a, no_input);
+        test_advance_frame(&client_b, no_input);
+    }
+
+    EntityLock *host_lock = network_lock_find(&host.state.network, host_hero_id);
+    EntityLock *replica_a = network_lock_find(&client_a.state.network, host_hero_id);
+    EntityLock *replica_b = network_lock_find(&client_b.state.network, host_hero_id);
+    TEST_ASSERT_NOT_NULL(host_lock);
+    TEST_ASSERT_NOT_NULL(replica_a);
+    TEST_ASSERT_NOT_NULL(replica_b);
+    TEST_ASSERT_EQUAL_INT(player_a, host_lock->holder_player_id);
+    TEST_ASSERT_EQUAL_INT(player_a, replica_a->holder_player_id);
+    TEST_ASSERT_EQUAL_INT(player_a, replica_b->holder_player_id);
+
+    /* B acquires the SAME entity: host denies (op_seq 2), broadcasts a
+     * LOCK_DENY echo whose author is B -- only B acts on it. */
+    client_send_lock_op(
+        &client_b,
+        (EditorOp){.kind = EDITOR_OP_LOCK_ACQUIRE, .level_name = strv_from_cstr("test"), .entity_id = host_hero_id});
+    test_advance_frame(&host, no_input);
+    for (int frame = 0; frame < 3; frame++) {
+        test_advance_frame(&client_a, no_input);
+        test_advance_frame(&client_b, no_input);
+    }
+
+    TEST_ASSERT_EQUAL_INT(1, client_b.state.network.lock_denied_count);
+    TEST_ASSERT_EQUAL_INT(host_hero_id, client_b.state.network.lock_denied_entity_ids[0]);
+    TEST_ASSERT_EQUAL_INT(0, client_a.state.network.lock_denied_count);
+
+    replica_a = network_lock_find(&client_a.state.network, host_hero_id);
+    replica_b = network_lock_find(&client_b.state.network, host_hero_id);
+    TEST_ASSERT_NOT_NULL(replica_a);
+    TEST_ASSERT_NOT_NULL(replica_b);
+    TEST_ASSERT_EQUAL_INT(player_a, replica_a->holder_player_id);
+    TEST_ASSERT_EQUAL_INT(player_a, replica_b->holder_player_id);
+    (void)player_b;
+
+    test_game_teardown(&host);
+    test_game_teardown(&client_a);
+    test_game_teardown(&client_b);
+    loopback_network_free(&loopback);
+}
+
+/* (b) With A holding the hero lock, a MOVE from B is enforced away (dropped on
+ * the host, no echo, no client sees it move); a MOVE from A -- the holder --
+ * applies and converges on both peers. */
+void test_integration_locked_entity_rejects_non_holder_move(void)
+{
+    LoopbackNetwork loopback;
+    loopback_network_init(&loopback, &test_heap_alloc);
+    NetAddr host_addr = net_addr_make(1, 9000);
+    NetAddr client_a_addr = net_addr_make(2, 9001);
+    NetAddr client_b_addr = net_addr_make(3, 9002);
+    NetTransport host_transport;
+    NetTransport client_a_transport;
+    NetTransport client_b_transport;
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, host_addr, &host_transport));
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, client_a_addr, &client_a_transport));
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, client_b_addr, &client_b_transport));
+
+    TestGame host;
+    TEST_ASSERT_TRUE(test_game_setup(&host, host_session_gamedata));
+    host.state.network.mode = NET_HOSTING;
+    host.state.network.transport = host_transport;
+    host.state.network.next_op_seq = 1;
+
+    TestGame client_a;
+    TEST_ASSERT_TRUE(test_game_setup(&client_a, host_session_gamedata));
+    client_a.state.network.mode = NET_JOINING;
+    client_a.state.network.transport = client_a_transport;
+    client_a.state.network.join_target = host_addr;
+
+    TestGame client_b;
+    TEST_ASSERT_TRUE(test_game_setup(&client_b, host_session_gamedata));
+    client_b.state.network.mode = NET_JOINING;
+    client_b.state.network.transport = client_b_transport;
+    client_b.state.network.join_target = host_addr;
+
+    Entity *host_hero = test_find_entity_by_blueprint(&host.state, "hero");
+    TEST_ASSERT_NOT_NULL(host_hero);
+    int host_hero_id = host_hero->id;
+
+    InputState no_input = {0};
+    for (int frame = 0; frame < 3; frame++) {
+        test_advance_frame(&client_a, no_input);
+        test_advance_frame(&host, no_input);
+    }
+    for (int frame = 0; frame < 3; frame++) {
+        test_advance_frame(&client_b, no_input);
+        test_advance_frame(&client_a, no_input);
+        test_advance_frame(&host, no_input);
+    }
+    TEST_ASSERT_EQUAL_INT(NET_CLIENT, client_a.state.network.mode);
+    TEST_ASSERT_EQUAL_INT(NET_CLIENT, client_b.state.network.mode);
+
+    host.state.editor_mode = true;
+
+    /* A acquires the hero lock. */
+    client_send_lock_op(
+        &client_a,
+        (EditorOp){.kind = EDITOR_OP_LOCK_ACQUIRE, .level_name = strv_from_cstr("test"), .entity_id = host_hero_id});
+    test_advance_frame(&host, no_input);
+    for (int frame = 0; frame < 3; frame++) {
+        test_advance_frame(&client_a, no_input);
+        test_advance_frame(&client_b, no_input);
+    }
+    float hero_before = test_find_entity_by_id(&host.state, host_hero_id)->position.x;
+
+    /* B (not the holder) tries to move the hero -- the host must drop it: no
+     * apply, no echo. */
+    client_send_lock_op(&client_b, (EditorOp){.kind = EDITOR_OP_MOVE_ENTITY,
+                                              .level_name = strv_from_cstr("test"),
+                                              .entity_id = host_hero_id,
+                                              .move_x = 300.0F,
+                                              .move_y = 200.0F});
+    test_advance_frame(&host, no_input);
+    for (int frame = 0; frame < 3; frame++) {
+        test_advance_frame(&client_a, no_input);
+        test_advance_frame(&client_b, no_input);
+    }
+    TEST_ASSERT_EQUAL_FLOAT(hero_before, test_find_entity_by_id(&host.state, host_hero_id)->position.x);
+    /* No MOVE echo reached the clients -- their hero never moved toward B's
+     * target. */
+    TEST_ASSERT_TRUE(test_find_entity_by_id(&client_a.state, host_hero_id)->position.x < 260.0F);
+    TEST_ASSERT_TRUE(test_find_entity_by_id(&client_b.state, host_hero_id)->position.x < 260.0F);
+
+    /* A (the holder) moves the hero -- applied and converges on both. */
+    client_send_lock_op(&client_a, (EditorOp){.kind = EDITOR_OP_MOVE_ENTITY,
+                                              .level_name = strv_from_cstr("test"),
+                                              .entity_id = host_hero_id,
+                                              .move_x = 250.0F,
+                                              .move_y = 150.0F});
+    test_advance_frame(&host, no_input);
+    for (int frame = 0; frame < 3; frame++) {
+        test_advance_frame(&client_a, no_input);
+        test_advance_frame(&client_b, no_input);
+    }
+
+    Entity *host_hero_after = test_find_entity_by_id(&host.state, host_hero_id);
+    Entity *client_a_hero_after = test_find_entity_by_id(&client_a.state, host_hero_id);
+    Entity *client_b_hero_after = test_find_entity_by_id(&client_b.state, host_hero_id);
+    TEST_ASSERT_EQUAL_FLOAT(250.0F, host_hero_after->position.x);
+    TEST_ASSERT_EQUAL_FLOAT(250.0F, client_a_hero_after->position.x);
+    TEST_ASSERT_EQUAL_FLOAT(250.0F, client_b_hero_after->position.x);
+    TEST_ASSERT_EQUAL_FLOAT(150.0F, client_a_hero_after->position.y);
+    TEST_ASSERT_EQUAL_FLOAT(150.0F, client_b_hero_after->position.y);
+
+    test_game_teardown(&host);
+    test_game_teardown(&client_a);
+    test_game_teardown(&client_b);
+    loopback_network_free(&loopback);
+}
+
+/* (c) A holds a lock then goes silent: the host times it out past
+ * NETWORK_LOCK_TIMEOUT_SECONDS and echoes a LOCK_RELEASE, clearing B's replica
+ * and freeing the entity for B to acquire. A still-ticking holder (B, sending
+ * input every tick) never expires. */
+void test_integration_lock_times_out_on_silence_but_not_while_active(void)
+{
+    LoopbackNetwork loopback;
+    loopback_network_init(&loopback, &test_heap_alloc);
+    NetAddr host_addr = net_addr_make(1, 9000);
+    NetAddr client_a_addr = net_addr_make(2, 9001);
+    NetAddr client_b_addr = net_addr_make(3, 9002);
+    NetTransport host_transport;
+    NetTransport client_a_transport;
+    NetTransport client_b_transport;
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, host_addr, &host_transport));
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, client_a_addr, &client_a_transport));
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, client_b_addr, &client_b_transport));
+
+    TestGame host;
+    TEST_ASSERT_TRUE(test_game_setup(&host, host_session_gamedata));
+    host.state.network.mode = NET_HOSTING;
+    host.state.network.transport = host_transport;
+    host.state.network.next_op_seq = 1;
+
+    TestGame client_a;
+    TEST_ASSERT_TRUE(test_game_setup(&client_a, host_session_gamedata));
+    client_a.state.network.mode = NET_JOINING;
+    client_a.state.network.transport = client_a_transport;
+    client_a.state.network.join_target = host_addr;
+
+    TestGame client_b;
+    TEST_ASSERT_TRUE(test_game_setup(&client_b, host_session_gamedata));
+    client_b.state.network.mode = NET_JOINING;
+    client_b.state.network.transport = client_b_transport;
+    client_b.state.network.join_target = host_addr;
+
+    Entity *host_hero = test_find_entity_by_blueprint(&host.state, "hero");
+    TEST_ASSERT_NOT_NULL(host_hero);
+    int host_hero_id = host_hero->id;
+
+    InputState no_input = {0};
+    for (int frame = 0; frame < 3; frame++) {
+        test_advance_frame(&client_a, no_input);
+        test_advance_frame(&host, no_input);
+    }
+    for (int frame = 0; frame < 3; frame++) {
+        test_advance_frame(&client_b, no_input);
+        test_advance_frame(&client_a, no_input);
+        test_advance_frame(&host, no_input);
+    }
+    TEST_ASSERT_EQUAL_INT(NET_CLIENT, client_a.state.network.mode);
+    TEST_ASSERT_EQUAL_INT(NET_CLIENT, client_b.state.network.mode);
+
+    int player_b = client_b.state.network.local_player_id;
+    host.state.editor_mode = true;
+
+    /* A acquires the hero lock, then goes silent (never ticked again). */
+    client_send_lock_op(
+        &client_a,
+        (EditorOp){.kind = EDITOR_OP_LOCK_ACQUIRE, .level_name = strv_from_cstr("test"), .entity_id = host_hero_id});
+    test_advance_frame(&host, no_input);
+    TEST_ASSERT_NOT_NULL(network_lock_find(&host.state.network, host_hero_id));
+
+    /* 320 host ticks ~= 5.33s at 1/60, safely past NETWORK_LOCK_TIMEOUT_SECONDS.
+     * B keeps ticking to drain its inbox and eventually the release echo. */
+    int frames_past_timeout = (int)(NETWORK_LOCK_TIMEOUT_SECONDS * 60.0F) + 20;
+    for (int frame = 0; frame < frames_past_timeout; frame++) {
+        test_advance_frame(&client_b, no_input);
+        test_advance_frame(&host, no_input);
+    }
+
+    /* A went silent, so the host force-released its lock and echoed it -- the
+     * host authority and B's replica both show the hero unlocked now. */
+    TEST_ASSERT_NULL(network_lock_find(&host.state.network, host_hero_id));
+    TEST_ASSERT_NULL(network_lock_find(&client_b.state.network, host_hero_id));
+
+    /* The freed entity is B's to take. */
+    client_send_lock_op(
+        &client_b,
+        (EditorOp){.kind = EDITOR_OP_LOCK_ACQUIRE, .level_name = strv_from_cstr("test"), .entity_id = host_hero_id});
+    test_advance_frame(&host, no_input);
+    for (int frame = 0; frame < 3; frame++) {
+        test_advance_frame(&client_b, no_input);
+    }
+    EntityLock *host_lock = network_lock_find(&host.state.network, host_hero_id);
+    EntityLock *replica_b = network_lock_find(&client_b.state.network, host_hero_id);
+    TEST_ASSERT_NOT_NULL(host_lock);
+    TEST_ASSERT_NOT_NULL(replica_b);
+    TEST_ASSERT_EQUAL_INT(player_b, host_lock->holder_player_id);
+    TEST_ASSERT_EQUAL_INT(player_b, replica_b->holder_player_id);
+
+    /* B keeps ticking (sending input every tick) well past the timeout span --
+     * its lock is continually refreshed and never expires. */
+    for (int frame = 0; frame < frames_past_timeout; frame++) {
+        test_advance_frame(&client_b, no_input);
+        test_advance_frame(&host, no_input);
+    }
+    host_lock = network_lock_find(&host.state.network, host_hero_id);
+    replica_b = network_lock_find(&client_b.state.network, host_hero_id);
+    TEST_ASSERT_NOT_NULL(host_lock);
+    TEST_ASSERT_NOT_NULL(replica_b);
+    TEST_ASSERT_EQUAL_INT(player_b, host_lock->holder_player_id);
+    TEST_ASSERT_EQUAL_INT(player_b, replica_b->holder_player_id);
+
+    test_game_teardown(&host);
+    test_game_teardown(&client_a);
+    test_game_teardown(&client_b);
+    loopback_network_free(&loopback);
+}
+
+/* (d) A client's ACQUIRE followed by a MOVE, arriving at the host in send
+ * order, are stamped and echoed in that order: the grant echo's op_seq is
+ * strictly less than the move echo's, decoded straight off the client's wire. */
+void test_integration_lock_acquire_then_move_echo_in_op_seq_order(void)
+{
+    LoopbackNetwork loopback;
+    loopback_network_init(&loopback, &test_heap_alloc);
+    NetAddr host_addr = net_addr_make(1, 9000);
+    NetAddr client_addr = net_addr_make(2, 9001);
+    NetTransport host_transport;
+    NetTransport client_transport;
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, host_addr, &host_transport));
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, client_addr, &client_transport));
+
+    TestGame host;
+    TEST_ASSERT_TRUE(test_game_setup(&host, host_session_gamedata));
+    host.state.network.mode = NET_HOSTING;
+    host.state.network.transport = host_transport;
+    host.state.network.next_op_seq = 1;
+
+    TestGame client;
+    TEST_ASSERT_TRUE(test_game_setup(&client, host_session_gamedata));
+    client.state.network.mode = NET_JOINING;
+    client.state.network.transport = client_transport;
+    client.state.network.join_target = host_addr;
+
+    Entity *host_hero = test_find_entity_by_blueprint(&host.state, "hero");
+    TEST_ASSERT_NOT_NULL(host_hero);
+    int host_hero_id = host_hero->id;
+
+    InputState no_input = {0};
+    for (int frame = 0; frame < 3; frame++) {
+        test_advance_frame(&client, no_input);
+        test_advance_frame(&host, no_input);
+    }
+    TEST_ASSERT_EQUAL_INT(NET_CLIENT, client.state.network.mode);
+    host.state.editor_mode = true;
+
+    /* Clear the handshake leftovers off the client's wire so the post-tick
+     * drain sees only the two op echoes. Zero-init the out arrays so the
+     * static analyzer sees a defined value even on the (asserted-impossible)
+     * path where drain_op_echoes writes fewer than two entries. */
+    EditorOpKind kinds[8] = {0};
+    uint32_t op_seqs[8] = {0};
+    (void)drain_op_echoes(&client_transport, kinds, op_seqs, 8);
+
+    /* ACQUIRE then MOVE, in that send order, both delivered to the host in one
+     * receive; the host grants then applies (the acquire it just granted
+     * permits the move) and echoes both. */
+    client_send_lock_op(
+        &client,
+        (EditorOp){.kind = EDITOR_OP_LOCK_ACQUIRE, .level_name = strv_from_cstr("test"), .entity_id = host_hero_id});
+    client_send_lock_op(&client, (EditorOp){.kind = EDITOR_OP_MOVE_ENTITY,
+                                            .level_name = strv_from_cstr("test"),
+                                            .entity_id = host_hero_id,
+                                            .move_x = 240.0F,
+                                            .move_y = 160.0F});
+    test_advance_frame(&host, no_input);
+
+    int op_count = drain_op_echoes(&client_transport, kinds, op_seqs, 8);
+    TEST_ASSERT_EQUAL_INT(2, op_count);
+    TEST_ASSERT_EQUAL_INT(EDITOR_OP_LOCK_ACQUIRE, kinds[0]);
+    TEST_ASSERT_EQUAL_INT(EDITOR_OP_MOVE_ENTITY, kinds[1]);
+    TEST_ASSERT_TRUE(op_seqs[0] < op_seqs[1]);
+    TEST_ASSERT_EQUAL_UINT32(1, op_seqs[0]);
+    TEST_ASSERT_EQUAL_UINT32(2, op_seqs[1]);
+
+    test_game_teardown(&host);
+    test_game_teardown(&client);
+    loopback_network_free(&loopback);
+}
+
 /* Offline single-player is unaffected by S8.6: game_get_local_player
  * resolves to the exact same entity as game_get_player (the sole local:0
  * player, pointer-identical, not just equal by value) since

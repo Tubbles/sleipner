@@ -193,6 +193,45 @@ typedef struct {
     bool occupied;
 } HeldEditorOp;
 
+/* S8.7d1: cap on entity locks held at once across the whole session.
+ * Bounded by peers times the editor multi-select cap (5 peers x 32
+ * multiselect ids = 160), a user-action bound rather than a
+ * frame-count-proportional one -- the same justified fixed-cap exception
+ * BindingStore/NetClient/JoinList already rely on. An acquire that finds
+ * the table full is DENIED (network_lock_acquire returns false), never
+ * silently dropped -- a safe fallback. */
+#define NETWORK_LOCKS_MAX 160
+
+/* S8.7d1: seconds of host-side silence (no datagram of any kind from a
+ * lock's holder) after which the host force-releases that holder's locks.
+ * Connected clients send MSG_INPUT every tick, so an active peer's locks
+ * are refreshed continuously (network_lock_refresh_holder, network.c) and
+ * never age; only true silence (disconnect, crash, cable pull) lets one
+ * expire. See host_age_and_expire_locks (net_session.c). */
+#define NETWORK_LOCK_TIMEOUT_SECONDS 5.0F
+
+/* One entity lock. On the HOST this table is the authority: holder_player_id
+ * names the peer that owns the edit lock, seconds_since_refresh is the
+ * silence-timeout accumulator (zeroed whenever a datagram from the holder
+ * arrives, aged each host tick). On a CLIENT the identical struct is a
+ * REPLICA maintained purely from host echoes -- seconds_since_refresh is
+ * unused there (a client never times a lock out; it only mirrors the host's
+ * grant/release decisions). active distinguishes a live entry from an unused
+ * slot in the fixed-cap array below. */
+typedef struct {
+    int entity_id;
+    int holder_player_id;
+    float seconds_since_refresh;
+    bool active;
+} EntityLock;
+
+/* S8.7d1: cap on entity ids parked in lock_denied_entity_ids per client for
+ * the editor to drain (S8.7d2). One editor gesture can request at most the
+ * editor's 32-entry multiselect worth of locks, so 32 is the natural bound;
+ * an overflow beyond it is dropped silently. Same justified fixed-cap
+ * exception as the locks table above. */
+#define NETWORK_LOCK_DENIED_MAX 32
+
 typedef struct {
     NetMode mode;
     NetTransport transport;
@@ -294,6 +333,19 @@ typedef struct {
      * Meaningless on the HOST's own NetworkState. */
     HeldEditorOp held_ops[NETWORK_OP_HOLDBACK_MAX];
     uint32_t next_expected_op_seq;
+    /* S8.7d1: the entity lock table. On the HOST it is the authority
+     * (network_lock_acquire/_release/_refresh_holder mutate it, the timeout
+     * ages it); on a CLIENT it is a replica maintained purely from LOCK_*
+     * echoes. Session state, never undo-snapshotted -- reset by network_stop
+     * like every other field here. */
+    EntityLock locks[NETWORK_LOCKS_MAX];
+    /* S8.7d1: CLIENT side only -- entity ids from LOCK_DENY echoes addressed
+     * to this peer (echo author == local_player_id), appended here for the
+     * editor to drain each frame (the drain itself is S8.7d2; this slice
+     * only populates). Overflow past NETWORK_LOCK_DENIED_MAX is dropped
+     * silently. Meaningless on the HOST's own NetworkState. */
+    int lock_denied_entity_ids[NETWORK_LOCK_DENIED_MAX];
+    int lock_denied_count;
 } NetworkState;
 
 /* Placeholder advertised name until a real player-name setting exists
@@ -336,9 +388,36 @@ network_start_hosting(NetworkState *network, Allocator *alloc, const char *host_
  * and reset every NetworkState field back to its NET_OFFLINE zero
  * value -- mode, join_list, join_target, beacon_timer, host_name,
  * clients/client_count, local_player_id (S8.6), host_event_channel, the
- * delivered-event bookkeeping (S8.4c), and the client-event bookkeeping
- * (S8.7a). Idempotent: safe to call on an already-OFFLINE NetworkState. */
+ * delivered-event bookkeeping (S8.4c), the client-event bookkeeping
+ * (S8.7a), and (S8.7d1) the lock table plus the client deny list/count.
+ * Idempotent: safe to call on an already-OFFLINE NetworkState. */
 void network_stop(NetworkState *network);
+
+/* ---- S8.7d1: entity lock table helpers (host authority + client replica).
+ * Pure state mutators on network->locks, unit-tested directly in
+ * network_test.c. On the HOST they enforce the lock protocol; on a CLIENT a
+ * subset (acquire/find) is reused to maintain the echo-driven replica. ---- */
+
+/* Grant/re-grant entity_id to holder_player_id. Returns true when the lock
+ * is (or becomes) held by holder_player_id: the entity was free (claims a
+ * slot -- a full table returns false instead) or already held by the SAME
+ * holder (idempotent re-grant, its silence age reset to 0). Returns false
+ * when the entity is held by a DIFFERENT holder, or the table is full. */
+[[nodiscard]] bool network_lock_acquire(NetworkState *network, int entity_id, int holder_player_id);
+
+/* Release entity_id, but only if it is currently held by exactly
+ * holder_player_id -- returns true and clears the slot in that case, false
+ * otherwise (releasing something you do not hold is a no-op). */
+[[nodiscard]] bool network_lock_release(NetworkState *network, int entity_id, int holder_player_id);
+
+/* The active lock on entity_id, or nullptr if the entity is unlocked. */
+EntityLock *network_lock_find(NetworkState *network, int entity_id);
+
+/* Zero seconds_since_refresh on every active lock held by holder_player_id --
+ * the silence-timeout refresh the host applies whenever a datagram from that
+ * holder arrives (network_host_receive, network.c). No-op if the holder owns
+ * no locks. */
+void network_lock_refresh_holder(NetworkState *network, int holder_player_id);
 
 /* ---- S8.4a: session JOIN + INPUT flow, over an already-established
  * `network->transport`/`network->join_target` (net.h/net_loopback.h/

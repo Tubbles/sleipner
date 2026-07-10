@@ -96,6 +96,11 @@ void test_stop_resets_every_field_to_offline(void)
     network.next_expected_op_seq = 4;
     network.held_ops[2].occupied = true;
     network.held_ops[2].op_seq = 6;
+    /* S8.7d1: pre-seed a live lock and a queued deny so their reset is proven
+     * the same way as the fields above. */
+    TEST_ASSERT_TRUE(network_lock_acquire(&network, 7, 2));
+    network.lock_denied_entity_ids[0] = 7;
+    network.lock_denied_count = 1;
 
     network_stop(&network);
 
@@ -116,6 +121,9 @@ void test_stop_resets_every_field_to_offline(void)
     TEST_ASSERT_EQUAL_UINT32(0, network.next_op_seq);
     TEST_ASSERT_EQUAL_UINT32(0, network.next_expected_op_seq);
     TEST_ASSERT_FALSE(network.held_ops[2].occupied);
+    /* S8.7d1: the lock table and the client deny list are wiped too. */
+    TEST_ASSERT_NULL(network_lock_find(&network, 7));
+    TEST_ASSERT_EQUAL_INT(0, network.lock_denied_count);
 }
 
 void test_stop_is_idempotent_on_already_offline_network(void)
@@ -509,6 +517,80 @@ void test_host_receive_full_pending_ops_does_not_mark_op(void)
     loopback_network_free(&loopback);
 }
 
+/* ---- S8.7d1: host lock table helpers ----
+ *
+ * Pure state mutators on NetworkState.locks -- no transport needed, driven on
+ * an all-zero NetworkState directly. These prove the host-authority semantics
+ * host_apply_and_echo_ops (net_session.c) relies on. */
+
+void test_lock_acquire_grants_when_free(void)
+{
+    NetworkState network = {0};
+    TEST_ASSERT_TRUE(network_lock_acquire(&network, 42, 1));
+    EntityLock *lock = network_lock_find(&network, 42);
+    TEST_ASSERT_NOT_NULL(lock);
+    TEST_ASSERT_EQUAL_INT(1, lock->holder_player_id);
+}
+
+void test_lock_acquire_regrants_idempotently_to_same_holder(void)
+{
+    NetworkState network = {0};
+    TEST_ASSERT_TRUE(network_lock_acquire(&network, 42, 1));
+    network_lock_find(&network, 42)->seconds_since_refresh = 3.0F;
+    /* Re-grant to the same holder succeeds, refreshes the silence age back to
+     * 0, and does not add a second slot. */
+    TEST_ASSERT_TRUE(network_lock_acquire(&network, 42, 1));
+    TEST_ASSERT_EQUAL_FLOAT(0.0F, network_lock_find(&network, 42)->seconds_since_refresh);
+}
+
+void test_lock_acquire_refuses_second_holder(void)
+{
+    NetworkState network = {0};
+    TEST_ASSERT_TRUE(network_lock_acquire(&network, 42, 1));
+    TEST_ASSERT_FALSE(network_lock_acquire(&network, 42, 2));
+    TEST_ASSERT_EQUAL_INT(1, network_lock_find(&network, 42)->holder_player_id);
+}
+
+void test_lock_acquire_refuses_when_table_full(void)
+{
+    NetworkState network = {0};
+    for (int index = 0; index < NETWORK_LOCKS_MAX; index++) {
+        TEST_ASSERT_TRUE(network_lock_acquire(&network, index + 1, 1));
+    }
+    /* A brand-new entity id past a full table is refused (the safe fallback). */
+    TEST_ASSERT_FALSE(network_lock_acquire(&network, NETWORK_LOCKS_MAX + 1, 1));
+}
+
+void test_lock_release_only_works_for_holder(void)
+{
+    NetworkState network = {0};
+    TEST_ASSERT_TRUE(network_lock_acquire(&network, 42, 1));
+    /* A release by a non-holder is a no-op; the lock survives. */
+    TEST_ASSERT_FALSE(network_lock_release(&network, 42, 2));
+    TEST_ASSERT_NOT_NULL(network_lock_find(&network, 42));
+    /* The holder's own release clears it. */
+    TEST_ASSERT_TRUE(network_lock_release(&network, 42, 1));
+    TEST_ASSERT_NULL(network_lock_find(&network, 42));
+}
+
+void test_lock_refresh_zeroes_ages_for_one_holder_only(void)
+{
+    NetworkState network = {0};
+    TEST_ASSERT_TRUE(network_lock_acquire(&network, 10, 1));
+    TEST_ASSERT_TRUE(network_lock_acquire(&network, 11, 1));
+    TEST_ASSERT_TRUE(network_lock_acquire(&network, 20, 2));
+    network_lock_find(&network, 10)->seconds_since_refresh = 4.0F;
+    network_lock_find(&network, 11)->seconds_since_refresh = 4.0F;
+    network_lock_find(&network, 20)->seconds_since_refresh = 4.0F;
+
+    network_lock_refresh_holder(&network, 1);
+
+    /* Holder 1's locks are refreshed, holder 2's is untouched. */
+    TEST_ASSERT_EQUAL_FLOAT(0.0F, network_lock_find(&network, 10)->seconds_since_refresh);
+    TEST_ASSERT_EQUAL_FLOAT(0.0F, network_lock_find(&network, 11)->seconds_since_refresh);
+    TEST_ASSERT_EQUAL_FLOAT(4.0F, network_lock_find(&network, 20)->seconds_since_refresh);
+}
+
 int main(void)
 {
     test_helpers_init();
@@ -528,5 +610,11 @@ int main(void)
     RUN_TEST(test_client_send_reliable_op_lands_decodable_on_host);
     RUN_TEST(test_host_broadcast_reliable_op_reaches_both_clients);
     RUN_TEST(test_host_receive_full_pending_ops_does_not_mark_op);
+    RUN_TEST(test_lock_acquire_grants_when_free);
+    RUN_TEST(test_lock_acquire_regrants_idempotently_to_same_holder);
+    RUN_TEST(test_lock_acquire_refuses_second_holder);
+    RUN_TEST(test_lock_acquire_refuses_when_table_full);
+    RUN_TEST(test_lock_release_only_works_for_holder);
+    RUN_TEST(test_lock_refresh_zeroes_ages_for_one_holder_only);
     return UNITY_END();
 }

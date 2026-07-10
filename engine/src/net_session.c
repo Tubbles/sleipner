@@ -81,18 +81,90 @@ static void spawn_network_player(Diag *diag, GameState *state, int player_id)
     (void)game_respawn_rebuild_tracking(diag, state);
 }
 
-/* S8.7c: decode, apply, stamp, and echo each op network_host_receive
- * drained into `ops` this tick. Only an EDITOR_OP_MOVE_ENTITY naming the
- * current level and a resolvable entity id is applied (entity->position set
+/* S8.7c/S8.7d1: stamp `operation` as `kind` under a fresh op_seq (authored by
+ * the op's SENDER -- never the wire's author field, the host knows who sent
+ * it) and echo it to every client. The ordered echo stream is what makes the
+ * host's decision authoritative on every replica, in the one total order
+ * op_seq defines. A dropped op (see the handlers below) is never stamped or
+ * echoed, so that stream stays contiguous over exactly the ops that took
+ * effect. */
+static void host_stamp_and_broadcast(GameState *state, EditorOpKind kind, EditorOp *operation, int sender_player_id)
+{
+    operation->kind = kind;
+    operation->author_player_id = sender_player_id;
+    operation->op_seq = state->network.next_op_seq++;
+    network_host_broadcast_reliable_op(&state->network, operation);
+}
+
+/* True when operation names the host's current level and a resolvable entity
+ * in it -- the shared precondition a lock acquire needs. */
+static bool host_op_targets_current_entity(const GameState *state, const EditorOp *operation)
+{
+    if (!strv_eq(operation->level_name, str_to_strv(state->gamedata.current_level.name))) {
+        return false;
+    }
+    return level_find_entity_by_id(&state->gamedata.current_level, operation->entity_id) >= 0;
+}
+
+/* S8.7d1: a LOCK_ACQUIRE request from sender S. GRANT (echo LOCK_ACQUIRE) when
+ * S names the current level, a known entity, AND network_lock_acquire claims
+ * it for S (free entity or already held by S; a full table refuses). DENY
+ * (echo LOCK_DENY) otherwise. Short-circuit order matters: network_lock_acquire
+ * runs only after the level/entity check, so a cross-level or unknown-entity
+ * request never touches the lock table. The DENY rides the same ordered echo
+ * stream as every grant, so every replica sees one consistent total order --
+ * only the named requester acts on it (client_apply_lock_deny_echo). */
+static void host_handle_lock_acquire(GameState *state, EditorOp *operation, int sender_player_id)
+{
+    bool granted = host_op_targets_current_entity(state, operation) &&
+                   network_lock_acquire(&state->network, operation->entity_id, sender_player_id);
+    host_stamp_and_broadcast(state, granted ? EDITOR_OP_LOCK_ACQUIRE : EDITOR_OP_LOCK_DENY, operation,
+                             sender_player_id);
+}
+
+/* S8.7d1: a LOCK_RELEASE request from sender S. Echo LOCK_RELEASE only if S
+ * actually held the lock (network_lock_release), else silently drop -- a
+ * release of something you do not hold is a no-op. */
+static void host_handle_lock_release(GameState *state, EditorOp *operation, int sender_player_id)
+{
+    if (!network_lock_release(&state->network, operation->entity_id, sender_player_id)) {
+        return;
+    }
+    host_stamp_and_broadcast(state, EDITOR_OP_LOCK_RELEASE, operation, sender_player_id);
+}
+
+/* S8.7c/S8.7d1: an EDITOR_OP_MOVE_ENTITY from sender S. Enforcement: a move of
+ * an entity locked by someone OTHER than S is silently dropped (no apply, no
+ * echo). Unlocked or held-by-S moves apply as before (entity->position set
  * directly, mirroring the editor's own drag on the host -- no interp shift,
- * host entities render authoritatively), then re-broadcast under a fresh
- * op_seq with the SENDER's player_id stamped as author (never the wire's
- * author field -- the host knows who sent it). Every other case is a
- * tolerant silent drop (malformed decode, non-move kind, cross-level op, or
- * unknown entity id) -- net_session.c logs nowhere, same silent convention
- * as apply_sync_record/ensure_synced_entity_exists above. A dropped op is
- * NOT stamped or echoed, so the op_seq stream every client replays stays
- * contiguous over exactly the ops that were applied. */
+ * host entities render authoritatively). Why unlocked moves STILL apply: a
+ * client only produces a move after a grab, but its ACQUIRE and MOVE can
+ * arrive host-side out of send order (per-client arrival order is not send
+ * order across drops/resends) -- treating "unlocked" as permitted makes that
+ * race harmless instead of losing the move. Cross-level and unknown-entity
+ * moves are tolerant silent drops, same convention as the state appliers. */
+static void host_handle_move(GameState *state, EditorOp *operation, int sender_player_id)
+{
+    if (!strv_eq(operation->level_name, str_to_strv(state->gamedata.current_level.name))) {
+        return;
+    }
+    int entity_index = level_find_entity_by_id(&state->gamedata.current_level, operation->entity_id);
+    if (entity_index < 0) {
+        return;
+    }
+    const EntityLock *lock = network_lock_find(&state->network, operation->entity_id);
+    if (lock != nullptr && lock->holder_player_id != sender_player_id) {
+        return;
+    }
+    state->gamedata.current_level.entities.data[entity_index].position =
+        (Vector2){operation->move_x, operation->move_y};
+    host_stamp_and_broadcast(state, EDITOR_OP_MOVE_ENTITY, operation, sender_player_id);
+}
+
+/* S8.7c/S8.7d1: decode each op network_host_receive drained into `ops` this
+ * tick and dispatch by kind -- move enforcement plus the lock protocol. A
+ * malformed decode is skipped; SET_ATTR/DELETE_ENTITY are out of this slice's
+ * scope; a client never originates LOCK_DENY -- all silently dropped. */
 static void host_apply_and_echo_ops(GameState *state, const PendingEditorOps *ops)
 {
     for (int index = 0; index < ops->count; index++) {
@@ -105,21 +177,54 @@ static void host_apply_and_echo_ops(GameState *state, const PendingEditorOps *op
         if (!protocol_decode_op(&packet.reader, &operation)) {
             continue;
         }
-        if (operation.kind != EDITOR_OP_MOVE_ENTITY) {
+        int sender_player_id = ops->sender_player_ids[index];
+        switch (operation.kind) {
+        case EDITOR_OP_MOVE_ENTITY:
+            host_handle_move(state, &operation, sender_player_id);
+            break;
+        case EDITOR_OP_LOCK_ACQUIRE:
+            host_handle_lock_acquire(state, &operation, sender_player_id);
+            break;
+        case EDITOR_OP_LOCK_RELEASE:
+            host_handle_lock_release(state, &operation, sender_player_id);
+            break;
+        case EDITOR_OP_SET_ATTR:
+        case EDITOR_OP_DELETE_ENTITY:
+        case EDITOR_OP_LOCK_DENY:
+            break;
+        }
+    }
+}
+
+/* S8.7d1: age every active lock whose holder is not 0 by delta_time (the
+ * host's own player id 0 never ages -- the host cannot go silent on itself)
+ * and force-release any past NETWORK_LOCK_TIMEOUT_SECONDS: clear the slot and
+ * echo a LOCK_RELEASE authored by the former holder (so every client's
+ * replica clears too). Called from network_host_tick AFTER network_host_receive
+ * so this tick's incoming refreshes (network_lock_refresh_holder, driven by
+ * every datagram a live client sends) land before the ageing -- an active
+ * peer's lock is refreshed to 0 every tick and so never expires. */
+static void host_age_and_expire_locks(GameState *state, float delta_time)
+{
+    NetworkState *network = &state->network;
+    for (int index = 0; index < NETWORK_LOCKS_MAX; index++) {
+        EntityLock *lock = &network->locks[index];
+        if (!lock->active || lock->holder_player_id == 0) {
             continue;
         }
-        if (!strv_eq(operation.level_name, str_to_strv(state->gamedata.current_level.name))) {
+        lock->seconds_since_refresh += delta_time;
+        if (lock->seconds_since_refresh < NETWORK_LOCK_TIMEOUT_SECONDS) {
             continue;
         }
-        int entity_index = level_find_entity_by_id(&state->gamedata.current_level, operation.entity_id);
-        if (entity_index < 0) {
-            continue;
-        }
-        state->gamedata.current_level.entities.data[entity_index].position =
-            (Vector2){operation.move_x, operation.move_y};
-        operation.author_player_id = ops->sender_player_ids[index];
-        operation.op_seq = state->network.next_op_seq++;
-        network_host_broadcast_reliable_op(&state->network, &operation);
+        EditorOp release = {
+            .kind = EDITOR_OP_LOCK_RELEASE,
+            .level_name = str_to_strv(state->gamedata.current_level.name),
+            .entity_id = lock->entity_id,
+            .author_player_id = lock->holder_player_id,
+            .op_seq = network->next_op_seq++,
+        };
+        lock->active = false;
+        network_host_broadcast_reliable_op(network, &release);
     }
 }
 
@@ -151,6 +256,10 @@ void network_host_tick(GameState *state, float delta_time)
                                                        .argument = (Strv){0}});
     }
     host_apply_and_echo_ops(state, &pending_ops);
+    /* S8.7d1: this tick's incoming refreshes already landed inside
+     * network_host_receive above, so ageing here expires only genuinely
+     * silent holders. */
+    host_age_and_expire_locks(state, delta_time);
     network_host_tick_reliable_channels(&state->network, delta_time);
     network_host_send_acks(&state->network);
 }
@@ -346,7 +455,7 @@ static void shift_interp_window(Entity *entity)
  * NET_CLIENT lerps smoothly toward the new position instead of snapping.
  * The shared "write position, then re-bracket the interp window" step for
  * both a POS_X/POS_Y sync pair (apply_sync_record below) and a whole
- * EDITOR_OP_MOVE_ENTITY echo (client_apply_move_op below, S8.7c) --
+ * EDITOR_OP_MOVE_ENTITY echo (client_apply_move_echo below, S8.7c) --
  * shift_interp_window reads entity->position for its interp_to end, so the
  * write must precede it. */
 static void apply_synced_position(Entity *entity, Vector2 position)
@@ -506,27 +615,91 @@ static void network_client_receive_event(NetworkState *network, uint32_t seq, Pa
     network_client_apply_event(network, event);
 }
 
-/* S8.7c: apply one EDITOR_OP_MOVE_ENTITY echo onto this client's replica.
- * Tolerant-skip (silent, same convention as apply_sync_record) for a
- * non-move kind, an op naming a level other than the current one
- * (cross-level ops are a later slice), or an entity id this client's level
- * does not have. Reuses apply_synced_position so the moved entity lerps
- * smoothly toward its new position exactly as a synced POS_X/POS_Y pair
- * does. */
-static void client_apply_move_op(GameState *state, const EditorOp *operation)
+/* S8.7c: apply one MOVE echo onto this client's replica -- reuses
+ * apply_synced_position so the moved entity lerps smoothly toward its new
+ * position exactly as a synced POS_X/POS_Y pair does. No-op for an entity id
+ * this client's level does not have. */
+static void client_apply_move_echo(GameState *state, const EditorOp *operation)
 {
-    if (operation->kind != EDITOR_OP_MOVE_ENTITY) {
-        return;
-    }
-    if (!strv_eq(operation->level_name, str_to_strv(state->gamedata.current_level.name))) {
-        return;
-    }
     int entity_index = level_find_entity_by_id(&state->gamedata.current_level, operation->entity_id);
     if (entity_index < 0) {
         return;
     }
     apply_synced_position(&state->gamedata.current_level.entities.data[entity_index],
                           (Vector2){operation->move_x, operation->move_y});
+}
+
+/* S8.7d1: mirror a LOCK_ACQUIRE echo into this client's replica table. The
+ * host echo is authoritative, so it must OVERWRITE even a locally-stale
+ * different holder -- network_lock_acquire refuses an entity held by someone
+ * else, so drop any existing replica entry first, then the acquire always
+ * claims a fresh slot for the echoed holder. */
+static void client_apply_lock_acquire_echo(NetworkState *network, const EditorOp *operation)
+{
+    EntityLock *stale = network_lock_find(network, operation->entity_id);
+    if (stale != nullptr) {
+        stale->active = false;
+    }
+    (void)network_lock_acquire(network, operation->entity_id, operation->author_player_id);
+}
+
+/* S8.7d1: mirror a LOCK_RELEASE echo -- clear the entity's replica lock
+ * unconditionally (the host echo is authoritative; do not holder-check the
+ * replica). No-op if the client's replica already has no lock on it. */
+static void client_apply_lock_release_echo(NetworkState *network, const EditorOp *operation)
+{
+    EntityLock *lock = network_lock_find(network, operation->entity_id);
+    if (lock != nullptr) {
+        lock->active = false;
+    }
+}
+
+/* S8.7d1: a LOCK_DENY echo. Only the named requester acts on it: if this echo
+ * is addressed to this peer (author == local_player_id), append the entity id
+ * for the editor to drain next frame (the drain is S8.7d2; this slice only
+ * populates). Overflow past NETWORK_LOCK_DENIED_MAX is dropped silently -- one
+ * gesture requests at most the 32-entry multiselect worth of locks. */
+static void client_apply_lock_deny_echo(NetworkState *network, const EditorOp *operation)
+{
+    if (operation->author_player_id != network->local_player_id) {
+        return;
+    }
+    if (network->lock_denied_count >= NETWORK_LOCK_DENIED_MAX) {
+        return;
+    }
+    network->lock_denied_entity_ids[network->lock_denied_count] = operation->entity_id;
+    network->lock_denied_count++;
+}
+
+/* S8.7c/S8.7d1: apply one host op echo onto this client's replica, dispatched
+ * by kind. All kinds share the current-level tolerant skip (silent, same
+ * convention as apply_sync_record) -- an echo naming a level other than the
+ * current one is ignored (cross-level ops are a later slice). MOVE writes the
+ * entity position; the three lock kinds maintain the echo-driven replica lock
+ * table (LOCK_ACQUIRE/RELEASE) and the deny list (LOCK_DENY).
+ * SET_ATTR/DELETE_ENTITY are not applied in this slice. */
+static void client_apply_op(GameState *state, const EditorOp *operation)
+{
+    if (!strv_eq(operation->level_name, str_to_strv(state->gamedata.current_level.name))) {
+        return;
+    }
+    switch (operation->kind) {
+    case EDITOR_OP_MOVE_ENTITY:
+        client_apply_move_echo(state, operation);
+        return;
+    case EDITOR_OP_LOCK_ACQUIRE:
+        client_apply_lock_acquire_echo(&state->network, operation);
+        return;
+    case EDITOR_OP_LOCK_RELEASE:
+        client_apply_lock_release_echo(&state->network, operation);
+        return;
+    case EDITOR_OP_LOCK_DENY:
+        client_apply_lock_deny_echo(&state->network, operation);
+        return;
+    case EDITOR_OP_SET_ATTR:
+    case EDITOR_OP_DELETE_ENTITY:
+        return;
+    }
 }
 
 /* Decode the op parked in `held` and apply it. A slot whose bytes fail to
@@ -543,7 +716,7 @@ static void client_apply_held_op(GameState *state, const HeldEditorOp *held)
     if (!protocol_decode_op(&packet.reader, &operation)) {
         return;
     }
-    client_apply_move_op(state, &operation);
+    client_apply_op(state, &operation);
 }
 
 /* After an in-order op applies and next_expected_op_seq advances, apply any
@@ -602,7 +775,7 @@ static void network_client_receive_op(GameState *state, const uint8_t *bytes, si
     uint32_t channel_seq = packet->header.seq;
     if (operation.op_seq == net->next_expected_op_seq) {
         (void)reliable_on_receive(&net->host_event_channel, channel_seq);
-        client_apply_move_op(state, &operation);
+        client_apply_op(state, &operation);
         net->next_expected_op_seq++;
         client_drain_held_ops(state);
         return;
