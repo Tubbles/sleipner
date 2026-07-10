@@ -2,6 +2,7 @@
 #include "unity.h"
 
 #include "../src/error.c"        // NOLINT(bugprone-suspicious-include)
+#include "../src/net_loopback.c" // NOLINT(bugprone-suspicious-include)
 #include "../src/net_protocol.c" // NOLINT(bugprone-suspicious-include)
 #include "../src/net_reliable.c" // NOLINT(bugprone-suspicious-include)
 #include "../src/net_udp.c"      // NOLINT(bugprone-suspicious-include)
@@ -167,6 +168,161 @@ void test_start_hosting_and_discovering_coexist_via_port_reuse(void)
     network_stop(&client_network);
 }
 
+/* ---- S8.7a: client->host reliable event channel ----
+ *
+ * Same drop/resend/dedup/ack model net_reliable_test.c already proves for
+ * host->client (net_reliable.h's own top doc comment documents why the
+ * same ReliableChannel struct now carries both directions) -- these tests
+ * exercise it end to end through network.c's own primitives
+ * (network_client_send_reliable_event/_tick_reliable_channel,
+ * network_host_receive, network_host_send_acks) over a real loopback
+ * transport, the same LoopbackNetwork setup net_reliable_test.c uses.
+ * network_test.c operates below net_session.c -- the session-level ticks
+ * that thread delta_time through a whole GameState are exercised in
+ * integration_test.c instead -- so applying the host's ack back onto the
+ * client here calls reliable_on_ack directly rather than going through
+ * net_session.c's MSG_ACK branch (network_client_receive_state), which
+ * isn't reachable from this file; that is the exact operation that branch
+ * itself wraps. register_client (network.c, file-local) stands in for a
+ * real JOIN handshake, the same whitebox shortcut this file's other tests
+ * already use to reach network.c's own statics. */
+
+static LoopbackNetwork make_loopback_network(void)
+{
+    LoopbackNetwork network;
+    loopback_network_init(&network, &test_heap_alloc);
+    return network;
+}
+
+void test_client_reliable_event_delivered_exactly_once_to_host(void)
+{
+    LoopbackNetwork loopback = make_loopback_network();
+    NetAddr host_addr = net_addr_make(1, 9000);
+    NetAddr client_addr = net_addr_make(2, 9001);
+    NetTransport host_transport;
+    NetTransport client_transport;
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, host_addr, &host_transport));
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, client_addr, &client_transport));
+
+    NetworkState host_network = {.transport = host_transport};
+    register_client(&host_network, client_addr);
+    NetworkState client_network = {.transport = client_transport, .join_target = host_addr};
+
+    EventRecord event = {.event_type = 42, .entity_id = 7, .argument = (Strv){0}};
+    network_client_send_reliable_event(&client_network, event);
+    network_host_receive(&host_network, 0);
+
+    TEST_ASSERT_EQUAL_INT(1, host_network.client_event_delivered_count);
+    TEST_ASSERT_EQUAL_INT32(42, host_network.last_client_event_type);
+    TEST_ASSERT_EQUAL_INT32(7, host_network.last_client_event_entity_id);
+    TEST_ASSERT_EQUAL_INT(1, host_network.last_client_event_player_id);
+
+    loopback_network_free(&loopback);
+}
+
+void test_client_resend_does_not_double_deliver_to_host(void)
+{
+    LoopbackNetwork loopback = make_loopback_network();
+    NetAddr host_addr = net_addr_make(1, 9000);
+    NetAddr client_addr = net_addr_make(2, 9001);
+    NetTransport host_transport;
+    NetTransport client_transport;
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, host_addr, &host_transport));
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, client_addr, &client_transport));
+
+    NetworkState host_network = {.transport = host_transport};
+    register_client(&host_network, client_addr);
+    NetworkState client_network = {.transport = client_transport, .join_target = host_addr};
+
+    EventRecord event = {.event_type = 1, .entity_id = 99, .argument = (Strv){0}};
+    network_client_send_reliable_event(&client_network, event);
+
+    /* Simulate loss: the original transmission sits in the host's inbox;
+     * drain and discard it rather than delivering it. */
+    uint8_t discard_buffer[NET_MAX_PACKET_SIZE];
+    NetAddr discard_src = {0};
+    TEST_ASSERT_TRUE(net_recv(&host_transport, &discard_src, discard_buffer, sizeof(discard_buffer)) > 0);
+
+    /* Age past the resend timer -> the same event (seq 0) is retransmitted
+     * and this is the host's FIRST actual receive of it -- delivered once. */
+    network_client_tick_reliable_channel(&client_network, RELIABLE_RESEND_SECONDS + 0.01F);
+    network_host_receive(&host_network, 0);
+    TEST_ASSERT_EQUAL_INT(1, host_network.client_event_delivered_count);
+
+    /* The host never acked, so a second resend fires and reaches the host
+     * again -- the SAME seq, which must dedup rather than double-deliver. */
+    network_client_tick_reliable_channel(&client_network, RELIABLE_RESEND_SECONDS + 0.01F);
+    network_host_receive(&host_network, 0);
+    TEST_ASSERT_EQUAL_INT(1, host_network.client_event_delivered_count);
+
+    loopback_network_free(&loopback);
+}
+
+void test_host_sends_ack_and_client_stops_resending(void)
+{
+    LoopbackNetwork loopback = make_loopback_network();
+    NetAddr host_addr = net_addr_make(1, 9000);
+    NetAddr client_addr = net_addr_make(2, 9001);
+    NetTransport host_transport;
+    NetTransport client_transport;
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, host_addr, &host_transport));
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, client_addr, &client_transport));
+
+    NetworkState host_network = {.transport = host_transport};
+    register_client(&host_network, client_addr);
+    NetworkState client_network = {.transport = client_transport, .join_target = host_addr};
+
+    EventRecord event = {.event_type = 1, .entity_id = 1, .argument = (Strv){0}};
+    network_client_send_reliable_event(&client_network, event);
+    network_host_receive(&host_network, 0);
+    TEST_ASSERT_EQUAL_INT(1, host_network.client_event_delivered_count);
+    TEST_ASSERT_TRUE(host_network.clients[0].event_channel.has_received_any);
+
+    network_host_send_acks(&host_network);
+
+    uint8_t buffer[NET_MAX_PACKET_SIZE];
+    NetAddr src = {0};
+    int received = net_recv(&client_transport, &src, buffer, sizeof(buffer));
+    TEST_ASSERT_TRUE(received > 0);
+    DecodedPacket packet;
+    ErrorState decode_err = {0};
+    TEST_ASSERT_TRUE(protocol_decode_packet(buffer, (size_t)received, &packet, &decode_err));
+    TEST_ASSERT_EQUAL_INT(MSG_ACK, packet.header.type);
+    AckMessage ack = {0};
+    TEST_ASSERT_TRUE(protocol_decode_ack(&packet.reader, &ack));
+    reliable_on_ack(&client_network.host_event_channel, ack);
+    TEST_ASSERT_FALSE(client_network.host_event_channel.send_window[0].awaiting_ack);
+
+    /* A further tick past the resend interval must not resend the
+     * now-acked slot. */
+    network_client_tick_reliable_channel(&client_network, RELIABLE_RESEND_SECONDS + 0.01F);
+    TEST_ASSERT_EQUAL_INT(0, net_recv(&host_transport, &src, buffer, sizeof(buffer)));
+
+    loopback_network_free(&loopback);
+}
+
+void test_host_sends_no_acks_when_client_has_not_sent_anything(void)
+{
+    LoopbackNetwork loopback = make_loopback_network();
+    NetAddr host_addr = net_addr_make(1, 9000);
+    NetAddr client_addr = net_addr_make(2, 9001);
+    NetTransport host_transport;
+    NetTransport client_transport;
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, host_addr, &host_transport));
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, client_addr, &client_transport));
+
+    NetworkState host_network = {.transport = host_transport};
+    register_client(&host_network, client_addr);
+
+    network_host_send_acks(&host_network);
+
+    uint8_t buffer[NET_MAX_PACKET_SIZE];
+    NetAddr src = {0};
+    TEST_ASSERT_EQUAL_INT(0, net_recv(&client_transport, &src, buffer, sizeof(buffer)));
+
+    loopback_network_free(&loopback);
+}
+
 int main(void)
 {
     test_helpers_init();
@@ -179,5 +335,9 @@ int main(void)
     RUN_TEST(test_start_hosting_creates_real_transport_and_sets_mode);
     RUN_TEST(test_start_discovering_creates_real_transport_and_sets_mode);
     RUN_TEST(test_start_hosting_and_discovering_coexist_via_port_reuse);
+    RUN_TEST(test_client_reliable_event_delivered_exactly_once_to_host);
+    RUN_TEST(test_client_resend_does_not_double_deliver_to_host);
+    RUN_TEST(test_host_sends_ack_and_client_stops_resending);
+    RUN_TEST(test_host_sends_no_acks_when_client_has_not_sent_anything);
     return UNITY_END();
 }

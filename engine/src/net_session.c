@@ -12,7 +12,7 @@
 #include "level.h"
 #include "net.h"
 #include "net_protocol.h"
-#include "net_reliable.h" // ReliableChannel, reliable_on_receive
+#include "net_reliable.h" // ReliableChannel, reliable_on_ack, reliable_on_receive
 #include "network.h"
 #include "str.h"
 #include "strv.h"
@@ -107,9 +107,10 @@ void network_host_tick(GameState *state, float delta_time)
                                                        .argument = (Strv){0}});
     }
     network_host_tick_reliable_channels(&state->network, delta_time);
+    network_host_send_acks(&state->network);
 }
 
-void network_client_tick(GameState *state, const InputState *local_input)
+void network_client_tick(GameState *state, const InputState *local_input, float delta_time)
 {
     if (state->network.mode != NET_JOINING && state->network.mode != NET_CLIENT) {
         return;
@@ -128,6 +129,7 @@ void network_client_tick(GameState *state, const InputState *local_input)
      * ever discarded by a narrower "just look for the accept" drain. */
     network_client_receive_state(state);
     if (state->network.mode == NET_CLIENT) {
+        network_client_tick_reliable_channel(&state->network, delta_time);
         network_client_send_ack(&state->network);
     }
 }
@@ -448,23 +450,27 @@ static void network_client_receive_event(NetworkState *network, uint32_t seq, Pa
 }
 
 /* CLIENT side: drain every pending packet on state->network.transport and
- * apply whichever decodes as MSG_SNAPSHOT, MSG_DELTA, MSG_EVENT, or (S8.6)
- * MSG_JOIN_ACCEPT. MSG_SNAPSHOT/MSG_DELTA share the exact same attr-list
- * wire shape and this v1 sync sends full state either way (net_session.h's
- * own "SNAPSHOT vs DELTA" note), so there is nothing SNAPSHOT-specific to
- * do here beyond decoding whichever type arrived. MSG_EVENT (S8.4c) goes
- * through network_client_receive_event above for dedup before it is
- * applied. MSG_JOIN_ACCEPT stores its player_id onto
- * state->network.local_player_id and advances state->network.mode to
- * NET_CLIENT -- called unconditionally of mode by network_client_tick
- * (above), so this can run, and does run, while still NET_JOINING; a
- * duplicate accept (the host resends on every re-JOIN, network.c's
- * handle_join_datagram) just re-applies the same values, harmless. Anything
- * that fails to decode, or decodes as an unrelated message type, is
- * silently ignored -- same as network_host_receive's own drain loop
- * (network.c). The decode array cap matches NETWORK_SYNC_RECORDS_PER_PACKET
- * exactly, since that is also the largest chunk send_sync_records ever
- * encodes into one packet. */
+ * apply whichever decodes as MSG_SNAPSHOT, MSG_DELTA, MSG_EVENT, MSG_ACK
+ * (S8.7a), or (S8.6) MSG_JOIN_ACCEPT. MSG_SNAPSHOT/MSG_DELTA share the
+ * exact same attr-list wire shape and this v1 sync sends full state either
+ * way (net_session.h's own "SNAPSHOT vs DELTA" note), so there is nothing
+ * SNAPSHOT-specific to do here beyond decoding whichever type arrived.
+ * MSG_EVENT (S8.4c) goes through network_client_receive_event above for
+ * dedup before it is applied. MSG_ACK (S8.7a) is applied to
+ * host_event_channel's own send-side (reliable_on_ack, net_reliable.h),
+ * clearing whichever of this client's own outgoing reliable events (see
+ * network_client_send_reliable_event, network.h) the host's ack covers --
+ * the mirror of network.c's handle_ack_datagram, one direction reversed.
+ * MSG_JOIN_ACCEPT stores its player_id onto state->network.local_player_id
+ * and advances state->network.mode to NET_CLIENT -- called unconditionally
+ * of mode by network_client_tick (above), so this can run, and does run,
+ * while still NET_JOINING; a duplicate accept (the host resends on every
+ * re-JOIN, network.c's handle_join_datagram) just re-applies the same
+ * values, harmless. Anything that fails to decode, or decodes as an
+ * unrelated message type, is silently ignored -- same as
+ * network_host_receive's own drain loop (network.c). The decode array cap
+ * matches NETWORK_SYNC_RECORDS_PER_PACKET exactly, since that is also the
+ * largest chunk send_sync_records ever encodes into one packet. */
 static void network_client_receive_state(GameState *state)
 {
     uint8_t buffer[NET_MAX_PACKET_SIZE];
@@ -483,6 +489,11 @@ static void network_client_receive_state(GameState *state)
                 }
             } else if (packet.header.type == MSG_EVENT) {
                 network_client_receive_event(&state->network, packet.header.seq, &packet.reader);
+            } else if (packet.header.type == MSG_ACK) {
+                AckMessage ack = {0};
+                if (protocol_decode_ack(&packet.reader, &ack)) {
+                    reliable_on_ack(&state->network.host_event_channel, ack);
+                }
             } else if (packet.header.type == MSG_JOIN_ACCEPT) {
                 JoinAcceptMessage accept = {0};
                 if (protocol_decode_join_accept(&packet.reader, &accept)) {

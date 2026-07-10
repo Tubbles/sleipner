@@ -14,20 +14,23 @@
  *
  * One ReliableChannel per CONNECTION DIRECTION, not per NetworkState: a
  * host keeps one per connected client (`NetClient.event_channel`,
- * network.h) -- host->client events is what S8.4c wires (see
- * net_session.h's NETWORK_EVENT_PLAYER_JOINED); a client keeps one for
- * host->client events it receives (`NetworkState.host_event_channel`). v1
- * only implements this one direction -- client->host reliable events are
- * not needed yet (nothing a client originates today needs guaranteed
- * delivery to the host; its MSG_INPUT is already S8.4a's fire-and-forget,
- * correct since a dropped input frame is superseded by the next tick's
- * fresher input the same way SNAPSHOT/DELTA are) -- so a ReliableChannel's
- * send-side fields (next_send_sequence/send_window) go unused on a
- * client's host_event_channel, and its receive-side fields
- * (highest_received_sequence/received_bitfield) go unused on a host's
- * per-client event_channel. One struct covers both roles rather than
- * splitting into two types, since a future client->host direction would
- * need the exact same logic mirrored.
+ * network.h); a client keeps one for events exchanged with the host
+ * (`NetworkState.host_event_channel`). S8.4c wired only the host->client
+ * direction (send-side of a host's per-client event_channel, receive-side
+ * of a client's host_event_channel); S8.7a adds the reverse -- a client
+ * originating a reliable event (the collaborative editor's discrete ops)
+ * now uses the send-side of ITS OWN host_event_channel, and a host dedups
+ * each client's incoming events via the receive-side of THAT client's own
+ * event_channel. Both directions share the one ReliableChannel type rather
+ * than doubling up into per-direction types: a ReliableChannel's send-side
+ * fields (next_send_sequence/send_window) and receive-side fields
+ * (highest_received_sequence/received_bitfield) are entirely separate
+ * field groups with independent sequence spaces, so the same struct
+ * safely carries "this end's outgoing sequence" and "this end's incoming
+ * dedup window" for its role in each direction at once -- a host's
+ * per-client event_channel sends host->client (its send-side) and dedups
+ * client->host (its receive-side); a client's host_event_channel sends
+ * client->host (its send-side) and dedups host->client (its receive-side).
  *
  * ---- Send side: resend-until-acked ----
  *
@@ -130,9 +133,9 @@ typedef struct {
 
 /* Send side (assigns/resends) plus receive side (dedups/acks) for one
  * connection direction -- see this header's own top doc comment for why
- * only one direction is wired in v1 and why both halves still live in one
- * struct. Zero-initialized to "nothing sent, nothing received yet": every
- * slot's awaiting_ack starts false, has_received_any starts false. */
+ * both directions (S8.7a) reuse this one struct rather than splitting into
+ * two types. Zero-initialized to "nothing sent, nothing received yet":
+ * every slot's awaiting_ack starts false, has_received_any starts false. */
 typedef struct {
     /* ---- send side ---- */
     uint32_t next_send_sequence;

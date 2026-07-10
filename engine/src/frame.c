@@ -488,16 +488,19 @@ void run_active_frame(Diag *diag,
      * network_client_tick sends this tick's MSG_JOIN/MSG_INPUT and, S8.4b,
      * drains and applies any pending SNAPSHOT/DELTA onto this GameState's
      * own entities, and, S8.4c, applies any newly-delivered MSG_EVENT then
-     * sends the current ack. Both are self-guarding on state->network.mode
-     * (net_session.h) and no-op under every other mode, so calling both
-     * unconditionally here leaves single-player (NET_OFFLINE) untouched --
-     * same reasoning as game.c's tick_network running unconditionally of
-     * editor_mode. Uses the raw `input` (this peer's own physical
-     * controller reading), not `game_input`: a client's local
-     * fade-to-black transition suppresses ITS OWN player's movement, but
-     * must not also suppress the input it forwards to the host. */
+     * sends the current ack; S8.7a, it also applies any newly-arrived
+     * MSG_ACK to its own outgoing reliable-event send window and ages/
+     * resends that window by delta_time. Both are self-guarding on
+     * state->network.mode (net_session.h) and no-op under every other
+     * mode, so calling both unconditionally here leaves single-player
+     * (NET_OFFLINE) untouched -- same reasoning as game.c's tick_network
+     * running unconditionally of editor_mode. Uses the raw `input` (this
+     * peer's own physical controller reading), not `game_input`: a
+     * client's local fade-to-black transition suppresses ITS OWN player's
+     * movement, but must not also suppress the input it forwards to the
+     * host. */
     network_host_tick(state, delta_time);
-    network_client_tick(state, &input);
+    network_client_tick(state, &input, delta_time);
     /* S8.4b: a NET_CLIENT frame renders only -- it never runs the
      * authoritative simulation. network_client_tick above already applied
      * this tick's host state onto state's entities, so game_update_client_render

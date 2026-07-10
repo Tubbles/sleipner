@@ -129,6 +129,10 @@ void network_stop(NetworkState *network)
     network->last_delivered_event_type = 0;
     network->last_delivered_event_entity_id = 0;
     network->delivered_event_count = 0;
+    network->last_client_event_type = 0;
+    network->last_client_event_entity_id = 0;
+    network->last_client_event_player_id = 0;
+    network->client_event_delivered_count = 0;
 }
 
 /* ---- S8.4a: session JOIN + INPUT flow ---- */
@@ -261,6 +265,33 @@ static void handle_ack_datagram(NetworkState *network, NetAddr src, PacketReader
     reliable_on_ack(&client->event_channel, ack);
 }
 
+/* S8.7a: decode one payload as MSG_EVENT and dedup it via src's own
+ * event_channel receive-side (net_reliable.h's reliable_on_receive), if
+ * src is a registered client -- an EVENT from an unregistered address is
+ * ignored, same as handle_input_datagram/handle_ack_datagram's own
+ * contract. A newly-delivered event (not a duplicate/resend) updates
+ * network's last_client_event_type/_entity_id/_player_id and increments
+ * client_event_delivered_count -- see network_host_receive's own doc
+ * comment for the exactly-once contract this gives. */
+static void handle_event_datagram(NetworkState *network, NetAddr src, uint32_t seq, PacketReader *reader)
+{
+    NetClient *client = find_client_by_addr(network, src);
+    if (client == nullptr) {
+        return;
+    }
+    EventRecord event = {0};
+    if (!protocol_decode_event(reader, &event)) {
+        return;
+    }
+    if (!reliable_on_receive(&client->event_channel, seq)) {
+        return;
+    }
+    network->last_client_event_type = event.event_type;
+    network->last_client_event_entity_id = event.entity_id;
+    network->last_client_event_player_id = client->player_id;
+    network->client_event_delivered_count++;
+}
+
 void network_host_receive(NetworkState *network, uint64_t local_gamedata_hash)
 {
     uint8_t buffer[NET_MAX_PACKET_SIZE];
@@ -276,13 +307,15 @@ void network_host_receive(NetworkState *network, uint64_t local_gamedata_hash)
                 handle_input_datagram(network, src, &packet.reader);
             } else if (packet.header.type == MSG_ACK) {
                 handle_ack_datagram(network, src, &packet.reader);
+            } else if (packet.header.type == MSG_EVENT) {
+                handle_event_datagram(network, src, packet.header.seq, &packet.reader);
             }
         }
         received = net_recv(&network->transport, &src, buffer, sizeof(buffer));
     }
 }
 
-/* ---- S8.4c: reliable event sub-channel primitives ---- */
+/* ---- S8.4c/S8.7a: reliable event sub-channel primitives ---- */
 
 void network_broadcast_reliable_event(NetworkState *network, EventRecord event)
 {
@@ -318,4 +351,31 @@ void network_client_send_ack(NetworkState *network)
         return;
     }
     (void)net_send(&network->transport, network->join_target, buffer, packet_len);
+}
+
+void network_client_send_reliable_event(NetworkState *network, EventRecord event)
+{
+    reliable_send(&network->host_event_channel, &network->transport, network->join_target, event);
+}
+
+void network_client_tick_reliable_channel(NetworkState *network, float delta_time)
+{
+    reliable_tick(&network->host_event_channel, &network->transport, network->join_target, delta_time);
+}
+
+void network_host_send_acks(NetworkState *network)
+{
+    for (int index = 0; index < network->client_count; index++) {
+        NetClient *client = &network->clients[index];
+        if (!client->active || !client->event_channel.has_received_any) {
+            continue;
+        }
+        AckMessage ack = reliable_make_ack(&client->event_channel);
+        uint8_t buffer[NET_MAX_PACKET_SIZE];
+        size_t packet_len = 0;
+        if (!protocol_encode_ack_packet(buffer, sizeof(buffer), 0, ack, &packet_len)) {
+            continue;
+        }
+        (void)net_send(&network->transport, client->addr, buffer, packet_len);
+    }
 }
