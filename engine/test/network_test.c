@@ -101,6 +101,22 @@ void test_stop_resets_every_field_to_offline(void)
     TEST_ASSERT_TRUE(network_lock_acquire(&network, 7, 2));
     network.lock_denied_entity_ids[0] = 7;
     network.lock_denied_count = 1;
+    /* S8.7f1: pre-seed structural-resync state a live session would have --
+     * host side (an armed generation mid-stream), client side (a half-
+     * reassembled incoming generation), and the per-client confirmation/
+     * owed-snapshot bookkeeping. */
+    network.resync_generation = 2;
+    network.resync_total_bytes = 100;
+    network.resync_send_timer = 0.05F;
+    network.resync_incoming_generation = 2;
+    network.resync_failed_generation = 1;
+    network.resync_incoming_total_bytes = 100;
+    network.resync_incoming_chunk_count = 1;
+    network.resync_chunk_bitmap[0] = 1;
+    network.resync_ready = true;
+    network.clients[0].resync_confirmed_generation = 2;
+    network.clients[0].resync_snapshot_owed = true;
+    network.client_count = 1;
 
     network_stop(&network);
 
@@ -124,6 +140,21 @@ void test_stop_resets_every_field_to_offline(void)
     /* S8.7d1: the lock table and the client deny list are wiped too. */
     TEST_ASSERT_NULL(network_lock_find(&network, 7));
     TEST_ASSERT_EQUAL_INT(0, network.lock_denied_count);
+    /* S8.7f1: all resync bookkeeping back to the offline zero, on both the
+     * host role (generation disarmed) and the client role (reassembly wiped),
+     * plus the per-client fields (reset with the whole NetClient). */
+    TEST_ASSERT_EQUAL_UINT32(0, network.resync_generation);
+    TEST_ASSERT_EQUAL_size_t(0, network.resync_total_bytes);
+    TEST_ASSERT_EQUAL_FLOAT(0.0F, network.resync_send_timer);
+    TEST_ASSERT_EQUAL_UINT32(0, network.resync_incoming_generation);
+    TEST_ASSERT_EQUAL_UINT32(0, network.resync_failed_generation);
+    TEST_ASSERT_EQUAL_size_t(0, network.resync_incoming_total_bytes);
+    TEST_ASSERT_EQUAL_UINT16(0, network.resync_incoming_chunk_count);
+    TEST_ASSERT_EQUAL_UINT8(0, network.resync_chunk_bitmap[0]);
+    TEST_ASSERT_FALSE(network.resync_ready);
+    TEST_ASSERT_EQUAL_UINT32(0, network.clients[0].resync_confirmed_generation);
+    TEST_ASSERT_FALSE(network.clients[0].resync_snapshot_owed);
+    TEST_ASSERT_EQUAL_INT(0, network.client_count);
 }
 
 void test_stop_is_idempotent_on_already_offline_network(void)
@@ -727,6 +758,222 @@ void test_host_receive_cursor_drops_mismatched_and_unregistered(void)
     loopback_network_free(&loopback);
 }
 
+/* ---- S8.7f1: structural resync reassembly (network_resync_accept_chunk) ---- */
+
+/* Deterministic byte pattern so a reassembled buffer can be compared to its
+ * source exactly. */
+static void resync_fill_pattern(uint8_t *buffer, size_t len)
+{
+    for (size_t index = 0; index < len; index++) {
+        buffer[index] = (uint8_t)((index * 31u) + 7u);
+    }
+}
+
+void test_resync_accept_out_of_order_completes(void)
+{
+    NetworkState network = {0};
+    uint8_t source[2500];
+    resync_fill_pattern(source, sizeof(source));
+
+    /* 2500 bytes over 1024-byte chunks = 3 chunks (1024, 1024, 452). Fed last,
+     * first, middle -- reassembly must not depend on arrival order, and only
+     * completes once every chunk is present. */
+    network_resync_accept_chunk(&network,
+                                &(ResyncChunk){.generation = 1,
+                                               .total_bytes = 2500,
+                                               .chunk_index = 2,
+                                               .chunk_count = 3,
+                                               .current_level_name = strv_from_cstr("test"),
+                                               .payload = (Strv){.ptr = (const char *)(source + 2048), .len = 452}});
+    TEST_ASSERT_FALSE(network.resync_ready);
+    network_resync_accept_chunk(&network, &(ResyncChunk){.generation = 1,
+                                                         .total_bytes = 2500,
+                                                         .chunk_index = 0,
+                                                         .chunk_count = 3,
+                                                         .current_level_name = strv_from_cstr("test"),
+                                                         .payload = (Strv){.ptr = (const char *)source, .len = 1024}});
+    TEST_ASSERT_FALSE(network.resync_ready);
+    network_resync_accept_chunk(&network,
+                                &(ResyncChunk){.generation = 1,
+                                               .total_bytes = 2500,
+                                               .chunk_index = 1,
+                                               .chunk_count = 3,
+                                               .current_level_name = strv_from_cstr("test"),
+                                               .payload = (Strv){.ptr = (const char *)(source + 1024), .len = 1024}});
+    TEST_ASSERT_TRUE(network.resync_ready);
+    TEST_ASSERT_EQUAL_UINT32(1, network.resync_incoming_generation);
+    TEST_ASSERT_EQUAL_size_t(2500, network.resync_incoming_total_bytes);
+    TEST_ASSERT_EQUAL_STRING("test", network.resync_incoming_level_name);
+    TEST_ASSERT_EQUAL_MEMORY(source, network.resync_buffer, 2500);
+}
+
+void test_resync_supersede_newer_generation_midstream(void)
+{
+    NetworkState network = {0};
+    uint8_t gen1[1200];
+    uint8_t gen2[500];
+    resync_fill_pattern(gen1, sizeof(gen1));
+    resync_fill_pattern(gen2, sizeof(gen2));
+
+    /* Generation 1 (2 chunks) starts arriving but never completes. */
+    network_resync_accept_chunk(&network, &(ResyncChunk){.generation = 1,
+                                                         .total_bytes = 1200,
+                                                         .chunk_index = 0,
+                                                         .chunk_count = 2,
+                                                         .current_level_name = strv_from_cstr("old"),
+                                                         .payload = (Strv){.ptr = (const char *)gen1, .len = 1024}});
+    TEST_ASSERT_FALSE(network.resync_ready);
+
+    /* A strictly newer generation 2 (1 chunk) supersedes it -- the bitmap resets
+     * and its single chunk completes reassembly right away. */
+    network_resync_accept_chunk(&network, &(ResyncChunk){.generation = 2,
+                                                         .total_bytes = 500,
+                                                         .chunk_index = 0,
+                                                         .chunk_count = 1,
+                                                         .current_level_name = strv_from_cstr("new"),
+                                                         .payload = (Strv){.ptr = (const char *)gen2, .len = 500}});
+    TEST_ASSERT_TRUE(network.resync_ready);
+    TEST_ASSERT_EQUAL_UINT32(2, network.resync_incoming_generation);
+    TEST_ASSERT_EQUAL_size_t(500, network.resync_incoming_total_bytes);
+    TEST_ASSERT_EQUAL_STRING("new", network.resync_incoming_level_name);
+    TEST_ASSERT_EQUAL_MEMORY(gen2, network.resync_buffer, 500);
+
+    /* A now-stale generation 1 chunk arriving late is dropped (generation <
+     * the in-flight one), leaving generation 2's completed reassembly intact. */
+    network_resync_accept_chunk(&network,
+                                &(ResyncChunk){.generation = 1,
+                                               .total_bytes = 1200,
+                                               .chunk_index = 1,
+                                               .chunk_count = 2,
+                                               .current_level_name = strv_from_cstr("old"),
+                                               .payload = (Strv){.ptr = (const char *)(gen1 + 1024), .len = 176}});
+    TEST_ASSERT_EQUAL_UINT32(2, network.resync_incoming_generation);
+}
+
+void test_resync_rejects_failed_generation(void)
+{
+    NetworkState network = {0};
+    uint8_t payload[100];
+    resync_fill_pattern(payload, sizeof(payload));
+
+    /* A too-large total_bytes marks generation 3 failed at adoption. */
+    network_resync_accept_chunk(&network, &(ResyncChunk){.generation = 3,
+                                                         .total_bytes = NETWORK_RESYNC_MAX_BYTES,
+                                                         .chunk_index = 0,
+                                                         .chunk_count = 1,
+                                                         .current_level_name = strv_from_cstr("test"),
+                                                         .payload = (Strv){.ptr = (const char *)payload, .len = 100}});
+    TEST_ASSERT_EQUAL_UINT32(3, network.resync_failed_generation);
+    TEST_ASSERT_FALSE(network.resync_ready);
+    TEST_ASSERT_EQUAL_UINT32(0, network.resync_incoming_generation);
+
+    /* A now well-formed chunk for the same (failed) generation 3 is never
+     * retried -- a parse-failed generation is only ever superseded, not redone. */
+    network_resync_accept_chunk(&network, &(ResyncChunk){.generation = 3,
+                                                         .total_bytes = 100,
+                                                         .chunk_index = 0,
+                                                         .chunk_count = 1,
+                                                         .current_level_name = strv_from_cstr("test"),
+                                                         .payload = (Strv){.ptr = (const char *)payload, .len = 100}});
+    TEST_ASSERT_FALSE(network.resync_ready);
+    TEST_ASSERT_EQUAL_UINT32(0, network.resync_incoming_generation);
+
+    /* A newer generation 4 supersedes the failure and reassembles normally. */
+    network_resync_accept_chunk(&network, &(ResyncChunk){.generation = 4,
+                                                         .total_bytes = 100,
+                                                         .chunk_index = 0,
+                                                         .chunk_count = 1,
+                                                         .current_level_name = strv_from_cstr("test"),
+                                                         .payload = (Strv){.ptr = (const char *)payload, .len = 100}});
+    TEST_ASSERT_TRUE(network.resync_ready);
+    TEST_ASSERT_EQUAL_UINT32(4, network.resync_incoming_generation);
+}
+
+void test_resync_rejects_bad_headers(void)
+{
+    uint8_t payload[100];
+    resync_fill_pattern(payload, sizeof(payload));
+
+    /* A level name longer than the cap marks the generation failed at adoption. */
+    {
+        NetworkState network = {0};
+        char long_name[NETWORK_RESYNC_LEVEL_NAME_MAX + 8];
+        memset(long_name, 'a', sizeof(long_name) - 1);
+        long_name[sizeof(long_name) - 1] = '\0';
+        network_resync_accept_chunk(&network,
+                                    &(ResyncChunk){.generation = 1,
+                                                   .total_bytes = 100,
+                                                   .chunk_index = 0,
+                                                   .chunk_count = 1,
+                                                   .current_level_name = strv_from_cstr(long_name),
+                                                   .payload = (Strv){.ptr = (const char *)payload, .len = 100}});
+        TEST_ASSERT_EQUAL_UINT32(1, network.resync_failed_generation);
+        TEST_ASSERT_FALSE(network.resync_ready);
+    }
+
+    /* A chunk_count that disagrees with ceil(total_bytes / CHUNK_BYTES) is
+     * rejected: 100 bytes needs one chunk, not two. */
+    {
+        NetworkState network = {0};
+        network_resync_accept_chunk(&network,
+                                    &(ResyncChunk){.generation = 1,
+                                                   .total_bytes = 100,
+                                                   .chunk_index = 0,
+                                                   .chunk_count = 2,
+                                                   .current_level_name = strv_from_cstr("test"),
+                                                   .payload = (Strv){.ptr = (const char *)payload, .len = 100}});
+        TEST_ASSERT_EQUAL_UINT32(1, network.resync_failed_generation);
+        TEST_ASSERT_FALSE(network.resync_ready);
+    }
+}
+
+void test_resync_rejects_bad_chunk_geometry(void)
+{
+    NetworkState network = {0};
+    uint8_t source[2000];
+    resync_fill_pattern(source, sizeof(source));
+
+    /* Adopt a valid 2-chunk generation with its first chunk. */
+    network_resync_accept_chunk(&network, &(ResyncChunk){.generation = 1,
+                                                         .total_bytes = 2000,
+                                                         .chunk_index = 0,
+                                                         .chunk_count = 2,
+                                                         .current_level_name = strv_from_cstr("test"),
+                                                         .payload = (Strv){.ptr = (const char *)source, .len = 1024}});
+    TEST_ASSERT_FALSE(network.resync_ready);
+
+    /* A chunk_index past chunk_count is dropped (never overruns the buffer). */
+    network_resync_accept_chunk(&network, &(ResyncChunk){.generation = 1,
+                                                         .total_bytes = 2000,
+                                                         .chunk_index = 5,
+                                                         .chunk_count = 2,
+                                                         .current_level_name = strv_from_cstr("test"),
+                                                         .payload = (Strv){.ptr = (const char *)source, .len = 1024}});
+    TEST_ASSERT_FALSE(network.resync_ready);
+
+    /* A last chunk with the wrong payload length (should be 2000-1024=976) is
+     * dropped, so the reassembly stays incomplete. */
+    network_resync_accept_chunk(&network,
+                                &(ResyncChunk){.generation = 1,
+                                               .total_bytes = 2000,
+                                               .chunk_index = 1,
+                                               .chunk_count = 2,
+                                               .current_level_name = strv_from_cstr("test"),
+                                               .payload = (Strv){.ptr = (const char *)(source + 1024), .len = 500}});
+    TEST_ASSERT_FALSE(network.resync_ready);
+
+    /* The correctly-sized last chunk completes it, buffer matching the source. */
+    network_resync_accept_chunk(&network,
+                                &(ResyncChunk){.generation = 1,
+                                               .total_bytes = 2000,
+                                               .chunk_index = 1,
+                                               .chunk_count = 2,
+                                               .current_level_name = strv_from_cstr("test"),
+                                               .payload = (Strv){.ptr = (const char *)(source + 1024), .len = 976}});
+    TEST_ASSERT_TRUE(network.resync_ready);
+    TEST_ASSERT_EQUAL_MEMORY(source, network.resync_buffer, 2000);
+}
+
 int main(void)
 {
     test_helpers_init();
@@ -757,5 +1004,10 @@ int main(void)
     RUN_TEST(test_presence_age_keeps_still_fresh_entry);
     RUN_TEST(test_host_receive_cursor_upserts_registered_client);
     RUN_TEST(test_host_receive_cursor_drops_mismatched_and_unregistered);
+    RUN_TEST(test_resync_accept_out_of_order_completes);
+    RUN_TEST(test_resync_supersede_newer_generation_midstream);
+    RUN_TEST(test_resync_rejects_failed_generation);
+    RUN_TEST(test_resync_rejects_bad_headers);
+    RUN_TEST(test_resync_rejects_bad_chunk_geometry);
     return UNITY_END();
 }

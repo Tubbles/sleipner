@@ -1491,6 +1491,8 @@ int main(void)
         .level_loader_fn = production_level_loader,
         .level_loader_user_data = nullptr,
         .autosave_fn = save_autosave,
+        .resync_texture_lookup = texture_registry_lookup,
+        .resync_texture_user_data = state,
     };
 
     while (!WindowShouldClose() && !quit_requested) {

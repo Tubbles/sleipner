@@ -717,6 +717,44 @@ bool protocol_decode_cursor(PacketReader *reader, PresenceRecord *out_records, s
     return true;
 }
 
+/* ---- MSG_RESYNC ---- */
+
+/* Write the resync payload in the exact wire order documented on ResyncChunk:
+ * generation, total_bytes, chunk_index, chunk_count, then the two
+ * length-prefixed strings (current_level_name, payload). */
+static bool write_resync_payload(PacketWriter *writer, const ResyncChunk *chunk)
+{
+    if (!packet_writer_write_u32(writer, chunk->generation)) {
+        return false;
+    }
+    if (!packet_writer_write_u32(writer, chunk->total_bytes)) {
+        return false;
+    }
+    if (!packet_writer_write_u16(writer, chunk->chunk_index)) {
+        return false;
+    }
+    if (!packet_writer_write_u16(writer, chunk->chunk_count)) {
+        return false;
+    }
+    if (!packet_writer_write_string(writer, chunk->current_level_name)) {
+        return false;
+    }
+    return packet_writer_write_string(writer, chunk->payload);
+}
+
+bool protocol_decode_resync(PacketReader *reader, ResyncChunk *out)
+{
+    ResyncChunk chunk = {0};
+    if (!packet_reader_read_u32(reader, &chunk.generation) || !packet_reader_read_u32(reader, &chunk.total_bytes) ||
+        !packet_reader_read_u16(reader, &chunk.chunk_index) || !packet_reader_read_u16(reader, &chunk.chunk_count) ||
+        !packet_reader_read_string(reader, &chunk.current_level_name) ||
+        !packet_reader_read_string(reader, &chunk.payload)) {
+        return false;
+    }
+    *out = chunk;
+    return true;
+}
+
 /* ---- Whole-packet convenience ---- */
 
 /* Constructs *writer over (buffer, capacity) and writes the packet header
@@ -878,6 +916,19 @@ bool protocol_encode_cursor_packet(
         return false;
     }
     if (!encode_presence_list(&writer, records, count)) {
+        return false;
+    }
+    return packet_end(&writer, out_len);
+}
+
+bool protocol_encode_resync_packet(
+    uint8_t *buffer, size_t capacity, uint32_t seq, const ResyncChunk *chunk, size_t *out_len)
+{
+    PacketWriter writer;
+    if (!packet_begin(capacity, &writer, MSG_RESYNC, buffer, seq)) {
+        return false;
+    }
+    if (!write_resync_payload(&writer, chunk)) {
         return false;
     }
     return packet_end(&writer, out_len);

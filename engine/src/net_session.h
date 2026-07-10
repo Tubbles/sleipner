@@ -58,6 +58,7 @@
 #include "input.h"
 #include "net_protocol.h" // AttrRecord, EventRecord
 #include "net_reliable.h" // ReliableChannel
+#include "undo.h"         // UndoHistory
 
 #include <stddef.h> // size_t
 
@@ -110,8 +111,11 @@
  * network_client_tick below are what call all of them at the right point
  * in the tick.
  *
- * NETWORK_EVENT_PLAYER_JOINED is the one concrete event S8.4c wires
- * end-to-end, host->client: network_host_tick reliable-sends it to every
+ * NETWORK_EVENT_PLAYER_JOINED (and the S8.7f1 resync-complete confirmation
+ * NETWORK_EVENT_RESYNC_COMPLETE) are defined in network.h -- moved there so
+ * network.c can react to a client's resync confirmation (handle_event_datagram)
+ * without depending on this header. NETWORK_EVENT_PLAYER_JOINED is the one
+ * concrete event S8.4c wires end-to-end, host->client: network_host_tick reliable-sends it to every
  * active client (including the one that just joined) whenever a new client
  * registers, carrying the newly-joined player's player_id as
  * EventRecord.entity_id (argument unused, an empty Strv). A client's
@@ -135,7 +139,6 @@
  * GameState-level accumulator game_update appends fired events into) --
  * broader than S8.4c's own reliable-channel brief, tracked in TODO.md as a
  * follow-up. */
-#define NETWORK_EVENT_PLAYER_JOINED 1
 
 /* HOSTING only: network_host_receive (network.h) drains every pending
  * JOIN/INPUT/ACK/EVENT/JOIN_ACCEPT-triggering packet on
@@ -323,3 +326,46 @@ void network_editor_commit_move(GameState *state, int entity_id, Vector2 new_pos
  *   release of a lock the sender does not hold, so the deny-abort path can
  *   release the whole multiselect set without tracking which ids were granted. */
 void network_editor_release_locks(GameState *state, const int *entity_ids, int entity_count);
+
+/* ---- S8.7f1: full-gamedata structural resync ----
+ *
+ * Structural edits (blueprints, rules, atlas, animation, levels, tiles) have
+ * no fine-grained wire encoding by design. They propagate as a coarse
+ * full-gamedata resync: the host re-emits the whole gamedata as TOML, reloads
+ * its OWN GameState from those bytes, and streams the same bytes to every
+ * client, which reload identically. Because both sides re-parse the same bytes,
+ * per-level entity-id assignment (parse order) matches again on every peer, and
+ * game_load_gamedata recomputes gamedata_hash so hashes re-converge too. A
+ * structural edit is a session-wide barrier: it clears undo on every peer (the
+ * same thing a load / hot-reload / level transition already does). The editor
+ * trigger and client-side structural-mode blocking are a later slice; this one
+ * builds the transfer + reload mechanism, invoked by these functions. */
+
+/* HOST side. Re-emit the whole gamedata as TOML, self-reload from it, clear
+ * undo and push a fresh baseline, arm the next resync generation for streaming,
+ * and force-release every active lock (the barrier invalidates every claim --
+ * entity ids are about to be reassigned). A no-op returning true under any mode
+ * other than NET_HOSTING (so the future editor hook can call it unconditionally,
+ * including single-player NET_OFFLINE). Returns false if the current level name
+ * overflows the resync cap, the emit fails, or the self-reload fails -- in the
+ * reload-failure case state is left however the load left it, the same contract
+ * a hot-reload failure gives. */
+[[nodiscard]] bool network_host_begin_structural_resync(
+    Diag *diag, GameState *state, UndoHistory *undo_history, TextureLookupFn texture_lookup, void *texture_user_data);
+
+/* CLIENT side. True when a full resync generation has finished reassembling
+ * (network_resync_accept_chunk set resync_ready) and is waiting to be applied.
+ * Cheap predicate the frame layer polls every NET_CLIENT frame. Always false on
+ * a host/offline peer (only a client's reassembly sets resync_ready). */
+[[nodiscard]] bool network_client_resync_ready(const GameState *state);
+
+/* CLIENT side. Reload this client's GameState from the reassembled resync
+ * buffer, clear undo and push a fresh baseline (mirroring the host), then clear
+ * resync_ready. On SUCCESS, reliable-send a NETWORK_EVENT_RESYNC_COMPLETE back
+ * to the host carrying the applied generation, so the host stops re-streaming
+ * it. On load FAILURE, mark this generation failed (never retried for the same
+ * generation; a newer one supersedes) and do NOT confirm -- the client stays
+ * diverged until the next structural edit, a bounded pre-alpha compromise.
+ * Call only when network_client_resync_ready returned true. */
+[[nodiscard]] bool network_client_apply_resync(
+    Diag *diag, GameState *state, UndoHistory *undo_history, TextureLookupFn texture_lookup, void *texture_user_data);

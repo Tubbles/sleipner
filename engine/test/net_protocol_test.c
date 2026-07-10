@@ -677,6 +677,66 @@ void test_protocol_decode_cursor_rejects_truncated_buffer(void)
     TEST_ASSERT_FALSE(protocol_decode_cursor(&reader, out, 1, &out_count));
 }
 
+/* ---- MSG_RESYNC ---- */
+
+void test_protocol_resync_packet_round_trip(void)
+{
+    /* A short payload slice standing in for one chunk of the emitted TOML --
+     * every scalar field plus both length-prefixed strings (level name, raw
+     * payload bytes) must round-trip verbatim. */
+    const char payload_bytes[] = "[[blueprint]]\nname = \"hero\"\n";
+    ResyncChunk chunk = {
+        .generation = 7,
+        .total_bytes = 4096,
+        .chunk_index = 3,
+        .chunk_count = 4,
+        .current_level_name = strv_from_cstr("overworld"),
+        .payload = (Strv){.ptr = payload_bytes, .len = sizeof(payload_bytes) - 1},
+    };
+
+    uint8_t buffer[NET_PROTOCOL_TEST_BUFFER_SIZE];
+    size_t total_len = 0;
+    TEST_ASSERT_TRUE(protocol_encode_resync_packet(buffer, sizeof(buffer), 9, &chunk, &total_len));
+
+    DecodedPacket decoded;
+    ErrorState err = {0};
+    TEST_ASSERT_TRUE(protocol_decode_packet(buffer, total_len, &decoded, &err));
+    TEST_ASSERT_EQUAL_INT(MSG_RESYNC, decoded.header.type);
+
+    ResyncChunk out = {0};
+    TEST_ASSERT_TRUE(protocol_decode_resync(&decoded.reader, &out));
+    TEST_ASSERT_EQUAL_UINT32(chunk.generation, out.generation);
+    TEST_ASSERT_EQUAL_UINT32(chunk.total_bytes, out.total_bytes);
+    TEST_ASSERT_EQUAL_UINT16(chunk.chunk_index, out.chunk_index);
+    TEST_ASSERT_EQUAL_UINT16(chunk.chunk_count, out.chunk_count);
+    TEST_ASSERT_TRUE(strv_eq(chunk.current_level_name, out.current_level_name));
+    TEST_ASSERT_TRUE(strv_eq(chunk.payload, out.payload));
+}
+
+void test_protocol_decode_resync_rejects_truncated_buffer(void)
+{
+    const char payload_bytes[] = "chunkdata";
+    ResyncChunk chunk = {
+        .generation = 1,
+        .total_bytes = 100,
+        .chunk_index = 0,
+        .chunk_count = 1,
+        .current_level_name = strv_from_cstr("test"),
+        .payload = (Strv){.ptr = payload_bytes, .len = sizeof(payload_bytes) - 1},
+    };
+    uint8_t buffer[NET_PROTOCOL_TEST_BUFFER_SIZE];
+    size_t total_len = 0;
+    TEST_ASSERT_TRUE(protocol_encode_resync_packet(buffer, sizeof(buffer), 1, &chunk, &total_len));
+
+    /* Hand the payload decoder one fewer byte than the encoder wrote so a read
+     * runs off the end mid-field. Decode must fail closed and (ASan/UBSan on)
+     * never read out of bounds. */
+    size_t payload_len = total_len - PACKET_HEADER_SIZE;
+    PacketReader reader = packet_reader_make(buffer + PACKET_HEADER_SIZE, payload_len - 1);
+    ResyncChunk out = {0};
+    TEST_ASSERT_FALSE(protocol_decode_resync(&reader, &out));
+}
+
 /* ---- Malformed whole packets ---- */
 
 void test_protocol_decode_packet_rejects_length_mismatch(void)
@@ -759,6 +819,8 @@ int main(void)
     RUN_TEST(test_protocol_cursor_packet_round_trip);
     RUN_TEST(test_protocol_cursor_empty_list_round_trip);
     RUN_TEST(test_protocol_decode_cursor_rejects_truncated_buffer);
+    RUN_TEST(test_protocol_resync_packet_round_trip);
+    RUN_TEST(test_protocol_decode_resync_rejects_truncated_buffer);
     RUN_TEST(test_protocol_decode_packet_rejects_length_mismatch);
     RUN_TEST(test_gamedata_content_hash_same_string_same_hash);
     RUN_TEST(test_gamedata_content_hash_one_byte_change_different_hash);

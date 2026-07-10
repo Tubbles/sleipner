@@ -169,6 +169,21 @@ void network_stop(NetworkState *network)
     network->local_cursor = (Vector2){0};
     network->local_cursor_selected_entity_id = 0;
     network->local_cursor_valid = false;
+    /* S8.7f1: the resync buffer and all its host/client bookkeeping are session
+     * state -- back to the offline zero (a host re-arms resync_generation at the
+     * next structural edit, a client re-reassembles from incoming chunks). */
+    memset(network->resync_buffer, 0, sizeof(network->resync_buffer));
+    network->resync_generation = 0;
+    network->resync_total_bytes = 0;
+    memset(network->resync_level_name, 0, sizeof(network->resync_level_name));
+    network->resync_send_timer = 0.0F;
+    network->resync_incoming_generation = 0;
+    network->resync_failed_generation = 0;
+    network->resync_incoming_total_bytes = 0;
+    network->resync_incoming_chunk_count = 0;
+    memset(network->resync_chunk_bitmap, 0, sizeof(network->resync_chunk_bitmap));
+    memset(network->resync_incoming_level_name, 0, sizeof(network->resync_incoming_level_name));
+    network->resync_ready = false;
 }
 
 /* ---- S8.4a: session JOIN + INPUT flow ---- */
@@ -308,6 +323,92 @@ void network_presence_age(NetworkState *network, float delta_time)
     }
 }
 
+/* ---- S8.7f1: full-gamedata structural resync (CLIENT reassembly) ---- */
+
+/* Chunks the whole TOML spans: ceil(total_bytes / CHUNK_BYTES). */
+static uint16_t resync_expected_chunk_count(size_t total_bytes)
+{
+    return (uint16_t)((total_bytes + NETWORK_RESYNC_CHUNK_BYTES - 1) / NETWORK_RESYNC_CHUNK_BYTES);
+}
+
+/* Adopt a strictly-newer generation: store its header and reset the bitmap.
+ * Rejects (marks the generation failed, returns false) a level name that would
+ * not fit the cap, a total_bytes with no room for the null terminator the
+ * reload needs, or a chunk_count that disagrees with total_bytes or exceeds the
+ * chunk cap. A failed generation is never retried; only a newer one supersedes. */
+static bool resync_adopt_generation(NetworkState *network, const ResyncChunk *chunk)
+{
+    bool header_ok = chunk->current_level_name.len < NETWORK_RESYNC_LEVEL_NAME_MAX &&
+                     chunk->total_bytes < NETWORK_RESYNC_MAX_BYTES && chunk->chunk_count <= NETWORK_RESYNC_MAX_CHUNKS &&
+                     chunk->chunk_count == resync_expected_chunk_count(chunk->total_bytes);
+    if (!header_ok) {
+        network->resync_failed_generation = chunk->generation;
+        return false;
+    }
+    network->resync_incoming_generation = chunk->generation;
+    network->resync_incoming_total_bytes = chunk->total_bytes;
+    network->resync_incoming_chunk_count = chunk->chunk_count;
+    memset(network->resync_chunk_bitmap, 0, sizeof(network->resync_chunk_bitmap));
+    strv_copy_to_cstr(chunk->current_level_name, network->resync_incoming_level_name,
+                      sizeof(network->resync_incoming_level_name));
+    network->resync_ready = false;
+    return true;
+}
+
+/* True once every chunk index 0..chunk_count-1 of the in-flight generation has
+ * its bitmap bit set. */
+static bool resync_all_chunks_present(const NetworkState *network)
+{
+    for (uint16_t index = 0; index < network->resync_incoming_chunk_count; index++) {
+        if ((network->resync_chunk_bitmap[index / 8] & (uint8_t)(1U << (index % 8))) == 0) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/* Validate one chunk of the already-adopted generation against the stored
+ * header and, if valid, copy its payload into resync_buffer and set its bitmap
+ * bit; flips resync_ready once all chunks are present. Fail-closed: a chunk
+ * disagreeing with the stored geometry, or with a payload of the wrong length,
+ * is dropped without touching the buffer -- never overruns. */
+static void resync_store_chunk(NetworkState *network, const ResyncChunk *chunk)
+{
+    if (chunk->total_bytes != network->resync_incoming_total_bytes ||
+        chunk->chunk_count != network->resync_incoming_chunk_count) {
+        return;
+    }
+    uint16_t chunk_count = network->resync_incoming_chunk_count;
+    if (chunk->chunk_index >= chunk_count) {
+        return;
+    }
+    size_t offset = (size_t)chunk->chunk_index * NETWORK_RESYNC_CHUNK_BYTES;
+    bool is_last = chunk->chunk_index == (uint16_t)(chunk_count - 1);
+    size_t expected_len = is_last ? network->resync_incoming_total_bytes - offset : NETWORK_RESYNC_CHUNK_BYTES;
+    if (chunk->payload.len != expected_len) {
+        return;
+    }
+    memcpy(network->resync_buffer + offset, chunk->payload.ptr, chunk->payload.len);
+    network->resync_chunk_bitmap[chunk->chunk_index / 8] |= (uint8_t)(1U << (chunk->chunk_index % 8));
+    if (resync_all_chunks_present(network)) {
+        network->resync_ready = true;
+    }
+}
+
+void network_resync_accept_chunk(NetworkState *network, const ResyncChunk *chunk)
+{
+    if (chunk->generation == network->resync_failed_generation) {
+        return;
+    }
+    if (chunk->generation < network->resync_incoming_generation) {
+        return;
+    }
+    if (chunk->generation > network->resync_incoming_generation && !resync_adopt_generation(network, chunk)) {
+        return;
+    }
+    resync_store_chunk(network, chunk);
+}
+
 /* Register a newly-JOINed client at addr with the next player_id (1..N in
  * join order). A no-op (not an error) if addr is already registered --
  * re-JOIN refreshes rather than duplicating, and S8.4a has nothing else on
@@ -371,7 +472,17 @@ static void send_join_accept(const NetworkState *network, NetAddr dest, int play
 }
 
 /* Decode one payload as MSG_JOIN and either register-and-accept or refuse
- * the sender, per network_host_receive's own doc comment. */
+ * the sender, per network_host_receive's own doc comment. S8.7f1: a
+ * hash-MISMATCHED join is accepted if and only if a structural resync
+ * generation is armed (resync_generation > 0) -- the host holds emitted bytes
+ * ready to stream, and the fresh NetClient's resync_confirmed_generation 0
+ * trails that generation, so the next sweep streams the newcomer the host's
+ * full gamedata automatically and convergence is guaranteed. Host always
+ * wins: the accepted mismatched joiner is force-converted to the host's
+ * gamedata, the intended host-authoritative behavior for editing sessions. A
+ * mismatched join while generation == 0 stays refused exactly as before --
+ * genuinely different gamedata with nothing armed to converge it (S8.7i's
+ * desync recovery owns that case later). */
 static void handle_join_datagram(NetworkState *network, NetAddr src, PacketReader *reader, uint64_t local_gamedata_hash)
 {
     JoinMessage message = {0};
@@ -379,7 +490,7 @@ static void handle_join_datagram(NetworkState *network, NetAddr src, PacketReade
         return;
     }
     JoinVerifyResult verify = protocol_join_verify(local_gamedata_hash, message.gamedata_hash);
-    if (!verify.ok) {
+    if (!verify.ok && network->resync_generation == 0) {
         return;
     }
     register_client(network, src);
@@ -445,6 +556,13 @@ static void handle_event_datagram(NetworkState *network, NetAddr src, uint32_t s
     network->last_client_event_entity_id = event.entity_id;
     network->last_client_event_player_id = client->player_id;
     network->client_event_delivered_count++;
+    /* S8.7f1: a resync-complete confirmation carries the generation this client
+     * finished applying in EventRecord.entity_id (reused as a plain u32 carrier).
+     * Record it so the host's send sweep stops re-streaming that generation to
+     * this client. The bookkeeping fields above still update as for any event. */
+    if (event.event_type == NETWORK_EVENT_RESYNC_COMPLETE) {
+        client->resync_confirmed_generation = (uint32_t)event.entity_id;
+    }
 }
 
 /* S8.7c: an MSG_OP from a registered client is not applied here (network.c

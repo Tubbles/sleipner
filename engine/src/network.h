@@ -140,6 +140,36 @@ typedef enum {
  * rather than risking two copies drifting apart. */
 #define NETWORK_INPUT_SOURCE_PREFIX "network:"
 
+/* Reliable-event type ids exchanged over the event sub-channel (net_session.h's
+ * "reliable event sub-channel" note has the end-to-end wiring). They live here,
+ * not net_session.h, for the same cross-layer-sharing reason NETWORK_INPUT_SOURCE_PREFIX
+ * does: network.c must react to one of them (NETWORK_EVENT_RESYNC_COMPLETE, in
+ * handle_event_datagram) while net_session.c originates the others, and network.h
+ * is the header both include.
+ *  - NETWORK_EVENT_PLAYER_JOINED: HOST->client, a new player connected (S8.4c);
+ *    carries the joined player_id as EventRecord.entity_id.
+ *  - NETWORK_EVENT_RESYNC_COMPLETE (S8.7f1): client->host, "I finished applying
+ *    resync generation N"; the generation rides EventRecord.entity_id (reused as
+ *    a plain u32 carrier, not an actual entity id), and handle_event_datagram
+ *    records it onto that client's resync_confirmed_generation so the host stops
+ *    re-sending that generation's chunks to it. */
+#define NETWORK_EVENT_PLAYER_JOINED 1
+#define NETWORK_EVENT_RESYNC_COMPLETE 2
+
+/* S8.7f1: full-gamedata structural resync sizing.
+ *  - NETWORK_RESYNC_MAX_BYTES caps the emitted TOML a single resync can carry;
+ *    the client's reassembly buffer and the host's send source are both this
+ *    size. total_bytes is enforced STRICTLY below this cap so the one-byte null
+ *    terminator the reload needs always fits (network_resync_accept_chunk).
+ *  - NETWORK_RESYNC_MAX_CHUNKS bounds the per-generation chunk bitmap.
+ *  - NETWORK_RESYNC_LEVEL_NAME_MAX caps the current-level name a resync names;
+ *    a longer name marks the generation failed (a pre-alpha ceiling).
+ *  - NETWORK_RESYNC_SEND_INTERVAL_SECONDS is the host's re-send sweep cadence. */
+#define NETWORK_RESYNC_MAX_BYTES 262144
+#define NETWORK_RESYNC_MAX_CHUNKS (NETWORK_RESYNC_MAX_BYTES / NETWORK_RESYNC_CHUNK_BYTES)
+#define NETWORK_RESYNC_LEVEL_NAME_MAX 64
+#define NETWORK_RESYNC_SEND_INTERVAL_SECONDS 0.1F
+
 /* One client connected to a hosted session -- host-side only, populated by
  * network_host_receive below (a client's own NetworkState never fills out
  * its own `clients`). player_id is assigned 1..NET_MAX_CLIENTS in join
@@ -168,6 +198,26 @@ typedef struct {
      * comment. network_host_send_acks (below) acks whatever this client has
      * sent so far. */
     ReliableChannel event_channel;
+    /* S8.7f1: the highest structural-resync generation this client has
+     * confirmed it fully applied (via a NETWORK_EVENT_RESYNC_COMPLETE reliable
+     * event, recorded in handle_event_datagram). 0 = confirmed nothing yet, so
+     * a freshly-registered client automatically trails any armed generation and
+     * gets streamed on the next host sweep -- this is also the late-editing-join
+     * path. The host stops re-sending a generation's chunks to a client once
+     * this catches up to network->resync_generation. */
+    uint32_t resync_confirmed_generation;
+    /* S8.7f1: true while this client owes itself a post-resync entity SNAPSHOT.
+     * The streamed resync buffer is frozen at the emit instant, so a client
+     * that applies it lands on emit-time entity positions -- stale if the host
+     * kept simulating or editing after the emit, and with deltas suspended
+     * during an editor session nothing else would heal it. Set whenever the
+     * host streams this client a chunk set (host_tick_resync, net_session.c);
+     * once this client's resync_confirmed_generation catches the armed
+     * generation, the host sends it ONE fresh snapshot (the same join-time
+     * network_host_send_snapshot) to overlay live positions on the
+     * just-applied structural base, and clears the flag. Reset with the rest
+     * of NetClient (network_stop's and register_client's whole-struct init). */
+    bool resync_snapshot_owed;
 } NetClient;
 
 /* Cap on client-side out-of-order editor-op echoes held back waiting for
@@ -397,6 +447,42 @@ typedef struct {
     Vector2 local_cursor;
     int local_cursor_selected_entity_id;
     bool local_cursor_valid;
+    /* S8.7f1: full-gamedata structural resync buffer. Dual role, and a peer is
+     * only ever one role at a time (a host never reassembles, a client never
+     * emits): on the HOST it holds the emitted TOML being streamed -- the stable
+     * send source that stays fixed across every re-send sweep of one generation;
+     * on a CLIENT it is the reassembly target the incoming chunks are copied
+     * into. Session state, never undo-snapshotted -- reset by network_stop. */
+    uint8_t resync_buffer[NETWORK_RESYNC_MAX_BYTES];
+    /* S8.7f1 HOST side. resync_generation is the structural-edit counter: 0
+     * means no structural edit has happened this session, the first edit bumps
+     * it to 1. A client whose resync_confirmed_generation trails this is streamed
+     * the full chunk set every send sweep. resync_total_bytes is the emitted
+     * TOML length in resync_buffer, resync_level_name the level the emit was
+     * taken on (clients reload onto it), resync_send_timer the sweep-cadence
+     * accumulator. Meaningless on a CLIENT's own NetworkState. */
+    uint32_t resync_generation;
+    size_t resync_total_bytes;
+    char resync_level_name[NETWORK_RESYNC_LEVEL_NAME_MAX];
+    float resync_send_timer;
+    /* S8.7f1 CLIENT side reassembly bookkeeping. resync_incoming_generation is
+     * the generation currently being reassembled (a strictly newer one
+     * supersedes it mid-stream, resetting the bitmap). resync_failed_generation
+     * is a generation whose reload failed or whose header was out of bounds --
+     * never retried, only a newer generation supersedes it (leaves this client
+     * diverged until the next structural edit, a bounded pre-alpha compromise).
+     * resync_incoming_total_bytes/_chunk_count/_level_name describe the in-flight
+     * generation; resync_chunk_bitmap marks which chunk indices have arrived;
+     * resync_ready flips true once every chunk 0..chunk_count-1 is present, and
+     * the frame layer then applies the reassembled buffer. Meaningless on the
+     * HOST's own NetworkState. */
+    uint32_t resync_incoming_generation;
+    uint32_t resync_failed_generation;
+    size_t resync_incoming_total_bytes;
+    uint16_t resync_incoming_chunk_count;
+    uint8_t resync_chunk_bitmap[NETWORK_RESYNC_MAX_CHUNKS / 8];
+    char resync_incoming_level_name[NETWORK_RESYNC_LEVEL_NAME_MAX];
+    bool resync_ready;
 } NetworkState;
 
 /* Placeholder advertised name until a real player-name setting exists
@@ -493,6 +579,30 @@ void network_presence_age(NetworkState *network, float delta_time);
 /* The active presence entry for player_id, or nullptr if absent or inactive. */
 PresenceEntry *network_presence_find(NetworkState *network, int player_id);
 
+/* ---- S8.7f1: full-gamedata structural resync (CLIENT reassembly). Pure state
+ * mutator on network's resync bookkeeping, unit-tested directly in
+ * network_test.c. The host-side emit/self-reload/stream + client-side apply
+ * live in net_session.c (they need GameState); this is the transport-free
+ * reassembly step. ---- */
+
+/* CLIENT side: fold one decoded MSG_RESYNC chunk into the reassembly state.
+ * Fail-closed, never overruns resync_buffer:
+ *  - chunk->generation == resync_failed_generation: dropped (a parse-failed
+ *    generation is never retried; only a strictly newer one supersedes it).
+ *  - chunk->generation  < resync_incoming_generation: dropped (stale).
+ *  - chunk->generation  > resync_incoming_generation: adopted as the new
+ *    in-flight generation (bitmap reset; generation/total/chunk_count/level_name
+ *    stored). A level name longer than NETWORK_RESYNC_LEVEL_NAME_MAX-1, a
+ *    total_bytes >= NETWORK_RESYNC_MAX_BYTES, or a chunk_count exceeding
+ *    NETWORK_RESYNC_MAX_CHUNKS marks the generation failed and drops it.
+ * For any accepted (non-superseded, non-stale) chunk the geometry is then
+ * validated -- chunk_index < chunk_count, chunk_count matches ceil(total/CHUNK),
+ * and the payload length equals CHUNK_BYTES for every chunk but the last (which
+ * must equal the remainder). Any violation drops the packet without touching
+ * the buffer. A valid chunk is copied to resync_buffer at chunk_index * CHUNK_BYTES
+ * and its bitmap bit set; resync_ready flips true once every bit is present. */
+void network_resync_accept_chunk(NetworkState *network, const ResyncChunk *chunk);
+
 /* ---- S8.4a: session JOIN + INPUT flow, over an already-established
  * `network->transport`/`network->join_target` (net.h/net_loopback.h/
  * net_udp.h; net_protocol.h encodes/decodes the wire bytes). Driven every
@@ -552,7 +662,14 @@ typedef struct {
  * that player_id (S8.6, sent on every accepted JOIN including a refresh,
  * so a client whose first accept was lost still converges once it
  * resends), a mismatch is silently refused (no client registered, no
- * reply sent). A decoded MSG_INPUT from an address already present in
+ * reply sent) -- UNLESS (S8.7f1) a structural resync generation is armed
+ * (resync_generation > 0), in which case the mismatched join is accepted
+ * anyway: the fresh NetClient trails the generation, so the next resync
+ * sweep streams it the host's full gamedata and convergence is
+ * guaranteed. Host always wins -- the accepted mismatched joiner is
+ * force-converted to the host's gamedata, the intended host-authoritative
+ * behavior for editing sessions (see handle_join_datagram, network.c).
+ * A decoded MSG_INPUT from an address already present in
  * `clients` overwrites that client's last_input; MSG_INPUT from an
  * unregistered address is ignored. A decoded MSG_ACK (S8.4c) from an
  * address already present in `clients` is applied to that client's own

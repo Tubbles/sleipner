@@ -113,6 +113,8 @@ void run_active_frame(Diag *diag,
                       EditorState *editor_state,
                       WatchList *watches,
                       UndoHistory *undo_history,
+                      TextureLookupFn resync_texture_lookup,
+                      void *resync_texture_user_data,
                       InputState input,
                       float delta_time);
 
@@ -151,6 +153,13 @@ typedef struct {
     LevelLoaderFn level_loader_fn;
     void *level_loader_user_data;
     AutosaveFn autosave_fn;
+    /* S8.7f1: texture lookup a NET_CLIENT uses when it reloads its whole
+     * gamedata from a completed structural resync (network_client_apply_resync,
+     * run_active_frame). Caller-specific like the level loader above: production
+     * wires texture_registry_lookup + GameState, tests wire a dummy lookup +
+     * nullptr. */
+    TextureLookupFn resync_texture_lookup;
+    void *resync_texture_user_data;
 } FrameContext;
 
 /* Run one full frame of input dispatch: global toggles, menu open /

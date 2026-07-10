@@ -455,6 +455,8 @@ void run_active_frame(Diag *diag,
                       EditorState *editor_state,
                       WatchList *watches,
                       UndoHistory *undo_history,
+                      TextureLookupFn resync_texture_lookup,
+                      void *resync_texture_user_data,
                       InputState input,
                       float delta_time)
 {
@@ -517,6 +519,19 @@ void run_active_frame(Diag *diag,
     }
     network_host_tick(state, delta_time);
     network_client_tick(state, &input, delta_time);
+    /* S8.7f1: a NET_CLIENT that just finished reassembling a full structural
+     * resync (network_client_tick drained its last chunk above) reloads its
+     * whole gamedata from the host's streamed bytes here -- BEFORE the
+     * render-only NET_CLIENT branch below, so this frame already renders the
+     * post-reload state. The reload reassigns per-level entity ids, so the
+     * editor selection (frame-layer-owned state) is stale and must be cleared
+     * at this call site (network.h has no editor dependency). Safe to poll
+     * unconditionally: resync_ready is only ever set on a client. */
+    if (network_client_resync_ready(state) &&
+        network_client_apply_resync(diag, state, undo_history, resync_texture_lookup, resync_texture_user_data)) {
+        editor_state->selected_entity_id = -1;
+        editor_state->multiselect_count = 0;
+    }
     /* S8.4b: a NET_CLIENT frame renders only -- it never runs the
      * authoritative simulation. network_client_tick above already applied
      * this tick's host state onto state's entities, so game_update_client_render
@@ -915,7 +930,7 @@ void frame_update(Diag *diag, GameState *state, FrameContext *ctx, InputState in
             ctx->editor_state->toast_timer -= delta_time;
         }
     } else {
-        run_active_frame(diag, state, ctx->editor_camera, ctx->editor_state, ctx->watches, ctx->undo_history, input,
-                         delta_time);
+        run_active_frame(diag, state, ctx->editor_camera, ctx->editor_state, ctx->watches, ctx->undo_history,
+                         ctx->resync_texture_lookup, ctx->resync_texture_user_data, input, delta_time);
     }
 }

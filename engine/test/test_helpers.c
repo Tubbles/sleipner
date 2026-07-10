@@ -269,6 +269,8 @@ bool test_game_setup_with_level(TestGame *out, const char *toml_string, const ch
         .preferences_save_fn = test_recording_preferences_save,
         .level_loader_fn = test_level_loader,
         .level_loader_user_data = out,
+        .resync_texture_lookup = test_dummy_texture_lookup,
+        .resync_texture_user_data = nullptr,
     };
     return true;
 }

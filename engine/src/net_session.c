@@ -16,6 +16,8 @@
 #include "network.h"
 #include "str.h"
 #include "strv.h"
+#include "toml_emitter.h" // toml_emit_gamedata
+#include "undo.h"         // UndoHistory, undo_history_clear, undo_history_new_entry
 
 #include "raylib.h" // Vector2
 
@@ -196,6 +198,24 @@ static void host_apply_and_echo_ops(GameState *state, const PendingEditorOps *op
     }
 }
 
+/* S8.7d1/S8.7f1: clear one active lock and echo a LOCK_RELEASE authored by its
+ * former holder under a fresh op_seq, so every client's replica clears too.
+ * Shared by the silence timeout (host_age_and_expire_locks) and the structural
+ * resync barrier (network_host_begin_structural_resync). level_name is the
+ * host's current level, passed in so the caller reads it once. */
+static void host_force_release_lock(NetworkState *network, EntityLock *lock, Strv level_name)
+{
+    EditorOp release = {
+        .kind = EDITOR_OP_LOCK_RELEASE,
+        .level_name = level_name,
+        .entity_id = lock->entity_id,
+        .author_player_id = lock->holder_player_id,
+        .op_seq = network->next_op_seq++,
+    };
+    lock->active = false;
+    network_host_broadcast_reliable_op(network, &release);
+}
+
 /* S8.7d1: age every active lock whose holder is not 0 by delta_time (the
  * host's own player id 0 never ages -- the host cannot go silent on itself)
  * and force-release any past NETWORK_LOCK_TIMEOUT_SECONDS: clear the slot and
@@ -216,15 +236,7 @@ static void host_age_and_expire_locks(GameState *state, float delta_time)
         if (lock->seconds_since_refresh < NETWORK_LOCK_TIMEOUT_SECONDS) {
             continue;
         }
-        EditorOp release = {
-            .kind = EDITOR_OP_LOCK_RELEASE,
-            .level_name = str_to_strv(state->gamedata.current_level.name),
-            .entity_id = lock->entity_id,
-            .author_player_id = lock->holder_player_id,
-            .op_seq = network->next_op_seq++,
-        };
-        lock->active = false;
-        network_host_broadcast_reliable_op(network, &release);
+        host_force_release_lock(network, lock, str_to_strv(state->gamedata.current_level.name));
     }
 }
 
@@ -317,6 +329,172 @@ static void client_tick_presence(NetworkState *network, float delta_time)
     network_presence_age(network, delta_time);
 }
 
+/* ---- S8.7f1: full-gamedata structural resync (HOST emit + stream) ---- */
+
+/* Chunks the whole TOML spans: ceil(total_bytes / CHUNK_BYTES). */
+static uint16_t host_resync_chunk_count(size_t total_bytes)
+{
+    return (uint16_t)((total_bytes + NETWORK_RESYNC_CHUNK_BYTES - 1) / NETWORK_RESYNC_CHUNK_BYTES);
+}
+
+/* Re-emit the whole gamedata (current level first, then every other level --
+ * the exact combined-level array main.c's save_gamedata builds) into
+ * resync_buffer, mirroring save_gamedata's toml_emit_gamedata call. Returns the
+ * emitted length (< NETWORK_RESYNC_MAX_BYTES, and the buffer is null-terminated
+ * at that offset, so game_load_gamedata can read it straight) on success, or a
+ * negative value (state->error set) on emit failure or buffer overflow. */
+static int host_emit_gamedata_into_resync_buffer(GameState *state)
+{
+    SCRATCH_SCOPE(&state->scratch_arena);
+    int total_levels = 1 + state->gamedata.other_levels.count;
+    Level *all_levels = (Level *)arena_alloc(&state->scratch_arena, sizeof(Level) * (size_t)total_levels);
+    all_levels[0] = state->gamedata.current_level;
+    for (int index = 0; index < state->gamedata.other_levels.count; index++) {
+        all_levels[1 + index] = state->gamedata.other_levels.data[index];
+    }
+    return toml_emit_gamedata(&state->error, (char *)state->network.resync_buffer, (int)NETWORK_RESYNC_MAX_BYTES,
+                              &state->gamedata.blueprints, &state->gamedata.subroutines, &state->gamedata.tileset,
+                              &state->gamedata.atlas_regions, all_levels, total_levels);
+}
+
+/* Send the full chunk set of the armed generation to one client. Fire-and-forget:
+ * a chunk that fails to encode is skipped, and the next sweep resends the whole
+ * set anyway (repeat-set delivery). */
+static void host_send_resync_to_client(NetworkState *network, const NetClient *client)
+{
+    uint16_t chunk_count = host_resync_chunk_count(network->resync_total_bytes);
+    for (uint16_t index = 0; index < chunk_count; index++) {
+        size_t offset = (size_t)index * NETWORK_RESYNC_CHUNK_BYTES;
+        size_t remaining = network->resync_total_bytes - offset;
+        size_t payload_len = remaining < NETWORK_RESYNC_CHUNK_BYTES ? remaining : NETWORK_RESYNC_CHUNK_BYTES;
+        ResyncChunk chunk = {
+            .generation = network->resync_generation,
+            .total_bytes = (uint32_t)network->resync_total_bytes,
+            .chunk_index = index,
+            .chunk_count = chunk_count,
+            .current_level_name = strv_from_cstr(network->resync_level_name),
+            .payload = (Strv){.ptr = (const char *)(network->resync_buffer + offset), .len = payload_len},
+        };
+        uint8_t buffer[NET_MAX_PACKET_SIZE];
+        size_t packet_len = 0;
+        if (!protocol_encode_resync_packet(buffer, sizeof(buffer), 0, &chunk, &packet_len)) {
+            continue;
+        }
+        (void)net_send(&network->transport, client->addr, buffer, packet_len);
+    }
+}
+
+/* S8.7f1: once per host tick. While a generation is armed, every send interval,
+ * stream the full chunk set to each client still trailing it (marking it as
+ * owing a post-confirm snapshot, see NetClient.resync_snapshot_owed). All
+ * clients confirmed => no chunk sends, but the generation stays armed so a LATE
+ * JOINER (fresh NetClient, resync_confirmed_generation 0 < generation) is
+ * streamed on the next sweep automatically -- this is the editing-join path.
+ * Separately, EVERY tick (not just on the sweep cadence, so the heal lands the
+ * tick the confirmation arrives): any client that was streamed chunks and has
+ * now confirmed the armed generation gets ONE fresh entity SNAPSHOT
+ * (network_host_send_snapshot, the join-time send) -- the streamed buffer is
+ * frozen at the emit instant, so the reload left the client on emit-time
+ * entity positions, and with deltas suspended during an editor session nothing
+ * else would overlay the live ones. Called after network_host_receive so this
+ * tick's incoming RESYNC_COMPLETE confirmations are already recorded before
+ * deciding who still needs the stream or the heal. */
+static void host_tick_resync(GameState *state, float delta_time)
+{
+    NetworkState *network = &state->network;
+    if (network->resync_generation == 0) {
+        return;
+    }
+    for (int index = 0; index < network->client_count; index++) {
+        NetClient *client = &network->clients[index];
+        if (!client->active || !client->resync_snapshot_owed ||
+            client->resync_confirmed_generation < network->resync_generation) {
+            continue;
+        }
+        client->resync_snapshot_owed = false;
+        network_host_send_snapshot(state, client);
+    }
+    network->resync_send_timer += delta_time;
+    if (network->resync_send_timer < NETWORK_RESYNC_SEND_INTERVAL_SECONDS) {
+        return;
+    }
+    network->resync_send_timer = 0.0F;
+    for (int index = 0; index < network->client_count; index++) {
+        NetClient *client = &network->clients[index];
+        if (!client->active || client->resync_confirmed_generation >= network->resync_generation) {
+            continue;
+        }
+        client->resync_snapshot_owed = true;
+        host_send_resync_to_client(network, client);
+    }
+}
+
+bool network_host_begin_structural_resync(
+    Diag *diag, GameState *state, UndoHistory *undo_history, TextureLookupFn texture_lookup, void *texture_user_data)
+{
+    /* No-op success under any non-hosting mode so the future editor hook can
+     * call this unconditionally: single-player (NET_OFFLINE) has no peers to
+     * resync, and a client is not the session authority (a client structural
+     * edit is the next slice's blocked path). */
+    if (state->network.mode != NET_HOSTING) {
+        return true;
+    }
+    NetworkState *network = &state->network;
+
+    /* (1) Capture the current level name -- clients reload onto it and the
+     * self-reload below re-parses this same level. */
+    Strv level_name = str_to_strv(state->gamedata.current_level.name);
+    if (level_name.len >= NETWORK_RESYNC_LEVEL_NAME_MAX) {
+        error_set(&state->error, "network_host_begin_structural_resync: level name too long (%zu bytes)",
+                  level_name.len);
+        return false;
+    }
+    strv_copy_to_cstr(level_name, network->resync_level_name, sizeof(network->resync_level_name));
+
+    /* (2) Re-emit the whole gamedata as TOML into the stable send buffer. */
+    int emitted = host_emit_gamedata_into_resync_buffer(state);
+    if (emitted < 0) {
+        error_wrap(&state->error, "network_host_begin_structural_resync");
+        return false;
+    }
+
+    /* (3) Self-reload from those exact bytes: identical parse order realigns
+     * per-level entity ids and game_load_gamedata recomputes gamedata_hash, so
+     * host and clients re-converge once the clients reload the same bytes. On
+     * failure state is left however the load left it -- the hot-reload contract. */
+    if (!game_load_gamedata(diag, state,
+                            (GamedataParams){.toml_string = (const char *)network->resync_buffer,
+                                             .level_name = network->resync_level_name,
+                                             .texture_lookup = texture_lookup,
+                                             .texture_user_data = texture_user_data})) {
+        return false;
+    }
+
+    /* (4) The structural edit is a session-wide barrier: clear undo and push a
+     * fresh baseline, mirroring the hot-reload / transition reload paths. */
+    undo_history_clear(undo_history);
+    undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
+                           strv_from_cstr("Structural resync"));
+
+    /* (5) Arm the next generation for streaming (first edit makes it 1);
+     * resync_send_timer 0 sends on the next host tick's sweep. */
+    network->resync_generation++;
+    network->resync_total_bytes = (size_t)emitted;
+    network->resync_send_timer = 0.0F;
+
+    /* (6) Force-release every active lock: the barrier invalidates every claim
+     * (entity ids are about to be reassigned), and each release echo clears the
+     * matching replica on every client. Client op holdback / selection staleness
+     * heals on the client's own apply (network_client_apply_resync). */
+    for (int index = 0; index < NETWORK_LOCKS_MAX; index++) {
+        EntityLock *lock = &network->locks[index];
+        if (lock->active) {
+            host_force_release_lock(network, lock, str_to_strv(state->gamedata.current_level.name));
+        }
+    }
+    return true;
+}
+
 void network_host_tick(GameState *state, float delta_time)
 {
     if (state->network.mode != NET_HOSTING) {
@@ -355,6 +533,11 @@ void network_host_tick(GameState *state, float delta_time)
     host_tick_presence(&state->network, delta_time);
     network_host_tick_reliable_channels(&state->network, delta_time);
     network_host_send_acks(&state->network);
+    /* S8.7f1: after this tick's incoming RESYNC_COMPLETE confirmations landed in
+     * network_host_receive, stream the armed generation to every client still
+     * trailing it (and any late joiner) on the send-interval cadence, and send
+     * the one-shot post-confirm snapshot heal to any client that just caught up. */
+    host_tick_resync(state, delta_time);
 }
 
 void network_client_tick(GameState *state, const InputState *local_input, float delta_time)
@@ -972,6 +1155,42 @@ static void network_client_receive_cursor(NetworkState *network, PacketReader *r
  * network_host_receive's own drain loop (network.c). The decode array cap
  * matches NETWORK_SYNC_RECORDS_PER_PACKET exactly, since that is also the
  * largest chunk send_sync_records ever encodes into one packet. */
+/* Dispatch one already-header-decoded packet by type onto this client's state.
+ * `bytes`/`len` are the whole datagram (MSG_OP parks raw bytes, see
+ * network_client_receive_op). Split out of network_client_receive_state's drain
+ * loop so neither trips clang-tidy's cognitive-complexity ceiling. */
+static void network_client_dispatch_packet(GameState *state, const uint8_t *bytes, size_t len, DecodedPacket *packet)
+{
+    if (packet->header.type == MSG_SNAPSHOT || packet->header.type == MSG_DELTA) {
+        AttrRecord records[NETWORK_SYNC_RECORDS_PER_PACKET];
+        size_t record_count = 0;
+        if (protocol_decode_attr_list(&packet->reader, records, NETWORK_SYNC_RECORDS_PER_PACKET, &record_count)) {
+            network_client_apply_state(state, records, record_count);
+        }
+    } else if (packet->header.type == MSG_EVENT) {
+        network_client_receive_event(&state->network, packet->header.seq, &packet->reader);
+    } else if (packet->header.type == MSG_OP) {
+        network_client_receive_op(state, bytes, len, packet);
+    } else if (packet->header.type == MSG_ACK) {
+        AckMessage ack = {0};
+        if (protocol_decode_ack(&packet->reader, &ack)) {
+            reliable_on_ack(&state->network.host_event_channel, ack);
+        }
+    } else if (packet->header.type == MSG_JOIN_ACCEPT) {
+        JoinAcceptMessage accept = {0};
+        if (protocol_decode_join_accept(&packet->reader, &accept)) {
+            client_apply_join_accept(&state->network, accept);
+        }
+    } else if (packet->header.type == MSG_CURSOR) {
+        network_client_receive_cursor(&state->network, &packet->reader);
+    } else if (packet->header.type == MSG_RESYNC) {
+        ResyncChunk chunk = {0};
+        if (protocol_decode_resync(&packet->reader, &chunk)) {
+            network_resync_accept_chunk(&state->network, &chunk);
+        }
+    }
+}
+
 static void network_client_receive_state(GameState *state)
 {
     uint8_t buffer[NET_MAX_PACKET_SIZE];
@@ -981,33 +1200,53 @@ static void network_client_receive_state(GameState *state)
         DecodedPacket packet;
         ErrorState decode_err = {0};
         if (protocol_decode_packet(buffer, (size_t)received, &packet, &decode_err)) {
-            if (packet.header.type == MSG_SNAPSHOT || packet.header.type == MSG_DELTA) {
-                AttrRecord records[NETWORK_SYNC_RECORDS_PER_PACKET];
-                size_t record_count = 0;
-                if (protocol_decode_attr_list(&packet.reader, records, NETWORK_SYNC_RECORDS_PER_PACKET,
-                                              &record_count)) {
-                    network_client_apply_state(state, records, record_count);
-                }
-            } else if (packet.header.type == MSG_EVENT) {
-                network_client_receive_event(&state->network, packet.header.seq, &packet.reader);
-            } else if (packet.header.type == MSG_OP) {
-                network_client_receive_op(state, buffer, (size_t)received, &packet);
-            } else if (packet.header.type == MSG_ACK) {
-                AckMessage ack = {0};
-                if (protocol_decode_ack(&packet.reader, &ack)) {
-                    reliable_on_ack(&state->network.host_event_channel, ack);
-                }
-            } else if (packet.header.type == MSG_JOIN_ACCEPT) {
-                JoinAcceptMessage accept = {0};
-                if (protocol_decode_join_accept(&packet.reader, &accept)) {
-                    client_apply_join_accept(&state->network, accept);
-                }
-            } else if (packet.header.type == MSG_CURSOR) {
-                network_client_receive_cursor(&state->network, &packet.reader);
-            }
+            network_client_dispatch_packet(state, buffer, (size_t)received, &packet);
         }
         received = net_recv(&state->network.transport, &src, buffer, sizeof(buffer));
     }
+}
+
+bool network_client_resync_ready(const GameState *state)
+{
+    return state->network.resync_ready;
+}
+
+bool network_client_apply_resync(
+    Diag *diag, GameState *state, UndoHistory *undo_history, TextureLookupFn texture_lookup, void *texture_user_data)
+{
+    NetworkState *network = &state->network;
+    /* network_resync_accept_chunk guarantees total_bytes < NETWORK_RESYNC_MAX_BYTES,
+     * so this one-byte terminator always fits and game_load_gamedata can read
+     * the reassembled TOML as a C string. Clear resync_ready up front: whether
+     * the reload succeeds or fails this generation is done being applied. */
+    size_t total_bytes = network->resync_incoming_total_bytes;
+    network->resync_buffer[total_bytes] = 0;
+    network->resync_ready = false;
+    if (!game_load_gamedata(diag, state,
+                            (GamedataParams){.toml_string = (const char *)network->resync_buffer,
+                                             .level_name = network->resync_incoming_level_name,
+                                             .texture_lookup = texture_lookup,
+                                             .texture_user_data = texture_user_data})) {
+        /* A failed parse is never retried for the same generation; a newer one
+         * supersedes. This leaves the client diverged until the next structural
+         * edit (or S8.7i recovery) -- a bounded pre-alpha compromise. Do NOT
+         * confirm, so the host keeps this generation armed for the client. */
+        network->resync_failed_generation = network->resync_incoming_generation;
+        return false;
+    }
+    /* Session-wide barrier, mirroring the host: clear undo, push a fresh
+     * baseline. Both sides re-parsed the same bytes, so entity ids and
+     * gamedata_hash re-converge here. */
+    undo_history_clear(undo_history);
+    undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
+                           strv_from_cstr("Structural resync"));
+    /* Confirm to the host over the reliable client->host channel so it stops
+     * re-streaming this generation. The generation rides EventRecord.entity_id
+     * (handle_event_datagram, network.c reads it back). */
+    network_client_send_reliable_event(network, (EventRecord){.event_type = NETWORK_EVENT_RESYNC_COMPLETE,
+                                                              .entity_id = (int32_t)network->resync_incoming_generation,
+                                                              .argument = (Strv){0}});
+    return true;
 }
 
 void network_editor_commit_move(GameState *state, int entity_id, Vector2 new_position)

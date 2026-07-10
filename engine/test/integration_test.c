@@ -9957,3 +9957,445 @@ void test_integration_death_state_on_defeat(void)
 
     test_game_teardown(&game);
 }
+
+/* ---- Integration: S8.7f1 full-gamedata structural resync ----
+ *
+ * Structural edits (blueprints, rules, atlas, levels, tiles) have no
+ * fine-grained wire encoding: they propagate as a coarse full-gamedata resync.
+ * The host re-emits the whole gamedata as TOML, reloads its own GameState from
+ * those bytes, and streams the same bytes to every client, which reload
+ * identically -- so per-level entity ids and the gamedata content hash
+ * re-converge on every peer, and undo is cleared everywhere (the barrier). The
+ * host emit + reload + stream is driven directly by
+ * network_host_begin_structural_resync (the editor trigger is a later slice);
+ * the client reassemble + reload runs where frame.c wires it in
+ * (run_active_frame), driven only through test_advance_frame.
+ *
+ * host_session_gamedata emits to under one NETWORK_RESYNC_CHUNK_BYTES chunk, so
+ * multi-chunk reassembly is proven unit-style in network_test.c
+ * (test_resync_accept_out_of_order_completes, a 3-chunk buffer) rather than
+ * re-driven here. */
+
+/* All-same dummy texture lookup for the host's self-reload inside
+ * network_host_begin_structural_resync (the client-side apply uses the frame_ctx
+ * lookup wired by test_helpers.c). Returns a valid non-null handle; entity
+ * rendering never runs headless, so the handle is only address-stored. */
+static Texture2D resync_test_texture;
+static Texture2D *resync_test_texture_lookup(const char *texture_name, void *user_data)
+{
+    (void)texture_name;
+    (void)user_data;
+    return &resync_test_texture;
+}
+
+/* Add a "magic" float attr to the named blueprint -- a structural gamedata edit
+ * (re-emitted by toml_emit_gamedata) the fine-grained entity delta stream never
+ * carries, so it only reaches clients via a full-gamedata resync. */
+static void host_add_blueprint_magic_attr(GameState *state, const char *blueprint_name, float value)
+{
+    Allocator alloc = allocator_arena(&state->gamedata_arena);
+    for (int index = 0; index < state->gamedata.blueprints.entries.count; index++) {
+        Blueprint *blueprint = &state->gamedata.blueprints.entries.data[index];
+        if (strcmp(attr_get_string(&blueprint->attrs, "name"), blueprint_name) == 0) {
+            (void)attr_set_float(&alloc, &blueprint->attrs, "magic", value);
+            return;
+        }
+    }
+}
+
+/* Drain every packet on `transport`, returning how many decoded as MSG_RESYNC.
+ * Consumes all packets (non-resync traffic discarded) -- lets a test assert the
+ * host has stopped streaming resync chunks to a confirmed client. */
+static int drain_count_resync(NetTransport *transport)
+{
+    uint8_t buffer[NET_MAX_PACKET_SIZE];
+    NetAddr src = {0};
+    int count = 0;
+    int received = net_recv(transport, &src, buffer, sizeof(buffer));
+    while (received > 0) {
+        DecodedPacket packet;
+        ErrorState decode_err = {0};
+        if (protocol_decode_packet(buffer, (size_t)received, &packet, &decode_err) &&
+            packet.header.type == MSG_RESYNC) {
+            count++;
+        }
+        received = net_recv(transport, &src, buffer, sizeof(buffer));
+    }
+    return count;
+}
+
+/* A structural blueprint edit on the host propagates to both clients via the
+ * resync stream: both clients' gamedata shows the new blueprint attr, their undo
+ * histories are cleared to the resync baseline, every peer's gamedata_hash
+ * re-converges, and both NetClients confirm the generation. Then, once confirmed,
+ * the host stops streaming -- no further MSG_RESYNC reaches either client. */
+void test_integration_structural_resync_propagates_and_stops(void)
+{
+    LoopbackNetwork loopback;
+    loopback_network_init(&loopback, &test_heap_alloc);
+    NetAddr host_addr = net_addr_make(1, 9000);
+    NetAddr client_addr = net_addr_make(2, 9001);
+    NetAddr client2_addr = net_addr_make(3, 9002);
+    NetTransport host_transport;
+    NetTransport client_transport;
+    NetTransport client2_transport;
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, host_addr, &host_transport));
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, client_addr, &client_transport));
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, client2_addr, &client2_transport));
+
+    TestGame host;
+    TEST_ASSERT_TRUE(test_game_setup(&host, host_session_gamedata));
+    host.state.network.mode = NET_HOSTING;
+    host.state.network.transport = host_transport;
+    host.state.network.next_op_seq = 1;
+
+    TestGame client;
+    TEST_ASSERT_TRUE(test_game_setup(&client, host_session_gamedata));
+    client.state.network.mode = NET_JOINING;
+    client.state.network.transport = client_transport;
+    client.state.network.join_target = host_addr;
+
+    TestGame client2;
+    TEST_ASSERT_TRUE(test_game_setup(&client2, host_session_gamedata));
+    client2.state.network.mode = NET_JOINING;
+    client2.state.network.transport = client2_transport;
+    client2.state.network.join_target = host_addr;
+
+    InputState no_input = {0};
+    for (int frame = 0; frame < 5; frame++) {
+        test_advance_frame(&client, no_input);
+        test_advance_frame(&client2, no_input);
+        test_advance_frame(&host, no_input);
+    }
+    TEST_ASSERT_EQUAL_INT(NET_CLIENT, client.state.network.mode);
+    TEST_ASSERT_EQUAL_INT(NET_CLIENT, client2.state.network.mode);
+    TEST_ASSERT_EQUAL_INT(2, host.state.network.client_count);
+
+    /* Host structural edit: add a blueprint attr invisible to the delta stream,
+     * then begin the resync (host self-reloads to the emitted bytes). Editor
+     * mode suspends the host's delta broadcast so the resync is the only
+     * gamedata channel. */
+    host.state.editor_mode = true;
+    host_add_blueprint_magic_attr(&host.state, "hero", 42.0F);
+    TEST_ASSERT_TRUE(network_host_begin_structural_resync(&host.diag, &host.state, &host.undo_history,
+                                                          resync_test_texture_lookup, nullptr));
+
+    for (int frame = 0; frame < 25; frame++) {
+        test_advance_frame(&client, no_input);
+        test_advance_frame(&client2, no_input);
+        test_advance_frame(&host, no_input);
+    }
+
+    /* Both clients now show the structural blueprint attr the delta stream never
+     * carried -- proof the whole gamedata re-parsed on each. */
+    const Blueprint *client_hero = blueprint_find(&client.state.gamedata.blueprints, "hero");
+    const Blueprint *client2_hero = blueprint_find(&client2.state.gamedata.blueprints, "hero");
+    TEST_ASSERT_NOT_NULL(client_hero);
+    TEST_ASSERT_NOT_NULL(client2_hero);
+    TEST_ASSERT_EQUAL_FLOAT(42.0F, attr_get_float(&client_hero->attrs, "magic", -1.0F));
+    TEST_ASSERT_EQUAL_FLOAT(42.0F, attr_get_float(&client2_hero->attrs, "magic", -1.0F));
+
+    /* Undo cleared to the resync baseline on each client. */
+    TEST_ASSERT_TRUE(strv_eq_cstr(undo_history_description(&client.undo_history), "Structural resync"));
+    TEST_ASSERT_TRUE(strv_eq_cstr(undo_history_description(&client2.undo_history), "Structural resync"));
+
+    /* Hashes re-converged across every peer (both sides parsed the same bytes). */
+    TEST_ASSERT_EQUAL_UINT64(host.state.gamedata_hash, client.state.gamedata_hash);
+    TEST_ASSERT_EQUAL_UINT64(host.state.gamedata_hash, client2.state.gamedata_hash);
+
+    /* Both clients confirmed the generation back to the host. */
+    TEST_ASSERT_EQUAL_UINT32(host.state.network.resync_generation,
+                             host.state.network.clients[0].resync_confirmed_generation);
+    TEST_ASSERT_EQUAL_UINT32(host.state.network.resync_generation,
+                             host.state.network.clients[1].resync_confirmed_generation);
+
+    /* Streaming stops after confirm: clear both inboxes, run more host ticks, and
+     * assert no further resync chunk is sent to either confirmed client. */
+    (void)drain_count_resync(&client_transport);
+    (void)drain_count_resync(&client2_transport);
+    for (int frame = 0; frame < 20; frame++) {
+        test_advance_frame(&host, no_input);
+    }
+    TEST_ASSERT_EQUAL_INT(0, drain_count_resync(&client_transport));
+    TEST_ASSERT_EQUAL_INT(0, drain_count_resync(&client2_transport));
+
+    test_game_teardown(&host);
+    test_game_teardown(&client);
+    test_game_teardown(&client2);
+    loopback_network_free(&loopback);
+}
+
+/* The structural resync barrier force-releases every entity lock: a granted lock
+ * clears immediately on the host, and the LOCK_RELEASE echo clears the client's
+ * replica after the ticks that deliver it. */
+void test_integration_structural_resync_releases_locks(void)
+{
+    LoopbackNetwork loopback;
+    loopback_network_init(&loopback, &test_heap_alloc);
+    NetAddr host_addr = net_addr_make(1, 9000);
+    NetAddr client_addr = net_addr_make(2, 9001);
+    NetTransport host_transport;
+    NetTransport client_transport;
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, host_addr, &host_transport));
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, client_addr, &client_transport));
+
+    TestGame host;
+    TEST_ASSERT_TRUE(test_game_setup(&host, host_session_gamedata));
+    host.state.network.mode = NET_HOSTING;
+    host.state.network.transport = host_transport;
+    host.state.network.next_op_seq = 1;
+
+    TestGame client;
+    TEST_ASSERT_TRUE(test_game_setup(&client, host_session_gamedata));
+    client.state.network.mode = NET_JOINING;
+    client.state.network.transport = client_transport;
+    client.state.network.join_target = host_addr;
+
+    Entity *host_hero = test_find_entity_by_blueprint(&host.state, "hero");
+    TEST_ASSERT_NOT_NULL(host_hero);
+    int host_hero_id = host_hero->id;
+
+    InputState no_input = {0};
+    for (int frame = 0; frame < 3; frame++) {
+        test_advance_frame(&client, no_input);
+        test_advance_frame(&host, no_input);
+    }
+    TEST_ASSERT_EQUAL_INT(NET_CLIENT, client.state.network.mode);
+
+    host.state.editor_mode = true;
+
+    /* Pre-seed a granted lock (d1 machinery): the client acquires the hero, the
+     * host grants and echoes it, the client mirrors it into its replica table. */
+    client_send_lock_op(
+        &client,
+        (EditorOp){.kind = EDITOR_OP_LOCK_ACQUIRE, .level_name = strv_from_cstr("test"), .entity_id = host_hero_id});
+    for (int frame = 0; frame < 4; frame++) {
+        test_advance_frame(&host, no_input);
+        test_advance_frame(&client, no_input);
+    }
+    TEST_ASSERT_NOT_NULL(network_lock_find(&host.state.network, host_hero_id));
+    TEST_ASSERT_NOT_NULL(network_lock_find(&client.state.network, host_hero_id));
+
+    /* The barrier force-releases every lock immediately on the host. */
+    TEST_ASSERT_TRUE(network_host_begin_structural_resync(&host.diag, &host.state, &host.undo_history,
+                                                          resync_test_texture_lookup, nullptr));
+    TEST_ASSERT_NULL(network_lock_find(&host.state.network, host_hero_id));
+
+    /* The LOCK_RELEASE echo clears the client's replica once delivered. */
+    for (int frame = 0; frame < 20; frame++) {
+        test_advance_frame(&host, no_input);
+        test_advance_frame(&client, no_input);
+    }
+    TEST_ASSERT_NULL(network_lock_find(&client.state.network, host_hero_id));
+
+    test_game_teardown(&host);
+    test_game_teardown(&client);
+    loopback_network_free(&loopback);
+}
+
+/* A client that joins AFTER the host's structural edit (the editing-join path)
+ * carries a genuinely MISMATCHED gamedata hash -- its authored fixture vs the
+ * host's re-emitted bytes -- and must still be accepted: with a resync
+ * generation armed the JOIN gate lets it through (handle_join_datagram,
+ * network.c; host always wins), the stream converges it (attr visible, hash
+ * equal, generation confirmed), and the post-confirm snapshot heal overlays
+ * LIVE entity positions on the emit-frozen structural base: an entity the host
+ * moved after the emit must end at the moved position on the late joiner, not
+ * the emit-time one. */
+void test_integration_structural_resync_late_join_converges(void)
+{
+    LoopbackNetwork loopback;
+    loopback_network_init(&loopback, &test_heap_alloc);
+    NetAddr host_addr = net_addr_make(1, 9000);
+    NetAddr late_addr = net_addr_make(2, 9001);
+    NetTransport host_transport;
+    NetTransport late_transport;
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, host_addr, &host_transport));
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, late_addr, &late_transport));
+
+    TestGame host;
+    TEST_ASSERT_TRUE(test_game_setup(&host, host_session_gamedata));
+    host.state.network.mode = NET_HOSTING;
+    host.state.network.transport = host_transport;
+    host.state.network.next_op_seq = 1;
+    host.state.editor_mode = true;
+
+    /* Bump a generation FIRST (structural edit + resync arm) with no clients. */
+    host_add_blueprint_magic_attr(&host.state, "hero", 42.0F);
+    TEST_ASSERT_TRUE(network_host_begin_structural_resync(&host.diag, &host.state, &host.undo_history,
+                                                          resync_test_texture_lookup, nullptr));
+    TEST_ASSERT_EQUAL_UINT32(1, host.state.network.resync_generation);
+
+    /* AFTER the emit, move the hero on the host (a direct write standing in for
+     * live sim/edit drift). The streamed buffer is frozen at emit time, so only
+     * the post-confirm snapshot heal can carry this position to the late joiner
+     * -- host editor mode keeps the every-tick delta broadcast suspended. The
+     * hero pointer is re-fetched: the self-reload above re-parsed the level. */
+    Entity *host_hero = test_find_entity_by_blueprint(&host.state, "hero");
+    TEST_ASSERT_NOT_NULL(host_hero);
+    int hero_id = host_hero->id;
+    Vector2 moved = {310.0F, 205.0F};
+    host_hero->position = moved;
+
+    /* THEN a fresh client joins with its GENUINE hash -- the authored fixture's,
+     * which no longer matches the host's re-emitted bytes. The armed generation
+     * is what lets this mismatched JOIN through. The client's gamedata is still
+     * the pre-edit fixture (no "magic" attr), so the attr appearing below proves
+     * the resync delivered it rather than the client having loaded it locally. */
+    TestGame late_client;
+    TEST_ASSERT_TRUE(test_game_setup(&late_client, host_session_gamedata));
+    TEST_ASSERT_NOT_EQUAL_UINT64(host.state.gamedata_hash, late_client.state.gamedata_hash);
+    late_client.state.network.mode = NET_JOINING;
+    late_client.state.network.transport = late_transport;
+    late_client.state.network.join_target = host_addr;
+
+    const Blueprint *late_hero_before = blueprint_find(&late_client.state.gamedata.blueprints, "hero");
+    TEST_ASSERT_NOT_NULL(late_hero_before);
+    TEST_ASSERT_EQUAL_FLOAT(-1.0F, attr_get_float(&late_hero_before->attrs, "magic", -1.0F));
+
+    InputState no_input = {0};
+    for (int frame = 0; frame < 40; frame++) {
+        test_advance_frame(&late_client, no_input);
+        test_advance_frame(&host, no_input);
+    }
+    TEST_ASSERT_EQUAL_INT(NET_CLIENT, late_client.state.network.mode);
+    TEST_ASSERT_EQUAL_INT(1, host.state.network.client_count);
+
+    const Blueprint *late_hero_after = blueprint_find(&late_client.state.gamedata.blueprints, "hero");
+    TEST_ASSERT_NOT_NULL(late_hero_after);
+    TEST_ASSERT_EQUAL_FLOAT(42.0F, attr_get_float(&late_hero_after->attrs, "magic", -1.0F));
+    TEST_ASSERT_EQUAL_UINT64(host.state.gamedata_hash, late_client.state.gamedata_hash);
+    TEST_ASSERT_EQUAL_UINT32(host.state.network.resync_generation,
+                             host.state.network.clients[0].resync_confirmed_generation);
+
+    /* Position freshness: the reload left the hero at its emit-time position
+     * (100, 100); the one-shot post-confirm snapshot must have overlaid the
+     * live moved position on top. */
+    Entity *late_hero_entity = test_find_entity_by_id(&late_client.state, hero_id);
+    TEST_ASSERT_NOT_NULL(late_hero_entity);
+    TEST_ASSERT_EQUAL_FLOAT(moved.x, late_hero_entity->position.x);
+    TEST_ASSERT_EQUAL_FLOAT(moved.y, late_hero_entity->position.y);
+
+    test_game_teardown(&host);
+    test_game_teardown(&late_client);
+    loopback_network_free(&loopback);
+}
+
+/* The mismatched-join acceptance is gated STRICTLY on an armed resync
+ * generation: with resync_generation still 0 (no structural edit this session)
+ * a hash-mismatched JOIN stays silently refused exactly as before -- the
+ * client never leaves NET_JOINING and the host registers nothing. */
+void test_integration_mismatched_join_refused_without_resync(void)
+{
+    LoopbackNetwork loopback;
+    loopback_network_init(&loopback, &test_heap_alloc);
+    NetAddr host_addr = net_addr_make(1, 9000);
+    NetAddr client_addr = net_addr_make(2, 9001);
+    NetTransport host_transport;
+    NetTransport client_transport;
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, host_addr, &host_transport));
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, client_addr, &client_transport));
+
+    TestGame host;
+    TEST_ASSERT_TRUE(test_game_setup(&host, host_session_gamedata));
+    host.state.network.mode = NET_HOSTING;
+    host.state.network.transport = host_transport;
+    host.state.network.next_op_seq = 1;
+    TEST_ASSERT_EQUAL_UINT32(0, host.state.network.resync_generation);
+
+    /* Simulate genuinely different gamedata by perturbing the hash the client
+     * sends in its JOIN (the hash is the JOIN gate's whole input). */
+    TestGame client;
+    TEST_ASSERT_TRUE(test_game_setup(&client, host_session_gamedata));
+    client.state.gamedata_hash ^= 1;
+    client.state.network.mode = NET_JOINING;
+    client.state.network.transport = client_transport;
+    client.state.network.join_target = host_addr;
+
+    InputState no_input = {0};
+    for (int frame = 0; frame < 10; frame++) {
+        test_advance_frame(&client, no_input);
+        test_advance_frame(&host, no_input);
+    }
+    TEST_ASSERT_EQUAL_INT(NET_JOINING, client.state.network.mode);
+    TEST_ASSERT_EQUAL_INT(0, host.state.network.client_count);
+
+    test_game_teardown(&host);
+    test_game_teardown(&client);
+    loopback_network_free(&loopback);
+}
+
+/* After a completed resync, per-level entity ids are coherent across peers: a
+ * host-side move op (which names its entity by id) lands on the client's matching
+ * entity, proving both sides re-parsed to the same id assignment. */
+void test_integration_structural_resync_realigns_entity_ids(void)
+{
+    LoopbackNetwork loopback;
+    loopback_network_init(&loopback, &test_heap_alloc);
+    NetAddr host_addr = net_addr_make(1, 9000);
+    NetAddr client_addr = net_addr_make(2, 9001);
+    NetTransport host_transport;
+    NetTransport client_transport;
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, host_addr, &host_transport));
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, client_addr, &client_transport));
+
+    TestGame host;
+    TEST_ASSERT_TRUE(test_game_setup(&host, host_session_gamedata));
+    host.state.network.mode = NET_HOSTING;
+    host.state.network.transport = host_transport;
+    host.state.network.next_op_seq = 1;
+
+    TestGame client;
+    TEST_ASSERT_TRUE(test_game_setup(&client, host_session_gamedata));
+    client.state.network.mode = NET_JOINING;
+    client.state.network.transport = client_transport;
+    client.state.network.join_target = host_addr;
+
+    InputState no_input = {0};
+    for (int frame = 0; frame < 3; frame++) {
+        test_advance_frame(&client, no_input);
+        test_advance_frame(&host, no_input);
+    }
+    TEST_ASSERT_EQUAL_INT(NET_CLIENT, client.state.network.mode);
+
+    /* Both editing so the move op below is the sole entity-state channel. */
+    host.state.editor_mode = true;
+    client.state.editor_mode = true;
+
+    host_add_blueprint_magic_attr(&host.state, "hero", 7.0F);
+    TEST_ASSERT_TRUE(network_host_begin_structural_resync(&host.diag, &host.state, &host.undo_history,
+                                                          resync_test_texture_lookup, nullptr));
+    for (int frame = 0; frame < 25; frame++) {
+        test_advance_frame(&client, no_input);
+        test_advance_frame(&host, no_input);
+    }
+    TEST_ASSERT_EQUAL_UINT32(host.state.network.resync_generation,
+                             host.state.network.clients[0].resync_confirmed_generation);
+
+    /* Both peers re-parsed the same bytes, so the authored hero resolves to the
+     * same id on each. */
+    Entity *host_hero = test_find_entity_by_blueprint(&host.state, "hero");
+    Entity *client_hero = test_find_entity_by_blueprint(&client.state, "hero");
+    TEST_ASSERT_NOT_NULL(host_hero);
+    TEST_ASSERT_NOT_NULL(client_hero);
+    TEST_ASSERT_EQUAL_INT(host_hero->id, client_hero->id);
+    int hero_id = host_hero->id;
+
+    /* Drive one host-side move op by that id; it must land on the client's
+     * matching entity, proving the ids realigned. */
+    Vector2 target = {271.0F, 133.0F};
+    host_hero->position = target;
+    network_editor_commit_move(&host.state, hero_id, target);
+    for (int frame = 0; frame < 6; frame++) {
+        test_advance_frame(&client, no_input);
+        test_advance_frame(&host, no_input);
+    }
+    Entity *client_hero_moved = test_find_entity_by_id(&client.state, hero_id);
+    TEST_ASSERT_NOT_NULL(client_hero_moved);
+    TEST_ASSERT_EQUAL_FLOAT(target.x, client_hero_moved->position.x);
+    TEST_ASSERT_EQUAL_FLOAT(target.y, client_hero_moved->position.y);
+
+    test_game_teardown(&host);
+    test_game_teardown(&client);
+    loopback_network_free(&loopback);
+}

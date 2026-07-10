@@ -142,6 +142,15 @@ typedef enum {
      * an unknown type is already silently ignored by every drain loop, so no
      * PROTOCOL_VERSION bump is needed. */
     MSG_CURSOR,
+    /* S8.7f1: one chunk of a full-gamedata structural resync (see ResyncChunk
+     * below). Structural edits (blueprints, rules, atlas, animation, levels,
+     * tiles) have no fine-grained wire encoding by design, so they propagate
+     * as a coarse full-gamedata re-emit the host streams to every client one
+     * chunk per packet. Appended last on purpose, same wire-byte caveat as
+     * MSG_OP/MSG_CURSOR -- enumerators are never reordered or renumbered, and
+     * an unknown type is already silently ignored by every drain loop, so no
+     * PROTOCOL_VERSION bump is needed. */
+    MSG_RESYNC,
 } MessageType;
 
 /* ---- Attr record: entity_id + name + typed value.
@@ -382,6 +391,48 @@ typedef struct {
  * closed on any truncated read. */
 [[nodiscard]] bool
 protocol_decode_cursor(PacketReader *reader, PresenceRecord *out_records, size_t cap, size_t *out_count);
+
+/* ---- MSG_RESYNC: one chunk of a full-gamedata structural resync (S8.7f1).
+ *
+ * A structural edit re-emits the whole gamedata as TOML; the host streams
+ * those bytes to every client one chunk per packet, and each client
+ * reassembles the full buffer, null-terminates it, and reloads its own
+ * GameState from it -- both sides re-parse the same bytes so per-level entity
+ * ids and the gamedata content hash re-converge on every peer.
+ *
+ * Fire-and-forget repeat-set, NOT a reliable channel: the host re-sends the
+ * complete chunk set on a timer until each client confirms (network.h's
+ * resync bookkeeping), so any dropped chunk is simply refilled by the next
+ * sweep -- no per-chunk seq/ack/resend machinery needed. total_bytes is the
+ * whole emitted TOML length; chunk_index/chunk_count place this chunk within
+ * it; current_level_name is the host's current level (the client reloads onto
+ * it); payload is this chunk's slice of the TOML bytes (NETWORK_RESYNC_CHUNK_BYTES
+ * for every chunk but the last, which carries the remainder). Both
+ * current_level_name and payload are length-prefixed strings on the wire; the
+ * decoded Strv views point into the reader's own buffer, same lifetime
+ * contract every other decoded string field in this header documents. ---- */
+#define NETWORK_RESYNC_CHUNK_BYTES 1024
+
+typedef struct {
+    uint32_t generation;
+    uint32_t total_bytes;
+    uint16_t chunk_index;
+    uint16_t chunk_count;
+    Strv current_level_name;
+    Strv payload;
+} ResyncChunk;
+
+/* Encode one resync chunk as a whole MSG_RESYNC packet into a caller-owned
+ * buffer, reporting total bytes written via out_len. Fails closed on any
+ * bounds overflow, like every other protocol_encode_*_packet. */
+[[nodiscard]] bool protocol_encode_resync_packet(
+    uint8_t *buffer, size_t capacity, uint32_t seq, const ResyncChunk *chunk, size_t *out_len);
+
+/* Decode an MSG_RESYNC payload after the caller already decoded the header
+ * (same division of labor as protocol_decode_cursor). The decoded
+ * current_level_name/payload Strv views point into the reader's own buffer.
+ * Fails closed on any truncated read. */
+[[nodiscard]] bool protocol_decode_resync(PacketReader *reader, ResyncChunk *out);
 
 /* ---- Whole-packet convenience: header + payload in one call, with
  * `length` back-patched once the payload's actual size is known. Each
