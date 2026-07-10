@@ -181,8 +181,12 @@
  * table by delta_time and force-releases any lock whose holder has gone
  * silent past NETWORK_LOCK_TIMEOUT_SECONDS, echoing a LOCK_RELEASE authored by
  * the former holder -- ageing runs AFTER network_host_receive so this tick's
- * incoming refreshes land first. No-op under any mode other than
- * NET_HOSTING. */
+ * incoming refreshes land first. (S8.7e) Finally the presence table is
+ * serviced: this frame's bridged cursor (frame.c) is folded into the host's
+ * own entry (player_id 0), the table is aged so a silent peer drops out, and
+ * the aggregate of every active entry is relayed as one MSG_CURSOR to every
+ * client -- the host is the star-topology relay. No-op under any mode other
+ * than NET_HOSTING. */
 void network_host_tick(GameState *state, float delta_time);
 
 /* JOINING or NET_CLIENT only. NET_JOINING: (re)sends this session's
@@ -215,7 +219,12 @@ void network_host_tick(GameState *state, float delta_time);
  * dispatched by kind: MOVE writes the entity position, LOCK_ACQUIRE/RELEASE
  * maintain this client's replica lock table, and a LOCK_DENY addressed to
  * this peer appends its entity id to lock_denied_entity_ids for the editor to
- * drain (S8.7d2). No-op under any other mode. */
+ * drain (S8.7d2). (S8.7e) Any host-relayed MSG_CURSOR drained here upserts
+ * every peer's presence into this client's table (skipping its own echoed
+ * entry, the local bridge copy is fresher); then this client's own bridged
+ * cursor (frame.c) is sent to the host and mirrored locally, and the table is
+ * aged so a peer the host stops relaying fades out. No-op under any other
+ * mode. */
 void network_client_tick(GameState *state, const InputState *local_input, float delta_time);
 
 /* HOST side (S8.4b): encode the current synced state of state's whole

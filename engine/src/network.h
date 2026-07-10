@@ -33,6 +33,8 @@
 #include "net_protocol.h" // EventRecord, AckMessage
 #include "net_reliable.h" // ReliableChannel
 
+#include "raylib.h" // Vector2
+
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -232,6 +234,37 @@ typedef struct {
  * exception as the locks table above. */
 #define NETWORK_LOCK_DENIED_MAX 32
 
+/* S8.7e: cap on presence entries held at once -- every connected peer plus
+ * this peer's own entry. Bounded by NET_MAX_CLIENTS + 1 (the host and up to
+ * NET_MAX_CLIENTS clients), a peer-count bound, not a frame-count one -- the
+ * same justified fixed-cap exception BindingStore/NetClient/JoinList rely on. */
+#define NETWORK_PRESENCE_MAX (NET_MAX_CLIENTS + 1)
+
+/* S8.7e: seconds of silence after which a presence entry fades out. Presence
+ * flows only while a peer is actively editing (frame.c gates the outgoing
+ * bridge on editor_mode), so a peer that leaves editor mode, goes quiet, or
+ * disconnects stops refreshing its entry and is deactivated once its age
+ * crosses this. One second at the presence tick rate is many missed packets --
+ * a single dropped datagram never fades an active peer. */
+#define NETWORK_PRESENCE_TIMEOUT_SECONDS 1.0F
+
+/* S8.7e: one peer's editor presence -- its cursor, current selection, and
+ * display name. This table holds ALL known peers' presence, INCLUDING this
+ * peer's own entry (so rendering can treat every cursor uniformly and simply
+ * skip its own id). cursor is a world position (the editor camera target,
+ * frame.c). seconds_since_seen is a silence-age accumulator: reset to 0 by
+ * network_presence_upsert whenever a fresh record arrives, aged each tick by
+ * network_presence_age, and deactivated past NETWORK_PRESENCE_TIMEOUT_SECONDS.
+ * active distinguishes a live entry from an unused slot in the fixed-cap array. */
+typedef struct {
+    int player_id;
+    Vector2 cursor;
+    int selected_entity_id;
+    char name[NET_NAME_MAX];
+    float seconds_since_seen;
+    bool active;
+} PresenceEntry;
+
 typedef struct {
     NetMode mode;
     NetTransport transport;
@@ -346,6 +379,24 @@ typedef struct {
      * silently. Meaningless on the HOST's own NetworkState. */
     int lock_denied_entity_ids[NETWORK_LOCK_DENIED_MAX];
     int lock_denied_count;
+    /* S8.7e: the editor-presence table -- every known peer's cursor,
+     * selection, and name, INCLUDING this peer's own entry (see PresenceEntry
+     * above). On a CLIENT it holds this client's own entry (from its local
+     * bridge) plus the host and every other peer relayed by the host; on the
+     * HOST it holds the host's own entry plus each client's latest. Session
+     * state, never undo-snapshotted -- reset by network_stop like every other
+     * field here. */
+    PresenceEntry presence[NETWORK_PRESENCE_MAX];
+    /* S8.7e: the outgoing presence bridge. frame.c writes these each editor
+     * frame (local_cursor = the editor camera target, a main.c local; the
+     * selection = editor_state->selected_entity_id) and sets local_cursor_valid;
+     * the session tick (net_session.c) consumes them and clears the flag. This
+     * decouples the editor-owned camera/selection -- main.c locals -- from the
+     * net layer, which must stay editor-free (network.h has no dependency on
+     * the editor). Meaningless unless local_cursor_valid is set this frame. */
+    Vector2 local_cursor;
+    int local_cursor_selected_entity_id;
+    bool local_cursor_valid;
 } NetworkState;
 
 /* Placeholder advertised name until a real player-name setting exists
@@ -389,7 +440,8 @@ network_start_hosting(NetworkState *network, Allocator *alloc, const char *host_
  * value -- mode, join_list, join_target, beacon_timer, host_name,
  * clients/client_count, local_player_id (S8.6), host_event_channel, the
  * delivered-event bookkeeping (S8.4c), the client-event bookkeeping
- * (S8.7a), and (S8.7d1) the lock table plus the client deny list/count.
+ * (S8.7a), (S8.7d1) the lock table plus the client deny list/count, and
+ * (S8.7e) the presence table plus the outgoing presence bridge fields.
  * Idempotent: safe to call on an already-OFFLINE NetworkState. */
 void network_stop(NetworkState *network);
 
@@ -418,6 +470,28 @@ EntityLock *network_lock_find(NetworkState *network, int entity_id);
  * holder arrives (network_host_receive, network.c). No-op if the holder owns
  * no locks. */
 void network_lock_refresh_holder(NetworkState *network, int holder_player_id);
+
+/* ---- S8.7e: editor presence table helpers. Pure state mutators on
+ * network->presence, unit-tested directly in network_test.c. Both host and
+ * client maintain the table the same way -- the host relays the aggregate,
+ * each peer renders every entry but its own. ---- */
+
+/* Insert or refresh `record`: find the entry for record.player_id (or claim a
+ * free slot), copy its fields in (name truncated to NET_NAME_MAX-1 bytes, the
+ * same truncating copy join_list_add_or_refresh uses), reset seconds_since_seen
+ * to 0, and mark it active. A full table silently drops the record -- the cap
+ * equals the max peer count, so a full table means a duplicate-id anomaly, not
+ * a real new peer. */
+void network_presence_upsert(NetworkState *network, PresenceRecord record);
+
+/* Age every active entry by delta_time and deactivate any past
+ * NETWORK_PRESENCE_TIMEOUT_SECONDS. A peer that left editor mode, went silent,
+ * or disconnected stops refreshing its entry (frame.c only bridges presence
+ * while editing) and fades out here. */
+void network_presence_age(NetworkState *network, float delta_time);
+
+/* The active presence entry for player_id, or nullptr if absent or inactive. */
+PresenceEntry *network_presence_find(NetworkState *network, int player_id);
 
 /* ---- S8.4a: session JOIN + INPUT flow, over an already-established
  * `network->transport`/`network->join_target` (net.h/net_loopback.h/
@@ -506,9 +580,14 @@ typedef struct {
  * deduped via the sending client's own event_channel (reliable_on_receive,
  * keyed by the packet header's seq) and, if newly delivered, appended to
  * out_ops. MSG_OP from an unregistered address is ignored, same as
- * MSG_INPUT/MSG_ACK/MSG_EVENT. out_ops must be non-null (callers that do
- * not consume ops pass one they ignore). Call once per tick, before
- * simulating, so the freshest input reaches this tick's game_update. */
+ * MSG_INPUT/MSG_ACK/MSG_EVENT. A decoded MSG_CURSOR (S8.7e) from a
+ * registered client upserts ONLY the records whose player_id matches the
+ * sending client's player_id into network->presence (one peer, one voice --
+ * the wire is never trusted to speak for another peer, mismatched records
+ * dropped); CURSOR from an unregistered address is ignored, same as the
+ * others. out_ops must be non-null (callers that do not consume ops pass one
+ * they ignore). Call once per tick, before simulating, so the freshest input
+ * reaches this tick's game_update. */
 void network_host_receive(NetworkState *network, uint64_t local_gamedata_hash, PendingEditorOps *out_ops);
 
 /* Look up a connected client by player_id (1..NET_MAX_CLIENTS). Returns

@@ -228,6 +228,95 @@ static void host_age_and_expire_locks(GameState *state, float delta_time)
     }
 }
 
+/* S8.7e: this peer's own presence record, assembled from the bridge fields
+ * frame.c wrote this editor frame. own_player_id is the peer's own id (0 on
+ * the host, local_player_id on a client); name is network->host_name (its
+ * dual host/client display-name role, network.h). */
+static PresenceRecord local_presence_record(const NetworkState *network, int own_player_id)
+{
+    return (PresenceRecord){
+        .player_id = own_player_id,
+        .cursor_x = network->local_cursor.x,
+        .cursor_y = network->local_cursor.y,
+        .selected_entity_id = network->local_cursor_selected_entity_id,
+        .name = strv_from_cstr(network->host_name),
+    };
+}
+
+/* S8.7e: build a record list from every active presence entry and relay it as
+ * ONE MSG_CURSOR to every active client -- the host is the star-topology relay,
+ * so each client learns every OTHER peer's cursor (and its own echoed back,
+ * which the client skips as stale, see network_client_receive_cursor). Fire-
+ * and-forget: a failed encode/send is silently dropped. */
+static void host_broadcast_presence(NetworkState *network)
+{
+    PresenceRecord records[NETWORK_PRESENCE_MAX];
+    size_t count = 0;
+    for (int index = 0; index < NETWORK_PRESENCE_MAX; index++) {
+        const PresenceEntry *entry = &network->presence[index];
+        if (!entry->active) {
+            continue;
+        }
+        records[count] = (PresenceRecord){
+            .player_id = entry->player_id,
+            .cursor_x = entry->cursor.x,
+            .cursor_y = entry->cursor.y,
+            .selected_entity_id = entry->selected_entity_id,
+            .name = strv_from_cstr(entry->name),
+        };
+        count++;
+    }
+    uint8_t buffer[NET_MAX_PACKET_SIZE];
+    size_t packet_len = 0;
+    if (!protocol_encode_cursor_packet(buffer, sizeof(buffer), 0, records, count, &packet_len)) {
+        return;
+    }
+    for (int index = 0; index < network->client_count; index++) {
+        const NetClient *client = &network->clients[index];
+        if (!client->active) {
+            continue;
+        }
+        (void)net_send(&network->transport, client->addr, buffer, packet_len);
+    }
+}
+
+/* S8.7e: HOST-side presence, once per hosting tick. Consume this editor
+ * frame's bridged cursor into the host's own entry (player_id 0), age the
+ * whole table so a silent peer drops out, then relay the aggregate. Ageing
+ * runs BEFORE the broadcast so an expired entry is never relayed; the host's
+ * own upsert runs before ageing so an actively-editing host never ages itself
+ * out. Incoming client cursors were already upserted by network_host_receive
+ * (above) this same tick, so the relay reflects the freshest of every peer. */
+static void host_tick_presence(NetworkState *network, float delta_time)
+{
+    if (network->local_cursor_valid) {
+        network_presence_upsert(network, local_presence_record(network, 0));
+        network->local_cursor_valid = false;
+    }
+    network_presence_age(network, delta_time);
+    host_broadcast_presence(network);
+}
+
+/* S8.7e: CLIENT-side presence, once per client tick. If frame.c bridged a
+ * cursor this editor frame, send this client's own presence to the host (one
+ * record) and mirror it into this client's own presence table (self-entry, so
+ * rendering treats every cursor uniformly), then clear the bridge flag. Age
+ * the table every tick so a peer the host stops relaying fades out. */
+static void client_tick_presence(NetworkState *network, float delta_time)
+{
+    if (network->local_cursor_valid) {
+        PresenceRecord record = local_presence_record(network, network->local_player_id);
+        uint8_t buffer[NET_MAX_PACKET_SIZE];
+        size_t packet_len = 0;
+        if (protocol_encode_cursor_packet(buffer, sizeof(buffer), 0, &record, 1, &packet_len)) {
+            (void)net_send(&network->transport, network->join_target, buffer, packet_len);
+        }
+        network_presence_upsert(network, record);
+        network->local_cursor_valid = false;
+    }
+    network_presence_age(network, delta_time);
+}
+
 void network_host_tick(GameState *state, float delta_time)
 {
     if (state->network.mode != NET_HOSTING) {
@@ -260,6 +349,10 @@ void network_host_tick(GameState *state, float delta_time)
      * network_host_receive above, so ageing here expires only genuinely
      * silent holders. */
     host_age_and_expire_locks(state, delta_time);
+    /* S8.7e: consume this frame's bridged cursor, age the presence table, and
+     * relay the aggregate to every client -- AFTER network_host_receive so
+     * this tick's incoming client cursors are already in the table. */
+    host_tick_presence(&state->network, delta_time);
     network_host_tick_reliable_channels(&state->network, delta_time);
     network_host_send_acks(&state->network);
 }
@@ -285,6 +378,10 @@ void network_client_tick(GameState *state, const InputState *local_input, float 
     if (state->network.mode == NET_CLIENT) {
         network_client_tick_reliable_channel(&state->network, delta_time);
         network_client_send_ack(&state->network);
+        /* S8.7e: send this client's own cursor to the host and age the
+         * presence table (host-relayed entries were upserted by the receive
+         * drain above). */
+        client_tick_presence(&state->network, delta_time);
     }
 }
 
@@ -824,6 +921,27 @@ static void client_apply_join_accept(NetworkState *network, JoinAcceptMessage ac
     network->mode = NET_CLIENT;
 }
 
+/* S8.7e: apply one host-relayed MSG_CURSOR onto this client's presence table.
+ * Upsert every record EXCEPT this client's own (player_id == local_player_id):
+ * the host echoes this client's entry back in the aggregate relay, but the
+ * local bridge copy (client_tick_presence) is always fresher, so the echo of
+ * self is skipped. Fire-and-forget: a malformed payload is silently dropped,
+ * the next relayed packet supersedes it. */
+static void network_client_receive_cursor(NetworkState *network, PacketReader *reader)
+{
+    PresenceRecord records[NETWORK_PRESENCE_MAX];
+    size_t record_count = 0;
+    if (!protocol_decode_cursor(reader, records, NETWORK_PRESENCE_MAX, &record_count)) {
+        return;
+    }
+    for (size_t index = 0; index < record_count; index++) {
+        if (records[index].player_id == network->local_player_id) {
+            continue;
+        }
+        network_presence_upsert(network, records[index]);
+    }
+}
+
 /* CLIENT side: drain every pending packet on state->network.transport and
  * apply whichever decodes as MSG_SNAPSHOT, MSG_DELTA, MSG_EVENT, MSG_OP
  * (S8.7c), MSG_ACK (S8.7a), or (S8.6) MSG_JOIN_ACCEPT. A MSG_OP echo goes
@@ -884,6 +1002,8 @@ static void network_client_receive_state(GameState *state)
                 if (protocol_decode_join_accept(&packet.reader, &accept)) {
                     client_apply_join_accept(&state->network, accept);
                 }
+            } else if (packet.header.type == MSG_CURSOR) {
+                network_client_receive_cursor(&state->network, &packet.reader);
             }
         }
         received = net_recv(&state->network.transport, &src, buffer, sizeof(buffer));

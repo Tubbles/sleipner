@@ -503,6 +503,18 @@ void run_active_frame(Diag *diag,
      * client's local fade-to-black transition suppresses ITS OWN player's
      * movement, but must not also suppress the input it forwards to the
      * host. */
+    /* S8.7e: bridge this editor frame's cursor into the net layer for the
+     * session ticks below to consume and share. The editor camera target IS
+     * the browse cursor; presence only flows while this peer is actually
+     * editing a networked session, and the receiver-side timeout
+     * (network_presence_age) fades a peer that stops. Writing these bridge
+     * fields rather than passing the editor camera/selection into the net
+     * layer keeps network.c editor-free (it has no editor dependency). */
+    if (state->editor_mode && (state->network.mode == NET_HOSTING || state->network.mode == NET_CLIENT)) {
+        state->network.local_cursor = editor_camera->target;
+        state->network.local_cursor_selected_entity_id = editor_state->selected_entity_id;
+        state->network.local_cursor_valid = true;
+    }
     network_host_tick(state, delta_time);
     network_client_tick(state, &input, delta_time);
     /* S8.4b: a NET_CLIENT frame renders only -- it never runs the

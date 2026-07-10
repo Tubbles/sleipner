@@ -591,6 +591,142 @@ void test_lock_refresh_zeroes_ages_for_one_holder_only(void)
     TEST_ASSERT_EQUAL_FLOAT(4.0F, network_lock_find(&network, 20)->seconds_since_refresh);
 }
 
+/* ---- S8.7e: presence table helpers ----
+ *
+ * Pure state mutators on NetworkState.presence -- no transport needed, driven
+ * on an all-zero NetworkState directly, the same whitebox way the lock helper
+ * tests above run. */
+
+void test_presence_upsert_claims_and_refreshes(void)
+{
+    NetworkState network = {0};
+    network_presence_upsert(&network, (PresenceRecord){.player_id = 2,
+                                                       .cursor_x = 10.0F,
+                                                       .cursor_y = 20.0F,
+                                                       .selected_entity_id = 7,
+                                                       .name = strv_from_cstr("Bob")});
+    PresenceEntry *entry = network_presence_find(&network, 2);
+    TEST_ASSERT_NOT_NULL(entry);
+    TEST_ASSERT_EQUAL_FLOAT(10.0F, entry->cursor.x);
+    TEST_ASSERT_EQUAL_FLOAT(20.0F, entry->cursor.y);
+    TEST_ASSERT_EQUAL_INT(7, entry->selected_entity_id);
+    TEST_ASSERT_EQUAL_STRING("Bob", entry->name);
+
+    /* A second upsert for the same id refreshes the SAME slot (no second
+     * entry) and resets the silence age back to 0. */
+    entry->seconds_since_seen = 5.0F;
+    network_presence_upsert(&network, (PresenceRecord){.player_id = 2,
+                                                       .cursor_x = 30.0F,
+                                                       .cursor_y = 40.0F,
+                                                       .selected_entity_id = -1,
+                                                       .name = strv_from_cstr("Bobby")});
+    PresenceEntry *refreshed = network_presence_find(&network, 2);
+    TEST_ASSERT_NOT_NULL(refreshed);
+    TEST_ASSERT_EQUAL_FLOAT(30.0F, refreshed->cursor.x);
+    TEST_ASSERT_EQUAL_INT(-1, refreshed->selected_entity_id);
+    TEST_ASSERT_EQUAL_STRING("Bobby", refreshed->name);
+    TEST_ASSERT_EQUAL_FLOAT(0.0F, refreshed->seconds_since_seen);
+
+    int active = 0;
+    for (int index = 0; index < NETWORK_PRESENCE_MAX; index++) {
+        if (network.presence[index].active) {
+            active++;
+        }
+    }
+    TEST_ASSERT_EQUAL_INT(1, active);
+}
+
+void test_presence_age_deactivates_past_timeout(void)
+{
+    NetworkState network = {0};
+    network_presence_upsert(&network, (PresenceRecord){.player_id = 1, .name = strv_from_cstr("A")});
+    /* Aged just past the timeout: the silent peer fades out. */
+    network_presence_age(&network, NETWORK_PRESENCE_TIMEOUT_SECONDS + 0.01F);
+    TEST_ASSERT_NULL(network_presence_find(&network, 1));
+}
+
+void test_presence_age_keeps_still_fresh_entry(void)
+{
+    NetworkState network = {0};
+    network_presence_upsert(&network, (PresenceRecord){.player_id = 1, .name = strv_from_cstr("A")});
+    /* Aged by less than the timeout: the entry survives. */
+    network_presence_age(&network, NETWORK_PRESENCE_TIMEOUT_SECONDS - 0.01F);
+    TEST_ASSERT_NOT_NULL(network_presence_find(&network, 1));
+}
+
+/* Encode a one-record MSG_CURSOR and send it from `from` to `dest`. */
+static void send_cursor(NetTransport *from, NetAddr dest, PresenceRecord record)
+{
+    uint8_t buffer[NET_MAX_PACKET_SIZE];
+    size_t packet_len = 0;
+    TEST_ASSERT_TRUE(protocol_encode_cursor_packet(buffer, sizeof(buffer), 0, &record, 1, &packet_len));
+    TEST_ASSERT_TRUE(net_send(from, dest, buffer, packet_len) > 0);
+}
+
+void test_host_receive_cursor_upserts_registered_client(void)
+{
+    LoopbackNetwork loopback = make_loopback_network();
+    NetAddr host_addr = net_addr_make(1, 9000);
+    NetAddr client_addr = net_addr_make(2, 9001);
+    NetTransport host_transport;
+    NetTransport client_transport;
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, host_addr, &host_transport));
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, client_addr, &client_transport));
+
+    NetworkState host_network = {.transport = host_transport};
+    register_client(&host_network, client_addr);
+    int player_id = host_network.clients[0].player_id;
+
+    send_cursor(&client_transport, host_addr,
+                (PresenceRecord){.player_id = player_id,
+                                 .cursor_x = 5.0F,
+                                 .cursor_y = 6.0F,
+                                 .selected_entity_id = 9,
+                                 .name = strv_from_cstr("Client")});
+    host_receive_events_only(&host_network);
+
+    PresenceEntry *entry = network_presence_find(&host_network, player_id);
+    TEST_ASSERT_NOT_NULL(entry);
+    TEST_ASSERT_EQUAL_FLOAT(5.0F, entry->cursor.x);
+    TEST_ASSERT_EQUAL_FLOAT(6.0F, entry->cursor.y);
+    TEST_ASSERT_EQUAL_INT(9, entry->selected_entity_id);
+    TEST_ASSERT_EQUAL_STRING("Client", entry->name);
+
+    loopback_network_free(&loopback);
+}
+
+void test_host_receive_cursor_drops_mismatched_and_unregistered(void)
+{
+    LoopbackNetwork loopback = make_loopback_network();
+    NetAddr host_addr = net_addr_make(1, 9000);
+    NetAddr client_addr = net_addr_make(2, 9001);
+    NetAddr rogue_addr = net_addr_make(3, 9002);
+    NetTransport host_transport;
+    NetTransport client_transport;
+    NetTransport rogue_transport;
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, host_addr, &host_transport));
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, client_addr, &client_transport));
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, rogue_addr, &rogue_transport));
+
+    NetworkState host_network = {.transport = host_transport};
+    register_client(&host_network, client_addr);
+    int player_id = host_network.clients[0].player_id;
+
+    /* (b) A registered client speaking for a DIFFERENT player_id -- one peer,
+     * one voice -- is dropped. */
+    send_cursor(&client_transport, host_addr,
+                (PresenceRecord){.player_id = player_id + 1, .name = strv_from_cstr("Impostor")});
+    /* (a) A record from an unregistered source is dropped. */
+    send_cursor(&rogue_transport, host_addr, (PresenceRecord){.player_id = player_id, .name = strv_from_cstr("Rogue")});
+    host_receive_events_only(&host_network);
+
+    for (int index = 0; index < NETWORK_PRESENCE_MAX; index++) {
+        TEST_ASSERT_FALSE(host_network.presence[index].active);
+    }
+
+    loopback_network_free(&loopback);
+}
+
 int main(void)
 {
     test_helpers_init();
@@ -616,5 +752,10 @@ int main(void)
     RUN_TEST(test_lock_acquire_refuses_when_table_full);
     RUN_TEST(test_lock_release_only_works_for_holder);
     RUN_TEST(test_lock_refresh_zeroes_ages_for_one_holder_only);
+    RUN_TEST(test_presence_upsert_claims_and_refreshes);
+    RUN_TEST(test_presence_age_deactivates_past_timeout);
+    RUN_TEST(test_presence_age_keeps_still_fresh_entry);
+    RUN_TEST(test_host_receive_cursor_upserts_registered_client);
+    RUN_TEST(test_host_receive_cursor_drops_mismatched_and_unregistered);
     return UNITY_END();
 }

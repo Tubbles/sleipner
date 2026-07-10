@@ -313,6 +313,43 @@ static void draw_lock_highlights(const GameState *state)
     }
 }
 
+/* S8.7e: half-extent of the ~8px presence crosshair, its line thickness, and
+ * the gap from the marker to the name label -- world-space units (this draws
+ * in the same BeginMode2D pass as the lock outlines above). */
+#define PRESENCE_MARKER_HALF 4.0F
+#define PRESENCE_MARKER_THICK 1.5F
+#define PRESENCE_LABEL_GAP 6
+
+/* S8.7e: draw a small crosshair + name label at every OTHER peer's editor
+ * cursor, so a collaborator can see where each other editor is working. The
+ * cursor is a world position (the peer's editor camera target, bridged in
+ * frame.c), drawn in the same world-space pass as the lock outlines above.
+ * NET_OFFLINE skips entirely (the presence table is empty there anyway); this
+ * peer's own entry (id 0 on the host, local_player_id on a client) is skipped
+ * so it never draws its own cursor. Reuses the lock-holder palette (same
+ * modulo) so a peer's cursor and its lock outlines share one color. */
+static void draw_presence_cursors(const GameState *state)
+{
+    if (state->network.mode == NET_OFFLINE) {
+        return;
+    }
+    int own_player_id = state->network.mode == NET_HOSTING ? 0 : state->network.local_player_id;
+    for (int index = 0; index < NETWORK_PRESENCE_MAX; index++) {
+        const PresenceEntry *entry = &state->network.presence[index];
+        if (!entry->active || entry->player_id == own_player_id) {
+            continue;
+        }
+        Color color = lock_holder_colors[entry->player_id % LOCK_HOLDER_COLOR_COUNT];
+        Vector2 cursor = entry->cursor;
+        DrawLineEx((Vector2){cursor.x - PRESENCE_MARKER_HALF, cursor.y},
+                   (Vector2){cursor.x + PRESENCE_MARKER_HALF, cursor.y}, PRESENCE_MARKER_THICK, color);
+        DrawLineEx((Vector2){cursor.x, cursor.y - PRESENCE_MARKER_HALF},
+                   (Vector2){cursor.x, cursor.y + PRESENCE_MARKER_HALF}, PRESENCE_MARKER_THICK, color);
+        draw_ui_text(state->assets.ui_font, entry->name, (int)(cursor.x + PRESENCE_MARKER_HALF) + PRESENCE_LABEL_GAP,
+                     (int)cursor.y, EDITOR_PANEL_FONT_SIZE, color);
+    }
+}
+
 void draw_editor_highlights(const GameState *state, const EditorState *editor_state, int hover_entity_index)
 {
     if (hover_entity_index >= 0 && hover_entity_index < state->gamedata.current_level.entities.count) {
@@ -337,6 +374,7 @@ void draw_editor_highlights(const GameState *state, const EditorState *editor_st
                              WHITE);
     }
     draw_lock_highlights(state);
+    draw_presence_cursors(state);
 }
 
 static const char *attr_display_value(const Attribute *attr)

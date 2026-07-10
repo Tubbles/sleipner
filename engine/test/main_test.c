@@ -172,6 +172,7 @@ void test_integration_optimistic_grab_deny_aborts_drag(void);
 void test_integration_lock_released_on_commit(void);
 void test_integration_lock_released_on_cancel(void);
 void test_integration_host_grab_grants_and_releases(void);
+void test_integration_editor_presence_shares_cursor_and_times_out(void);
 void test_integration_offline_local_player_matches_player(void);
 void test_integration_menu_escape_returns_resume(void);
 void test_integration_menu_gamepad_navigation(void);
@@ -449,6 +450,7 @@ int main(void)
     RUN_TEST(test_integration_lock_released_on_commit);
     RUN_TEST(test_integration_lock_released_on_cancel);
     RUN_TEST(test_integration_host_grab_grants_and_releases);
+    RUN_TEST(test_integration_editor_presence_shares_cursor_and_times_out);
     RUN_TEST(test_integration_offline_local_player_matches_player);
     RUN_TEST(test_integration_menu_escape_returns_resume);
     RUN_TEST(test_integration_menu_gamepad_navigation);

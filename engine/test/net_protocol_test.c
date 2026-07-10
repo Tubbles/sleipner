@@ -601,6 +601,82 @@ void test_protocol_decode_op_rejects_truncated_buffer(void)
     TEST_ASSERT_FALSE(protocol_decode_op(&reader, &out));
 }
 
+/* ---- MSG_CURSOR ---- */
+
+void test_protocol_cursor_packet_round_trip(void)
+{
+    /* Two records: a named peer with a real selection, and one with an empty
+     * name and a -1 (no selection) sentinel -- proves both the string and the
+     * -1-selection paths round-trip. */
+    PresenceRecord records[2] = {
+        {.player_id = 1,
+         .cursor_x = 12.5F,
+         .cursor_y = -4.0F,
+         .selected_entity_id = 7,
+         .name = strv_from_cstr("Alice")},
+        {.player_id = 2, .cursor_x = 0.0F, .cursor_y = 96.0F, .selected_entity_id = -1, .name = strv_from_cstr("")},
+    };
+
+    uint8_t buffer[NET_PROTOCOL_TEST_BUFFER_SIZE];
+    size_t total_len = 0;
+    TEST_ASSERT_TRUE(protocol_encode_cursor_packet(buffer, sizeof(buffer), 3, records, 2, &total_len));
+
+    DecodedPacket decoded;
+    ErrorState err = {0};
+    TEST_ASSERT_TRUE(protocol_decode_packet(buffer, total_len, &decoded, &err));
+    TEST_ASSERT_EQUAL_INT(MSG_CURSOR, decoded.header.type);
+
+    /* Zero-init so the analyzer can't flag out[index] as possibly
+     * uninitialized: it does not model that the out_count assertion below
+     * prunes any decode-returned-fewer path before the fields are read. */
+    PresenceRecord out[2] = {0};
+    size_t out_count = 0;
+    TEST_ASSERT_TRUE(protocol_decode_cursor(&decoded.reader, out, 2, &out_count));
+    TEST_ASSERT_EQUAL_size_t(2, out_count);
+    for (size_t index = 0; index < 2; index++) {
+        TEST_ASSERT_EQUAL_INT32(records[index].player_id, out[index].player_id);
+        TEST_ASSERT_EQUAL_FLOAT(records[index].cursor_x, out[index].cursor_x);
+        TEST_ASSERT_EQUAL_FLOAT(records[index].cursor_y, out[index].cursor_y);
+        TEST_ASSERT_EQUAL_INT32(records[index].selected_entity_id, out[index].selected_entity_id);
+        TEST_ASSERT_TRUE(strv_eq(records[index].name, out[index].name));
+    }
+}
+
+void test_protocol_cursor_empty_list_round_trip(void)
+{
+    uint8_t buffer[NET_PROTOCOL_TEST_BUFFER_SIZE];
+    size_t total_len = 0;
+    TEST_ASSERT_TRUE(protocol_encode_cursor_packet(buffer, sizeof(buffer), 0, nullptr, 0, &total_len));
+
+    DecodedPacket decoded;
+    ErrorState err = {0};
+    TEST_ASSERT_TRUE(protocol_decode_packet(buffer, total_len, &decoded, &err));
+    TEST_ASSERT_EQUAL_INT(MSG_CURSOR, decoded.header.type);
+
+    PresenceRecord out[1];
+    size_t out_count = 99;
+    TEST_ASSERT_TRUE(protocol_decode_cursor(&decoded.reader, out, 1, &out_count));
+    TEST_ASSERT_EQUAL_size_t(0, out_count);
+}
+
+void test_protocol_decode_cursor_rejects_truncated_buffer(void)
+{
+    PresenceRecord record = {
+        .player_id = 5, .cursor_x = 1.0F, .cursor_y = 2.0F, .selected_entity_id = 3, .name = strv_from_cstr("Bob")};
+    uint8_t buffer[NET_PROTOCOL_TEST_BUFFER_SIZE];
+    size_t total_len = 0;
+    TEST_ASSERT_TRUE(protocol_encode_cursor_packet(buffer, sizeof(buffer), 1, &record, 1, &total_len));
+
+    /* Hand the payload decoder one fewer byte than the encoder wrote, so a
+     * read runs off the end mid-record. Decode must fail closed and (ASan/
+     * UBSan on) never read out of bounds. */
+    size_t payload_len = total_len - PACKET_HEADER_SIZE;
+    PacketReader reader = packet_reader_make(buffer + PACKET_HEADER_SIZE, payload_len - 1);
+    PresenceRecord out[1];
+    size_t out_count = 0;
+    TEST_ASSERT_FALSE(protocol_decode_cursor(&reader, out, 1, &out_count));
+}
+
 /* ---- Malformed whole packets ---- */
 
 void test_protocol_decode_packet_rejects_length_mismatch(void)
@@ -680,6 +756,9 @@ int main(void)
     RUN_TEST(test_protocol_op_empty_level_name_round_trip);
     RUN_TEST(test_protocol_decode_op_rejects_unknown_kind);
     RUN_TEST(test_protocol_decode_op_rejects_truncated_buffer);
+    RUN_TEST(test_protocol_cursor_packet_round_trip);
+    RUN_TEST(test_protocol_cursor_empty_list_round_trip);
+    RUN_TEST(test_protocol_decode_cursor_rejects_truncated_buffer);
     RUN_TEST(test_protocol_decode_packet_rejects_length_mismatch);
     RUN_TEST(test_gamedata_content_hash_same_string_same_hash);
     RUN_TEST(test_gamedata_content_hash_one_byte_change_different_hash);

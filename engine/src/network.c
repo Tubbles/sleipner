@@ -10,6 +10,8 @@
 #include "net_udp.h"
 #include "strv.h"
 
+#include "raylib.h" // Vector2
+
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
@@ -158,6 +160,15 @@ void network_stop(NetworkState *network)
         network->lock_denied_entity_ids[index] = 0;
     }
     network->lock_denied_count = 0;
+    /* S8.7e: the presence table and the outgoing bridge are session state --
+     * back to the offline zero (both host and client re-fill the table from
+     * incoming records, frame.c re-arms the bridge each editor frame). */
+    for (int index = 0; index < NETWORK_PRESENCE_MAX; index++) {
+        network->presence[index] = (PresenceEntry){0};
+    }
+    network->local_cursor = (Vector2){0};
+    network->local_cursor_selected_entity_id = 0;
+    network->local_cursor_valid = false;
 }
 
 /* ---- S8.4a: session JOIN + INPUT flow ---- */
@@ -237,6 +248,62 @@ void network_lock_refresh_holder(NetworkState *network, int holder_player_id)
     for (int index = 0; index < NETWORK_LOCKS_MAX; index++) {
         if (network->locks[index].active && network->locks[index].holder_player_id == holder_player_id) {
             network->locks[index].seconds_since_refresh = 0.0F;
+        }
+    }
+}
+
+/* ---- S8.7e: editor presence table helpers ---- */
+
+PresenceEntry *network_presence_find(NetworkState *network, int player_id)
+{
+    for (int index = 0; index < NETWORK_PRESENCE_MAX; index++) {
+        if (network->presence[index].active && network->presence[index].player_id == player_id) {
+            return &network->presence[index];
+        }
+    }
+    return nullptr;
+}
+
+/* The slot for record.player_id (an existing active entry) or the first free
+ * slot to claim, or nullptr when the table is full and the id is new. */
+static PresenceEntry *presence_slot_for(NetworkState *network, int player_id)
+{
+    PresenceEntry *existing = network_presence_find(network, player_id);
+    if (existing != nullptr) {
+        return existing;
+    }
+    for (int index = 0; index < NETWORK_PRESENCE_MAX; index++) {
+        if (!network->presence[index].active) {
+            return &network->presence[index];
+        }
+    }
+    return nullptr;
+}
+
+void network_presence_upsert(NetworkState *network, PresenceRecord record)
+{
+    PresenceEntry *slot = presence_slot_for(network, record.player_id);
+    if (slot == nullptr) {
+        return;
+    }
+    slot->player_id = record.player_id;
+    slot->cursor = (Vector2){record.cursor_x, record.cursor_y};
+    slot->selected_entity_id = record.selected_entity_id;
+    strv_copy_to_cstr(record.name, slot->name, sizeof(slot->name));
+    slot->seconds_since_seen = 0.0F;
+    slot->active = true;
+}
+
+void network_presence_age(NetworkState *network, float delta_time)
+{
+    for (int index = 0; index < NETWORK_PRESENCE_MAX; index++) {
+        PresenceEntry *entry = &network->presence[index];
+        if (!entry->active) {
+            continue;
+        }
+        entry->seconds_since_seen += delta_time;
+        if (entry->seconds_since_seen > NETWORK_PRESENCE_TIMEOUT_SECONDS) {
+            entry->active = false;
         }
     }
 }
@@ -421,6 +488,34 @@ static void handle_op_datagram(NetworkState *network,
     out_ops->count++;
 }
 
+/* S8.7e: decode one MSG_CURSOR payload from a registered client and upsert
+ * ONLY the records whose player_id matches the sending client's own
+ * player_id -- one peer, one voice: the wire is never trusted to speak for
+ * another peer, so a record claiming a different id is silently dropped. A
+ * CURSOR from an unregistered address is ignored, same as every other
+ * per-client handler above. Fire-and-forget: a malformed payload is dropped
+ * with no dedup and no error channel (presence is loss-tolerant, the next
+ * tick supersedes it). Presence is pure NetworkState data, so this lives in
+ * network.c with no game.h involvement. */
+static void handle_cursor_datagram(NetworkState *network, NetAddr src, PacketReader *reader)
+{
+    const NetClient *client = find_client_by_addr(network, src);
+    if (client == nullptr) {
+        return;
+    }
+    PresenceRecord records[NETWORK_PRESENCE_MAX];
+    size_t record_count = 0;
+    if (!protocol_decode_cursor(reader, records, NETWORK_PRESENCE_MAX, &record_count)) {
+        return;
+    }
+    for (size_t index = 0; index < record_count; index++) {
+        if (records[index].player_id != client->player_id) {
+            continue;
+        }
+        network_presence_upsert(network, records[index]);
+    }
+}
+
 void network_host_receive(NetworkState *network, uint64_t local_gamedata_hash, PendingEditorOps *out_ops)
 {
     uint8_t buffer[NET_MAX_PACKET_SIZE];
@@ -449,6 +544,8 @@ void network_host_receive(NetworkState *network, uint64_t local_gamedata_hash, P
                 handle_event_datagram(network, src, packet.header.seq, &packet.reader);
             } else if (packet.header.type == MSG_OP) {
                 handle_op_datagram(network, src, packet.header.seq, buffer, (size_t)received, out_ops);
+            } else if (packet.header.type == MSG_CURSOR) {
+                handle_cursor_datagram(network, src, &packet.reader);
             }
         }
         received = net_recv(&network->transport, &src, buffer, sizeof(buffer));

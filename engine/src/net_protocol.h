@@ -134,6 +134,14 @@ typedef enum {
      * unknown message type is already silently ignored by every drain
      * loop, so adding one is backward compatible. */
     MSG_OP,
+    /* S8.7e: editor PRESENCE -- a peer's cursor, selection, and display name
+     * (see PresenceRecord below). Soft, high-frequency, loss-tolerant state:
+     * rides the fire-and-forget path like MSG_SNAPSHOT/MSG_DELTA, NOT the
+     * reliable op sub-channel. Appended last on purpose, same wire-byte
+     * caveat as MSG_OP -- enumerators are never reordered or renumbered, and
+     * an unknown type is already silently ignored by every drain loop, so no
+     * PROTOCOL_VERSION bump is needed. */
+    MSG_CURSOR,
 } MessageType;
 
 /* ---- Attr record: entity_id + name + typed value.
@@ -341,6 +349,40 @@ typedef struct {
  * truncated read. */
 [[nodiscard]] bool protocol_decode_op(PacketReader *reader, EditorOp *out);
 
+/* ---- MSG_CURSOR: editor presence records (S8.7e).
+ *
+ * One record per editing peer: its editor cursor position, the entity it
+ * currently has selected (-1 for none), and its display name. A MSG_CURSOR
+ * payload is a LIST of these -- a u8 count, then that many records. Both
+ * directions use the same shape: a client sends a one-record list (itself),
+ * the host relays a list of every peer's latest.
+ *
+ * Fire-and-forget contract: MSG_CURSOR carries soft, high-frequency,
+ * loss-tolerant state, so there is NO seq dedup and NO ordering guarantee.
+ * A reordered stale packet briefly regresses a cursor and self-corrects on
+ * the next tick -- exactly the SNAPSHOT/DELTA rationale (which also re-sends
+ * full state every tick rather than reliably diffing). See MSG_CURSOR's own
+ * doc comment on MessageType above.
+ *
+ * The decoded `name` Strv views into the reader's own buffer, with the same
+ * lifetime contract every other decoded string field in this header
+ * documents (see the Ownership note at the top of this file). */
+typedef struct {
+    int32_t player_id;
+    float cursor_x;
+    float cursor_y;
+    int32_t selected_entity_id;
+    Strv name;
+} PresenceRecord;
+
+/* Decode an MSG_CURSOR payload after the caller already decoded the header
+ * (same division of labor as protocol_decode_attr_list). Fills out_records
+ * (caller-owned, length cap) and fails outright -- rather than truncating --
+ * if the wire count exceeds cap, mirroring protocol_decode_attr_list. Fails
+ * closed on any truncated read. */
+[[nodiscard]] bool
+protocol_decode_cursor(PacketReader *reader, PresenceRecord *out_records, size_t cap, size_t *out_count);
+
 /* ---- Whole-packet convenience: header + payload in one call, with
  * `length` back-patched once the payload's actual size is known. Each
  * writes into a caller-owned buffer (e.g. a NET_MAX_PACKET_SIZE stack
@@ -369,6 +411,11 @@ protocol_encode_ack_packet(uint8_t *buffer, size_t capacity, uint32_t seq, AckMe
  * closed on any bounds overflow, like every other protocol_encode_*_packet. */
 [[nodiscard]] bool
 protocol_encode_op_packet(uint8_t *buffer, size_t capacity, uint32_t seq, const EditorOp *operation, size_t *out_len);
+/* S8.7e: encode a presence-record list as one MSG_CURSOR packet. `count` is
+ * capped at UINT8_MAX (the u8 wire count); fails closed on any bounds
+ * overflow, like every other protocol_encode_*_packet. */
+[[nodiscard]] bool protocol_encode_cursor_packet(
+    uint8_t *buffer, size_t capacity, uint32_t seq, const PresenceRecord *records, size_t count, size_t *out_len);
 
 /* Decoded header plus a reader already positioned at the payload, bounded
  * to exactly header.length bytes -- a payload decode call can never read

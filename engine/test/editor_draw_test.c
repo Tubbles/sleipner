@@ -17,6 +17,7 @@ DEFINE_FFF_GLOBALS;
 
 /* raylib draw fakes */
 FAKE_VOID_FUNC(DrawLine, int, int, int, int, Color);
+FAKE_VOID_FUNC(DrawLineEx, Vector2, Vector2, float, Color);
 FAKE_VOID_FUNC(DrawRectangle, int, int, int, int, Color);
 FAKE_VOID_FUNC(DrawTextEx, Font, const char *, Vector2, float, float, Color);
 FAKE_VOID_FUNC(DrawRectangleLinesEx, Rectangle, float, Color);
@@ -403,6 +404,42 @@ void test_editor_draw_lock_highlight_outlines_foreign_lock(void)
     vec_entity_free(&level.entities);
 }
 
+/* ---- draw_editor_highlights presence cursors (S8.7e) -------------------- */
+
+void test_editor_draw_presence_cursor_marks_foreign_peer(void)
+{
+    RESET_FAKE(DrawLineEx);
+    RESET_FAKE(level_find_entity_by_id);
+    level_find_entity_by_id_fake.return_val = -1; /* no selection/lock outlines */
+
+    Level level = {.entities.alloc = test_heap_alloc};
+    GameState state = {0};
+    state.gamedata.current_level = level;
+    state.network.mode = NET_HOSTING; /* this peer is holder 0 */
+    /* A foreign peer (id 3) with an active presence entry -- its crosshair is
+     * the sole DrawLineEx activity under test. */
+    state.network.presence[0] =
+        (PresenceEntry){.player_id = 3, .cursor = {10.0F, 20.0F}, .selected_entity_id = -1, .active = true};
+
+    EditorState editor_state = {0};
+    editor_state.selected_entity_id = -1;
+    editor_state.multiselect_count = 0;
+
+    draw_editor_highlights(&state, &editor_state, -1);
+
+    /* The crosshair is two DrawLineEx calls, both in that holder's palette
+     * color (holder 3 -> index 3). */
+    TEST_ASSERT_EQUAL_INT(2, DrawLineEx_fake.call_count);
+    Color expected = lock_holder_colors[3 % LOCK_HOLDER_COLOR_COUNT];
+    Color drawn = DrawLineEx_fake.arg3_val;
+    TEST_ASSERT_EQUAL_UINT8(expected.r, drawn.r);
+    TEST_ASSERT_EQUAL_UINT8(expected.g, drawn.g);
+    TEST_ASSERT_EQUAL_UINT8(expected.b, drawn.b);
+    TEST_ASSERT_EQUAL_UINT8(expected.a, drawn.a);
+
+    vec_entity_free(&level.entities);
+}
+
 int main(void)
 {
     test_helpers_init();
@@ -423,6 +460,7 @@ int main(void)
     RUN_TEST(test_get_source_rect_from_defaults);
     RUN_TEST(test_get_source_rect_zero_when_missing);
     RUN_TEST(test_editor_draw_lock_highlight_outlines_foreign_lock);
+    RUN_TEST(test_editor_draw_presence_cursor_marks_foreign_peer);
 
     return UNITY_END();
 }

@@ -7117,6 +7117,126 @@ void test_integration_host_grab_grants_and_releases(void)
     loopback_network_free(&loopback);
 }
 
+/* ---- Integration: S8.7e editor presence (cursor + selection + name) ----
+ *
+ * Three-TestGame-over-net_loopback.h shape as the S8.7d tests, driven black-box
+ * through the real frame loop: each peer's editor cursor is its editor_camera
+ * target, bridged into the net layer by run_active_frame whenever that peer is
+ * in editor mode (frame.c). The host relays the aggregate every tick; each peer
+ * renders every OTHER peer's cursor. This test drives the peers as a black box
+ * (editor_camera targets + editor_mode, real frame ticks) and asserts on the
+ * observable presence table, then proves the loss-tolerant fade: a peer that
+ * leaves editor mode stops refreshing and times out on host and on every
+ * relayed peer. */
+void test_integration_editor_presence_shares_cursor_and_times_out(void)
+{
+    LoopbackNetwork loopback;
+    loopback_network_init(&loopback, &test_heap_alloc);
+    NetAddr host_addr = net_addr_make(1, 9000);
+    NetAddr client_a_addr = net_addr_make(2, 9001);
+    NetAddr client_b_addr = net_addr_make(3, 9002);
+    NetTransport host_transport;
+    NetTransport client_a_transport;
+    NetTransport client_b_transport;
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, host_addr, &host_transport));
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, client_a_addr, &client_a_transport));
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, client_b_addr, &client_b_transport));
+
+    TestGame host;
+    TEST_ASSERT_TRUE(test_game_setup(&host, host_session_gamedata));
+    host.state.network.mode = NET_HOSTING;
+    host.state.network.transport = host_transport;
+    host.state.network.next_op_seq = 1;
+
+    TestGame client_a;
+    TEST_ASSERT_TRUE(test_game_setup(&client_a, host_session_gamedata));
+    client_a.state.network.mode = NET_JOINING;
+    client_a.state.network.transport = client_a_transport;
+    client_a.state.network.join_target = host_addr;
+
+    TestGame client_b;
+    TEST_ASSERT_TRUE(test_game_setup(&client_b, host_session_gamedata));
+    client_b.state.network.mode = NET_JOINING;
+    client_b.state.network.transport = client_b_transport;
+    client_b.state.network.join_target = host_addr;
+
+    InputState no_input = {0};
+    /* A joins first (player_id 1), then B (player_id 2). */
+    for (int frame = 0; frame < 3; frame++) {
+        test_advance_frame(&client_a, no_input);
+        test_advance_frame(&host, no_input);
+    }
+    for (int frame = 0; frame < 3; frame++) {
+        test_advance_frame(&client_b, no_input);
+        test_advance_frame(&client_a, no_input);
+        test_advance_frame(&host, no_input);
+    }
+    TEST_ASSERT_EQUAL_INT(NET_CLIENT, client_a.state.network.mode);
+    TEST_ASSERT_EQUAL_INT(NET_CLIENT, client_b.state.network.mode);
+    int player_a = client_a.state.network.local_player_id;
+    int player_b = client_b.state.network.local_player_id;
+
+    /* Put all three peers in editor mode, each with a distinct cursor (its
+     * editor camera target) and display name. */
+    host.state.editor_mode = true;
+    client_a.state.editor_mode = true;
+    client_b.state.editor_mode = true;
+    host.editor_camera.target = (Vector2){50.0F, 60.0F};
+    client_a.editor_camera.target = (Vector2){110.0F, 120.0F};
+    client_b.editor_camera.target = (Vector2){200.0F, 210.0F};
+    strv_copy_to_cstr(strv_from_cstr("Bravo"), client_b.state.network.host_name,
+                      sizeof(client_b.state.network.host_name));
+
+    /* A few full round-trips: each peer bridges its cursor to the host, the
+     * host relays the aggregate back out. */
+    for (int frame = 0; frame < 6; frame++) {
+        test_advance_frame(&client_a, no_input);
+        test_advance_frame(&client_b, no_input);
+        test_advance_frame(&host, no_input);
+    }
+
+    /* The host's table shows B's cursor and name. */
+    PresenceEntry *host_view_b = network_presence_find(&host.state.network, player_b);
+    TEST_ASSERT_NOT_NULL(host_view_b);
+    TEST_ASSERT_EQUAL_FLOAT(200.0F, host_view_b->cursor.x);
+    TEST_ASSERT_EQUAL_FLOAT(210.0F, host_view_b->cursor.y);
+    TEST_ASSERT_EQUAL_STRING("Bravo", host_view_b->name);
+
+    /* Client A's table shows B's entry, relayed by the host. */
+    PresenceEntry *a_view_b = network_presence_find(&client_a.state.network, player_b);
+    TEST_ASSERT_NOT_NULL(a_view_b);
+    TEST_ASSERT_EQUAL_FLOAT(200.0F, a_view_b->cursor.x);
+    TEST_ASSERT_EQUAL_FLOAT(210.0F, a_view_b->cursor.y);
+    TEST_ASSERT_EQUAL_STRING("Bravo", a_view_b->name);
+
+    /* A's OWN entry comes from its local bridge, not the host's echo (A skips
+     * its own relayed record) -- so it is present with A's own cursor. */
+    PresenceEntry *a_view_a = network_presence_find(&client_a.state.network, player_a);
+    TEST_ASSERT_NOT_NULL(a_view_a);
+    TEST_ASSERT_EQUAL_FLOAT(110.0F, a_view_a->cursor.x);
+    TEST_ASSERT_EQUAL_FLOAT(120.0F, a_view_a->cursor.y);
+
+    /* B leaves editor mode: it stops bridging (and so stops sending presence).
+     * A stays editing so it keeps ticking (draining + ageing) throughout. Past
+     * two full timeout spans, B fades out of the host's table, and then out of
+     * the relay, so out of A's table too. */
+    client_b.state.editor_mode = false;
+    int fade_frames = (int)(NETWORK_PRESENCE_TIMEOUT_SECONDS * 60.0F) * 2 + 40;
+    for (int frame = 0; frame < fade_frames; frame++) {
+        test_advance_frame(&client_a, no_input);
+        test_advance_frame(&client_b, no_input);
+        test_advance_frame(&host, no_input);
+    }
+
+    TEST_ASSERT_NULL(network_presence_find(&host.state.network, player_b));
+    TEST_ASSERT_NULL(network_presence_find(&client_a.state.network, player_b));
+
+    test_game_teardown(&host);
+    test_game_teardown(&client_a);
+    test_game_teardown(&client_b);
+    loopback_network_free(&loopback);
+}
+
 /* Offline single-player is unaffected by S8.6: game_get_local_player
  * resolves to the exact same entity as game_get_player (the sole local:0
  * player, pointer-identical, not just equal by value) since

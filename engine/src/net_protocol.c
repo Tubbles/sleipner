@@ -646,6 +646,77 @@ bool protocol_decode_op(PacketReader *reader, EditorOp *out)
     return true;
 }
 
+/* ---- MSG_CURSOR ---- */
+
+/* Write one presence record: player_id, cursor (x, y), selected_entity_id,
+ * then the length-prefixed name, in that exact wire order. */
+static bool write_presence_record(PacketWriter *writer, PresenceRecord record)
+{
+    if (!packet_writer_write_i32(writer, record.player_id)) {
+        return false;
+    }
+    if (!packet_writer_write_f32(writer, record.cursor_x)) {
+        return false;
+    }
+    if (!packet_writer_write_f32(writer, record.cursor_y)) {
+        return false;
+    }
+    if (!packet_writer_write_i32(writer, record.selected_entity_id)) {
+        return false;
+    }
+    return packet_writer_write_string(writer, record.name);
+}
+
+/* Encode a presence-record list: a u8 count followed by that many records.
+ * The u8 count caps a list at UINT8_MAX records -- far above
+ * NETWORK_PRESENCE_MAX (network.h), the only real caller's bound. */
+static bool encode_presence_list(PacketWriter *writer, const PresenceRecord *records, size_t count)
+{
+    if (count > UINT8_MAX) {
+        return false;
+    }
+    if (!packet_writer_write_u8(writer, (uint8_t)count)) {
+        return false;
+    }
+    for (size_t index = 0; index < count; index++) {
+        if (!write_presence_record(writer, records[index])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool read_presence_record(PacketReader *reader, PresenceRecord *out)
+{
+    PresenceRecord record = {0};
+    if (!packet_reader_read_i32(reader, &record.player_id) || !packet_reader_read_f32(reader, &record.cursor_x) ||
+        !packet_reader_read_f32(reader, &record.cursor_y) ||
+        !packet_reader_read_i32(reader, &record.selected_entity_id) ||
+        !packet_reader_read_string(reader, &record.name)) {
+        return false;
+    }
+    *out = record;
+    return true;
+}
+
+bool protocol_decode_cursor(PacketReader *reader, PresenceRecord *out_records, size_t cap, size_t *out_count)
+{
+    uint8_t count = 0;
+    if (!packet_reader_read_u8(reader, &count)) {
+        return false;
+    }
+    if (count > cap) {
+        return false;
+    }
+    for (uint8_t index = 0; index < count; index++) {
+        if (!read_presence_record(reader, &out_records[index])) {
+            return false;
+        }
+    }
+    *out_count = count;
+    return true;
+}
+
 /* ---- Whole-packet convenience ---- */
 
 /* Constructs *writer over (buffer, capacity) and writes the packet header
@@ -794,6 +865,19 @@ bool protocol_encode_op_packet(
         return false;
     }
     if (!write_op_payload(&writer, operation)) {
+        return false;
+    }
+    return packet_end(&writer, out_len);
+}
+
+bool protocol_encode_cursor_packet(
+    uint8_t *buffer, size_t capacity, uint32_t seq, const PresenceRecord *records, size_t count, size_t *out_len)
+{
+    PacketWriter writer;
+    if (!packet_begin(capacity, &writer, MSG_CURSOR, buffer, seq)) {
+        return false;
+    }
+    if (!encode_presence_list(&writer, records, count)) {
         return false;
     }
     return packet_end(&writer, out_len);
