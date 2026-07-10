@@ -384,6 +384,189 @@ void test_protocol_join_accept_packet_round_trip(void)
     TEST_ASSERT_EQUAL_INT32(message.player_id, out.player_id);
 }
 
+/* ---- MSG_OP ---- */
+
+void test_protocol_op_move_packet_round_trip(void)
+{
+    EditorOp operation = {.kind = EDITOR_OP_MOVE_ENTITY,
+                          .level_name = strv_from_cstr("overworld"),
+                          .entity_id = 12,
+                          .author_player_id = 3,
+                          .op_seq = 77,
+                          .move_x = -4.5F,
+                          .move_y = -128.25F};
+
+    uint8_t buffer[NET_PROTOCOL_TEST_BUFFER_SIZE];
+    size_t total_len = 0;
+    TEST_ASSERT_TRUE(protocol_encode_op_packet(buffer, sizeof(buffer), 5, &operation, &total_len));
+
+    DecodedPacket decoded;
+    ErrorState err = {0};
+    TEST_ASSERT_TRUE(protocol_decode_packet(buffer, total_len, &decoded, &err));
+    TEST_ASSERT_EQUAL_INT(MSG_OP, decoded.header.type);
+
+    EditorOp out;
+    TEST_ASSERT_TRUE(protocol_decode_op(&decoded.reader, &out));
+    TEST_ASSERT_EQUAL_INT(EDITOR_OP_MOVE_ENTITY, out.kind);
+    TEST_ASSERT_TRUE(strv_eq(operation.level_name, out.level_name));
+    TEST_ASSERT_EQUAL_INT32(operation.entity_id, out.entity_id);
+    TEST_ASSERT_EQUAL_INT32(operation.author_player_id, out.author_player_id);
+    TEST_ASSERT_EQUAL_UINT32(operation.op_seq, out.op_seq);
+    TEST_ASSERT_EQUAL_FLOAT(operation.move_x, out.move_x);
+    TEST_ASSERT_EQUAL_FLOAT(operation.move_y, out.move_y);
+}
+
+void test_protocol_op_set_attr_string_packet_round_trip(void)
+{
+    /* attr.entity_id is deliberately different from operation.entity_id: the
+     * encoder overwrites it from the op header, so the decoded record must
+     * mirror operation.entity_id (42), not the 999 set here. */
+    EditorOp operation = {.kind = EDITOR_OP_SET_ATTR,
+                          .level_name = strv_from_cstr("dungeon"),
+                          .entity_id = 42,
+                          .author_player_id = 1,
+                          .op_seq = 8,
+                          .attr = {.entity_id = 999,
+                                   .name = strv_from_cstr("display_name"),
+                                   .type = ATTR_STRING,
+                                   .value = {.str = strv_from_cstr("Golden Chest")}}};
+
+    uint8_t buffer[NET_PROTOCOL_TEST_BUFFER_SIZE];
+    size_t total_len = 0;
+    TEST_ASSERT_TRUE(protocol_encode_op_packet(buffer, sizeof(buffer), 4, &operation, &total_len));
+
+    DecodedPacket decoded;
+    ErrorState err = {0};
+    TEST_ASSERT_TRUE(protocol_decode_packet(buffer, total_len, &decoded, &err));
+    TEST_ASSERT_EQUAL_INT(MSG_OP, decoded.header.type);
+
+    EditorOp out;
+    TEST_ASSERT_TRUE(protocol_decode_op(&decoded.reader, &out));
+    TEST_ASSERT_EQUAL_INT(EDITOR_OP_SET_ATTR, out.kind);
+    TEST_ASSERT_TRUE(strv_eq(operation.attr.name, out.attr.name));
+    TEST_ASSERT_EQUAL_INT(ATTR_STRING, out.attr.type);
+    TEST_ASSERT_TRUE(strv_eq(operation.attr.value.str, out.attr.value.str));
+    TEST_ASSERT_EQUAL_INT32(operation.entity_id, out.attr.entity_id);
+}
+
+void test_protocol_op_set_attr_float_packet_round_trip(void)
+{
+    /* Same mirror-invariant check as the string variant, with a
+     * float-valued record so the AttrRecord float path is exercised. */
+    EditorOp operation = {
+        .kind = EDITOR_OP_SET_ATTR,
+        .level_name = strv_from_cstr("dungeon"),
+        .entity_id = 7,
+        .author_player_id = 2,
+        .op_seq = 3,
+        .attr = {.entity_id = 999, .name = strv_from_cstr("speed"), .type = ATTR_FLOAT, .value = {.f = -2.5F}}};
+
+    uint8_t buffer[NET_PROTOCOL_TEST_BUFFER_SIZE];
+    size_t total_len = 0;
+    TEST_ASSERT_TRUE(protocol_encode_op_packet(buffer, sizeof(buffer), 4, &operation, &total_len));
+
+    DecodedPacket decoded;
+    ErrorState err = {0};
+    TEST_ASSERT_TRUE(protocol_decode_packet(buffer, total_len, &decoded, &err));
+
+    EditorOp out;
+    TEST_ASSERT_TRUE(protocol_decode_op(&decoded.reader, &out));
+    TEST_ASSERT_EQUAL_INT(EDITOR_OP_SET_ATTR, out.kind);
+    TEST_ASSERT_EQUAL_INT(ATTR_FLOAT, out.attr.type);
+    TEST_ASSERT_EQUAL_FLOAT(operation.attr.value.f, out.attr.value.f);
+    TEST_ASSERT_EQUAL_INT32(operation.entity_id, out.attr.entity_id);
+}
+
+void test_protocol_op_delete_packet_round_trip(void)
+{
+    EditorOp operation = {.kind = EDITOR_OP_DELETE_ENTITY,
+                          .level_name = strv_from_cstr("dungeon"),
+                          .entity_id = 15,
+                          .author_player_id = 4,
+                          .op_seq = 22};
+
+    uint8_t buffer[NET_PROTOCOL_TEST_BUFFER_SIZE];
+    size_t total_len = 0;
+    TEST_ASSERT_TRUE(protocol_encode_op_packet(buffer, sizeof(buffer), 6, &operation, &total_len));
+
+    DecodedPacket decoded;
+    ErrorState err = {0};
+    TEST_ASSERT_TRUE(protocol_decode_packet(buffer, total_len, &decoded, &err));
+
+    EditorOp out;
+    TEST_ASSERT_TRUE(protocol_decode_op(&decoded.reader, &out));
+    TEST_ASSERT_EQUAL_INT(EDITOR_OP_DELETE_ENTITY, out.kind);
+    TEST_ASSERT_TRUE(strv_eq(operation.level_name, out.level_name));
+    TEST_ASSERT_EQUAL_INT32(operation.entity_id, out.entity_id);
+    TEST_ASSERT_EQUAL_INT32(operation.author_player_id, out.author_player_id);
+    TEST_ASSERT_EQUAL_UINT32(operation.op_seq, out.op_seq);
+}
+
+void test_protocol_op_empty_level_name_round_trip(void)
+{
+    EditorOp operation = {.kind = EDITOR_OP_DELETE_ENTITY,
+                          .level_name = strv_from_cstr(""),
+                          .entity_id = 1,
+                          .author_player_id = 0,
+                          .op_seq = 0};
+
+    uint8_t buffer[NET_PROTOCOL_TEST_BUFFER_SIZE];
+    size_t total_len = 0;
+    TEST_ASSERT_TRUE(protocol_encode_op_packet(buffer, sizeof(buffer), 0, &operation, &total_len));
+
+    DecodedPacket decoded;
+    ErrorState err = {0};
+    TEST_ASSERT_TRUE(protocol_decode_packet(buffer, total_len, &decoded, &err));
+
+    EditorOp out;
+    TEST_ASSERT_TRUE(protocol_decode_op(&decoded.reader, &out));
+    TEST_ASSERT_EQUAL_size_t(0, out.level_name.len);
+}
+
+void test_protocol_decode_op_rejects_unknown_kind(void)
+{
+    EditorOp operation = {.kind = EDITOR_OP_DELETE_ENTITY,
+                          .level_name = strv_from_cstr("dungeon"),
+                          .entity_id = 5,
+                          .author_player_id = 2,
+                          .op_seq = 9};
+
+    uint8_t buffer[NET_PROTOCOL_TEST_BUFFER_SIZE];
+    size_t total_len = 0;
+    TEST_ASSERT_TRUE(protocol_encode_op_packet(buffer, sizeof(buffer), 1, &operation, &total_len));
+
+    /* The op kind is the first payload byte, right after the header. */
+    buffer[PACKET_HEADER_SIZE] = 200;
+
+    DecodedPacket decoded;
+    ErrorState err = {0};
+    TEST_ASSERT_TRUE(protocol_decode_packet(buffer, total_len, &decoded, &err));
+    EditorOp out;
+    TEST_ASSERT_FALSE(protocol_decode_op(&decoded.reader, &out));
+}
+
+void test_protocol_decode_op_rejects_truncated_buffer(void)
+{
+    EditorOp operation = {.kind = EDITOR_OP_SET_ATTR,
+                          .level_name = strv_from_cstr("dungeon"),
+                          .entity_id = 5,
+                          .author_player_id = 2,
+                          .op_seq = 9,
+                          .attr = {.name = strv_from_cstr("hp"), .type = ATTR_INT, .value = {.i = 3}}};
+
+    uint8_t buffer[NET_PROTOCOL_TEST_BUFFER_SIZE];
+    size_t total_len = 0;
+    TEST_ASSERT_TRUE(protocol_encode_op_packet(buffer, sizeof(buffer), 1, &operation, &total_len));
+
+    /* Hand the payload decoder one fewer byte than the encoder wrote, so a
+     * read runs off the end mid-record. Decode must fail closed and (ASan/
+     * UBSan on) never read out of bounds. */
+    size_t payload_len = total_len - PACKET_HEADER_SIZE;
+    PacketReader reader = packet_reader_make(buffer + PACKET_HEADER_SIZE, payload_len - 1);
+    EditorOp out;
+    TEST_ASSERT_FALSE(protocol_decode_op(&reader, &out));
+}
+
 /* ---- Malformed whole packets ---- */
 
 void test_protocol_decode_packet_rejects_length_mismatch(void)
@@ -455,6 +638,13 @@ int main(void)
     RUN_TEST(test_protocol_beacon_packet_round_trip);
     RUN_TEST(test_protocol_ack_packet_round_trip);
     RUN_TEST(test_protocol_join_accept_packet_round_trip);
+    RUN_TEST(test_protocol_op_move_packet_round_trip);
+    RUN_TEST(test_protocol_op_set_attr_string_packet_round_trip);
+    RUN_TEST(test_protocol_op_set_attr_float_packet_round_trip);
+    RUN_TEST(test_protocol_op_delete_packet_round_trip);
+    RUN_TEST(test_protocol_op_empty_level_name_round_trip);
+    RUN_TEST(test_protocol_decode_op_rejects_unknown_kind);
+    RUN_TEST(test_protocol_decode_op_rejects_truncated_buffer);
     RUN_TEST(test_protocol_decode_packet_rejects_length_mismatch);
     RUN_TEST(test_gamedata_content_hash_same_string_same_hash);
     RUN_TEST(test_gamedata_content_hash_one_byte_change_different_hash);

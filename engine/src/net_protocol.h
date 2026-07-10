@@ -126,6 +126,14 @@ typedef enum {
      * player_id network.c's register_client just assigned the sender. See
      * JoinAcceptMessage below. */
     MSG_JOIN_ACCEPT,
+    /* S8.7: a single editor operation (see EditorOp below). Rides the
+     * reliable sub-channel in later slices; this slice is encode/decode
+     * only -- nothing applies an op to game state yet. Appended last on
+     * purpose: MessageType values are wire bytes, so enumerators are never
+     * reordered or renumbered. No PROTOCOL_VERSION bump is needed -- an
+     * unknown message type is already silently ignored by every drain
+     * loop, so adding one is backward compatible. */
+    MSG_OP,
 } MessageType;
 
 /* ---- Attr record: entity_id + name + typed value.
@@ -253,6 +261,59 @@ typedef struct {
 [[nodiscard]] bool protocol_encode_join_accept(PacketWriter *writer, JoinAcceptMessage message);
 [[nodiscard]] bool protocol_decode_join_accept(PacketReader *reader, JoinAcceptMessage *out);
 
+/* ---- MSG_OP: a single editor operation (S8.7).
+ *
+ * The collaborative editor propagates scene edits as discrete ops between
+ * peers. This slice defines only the wire format; later slices ride these
+ * ops on the reliable sub-channel and apply them to game state. ---- */
+
+/* Wire-encoded as a single u8. Appended-to only, same wire-byte caveat as
+ * MessageType: enumerators are never reordered or renumbered. */
+typedef enum {
+    EDITOR_OP_MOVE_ENTITY,
+    EDITOR_OP_SET_ATTR,
+    EDITOR_OP_DELETE_ENTITY,
+} EditorOpKind;
+
+/* A single editor op. Flat fields (not a union), matching EventRecord's
+ * flat style; `kind` selects which payload fields are meaningful.
+ *
+ * level_name is mandatory: entity ids are per-level (level.h's
+ * Level.next_entity_id), so an op must name the level its entity_id lives
+ * in -- a peer may be editing a level other than the current one.
+ *
+ * op_seq is the HOST-assigned global serialization number. A client's op
+ * REQUEST carries 0; the host stamps the real value on its echo -- later
+ * slices implement that. This slice just carries the field.
+ *
+ * move_x/move_y are meaningful only for EDITOR_OP_MOVE_ENTITY. attr is
+ * meaningful only for EDITOR_OP_SET_ATTR, and the embedded record's own
+ * entity_id mirrors this header's entity_id: the encoder overwrites it from
+ * entity_id before writing (see point 4 / protocol_encode_op_packet), so
+ * the two can never disagree on the wire. EDITOR_OP_DELETE_ENTITY has no
+ * payload beyond the header.
+ *
+ * Decoded Strv fields (level_name, and any string inside attr) view into
+ * the caller's packet buffer, with the same lifetime contract every other
+ * decoded string field in this header documents (see the Ownership note at
+ * the top of this file). */
+typedef struct {
+    EditorOpKind kind;
+    Strv level_name;
+    int32_t entity_id;
+    int32_t author_player_id;
+    uint32_t op_seq;
+    float move_x;
+    float move_y;
+    AttrRecord attr;
+} EditorOp;
+
+/* Decodes an MSG_OP payload after the caller already decoded the header
+ * (same division of labor as protocol_decode_event). Rejects an unknown
+ * kind byte (anything > EDITOR_OP_DELETE_ENTITY) and fails closed on any
+ * truncated read. */
+[[nodiscard]] bool protocol_decode_op(PacketReader *reader, EditorOp *out);
+
 /* ---- Whole-packet convenience: header + payload in one call, with
  * `length` back-patched once the payload's actual size is known. Each
  * writes into a caller-owned buffer (e.g. a NET_MAX_PACKET_SIZE stack
@@ -277,6 +338,10 @@ protocol_encode_beacon_packet(uint8_t *buffer, size_t capacity, uint32_t seq, Be
 protocol_encode_ack_packet(uint8_t *buffer, size_t capacity, uint32_t seq, AckMessage message, size_t *out_len);
 [[nodiscard]] bool protocol_encode_join_accept_packet(
     uint8_t *buffer, size_t capacity, uint32_t seq, JoinAcceptMessage message, size_t *out_len);
+/* Takes the op by pointer (EditorOp is larger than EventRecord). Fails
+ * closed on any bounds overflow, like every other protocol_encode_*_packet. */
+[[nodiscard]] bool
+protocol_encode_op_packet(uint8_t *buffer, size_t capacity, uint32_t seq, const EditorOp *operation, size_t *out_len);
 
 /* Decoded header plus a reader already positioned at the payload, bounded
  * to exactly header.length bytes -- a payload decode call can never read

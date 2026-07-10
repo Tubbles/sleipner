@@ -563,6 +563,77 @@ bool protocol_decode_join_accept(PacketReader *reader, JoinAcceptMessage *out)
     return true;
 }
 
+/* ---- MSG_OP ---- */
+
+/* Writes the op payload (kind, header fields, then the kind-specific tail)
+ * in the exact wire order documented on EditorOp. For EDITOR_OP_SET_ATTR
+ * the record's entity_id is overwritten from the op header so the two can
+ * never disagree on the wire (the mirror invariant EditorOp documents). */
+static bool write_op_payload(PacketWriter *writer, const EditorOp *operation)
+{
+    if (!packet_writer_write_u8(writer, (uint8_t)operation->kind)) {
+        return false;
+    }
+    if (!packet_writer_write_string(writer, operation->level_name)) {
+        return false;
+    }
+    if (!packet_writer_write_i32(writer, operation->entity_id)) {
+        return false;
+    }
+    if (!packet_writer_write_i32(writer, operation->author_player_id)) {
+        return false;
+    }
+    if (!packet_writer_write_u32(writer, operation->op_seq)) {
+        return false;
+    }
+    switch (operation->kind) {
+    case EDITOR_OP_MOVE_ENTITY:
+        return packet_writer_write_f32(writer, operation->move_x) && packet_writer_write_f32(writer, operation->move_y);
+    case EDITOR_OP_SET_ATTR: {
+        AttrRecord record = operation->attr;
+        record.entity_id = operation->entity_id;
+        return protocol_encode_attr_record(writer, record);
+    }
+    case EDITOR_OP_DELETE_ENTITY:
+        return true;
+    }
+    return false;
+}
+
+bool protocol_decode_op(PacketReader *reader, EditorOp *out)
+{
+    uint8_t kind_byte = 0;
+    if (!packet_reader_read_u8(reader, &kind_byte)) {
+        return false;
+    }
+    if (kind_byte > EDITOR_OP_DELETE_ENTITY) {
+        return false;
+    }
+    EditorOp operation = {.kind = (EditorOpKind)kind_byte};
+    if (!packet_reader_read_string(reader, &operation.level_name) ||
+        !packet_reader_read_i32(reader, &operation.entity_id) ||
+        !packet_reader_read_i32(reader, &operation.author_player_id) ||
+        !packet_reader_read_u32(reader, &operation.op_seq)) {
+        return false;
+    }
+    switch (operation.kind) {
+    case EDITOR_OP_MOVE_ENTITY:
+        if (!packet_reader_read_f32(reader, &operation.move_x) || !packet_reader_read_f32(reader, &operation.move_y)) {
+            return false;
+        }
+        break;
+    case EDITOR_OP_SET_ATTR:
+        if (!protocol_decode_attr_record(reader, &operation.attr)) {
+            return false;
+        }
+        break;
+    case EDITOR_OP_DELETE_ENTITY:
+        break;
+    }
+    *out = operation;
+    return true;
+}
+
 /* ---- Whole-packet convenience ---- */
 
 /* Constructs *writer over (buffer, capacity) and writes the packet header
@@ -698,6 +769,19 @@ bool protocol_encode_join_accept_packet(
         return false;
     }
     if (!protocol_encode_join_accept(&writer, message)) {
+        return false;
+    }
+    return packet_end(&writer, out_len);
+}
+
+bool protocol_encode_op_packet(
+    uint8_t *buffer, size_t capacity, uint32_t seq, const EditorOp *operation, size_t *out_len)
+{
+    PacketWriter writer;
+    if (!packet_begin(capacity, &writer, MSG_OP, buffer, seq)) {
+        return false;
+    }
+    if (!write_op_payload(&writer, operation)) {
         return false;
     }
     return packet_end(&writer, out_len);
