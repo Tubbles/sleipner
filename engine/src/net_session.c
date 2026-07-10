@@ -926,3 +926,91 @@ void network_editor_commit_move(GameState *state, int entity_id, Vector2 new_pos
         return;
     }
 }
+
+/* S8.7d2: build a lock op REQUEST (no op_seq -- the host stamps its echo)
+ * naming the current level and entity_id, authored by author_player_id. Shared
+ * by the client-side grab/release senders below. */
+static EditorOp make_lock_request(GameState *state, EditorOpKind kind, int entity_id, int author_player_id)
+{
+    return (EditorOp){
+        .kind = kind,
+        .level_name = str_to_strv(state->gamedata.current_level.name),
+        .entity_id = entity_id,
+        .author_player_id = author_player_id,
+        .op_seq = 0,
+    };
+}
+
+/* S8.7d2, NET_HOSTING branch of network_editor_try_grab: refuse the whole
+ * group if any id is already locked by a player other than the host (id 0). */
+static bool host_group_grab_permitted(NetworkState *network, const int *entity_ids, int entity_count)
+{
+    for (int index = 0; index < entity_count; index++) {
+        const EntityLock *lock = network_lock_find(network, entity_ids[index]);
+        if (lock != nullptr && lock->holder_player_id != 0) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/* S8.7d2, NET_CLIENT branch of network_editor_try_grab: fast local deny if any
+ * id is already held (in this client's replica) by a player other than us. */
+static bool client_group_grab_permitted(NetworkState *network, const int *entity_ids, int entity_count)
+{
+    for (int index = 0; index < entity_count; index++) {
+        const EntityLock *lock = network_lock_find(network, entity_ids[index]);
+        if (lock != nullptr && lock->holder_player_id != network->local_player_id) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool network_editor_try_grab(GameState *state, const int *entity_ids, int entity_count)
+{
+    if (state->network.mode == NET_HOSTING) {
+        if (!host_group_grab_permitted(&state->network, entity_ids, entity_count)) {
+            return false;
+        }
+        for (int index = 0; index < entity_count; index++) {
+            (void)network_lock_acquire(&state->network, entity_ids[index], 0);
+            EditorOp grant = make_lock_request(state, EDITOR_OP_LOCK_ACQUIRE, entity_ids[index], 0);
+            host_stamp_and_broadcast(state, EDITOR_OP_LOCK_ACQUIRE, &grant, 0);
+        }
+        return true;
+    }
+    if (state->network.mode == NET_CLIENT) {
+        if (!client_group_grab_permitted(&state->network, entity_ids, entity_count)) {
+            return false;
+        }
+        for (int index = 0; index < entity_count; index++) {
+            EditorOp request =
+                make_lock_request(state, EDITOR_OP_LOCK_ACQUIRE, entity_ids[index], state->network.local_player_id);
+            network_client_send_reliable_op(&state->network, &request);
+        }
+        return true;
+    }
+    return true;
+}
+
+void network_editor_release_locks(GameState *state, const int *entity_ids, int entity_count)
+{
+    if (state->network.mode == NET_HOSTING) {
+        for (int index = 0; index < entity_count; index++) {
+            if (!network_lock_release(&state->network, entity_ids[index], 0)) {
+                continue;
+            }
+            EditorOp release = make_lock_request(state, EDITOR_OP_LOCK_RELEASE, entity_ids[index], 0);
+            host_stamp_and_broadcast(state, EDITOR_OP_LOCK_RELEASE, &release, 0);
+        }
+        return;
+    }
+    if (state->network.mode == NET_CLIENT) {
+        for (int index = 0; index < entity_count; index++) {
+            EditorOp request =
+                make_lock_request(state, EDITOR_OP_LOCK_RELEASE, entity_ids[index], state->network.local_player_id);
+            network_client_send_reliable_op(&state->network, &request);
+        }
+    }
+}

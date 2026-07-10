@@ -477,6 +477,11 @@ Vector2 editor_snap_position_to_grid(Vector2 position);
 void draw_place_panel(ScreenSize screen, const GameState *state, const EditorState *editor_state);
 void draw_place_preview(const GameState *state, const EditorState *editor_state, Camera2D camera);
 void handle_mode_transitions(GameState *state, EditorState *editor_state, const InputState *input);
+/* S8.7d2: drain pending LOCK_DENY denials once per editor frame (see the
+ * definition's doc comment, editor/core.c). Called at the top of frame.c's
+ * handle_editor_input, before any submode dispatch, so a stale denial can
+ * never linger and abort a later gesture. */
+void editor_drain_lock_denials(GameState *state, EditorState *editor_state);
 void handle_drag_input(
     GameState *state, EditorState *editor_state, UndoHistory *undo_history, InputState input, float delta_time);
 void handle_handle_input(

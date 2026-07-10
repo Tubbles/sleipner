@@ -278,3 +278,39 @@ void network_client_apply_state(GameState *state, const AttrRecord *records, siz
  *
  * new_position is the entity's final committed position (post grid-snap). */
 void network_editor_commit_move(GameState *state, int entity_id, Vector2 new_position);
+
+/* S8.7d2: called by the editor at grab time (both grab entry points,
+ * editor/core.c) with the full multiselect id set, BEFORE entering
+ * EDITOR_SUB_DRAG. Returns whether the grab may proceed.
+ *
+ * NET_OFFLINE (and any non-hosting/non-client mode): return true (single-player
+ *   editing is untouched -- no lock table involved).
+ * NET_HOSTING: the host IS the authority, so this is atomic. First it checks
+ *   EVERY id: if any is already locked by a player OTHER than the host (id 0),
+ *   the whole grab is refused (return false, all-or-nothing -- a partial group
+ *   grab would leave some entities locked and some not). Otherwise it claims
+ *   every id for holder 0 and broadcasts a LOCK_ACQUIRE echo per id, exactly
+ *   like host_apply_and_echo_ops' grant path, so every client's replica learns
+ *   the host now holds them.
+ * NET_CLIENT: OPTIMISTIC. It first checks the local REPLICA: if any id is
+ *   already held by a player OTHER than local_player_id, the grab is refused
+ *   immediately (fast local deny, nothing sent). Otherwise it sends one
+ *   EDITOR_OP_LOCK_ACQUIRE REQUEST per id (op_seq 0, authored by local_player_id,
+ *   naming the current level) and returns true -- the gesture proceeds
+ *   optimistically before the host has ruled, and a later LOCK_DENY echo
+ *   (drained by editor_drain_lock_denials) aborts it if the host refuses. */
+[[nodiscard]] bool network_editor_try_grab(GameState *state, const int *entity_ids, int entity_count);
+
+/* S8.7d2: called by the editor when a drag gesture ends (commit or cancel,
+ * editor/core.c) and by the deny-abort path (editor_drain_lock_denials) with
+ * the full multiselect id set, to release whatever locks the grab took.
+ *
+ * NET_OFFLINE (and any non-hosting/non-client mode): no-op.
+ * NET_HOSTING: for each id it releases the host's own lock (holder 0) and, if
+ *   it actually held one, broadcasts a LOCK_RELEASE echo so every replica clears.
+ * NET_CLIENT: sends one EDITOR_OP_LOCK_RELEASE REQUEST per id. Releasing an id
+ *   this peer never actually held (an optimistic grab the host denied, whose
+ *   ACQUIRE never became a grant) is harmless: the host silently ignores a
+ *   release of a lock the sender does not hold, so the deny-abort path can
+ *   release the whole multiselect set without tracking which ids were granted. */
+void network_editor_release_locks(GameState *state, const int *entity_ids, int entity_count);

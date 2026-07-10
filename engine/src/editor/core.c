@@ -837,6 +837,24 @@ static void remove_watch_at(WatchList *watches, int index)
     watches->count--;
 }
 
+/* Shared Grab entry for BOTH grab sites (the Tools radial's Grab item in
+ * dispatch_radial_confirm and handle_mode_transitions' ACTION_EDITOR_GRAB
+ * shortcut): gate on network_editor_try_grab (S8.7d2) -- a refused grab
+ * toasts and leaves the submode alone -- then capture the group's positions
+ * and enter DRAG. Split out of dispatch_radial_confirm to keep its cognitive
+ * complexity under the readability-function-cognitive-complexity threshold,
+ * mirroring enter_tile_mode/enter_atlas_mode below. */
+static void try_enter_drag_mode(GameState *state, EditorState *editor_state)
+{
+    if (!network_editor_try_grab(state, editor_state->multiselect_ids, editor_state->multiselect_count)) {
+        editor_state->toast_text = strv_from_cstr("Locked by another player");
+        editor_state->toast_timer = TOAST_DURATION;
+        return;
+    }
+    save_group_positions_for_drag(state, editor_state);
+    editor_state->sub_mode = EDITOR_SUB_DRAG;
+}
+
 /* Entering Tile mode from the Tools radial: clamp the paint cursor in case
  * the last level it was set against had a larger tile grid than the
  * current one (e.g. after switching levels via Level mode). Split out of
@@ -879,8 +897,7 @@ dispatch_radial_confirm(GameState *state, EditorState *editor_state, WatchList *
     if (editor_state->radial_context == RADIAL_CTX_TOOLS) {
         int sel = level_find_entity_by_id(&state->gamedata.current_level, editor_state->selected_entity_id);
         if (confirmed == 0 && sel >= 0) { /* Grab */
-            save_group_positions_for_drag(state, editor_state);
-            editor_state->sub_mode = EDITOR_SUB_DRAG;
+            try_enter_drag_mode(state, editor_state);
         } else if (confirmed == 1) { /* Place */
             if (state->gamedata.blueprints.entries.count > 0) {
                 editor_state->place_blueprint_index = find_place_blueprint_index(state, editor_state);
@@ -1057,8 +1074,7 @@ void handle_mode_transitions(GameState *state, EditorState *editor_state, const 
     }
     const Entity *entity = &state->gamedata.current_level.entities.data[sel];
     if (input_pressed(input, &state->bindings, ACTION_EDITOR_GRAB)) {
-        save_group_positions_for_drag(state, editor_state);
-        editor_state->sub_mode = EDITOR_SUB_DRAG;
+        try_enter_drag_mode(state, editor_state);
     }
     /* Handles shortcut: keyboard-only (H). Gamepad users reach Handles via
      * Tools radial. L1 is reserved as the undo/redo chord modifier and
@@ -1146,11 +1162,14 @@ void handle_drag_input(
             network_editor_commit_move(state, editor_state->multiselect_ids[index],
                                        state->gamedata.current_level.entities.data[moved_index].position);
         }
+        /* S8.7d2: release the locks the grab took (no-op offline). */
+        network_editor_release_locks(state, editor_state->multiselect_ids, editor_state->multiselect_count);
         editor_state->sub_mode = EDITOR_SUB_BROWSE;
         return;
     }
     if (input_pressed(&input, &state->bindings, ACTION_CANCEL)) {
         restore_group_positions(state, editor_state);
+        network_editor_release_locks(state, editor_state->multiselect_ids, editor_state->multiselect_count);
         editor_state->sub_mode = EDITOR_SUB_BROWSE;
         return;
     }
@@ -1167,6 +1186,51 @@ void handle_drag_input(
         entity->position.x += delta_x;
         entity->position.y += delta_y;
     }
+}
+
+/* True if any of the denied entity ids is a member of the current
+ * multi-selection -- i.e. the in-flight drag is on an entity the host just
+ * refused this peer a lock on. */
+static bool multiselect_contains_denied(const EditorState *editor_state, const int *denied_ids, int denied_count)
+{
+    for (int denied = 0; denied < denied_count; denied++) {
+        for (int index = 0; index < editor_state->multiselect_count; index++) {
+            if (editor_state->multiselect_ids[index] == denied_ids[denied]) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+/* S8.7d2: drain this client's LOCK_DENY backlog once per editor frame, at the
+ * very top of the editor dispatch (frame.c's handle_editor_input) so a stale
+ * denial can never linger and abort a future gesture. A DENY means the host
+ * refused this peer's optimistic ACQUIRE. If the peer is still dragging an
+ * entity that was denied, the whole gesture is aborted: positions are restored,
+ * the drag returns to BROWSE, a toast explains why, and every lock the grab
+ * took is released (releasing the never-granted ones is harmless -- see
+ * network_editor_release_locks). A DENY that arrives AFTER the gesture already
+ * committed (no matching drag in flight) is toast-only: the committed positions
+ * are NOT rolled back, since the local divergence heals when full-state deltas
+ * resume (frame.c's delta gate) and the undo interaction is owned by a later
+ * slice. The backlog is drained (count zeroed) in every case. */
+void editor_drain_lock_denials(GameState *state, EditorState *editor_state)
+{
+    if (state->network.lock_denied_count == 0) {
+        return;
+    }
+    bool abort_drag = editor_state->sub_mode == EDITOR_SUB_DRAG &&
+                      multiselect_contains_denied(editor_state, state->network.lock_denied_entity_ids,
+                                                  state->network.lock_denied_count);
+    if (abort_drag) {
+        restore_group_positions(state, editor_state);
+        editor_state->sub_mode = EDITOR_SUB_BROWSE;
+        network_editor_release_locks(state, editor_state->multiselect_ids, editor_state->multiselect_count);
+    }
+    editor_state->toast_text = strv_from_cstr("Locked by another player");
+    editor_state->toast_timer = TOAST_DURATION;
+    state->network.lock_denied_count = 0;
 }
 
 void handle_handle_input(

@@ -2,6 +2,7 @@
 
 #include "collision.h"
 #include "entity.h"
+#include "network.h"
 #include "raylib.h"
 #include "render.h"
 
@@ -23,6 +24,12 @@ static const Color attr_override_color = {255, 200, 50, 255}; /* amber: override
 static const Color attr_custom_color = {100, 220, 100, 255};  /* green: instance-only attribute */
 static const Color attr_dimmed_color = {120, 130, 140, 255};  /* gray: overridden by instance */
 static const Color multiselect_color = {255, 165, 0, 255};    /* orange: multi-selected entity (S5.7) */
+/* S8.7d2: outline colors for entities locked by OTHER peers, indexed by
+ * holder_player_id % LOCK_HOLDER_COLOR_COUNT. Placeholder palette -- real
+ * per-player names/colors are the presence slice's job; five clearly distinct
+ * hues suffice for now. */
+#define LOCK_HOLDER_COLOR_COUNT 5
+static const Color lock_holder_colors[LOCK_HOLDER_COLOR_COUNT] = {GOLD, RED, GREEN, PURPLE, SKYBLUE};
 
 void draw_ui_text(Font font, const char *text, int pos_x, int pos_y, int font_size, Color color)
 {
@@ -279,6 +286,33 @@ static Rectangle entity_outline_rect(const GameState *state, const Entity *entit
     return (Rectangle){entity->position.x, entity->position.y, src.width, src.height};
 }
 
+/* S8.7d2: outline every entity in the current level locked by a peer OTHER
+ * than this one, in that holder's color, so a collaborator can see what someone
+ * else is editing. The peer's own player id is 0 on the host, local_player_id
+ * on a client; NET_OFFLINE skips entirely (the lock table is empty there
+ * anyway). A lock naming an entity not in this level (a peer editing elsewhere)
+ * is skipped. Uses the same bounds the selection/multiselect highlights use. */
+static void draw_lock_highlights(const GameState *state)
+{
+    if (state->network.mode == NET_OFFLINE) {
+        return;
+    }
+    int own_player_id = state->network.mode == NET_HOSTING ? 0 : state->network.local_player_id;
+    for (int index = 0; index < NETWORK_LOCKS_MAX; index++) {
+        const EntityLock *lock = &state->network.locks[index];
+        if (!lock->active || lock->holder_player_id == own_player_id) {
+            continue;
+        }
+        int entity_index = level_find_entity_by_id(&state->gamedata.current_level, lock->entity_id);
+        if (entity_index < 0) {
+            continue;
+        }
+        Color holder_color = lock_holder_colors[lock->holder_player_id % LOCK_HOLDER_COLOR_COUNT];
+        DrawRectangleLinesEx(entity_outline_rect(state, &state->gamedata.current_level.entities.data[entity_index]),
+                             2.0F, holder_color);
+    }
+}
+
 void draw_editor_highlights(const GameState *state, const EditorState *editor_state, int hover_entity_index)
 {
     if (hover_entity_index >= 0 && hover_entity_index < state->gamedata.current_level.entities.count) {
@@ -302,6 +336,7 @@ void draw_editor_highlights(const GameState *state, const EditorState *editor_st
         DrawRectangleLinesEx(entity_outline_rect(state, &state->gamedata.current_level.entities.data[sel]), 2.0F,
                              WHITE);
     }
+    draw_lock_highlights(state);
 }
 
 static const char *attr_display_value(const Attribute *attr)

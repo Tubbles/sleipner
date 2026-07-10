@@ -65,6 +65,13 @@ FAKE_VALUE_FUNC(Strv, undo_history_description, const UndoHistory *);
  * network stack. The end-to-end drag-commit -> op -> converge path is
  * covered black-box in integration_test.c. */
 FAKE_VOID_FUNC(network_editor_commit_move, GameState *, int, Vector2);
+/* S8.7d2: core.c's grab sites gate on this seam and the drag commit/cancel +
+ * deny-drain paths call the release seam; faked here so core.c links without
+ * the network stack. try_grab defaults to returning false (fff zero-init), so
+ * tests that exercise a grab set network_editor_try_grab_fake.return_val = true
+ * first. The end-to-end lock UX is covered black-box in integration_test.c. */
+FAKE_VALUE_FUNC(bool, network_editor_try_grab, GameState *, const int *, int);
+FAKE_VOID_FUNC(network_editor_release_locks, GameState *, const int *, int);
 
 /* TextFormat stub — variadic, cannot use FAKE_VALUE_FUNC */
 const char *TextFormat(const char *text, ...)

@@ -356,6 +356,53 @@ void test_get_source_rect_zero_when_missing(void)
     TEST_ASSERT_EQUAL_FLOAT(0.0F, rect.height);
 }
 
+/* ---- draw_editor_highlights lock outlines (S8.7d2) ---------------------- */
+
+#define LOCK_TEST_ENTITY_ID 7
+
+/* Custom fake resolving only the locked entity's id to a real index, so the
+ * selection lookup (selected_entity_id = -1) draws nothing and the lock outline
+ * is the sole DrawRectangleLinesEx call under test. */
+static int lock_test_find_by_id(const Level *level, int entity_id)
+{
+    (void)level;
+    return entity_id == LOCK_TEST_ENTITY_ID ? 0 : -1;
+}
+
+void test_editor_draw_lock_highlight_outlines_foreign_lock(void)
+{
+    RESET_FAKE(DrawRectangleLinesEx);
+    RESET_FAKE(level_find_entity_by_id);
+    level_find_entity_by_id_fake.custom_fake = lock_test_find_by_id;
+
+    Level level = {.entities.alloc = test_heap_alloc};
+    Entity entity = {.id = LOCK_TEST_ENTITY_ID, .parent_index = -1, .position = {10.0F, 20.0F}};
+    TEST_ASSERT_TRUE(vec_entity_push(&level.entities, entity));
+
+    GameState state = {0};
+    state.gamedata.current_level = level;
+    state.network.mode = NET_HOSTING; /* this peer is holder 0; the lock below is another player's */
+    state.network.locks[0] = (EntityLock){.entity_id = LOCK_TEST_ENTITY_ID, .holder_player_id = 2, .active = true};
+
+    EditorState editor_state = {0};
+    editor_state.selected_entity_id = -1;
+    editor_state.multiselect_count = 0;
+
+    draw_editor_highlights(&state, &editor_state, -1);
+
+    /* Exactly one outline drawn -- the foreign lock -- in that holder's palette
+     * color (holder 2 -> index 2). */
+    TEST_ASSERT_EQUAL_INT(1, DrawRectangleLinesEx_fake.call_count);
+    Color expected = lock_holder_colors[2 % LOCK_HOLDER_COLOR_COUNT];
+    Color drawn = DrawRectangleLinesEx_fake.arg2_val;
+    TEST_ASSERT_EQUAL_UINT8(expected.r, drawn.r);
+    TEST_ASSERT_EQUAL_UINT8(expected.g, drawn.g);
+    TEST_ASSERT_EQUAL_UINT8(expected.b, drawn.b);
+    TEST_ASSERT_EQUAL_UINT8(expected.a, drawn.a);
+
+    vec_entity_free(&level.entities);
+}
+
 int main(void)
 {
     test_helpers_init();
@@ -375,6 +422,7 @@ int main(void)
     RUN_TEST(test_get_source_rect_from_instance);
     RUN_TEST(test_get_source_rect_from_defaults);
     RUN_TEST(test_get_source_rect_zero_when_missing);
+    RUN_TEST(test_editor_draw_lock_highlight_outlines_foreign_lock);
 
     return UNITY_END();
 }

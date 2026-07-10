@@ -240,6 +240,10 @@ void handle_editor_input(Diag *diag,
                          InputState input,
                          float delta_time)
 {
+    /* S8.7d2: drain any host LOCK_DENY denials first, unconditional of submode,
+     * so a stale denial can never linger and abort a future gesture -- see
+     * editor_drain_lock_denials (editor/core.c). */
+    editor_drain_lock_denials(state, editor_state);
     handle_mode_transitions(state, editor_state, &input);
     if (editor_state->sub_mode == EDITOR_SUB_DRAG) {
         handle_drag_input(state, editor_state, undo_history, input, delta_time);
