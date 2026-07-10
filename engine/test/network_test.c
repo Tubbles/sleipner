@@ -323,6 +323,111 @@ void test_host_sends_no_acks_when_client_has_not_sent_anything(void)
     loopback_network_free(&loopback);
 }
 
+/* ---- S8.7b: editor operations on the reliable sub-channel (send side) ----
+ *
+ * The receive/apply side (network_host_receive's MSG_OP branch) is a later
+ * slice, so these prove only that the send helpers put a well-formed,
+ * decodable MSG_OP on the wire -- decoded manually off the destination
+ * transport, the same whitebox way the S8.7a ack test decodes a MSG_ACK
+ * off the client transport above. register_client stands in for a real
+ * JOIN handshake, as elsewhere in this file. */
+
+/* Drain one packet off `transport`, assert it is a decodable MSG_OP at
+ * seq 0 carrying a DELETE-entity op naming `level_name`/`entity_id`. */
+static void
+assert_delete_op_landed_at_seq_zero(const NetTransport *transport, const char *level_name, int32_t entity_id)
+{
+    uint8_t buffer[NET_MAX_PACKET_SIZE];
+    NetAddr src = {0};
+    int received = net_recv(transport, &src, buffer, sizeof(buffer));
+    TEST_ASSERT_TRUE(received > 0);
+    DecodedPacket packet;
+    ErrorState decode_err = {0};
+    TEST_ASSERT_TRUE(protocol_decode_packet(buffer, (size_t)received, &packet, &decode_err));
+    TEST_ASSERT_EQUAL_INT(MSG_OP, packet.header.type);
+    TEST_ASSERT_EQUAL_UINT32(0, packet.header.seq);
+    EditorOp decoded = {0};
+    TEST_ASSERT_TRUE(protocol_decode_op(&packet.reader, &decoded));
+    TEST_ASSERT_EQUAL_INT(EDITOR_OP_DELETE_ENTITY, decoded.kind);
+    TEST_ASSERT_TRUE(strv_eq_cstr(decoded.level_name, level_name));
+    TEST_ASSERT_EQUAL_INT32(entity_id, decoded.entity_id);
+}
+
+void test_client_send_reliable_op_lands_decodable_on_host(void)
+{
+    LoopbackNetwork loopback = make_loopback_network();
+    NetAddr host_addr = net_addr_make(1, 9000);
+    NetAddr client_addr = net_addr_make(2, 9001);
+    NetTransport host_transport;
+    NetTransport client_transport;
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, host_addr, &host_transport));
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, client_addr, &client_transport));
+
+    NetworkState client_network = {.transport = client_transport, .join_target = host_addr};
+    EditorOp operation = {.kind = EDITOR_OP_MOVE_ENTITY,
+                          .level_name = strv_from_cstr("overworld"),
+                          .entity_id = 7,
+                          .author_player_id = 3,
+                          .op_seq = 0,
+                          .move_x = 12.5F,
+                          .move_y = -4.0F};
+    network_client_send_reliable_op(&client_network, &operation);
+
+    uint8_t buffer[NET_MAX_PACKET_SIZE];
+    NetAddr src = {0};
+    int received = net_recv(&host_transport, &src, buffer, sizeof(buffer));
+    TEST_ASSERT_TRUE(received > 0);
+    DecodedPacket packet;
+    ErrorState decode_err = {0};
+    TEST_ASSERT_TRUE(protocol_decode_packet(buffer, (size_t)received, &packet, &decode_err));
+    TEST_ASSERT_EQUAL_INT(MSG_OP, packet.header.type);
+    TEST_ASSERT_EQUAL_UINT32(0, packet.header.seq);
+    EditorOp decoded = {0};
+    TEST_ASSERT_TRUE(protocol_decode_op(&packet.reader, &decoded));
+    TEST_ASSERT_EQUAL_INT(EDITOR_OP_MOVE_ENTITY, decoded.kind);
+    TEST_ASSERT_TRUE(strv_eq_cstr(decoded.level_name, "overworld"));
+    TEST_ASSERT_EQUAL_INT32(7, decoded.entity_id);
+    TEST_ASSERT_EQUAL_INT32(3, decoded.author_player_id);
+    TEST_ASSERT_EQUAL_UINT32(0, decoded.op_seq);
+    TEST_ASSERT_EQUAL_FLOAT(12.5F, decoded.move_x);
+    TEST_ASSERT_EQUAL_FLOAT(-4.0F, decoded.move_y);
+
+    loopback_network_free(&loopback);
+}
+
+void test_host_broadcast_reliable_op_reaches_both_clients(void)
+{
+    LoopbackNetwork loopback = make_loopback_network();
+    NetAddr host_addr = net_addr_make(1, 9000);
+    NetAddr client_a_addr = net_addr_make(2, 9001);
+    NetAddr client_b_addr = net_addr_make(3, 9002);
+    NetTransport host_transport;
+    NetTransport client_a_transport;
+    NetTransport client_b_transport;
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, host_addr, &host_transport));
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, client_a_addr, &client_a_transport));
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, client_b_addr, &client_b_transport));
+
+    NetworkState host_network = {.transport = host_transport};
+    register_client(&host_network, client_a_addr);
+    register_client(&host_network, client_b_addr);
+
+    EditorOp operation = {.kind = EDITOR_OP_DELETE_ENTITY, .level_name = strv_from_cstr("dungeon"), .entity_id = 42};
+    network_host_broadcast_reliable_op(&host_network, &operation);
+
+    /* Both clients receive the op, each at its own seq 0 -- the two
+     * event_channels have independent sequence spaces. */
+    assert_delete_op_landed_at_seq_zero(&client_a_transport, "dungeon", 42);
+    assert_delete_op_landed_at_seq_zero(&client_b_transport, "dungeon", 42);
+
+    TEST_ASSERT_EQUAL_UINT32(1, host_network.clients[0].event_channel.next_send_sequence);
+    TEST_ASSERT_EQUAL_UINT32(1, host_network.clients[1].event_channel.next_send_sequence);
+    TEST_ASSERT_TRUE(host_network.clients[0].event_channel.send_window[0].awaiting_ack);
+    TEST_ASSERT_TRUE(host_network.clients[1].event_channel.send_window[0].awaiting_ack);
+
+    loopback_network_free(&loopback);
+}
+
 int main(void)
 {
     test_helpers_init();
@@ -339,5 +444,7 @@ int main(void)
     RUN_TEST(test_client_resend_does_not_double_deliver_to_host);
     RUN_TEST(test_host_sends_ack_and_client_stops_resending);
     RUN_TEST(test_host_sends_no_acks_when_client_has_not_sent_anything);
+    RUN_TEST(test_client_send_reliable_op_lands_decodable_on_host);
+    RUN_TEST(test_host_broadcast_reliable_op_reaches_both_clients);
     return UNITY_END();
 }

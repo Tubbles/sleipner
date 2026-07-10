@@ -37,13 +37,30 @@
  * reliable_send assigns the channel's next sequence number, encodes the
  * event as a full MSG_EVENT packet (net_protocol.h) into a ring-buffer slot
  * indexed by `sequence_number % RELIABLE_WINDOW`, and transmits it
- * immediately. reliable_tick ages every occupied slot by delta_time and
+ * immediately. reliable_send_op does the same for a single editor operation
+ * (net_protocol.h's EditorOp), encoding it as a MSG_OP packet instead --
+ * the two share the same slot arithmetic, eviction policy, and fail-closed
+ * drop, differing only in which protocol_encode_*_packet call fills the
+ * slot. reliable_tick ages every occupied slot by delta_time and
  * re-transmits (the exact same pre-encoded bytes, so a resend never
- * re-derives anything) any slot whose age has reached
+ * re-derives anything -- and never cares whether those bytes are a
+ * MSG_EVENT or a MSG_OP) any slot whose age has reached
  * RELIABLE_RESEND_SECONDS, resetting its age to 0. reliable_on_ack clears
  * (frees) every occupied slot the incoming ack covers, so a resend loop
  * naturally stops on its own once the receiver's ack catches up -- no
  * separate "stop resending" call needed.
+ *
+ * ---- Shared sequence space: MSG_EVENT and MSG_OP ----
+ *
+ * MSG_EVENT (reliable_send) and MSG_OP (reliable_send_op) sent on the SAME
+ * channel draw from the same next_send_sequence and are acked/deduped by
+ * the same send/receive window -- there is no per-type sequence space.
+ * That is intentional, not a shortcut: the receive side dedups purely on
+ * the packet header's seq (reliable_on_receive never looks at the message
+ * type), so one channel yields one total order per direction -- exactly
+ * what the collaborative editor's op stream needs, a single serialized
+ * sequence of edits the far end replays in order, with reliable delivery
+ * shared by whatever events also ride the channel.
  *
  * Window/backpressure policy: RELIABLE_WINDOW (64) is a hard cap on
  * simultaneously in-flight (sent, not yet acked) events per channel, not a
@@ -81,7 +98,7 @@
  * network_client_send_ack (network.h) does before sending an ack. */
 
 #include "net.h"          // NetTransport, NetAddr, net_send
-#include "net_protocol.h" // EventRecord, AckMessage, PROTOCOL_ACK_BITFIELD_BITS
+#include "net_protocol.h" // EventRecord, EditorOp, AckMessage, PROTOCOL_ACK_BITFIELD_BITS
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -99,33 +116,36 @@
  * that fires rarely (see this header's own top doc comment). */
 #define RELIABLE_RESEND_SECONDS 0.1F
 
-/* Bound for one send-window slot's pre-encoded packet bytes. Deliberately
- * NOT net.h's NET_MAX_PACKET_SIZE (1400) -- that is the wire's hard
- * MTU-safe ceiling, but a reliable EVENT is a small discrete notification,
- * not a level-sized SNAPSHOT/DELTA payload. Sized for PACKET_HEADER_SIZE
- * (12, net_protocol.h) plus EventRecord's two int32 fields (8) plus a u16
- * length prefix (2) plus up to rule.h's own MAX_ARG (64) argument bytes --
- * the same argument-length convention rule.c's action arguments already
- * assume -- rounded up for headroom, mirroring net_session.c's own
- * NETWORK_ATTR_STRING_VALUE_MAX (128) sizing rationale. An EventRecord
- * whose encoded packet would exceed this is silently dropped by
- * reliable_send (its underlying protocol_encode_event_packet call fails
- * the same bounds-check every other protocol_encode_*_packet call already
- * fails closed on) -- never a buffer overflow, just an event that never
- * gets queued. Multiplying this by RELIABLE_WINDOW * (NET_MAX_CLIENTS
- * host-side channels + one client-side channel) keeps a whole GameState's
- * total reliable-channel footprint in the tens of KB, not the ~450KB a
- * NET_MAX_PACKET_SIZE-sized slot would cost. */
-#define RELIABLE_EVENT_PAYLOAD_MAX 128
+/* Bound for one send-window slot's pre-encoded packet bytes. A slot now
+ * holds either a MSG_EVENT or a MSG_OP packet (see this header's own
+ * "Shared sequence space" note), whichever reliable_send/reliable_send_op
+ * queued -- so it is sized for the MSG_OP worst case, which dominates the
+ * small MSG_EVENT one. Deliberately NOT net.h's NET_MAX_PACKET_SIZE (1400)
+ * -- that is the wire's hard MTU-safe ceiling, but an editor op is a
+ * discrete edit, not a level-sized SNAPSHOT/DELTA payload. The MSG_OP worst
+ * case is PACKET_HEADER_SIZE (12, net_protocol.h) plus the op kind byte
+ * plus a length-prefixed level_name plus the op's three 4-byte header ints
+ * (entity_id, author_player_id, op_seq) plus an AttrRecord whose string
+ * value is bounded by net_session.c's own NETWORK_ATTR_STRING_VALUE_MAX
+ * (128) -- roughly 300 bytes, rounded up with headroom to 512. An op (or
+ * event) whose encoded packet would exceed this is silently dropped by
+ * reliable_send_op/reliable_send (their underlying protocol_encode_*_packet
+ * call fails the same bounds-check every other protocol_encode_*_packet
+ * call already fails closed on) -- never a buffer overflow, just a packet
+ * that never gets queued. Multiplying this by RELIABLE_WINDOW (64) *
+ * (NET_MAX_CLIENTS host-side channels + one client-side channel = 5) keeps
+ * a whole GameState's total reliable-channel footprint at 64 * 512 * 5 =
+ * 160 KB -- still small. */
+#define RELIABLE_SLOT_PACKET_MAX 512
 
-/* One send-window slot: a pre-encoded MSG_EVENT packet (header + payload,
- * ready to hand straight to net_send) plus resend bookkeeping.
+/* One send-window slot: a pre-encoded MSG_EVENT or MSG_OP packet (header +
+ * payload, ready to hand straight to net_send) plus resend bookkeeping.
  * awaiting_ack=false means the slot is free -- either never used, or its
- * sequence was cleared by reliable_on_ack; reliable_send/_tick both check
- * this before touching a slot's contents. */
+ * sequence was cleared by reliable_on_ack; reliable_send/reliable_send_op/
+ * _tick all check this before touching a slot's contents. */
 typedef struct {
     uint32_t sequence_number;
-    uint8_t packet[RELIABLE_EVENT_PAYLOAD_MAX];
+    uint8_t packet[RELIABLE_SLOT_PACKET_MAX];
     size_t packet_length;
     float seconds_since_send;
     bool awaiting_ack;
@@ -152,8 +172,19 @@ typedef struct {
  * occupied that ring-buffer slot, per this header's own "Window/
  * backpressure policy" note), and transmit it once immediately via
  * transport to dest. A no-op (nothing queued, nothing sent) if the encoded
- * packet would exceed RELIABLE_EVENT_PAYLOAD_MAX. */
+ * packet would exceed RELIABLE_SLOT_PACKET_MAX. */
 void reliable_send(ReliableChannel *channel, const NetTransport *transport, NetAddr dest, EventRecord event);
+
+/* Encode `operation` as a MSG_OP packet (net_protocol.h's
+ * protocol_encode_op_packet) under channel's next sequence number and queue
+ * plus transmit it exactly as reliable_send does its MSG_EVENT -- same slot
+ * arithmetic, same eviction policy, same shared next_send_sequence and
+ * send window (see this header's own "Shared sequence space" note), same
+ * fail-closed drop (nothing queued, nothing sent) if the encoded packet
+ * would exceed RELIABLE_SLOT_PACKET_MAX. The op is taken by pointer since
+ * EditorOp is larger than EventRecord (same reason protocol_encode_op_packet
+ * does). */
+void reliable_send_op(ReliableChannel *channel, const NetTransport *transport, NetAddr dest, const EditorOp *operation);
 
 /* Age every occupied send-window slot by delta_time; resend (the exact
  * bytes queued by reliable_send, unmodified) any slot whose age has

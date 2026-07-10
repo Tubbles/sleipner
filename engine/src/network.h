@@ -408,3 +408,31 @@ void network_client_tick_reliable_channel(NetworkState *network, float delta_tim
  * nothing to ack yet, same gate network_client_send_ack itself uses. Same
  * fire-and-forget contract as every other network_* send in this file. */
 void network_host_send_acks(NetworkState *network);
+
+/* ---- S8.7b: editor operations on the reliable sub-channel (send side).
+ * Editor ops (net_protocol.h's EditorOp, MSG_OP) ride the very same
+ * per-direction ReliableChannel MSG_EVENT already uses -- one shared
+ * next_send_sequence, one shared send/dedup window per direction (see
+ * net_reliable.h's own "Shared sequence space" note). These two are the
+ * op-carrying twins of network_client_send_reliable_event /
+ * network_broadcast_reliable_event, calling reliable_send_op in place of
+ * reliable_send. The resend ticks (network_client_tick_reliable_channel /
+ * network_host_tick_reliable_channels above) need no op-specific variant --
+ * slots hold pre-encoded bytes, so reliable_tick resends a MSG_OP exactly
+ * as it resends a MSG_EVENT. The receive/apply side (network_host_receive's
+ * MSG_OP branch, net_session's op application) lands in a later slice. ---- */
+
+/* S8.7b. CLIENT side. Reliable-send `operation` (net_reliable.h's
+ * reliable_send_op) to network->join_target under host_event_channel's own
+ * send-side sequence -- the op twin of network_client_send_reliable_event
+ * above. This is an op REQUEST: the caller passes op_seq 0, since the host
+ * stamps the real serialization number on its echo (a later slice); this
+ * function does not enforce that, it just sends whatever op it is given. */
+void network_client_send_reliable_op(NetworkState *network, const EditorOp *operation);
+
+/* S8.7b. HOST side. Reliable-send `operation` (net_reliable.h's
+ * reliable_send_op) to every currently active client's own event_channel --
+ * the op twin of network_broadcast_reliable_event above: each client gets
+ * its own sequence number and resend timer, so one client's dropped packet
+ * never delays or duplicates delivery to another. */
+void network_host_broadcast_reliable_op(NetworkState *network, const EditorOp *operation);

@@ -6,7 +6,7 @@
 #include "net.h"
 #include "net_discovery.h" // DISCOVERY_PORT
 #include "net_protocol.h"
-#include "net_reliable.h" // ReliableChannel, reliable_on_ack, reliable_send, reliable_tick, reliable_make_ack
+#include "net_reliable.h" // ReliableChannel, reliable_on_ack, reliable_send, reliable_send_op, reliable_tick, reliable_make_ack
 #include "net_udp.h"
 #include "strv.h"
 
@@ -377,5 +377,23 @@ void network_host_send_acks(NetworkState *network)
             continue;
         }
         (void)net_send(&network->transport, client->addr, buffer, packet_len);
+    }
+}
+
+/* ---- S8.7b: editor operations on the reliable sub-channel (send side) ---- */
+
+void network_client_send_reliable_op(NetworkState *network, const EditorOp *operation)
+{
+    reliable_send_op(&network->host_event_channel, &network->transport, network->join_target, operation);
+}
+
+void network_host_broadcast_reliable_op(NetworkState *network, const EditorOp *operation)
+{
+    for (int index = 0; index < network->client_count; index++) {
+        NetClient *client = &network->clients[index];
+        if (!client->active) {
+            continue;
+        }
+        reliable_send_op(&client->event_channel, &network->transport, client->addr, operation);
     }
 }
