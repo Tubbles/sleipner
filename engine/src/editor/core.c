@@ -5,6 +5,7 @@
 #include "debug.h"
 #include "error.h"
 #include "map.h"
+#include "net_session.h"
 #include "rule.h"
 #include "strv.h"
 
@@ -1129,6 +1130,22 @@ void handle_drag_input(
             editor_state->multiselect_count > 1 ? strv_from_cstr("Move entities") : strv_from_cstr("Move entity");
         undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
                                description);
+        /* S8.7c: propagate the committed move over the network. Both the
+         * single-entity and the multi-select group move commit through this
+         * one CONFIRM site (multiselect_ids always holds at least the anchor,
+         * multiselect_reset_to), so one call per moved entity here covers
+         * both. Each entity's final (post grid-snap) position is re-derived
+         * by stable id. network_editor_commit_move is a no-op under
+         * NET_OFFLINE, so single-player editing is untouched. */
+        for (int index = 0; index < editor_state->multiselect_count; index++) {
+            int moved_index =
+                level_find_entity_by_id(&state->gamedata.current_level, editor_state->multiselect_ids[index]);
+            if (moved_index < 0) {
+                continue;
+            }
+            network_editor_commit_move(state, editor_state->multiselect_ids[index],
+                                       state->gamedata.current_level.entities.data[moved_index].position);
+        }
         editor_state->sub_mode = EDITOR_SUB_BROWSE;
         return;
     }

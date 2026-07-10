@@ -168,6 +168,31 @@ typedef struct {
     ReliableChannel event_channel;
 } NetClient;
 
+/* Cap on client-side out-of-order editor-op echoes held back waiting for
+ * their in-order turn (S8.7c). Bounded by how many op_seqs can be in
+ * flight ahead of next_expected_op_seq at once on a LAN -- a small burst,
+ * not frame-count-proportional -- and drained every client tick as the gap
+ * fills. A holdback overflow is lossless: the offending packet is skipped
+ * WITHOUT being dedup-marked, so the sender's reliable resend redelivers it
+ * once a slot frees. Same justified fixed-cap exception BindingStore and
+ * NETWORK_PENDING_OPS_MAX already rely on. */
+#define NETWORK_OP_HOLDBACK_MAX 16
+
+/* S8.7c: one client-side held-back editor-op echo whose op_seq arrived
+ * ahead of next_expected_op_seq. The reliable channel delivers
+ * out-of-order arrivals immediately (net_reliable.h), but ops must apply in
+ * op_seq order or two moves of the same entity could finish in the wrong
+ * final state -- so a not-yet-applicable echo is parked here (raw packet
+ * bytes, decoded only when its turn comes, same lifetime reasoning as
+ * PendingEditorOps below) until the gap ahead of it fills.
+ * occupied=false marks a free slot. */
+typedef struct {
+    uint8_t packet[RELIABLE_SLOT_PACKET_MAX];
+    size_t length;
+    uint32_t op_seq;
+    bool occupied;
+} HeldEditorOp;
+
 typedef struct {
     NetMode mode;
     NetTransport transport;
@@ -245,6 +270,30 @@ typedef struct {
     int32_t last_client_event_entity_id;
     int last_client_event_player_id;
     int client_event_delivered_count;
+    /* S8.7c: HOST side only -- the global editor-op serialization counter.
+     * 0 while offline (zero-init default, and network_stop's reset);
+     * network_apply_hosting initializes it to 1 at hosting start, so the
+     * first stamped op gets 1 -- never 0, the "unstamped request" sentinel
+     * EditorOp (net_protocol.h) documents for a client's op REQUEST.
+     * net_session.c's network_host_tick stamps each applied move op
+     * op_seq = next_op_seq++ before echoing it, so every client replays the
+     * one same total order. Advertised to each joining client as
+     * JoinAcceptMessage.op_seq_baseline (network.c's handle_join_datagram).
+     * Meaningless on a CLIENT's own NetworkState. */
+    uint32_t next_op_seq;
+    /* S8.7c: CLIENT side only -- strict in-order application of host-stamped
+     * op echoes. 0 while offline (zero-init default, and network_stop's
+     * reset); seeded from the host's JoinAcceptMessage.op_seq_baseline
+     * exactly once, on the JOINING->CLIENT flip edge (net_session.c's
+     * accept branch, which clears held_ops in the same step), so the client
+     * starts in sync with the host's counter no matter how many ops the
+     * session stamped before this join. An echo whose op_seq equals it is
+     * applied immediately (then held_ops is scanned for the next
+     * consecutive op_seqs to apply too), one whose op_seq is ahead is
+     * parked in held_ops, one behind is a duplicate and dropped.
+     * Meaningless on the HOST's own NetworkState. */
+    HeldEditorOp held_ops[NETWORK_OP_HOLDBACK_MAX];
+    uint32_t next_expected_op_seq;
 } NetworkState;
 
 /* Placeholder advertised name until a real player-name setting exists
@@ -315,6 +364,32 @@ void network_client_send_join(NetworkState *network, uint64_t local_gamedata_has
  * network_client_send_join. Call every tick while NET_CLIENT. */
 void network_client_send_input(NetworkState *network, const InputState *local_input);
 
+/* S8.7c: out-parameter for network_host_receive's MSG_OP drain. network.c
+ * must stay free of game.h (this file's own top doc comment), but applying
+ * an op needs GameState -- so network_host_receive copies each
+ * newly-delivered op datagram's RAW BYTES here and net_session.c's
+ * network_host_tick decodes + applies them after the drain returns.
+ *
+ * Raw bytes, not decoded EditorOps: a decoded op's Strv fields (level_name)
+ * view into network_host_receive's own stack receive buffer, which dies the
+ * moment the drain loop reuses it for the next datagram; copying the packet
+ * bytes and decoding at apply time keeps those views alive with zero
+ * allocator involvement.
+ *
+ * The fixed cap is justified: op arrivals per tick are bounded (a client
+ * sends at most a handful of discrete edits per tick), the buffer is
+ * drained every tick, and overflow is lossless -- once count reaches
+ * NETWORK_PENDING_OPS_MAX, handle_op_datagram returns WITHOUT dedup-marking
+ * the packet, so the client's reliable resend redelivers it next tick.
+ * Same bounded-cap exception NetClient/JoinList already rely on. */
+#define NETWORK_PENDING_OPS_MAX 16
+typedef struct {
+    uint8_t packets[NETWORK_PENDING_OPS_MAX][RELIABLE_SLOT_PACKET_MAX];
+    size_t lengths[NETWORK_PENDING_OPS_MAX];
+    int sender_player_ids[NETWORK_PENDING_OPS_MAX];
+    int count;
+} PendingEditorOps;
+
 /* HOST side: drain every packet currently waiting on network->transport.
  * A decoded MSG_JOIN is hash-verified against local_gamedata_hash
  * (net_protocol.h's protocol_join_verify) -- a match registers the
@@ -340,10 +415,22 @@ void network_client_send_input(NetworkState *network, const InputState *local_in
  * already gives the reverse direction; MSG_EVENT from an unregistered
  * address is ignored, same as MSG_INPUT/MSG_ACK. Anything that fails to
  * decode (wrong magic/version, truncated, an unrelated message type) is
- * silently ignored, same as discovery_client_tick's own drain loop. Call
- * once per tick, before simulating, so the freshest input reaches this
- * tick's game_update. */
-void network_host_receive(NetworkState *network, uint64_t local_gamedata_hash);
+ * silently ignored, same as discovery_client_tick's own drain loop.
+ *
+ * A decoded MSG_OP (S8.7c) from a registered client is copied -- raw
+ * datagram bytes, length, and the sender's player_id -- into `out_ops` for
+ * net_session.c's network_host_tick to decode and apply after the drain
+ * (network.c cannot include game.h). Backpressure: if out_ops is already
+ * full (count == NETWORK_PENDING_OPS_MAX) the datagram is left on the wire
+ * unmarked (NOT passed to reliable_on_receive), so the client's resend
+ * redelivers it next tick -- overflow is lossless. Otherwise it is
+ * deduped via the sending client's own event_channel (reliable_on_receive,
+ * keyed by the packet header's seq) and, if newly delivered, appended to
+ * out_ops. MSG_OP from an unregistered address is ignored, same as
+ * MSG_INPUT/MSG_ACK/MSG_EVENT. out_ops must be non-null (callers that do
+ * not consume ops pass one they ignore). Call once per tick, before
+ * simulating, so the freshest input reaches this tick's game_update. */
+void network_host_receive(NetworkState *network, uint64_t local_gamedata_hash, PendingEditorOps *out_ops);
 
 /* Look up a connected client by player_id (1..NET_MAX_CLIENTS). Returns
  * nullptr if no active client currently holds that id -- the "unknown/

@@ -550,13 +550,19 @@ bool protocol_decode_ack(PacketReader *reader, AckMessage *out)
 
 bool protocol_encode_join_accept(PacketWriter *writer, JoinAcceptMessage message)
 {
-    return packet_writer_write_i32(writer, message.player_id);
+    if (!packet_writer_write_i32(writer, message.player_id)) {
+        return false;
+    }
+    return packet_writer_write_u32(writer, message.op_seq_baseline);
 }
 
 bool protocol_decode_join_accept(PacketReader *reader, JoinAcceptMessage *out)
 {
     JoinAcceptMessage message = {0};
     if (!packet_reader_read_i32(reader, &message.player_id)) {
+        return false;
+    }
+    if (!packet_reader_read_u32(reader, &message.op_seq_baseline)) {
         return false;
     }
     *out = message;

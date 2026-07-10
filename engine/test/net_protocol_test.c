@@ -368,7 +368,10 @@ void test_protocol_ack_packet_round_trip(void)
 
 void test_protocol_join_accept_packet_round_trip(void)
 {
-    JoinAcceptMessage message = {.player_id = 3};
+    /* op_seq_baseline (S8.7c) deliberately non-trivial: a mid-session join
+     * where the host already stamped ops must carry the current counter,
+     * not a hardcoded 0/1. */
+    JoinAcceptMessage message = {.player_id = 3, .op_seq_baseline = 47};
 
     uint8_t buffer[NET_PROTOCOL_TEST_BUFFER_SIZE];
     size_t total_len = 0;
@@ -382,6 +385,7 @@ void test_protocol_join_accept_packet_round_trip(void)
     JoinAcceptMessage out;
     TEST_ASSERT_TRUE(protocol_decode_join_accept(&decoded.reader, &out));
     TEST_ASSERT_EQUAL_INT32(message.player_id, out.player_id);
+    TEST_ASSERT_EQUAL_UINT32(message.op_seq_baseline, out.op_seq_baseline);
 }
 
 /* ---- MSG_OP ---- */

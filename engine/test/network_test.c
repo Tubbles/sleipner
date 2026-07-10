@@ -41,6 +41,9 @@ void test_apply_hosting_sets_mode_and_resets_beacon_timer(void)
     TEST_ASSERT_TRUE(network.transport_initialized);
     TEST_ASSERT_EQUAL_FLOAT(0.0F, network.beacon_timer);
     TEST_ASSERT_EQUAL_STRING("Alice", network.host_name);
+    /* S8.7c: hosting start arms the op counter -- the first stamped op gets
+     * 1, never the 0 "unstamped request" sentinel. */
+    TEST_ASSERT_EQUAL_UINT32(1, network.next_op_seq);
 }
 
 void test_apply_hosting_truncates_long_host_name(void)
@@ -87,6 +90,12 @@ void test_stop_resets_every_field_to_offline(void)
     /* S8.6: pre-seed local_player_id too, so its reset is proven the same
      * way as the fields above. */
     network.local_player_id = 3;
+    /* S8.7c: pre-seed the op-ordering state a live session would have
+     * accumulated -- counters mid-stream, one echo parked in holdback. */
+    network.next_op_seq = 9;
+    network.next_expected_op_seq = 4;
+    network.held_ops[2].occupied = true;
+    network.held_ops[2].op_seq = 6;
 
     network_stop(&network);
 
@@ -101,6 +110,12 @@ void test_stop_resets_every_field_to_offline(void)
     TEST_ASSERT_EQUAL_INT32(0, network.last_delivered_event_type);
     TEST_ASSERT_EQUAL_INT32(0, network.last_delivered_event_entity_id);
     TEST_ASSERT_EQUAL_INT(0, network.delivered_event_count);
+    /* S8.7c: counters back to the offline zero (network_apply_hosting and
+     * the JOIN_ACCEPT baseline re-arm them at the next session start), and
+     * no held echo survives. */
+    TEST_ASSERT_EQUAL_UINT32(0, network.next_op_seq);
+    TEST_ASSERT_EQUAL_UINT32(0, network.next_expected_op_seq);
+    TEST_ASSERT_FALSE(network.held_ops[2].occupied);
 }
 
 void test_stop_is_idempotent_on_already_offline_network(void)
@@ -194,6 +209,16 @@ static LoopbackNetwork make_loopback_network(void)
     return network;
 }
 
+/* S8.7c added a PendingEditorOps out-param to network_host_receive. These
+ * S8.7a event tests never exercise ops, so they drain through this wrapper
+ * with a throwaway sink and a zero gamedata hash (they register_client
+ * directly, never JOIN, so the hash is irrelevant). */
+static void host_receive_events_only(NetworkState *network)
+{
+    PendingEditorOps discard_ops = {0};
+    network_host_receive(network, 0, &discard_ops);
+}
+
 void test_client_reliable_event_delivered_exactly_once_to_host(void)
 {
     LoopbackNetwork loopback = make_loopback_network();
@@ -210,7 +235,7 @@ void test_client_reliable_event_delivered_exactly_once_to_host(void)
 
     EventRecord event = {.event_type = 42, .entity_id = 7, .argument = (Strv){0}};
     network_client_send_reliable_event(&client_network, event);
-    network_host_receive(&host_network, 0);
+    host_receive_events_only(&host_network);
 
     TEST_ASSERT_EQUAL_INT(1, host_network.client_event_delivered_count);
     TEST_ASSERT_EQUAL_INT32(42, host_network.last_client_event_type);
@@ -246,13 +271,13 @@ void test_client_resend_does_not_double_deliver_to_host(void)
     /* Age past the resend timer -> the same event (seq 0) is retransmitted
      * and this is the host's FIRST actual receive of it -- delivered once. */
     network_client_tick_reliable_channel(&client_network, RELIABLE_RESEND_SECONDS + 0.01F);
-    network_host_receive(&host_network, 0);
+    host_receive_events_only(&host_network);
     TEST_ASSERT_EQUAL_INT(1, host_network.client_event_delivered_count);
 
     /* The host never acked, so a second resend fires and reaches the host
      * again -- the SAME seq, which must dedup rather than double-deliver. */
     network_client_tick_reliable_channel(&client_network, RELIABLE_RESEND_SECONDS + 0.01F);
-    network_host_receive(&host_network, 0);
+    host_receive_events_only(&host_network);
     TEST_ASSERT_EQUAL_INT(1, host_network.client_event_delivered_count);
 
     loopback_network_free(&loopback);
@@ -274,7 +299,7 @@ void test_host_sends_ack_and_client_stops_resending(void)
 
     EventRecord event = {.event_type = 1, .entity_id = 1, .argument = (Strv){0}};
     network_client_send_reliable_event(&client_network, event);
-    network_host_receive(&host_network, 0);
+    host_receive_events_only(&host_network);
     TEST_ASSERT_EQUAL_INT(1, host_network.client_event_delivered_count);
     TEST_ASSERT_TRUE(host_network.clients[0].event_channel.has_received_any);
 
@@ -428,6 +453,62 @@ void test_host_broadcast_reliable_op_reaches_both_clients(void)
     loopback_network_free(&loopback);
 }
 
+/* ---- S8.7c: host-side MSG_OP receive backpressure ----
+ *
+ * A full PendingEditorOps must apply backpressure: the incoming op is left
+ * UNMARKED on the sending client's event_channel (never passed to
+ * reliable_on_receive), so nothing is lost -- the client's reliable resend
+ * redelivers it, and a later receive with room delivers it exactly once. */
+void test_host_receive_full_pending_ops_does_not_mark_op(void)
+{
+    LoopbackNetwork loopback = make_loopback_network();
+    NetAddr host_addr = net_addr_make(1, 9000);
+    NetAddr client_addr = net_addr_make(2, 9001);
+    NetTransport host_transport;
+    NetTransport client_transport;
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, host_addr, &host_transport));
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, client_addr, &client_transport));
+
+    NetworkState host_network = {.transport = host_transport};
+    register_client(&host_network, client_addr);
+    NetworkState client_network = {.transport = client_transport, .join_target = host_addr};
+
+    EditorOp operation = {.kind = EDITOR_OP_MOVE_ENTITY,
+                          .level_name = strv_from_cstr("overworld"),
+                          .entity_id = 7,
+                          .op_seq = 0,
+                          .move_x = 1.0F,
+                          .move_y = 2.0F};
+    network_client_send_reliable_op(&client_network, &operation);
+
+    /* Drain with an already-full sink: the op is consumed off the wire but
+     * NOT dedup-marked, and nothing is queued past the pre-set count. */
+    PendingEditorOps full_ops = {.count = NETWORK_PENDING_OPS_MAX};
+    network_host_receive(&host_network, 0, &full_ops);
+    TEST_ASSERT_EQUAL_INT(NETWORK_PENDING_OPS_MAX, full_ops.count);
+    TEST_ASSERT_FALSE(host_network.clients[0].event_channel.has_received_any);
+
+    /* Resend (client ages past the resend timer) and drain with room: now
+     * it is delivered exactly once, and its raw bytes round-trip. */
+    network_client_tick_reliable_channel(&client_network, RELIABLE_RESEND_SECONDS + 0.01F);
+    PendingEditorOps fresh_ops = {0};
+    network_host_receive(&host_network, 0, &fresh_ops);
+    TEST_ASSERT_EQUAL_INT(1, fresh_ops.count);
+    TEST_ASSERT_TRUE(host_network.clients[0].event_channel.has_received_any);
+    TEST_ASSERT_EQUAL_INT(1, fresh_ops.sender_player_ids[0]);
+
+    DecodedPacket packet;
+    ErrorState decode_err = {0};
+    TEST_ASSERT_TRUE(protocol_decode_packet(fresh_ops.packets[0], fresh_ops.lengths[0], &packet, &decode_err));
+    TEST_ASSERT_EQUAL_INT(MSG_OP, packet.header.type);
+    EditorOp decoded = {0};
+    TEST_ASSERT_TRUE(protocol_decode_op(&packet.reader, &decoded));
+    TEST_ASSERT_EQUAL_INT(EDITOR_OP_MOVE_ENTITY, decoded.kind);
+    TEST_ASSERT_EQUAL_INT32(7, decoded.entity_id);
+
+    loopback_network_free(&loopback);
+}
+
 int main(void)
 {
     test_helpers_init();
@@ -446,5 +527,6 @@ int main(void)
     RUN_TEST(test_host_sends_no_acks_when_client_has_not_sent_anything);
     RUN_TEST(test_client_send_reliable_op_lands_decodable_on_host);
     RUN_TEST(test_host_broadcast_reliable_op_reaches_both_clients);
+    RUN_TEST(test_host_receive_full_pending_ops_does_not_mark_op);
     return UNITY_END();
 }

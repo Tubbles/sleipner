@@ -12,6 +12,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 
 DiscoveredHost *join_list_find(JoinList *list, NetAddr addr)
 {
@@ -76,6 +77,12 @@ static void network_apply_hosting(NetworkState *network, NetTransport transport,
     network->mode = NET_HOSTING;
     network->beacon_timer = 0.0F;
     strv_copy_to_cstr(strv_from_cstr(host_name), network->host_name, sizeof(network->host_name));
+    /* S8.7c: the op counter is 0 while offline (see its own doc comment,
+     * network.h) and comes alive here -- the first stamped op gets 1, never
+     * the 0 "unstamped request" sentinel. Every joining client learns this
+     * value via JoinAcceptMessage.op_seq_baseline (handle_join_datagram
+     * below), so host and clients always agree on the stream's start. */
+    network->next_op_seq = 1;
 }
 
 /* Apply an already-created transport to `network` as the DISCOVERING
@@ -133,6 +140,14 @@ void network_stop(NetworkState *network)
     network->last_client_event_entity_id = 0;
     network->last_client_event_player_id = 0;
     network->client_event_delivered_count = 0;
+    /* Back to the offline zero (counters live only inside a session --
+     * network_apply_hosting re-arms next_op_seq at hosting start, and the
+     * JOIN_ACCEPT baseline re-seeds next_expected_op_seq at join time). */
+    network->next_op_seq = 0;
+    for (int index = 0; index < NETWORK_OP_HOLDBACK_MAX; index++) {
+        network->held_ops[index] = (HeldEditorOp){0};
+    }
+    network->next_expected_op_seq = 0;
 }
 
 /* ---- S8.4a: session JOIN + INPUT flow ---- */
@@ -201,12 +216,16 @@ void network_client_send_input(NetworkState *network, const InputState *local_in
 }
 
 /* HOST side (S8.6): reply to an accepted JOIN with MSG_JOIN_ACCEPT carrying
- * player_id, fire-and-forget like every other network_* send in this file.
- * Called for every verified JOIN (new registration or re-JOIN refresh),
- * never for a refused one -- see handle_join_datagram below. */
+ * player_id plus (S8.7c) op_seq_baseline -- the host's CURRENT next_op_seq,
+ * i.e. the first editor-op echo this client should expect. Fire-and-forget
+ * like every other network_* send in this file. Called for every verified
+ * JOIN (new registration or re-JOIN refresh), never for a refused one --
+ * see handle_join_datagram below. Because it re-fires on every re-JOIN, a
+ * genuinely reconnecting client always gets a fresh, current baseline, not
+ * the one from its first join. */
 static void send_join_accept(const NetworkState *network, NetAddr dest, int player_id)
 {
-    JoinAcceptMessage message = {.player_id = player_id};
+    JoinAcceptMessage message = {.player_id = player_id, .op_seq_baseline = network->next_op_seq};
     uint8_t buffer[NET_MAX_PACKET_SIZE];
     size_t packet_len = 0;
     if (!protocol_encode_join_accept_packet(buffer, sizeof(buffer), 0, message, &packet_len)) {
@@ -292,7 +311,48 @@ static void handle_event_datagram(NetworkState *network, NetAddr src, uint32_t s
     network->client_event_delivered_count++;
 }
 
-void network_host_receive(NetworkState *network, uint64_t local_gamedata_hash)
+/* S8.7c: an MSG_OP from a registered client is not applied here (network.c
+ * has no game.h) -- its RAW datagram bytes, length, and the sender's
+ * player_id are copied into out_ops for net_session.c's network_host_tick
+ * to decode and apply after the drain. See network_host_receive's own doc
+ * comment (network.h) and PendingEditorOps for the raw-bytes / backpressure
+ * rationale. The backpressure check runs BEFORE reliable_on_receive so an
+ * op that overflows out_ops stays unmarked and is redelivered by the
+ * client's resend -- lossless. `datagram`/`datagram_len` are the whole
+ * received packet bytes (header included), copied verbatim so the later
+ * decode sees exactly what arrived. */
+static void handle_op_datagram(NetworkState *network,
+                               NetAddr src,
+                               uint32_t seq,
+                               const uint8_t *datagram,
+                               size_t datagram_len,
+                               PendingEditorOps *out_ops)
+{
+    NetClient *client = find_client_by_addr(network, src);
+    if (client == nullptr) {
+        return;
+    }
+    if (out_ops->count >= NETWORK_PENDING_OPS_MAX) {
+        return;
+    }
+    if (!reliable_on_receive(&client->event_channel, seq)) {
+        return;
+    }
+    /* A legit op never exceeds RELIABLE_SLOT_PACKET_MAX (reliable_send_op
+     * fails to encode past it, net_reliable.c); an oversized datagram is
+     * malformed, so drop it (already dedup-marked, so the client stops
+     * resending it) rather than overrun the fixed slot. */
+    if (datagram_len > RELIABLE_SLOT_PACKET_MAX) {
+        return;
+    }
+    int slot = out_ops->count;
+    memcpy(out_ops->packets[slot], datagram, datagram_len);
+    out_ops->lengths[slot] = datagram_len;
+    out_ops->sender_player_ids[slot] = client->player_id;
+    out_ops->count++;
+}
+
+void network_host_receive(NetworkState *network, uint64_t local_gamedata_hash, PendingEditorOps *out_ops)
 {
     uint8_t buffer[NET_MAX_PACKET_SIZE];
     NetAddr src = {0};
@@ -309,6 +369,8 @@ void network_host_receive(NetworkState *network, uint64_t local_gamedata_hash)
                 handle_ack_datagram(network, src, &packet.reader);
             } else if (packet.header.type == MSG_EVENT) {
                 handle_event_datagram(network, src, packet.header.seq, &packet.reader);
+            } else if (packet.header.type == MSG_OP) {
+                handle_op_datagram(network, src, packet.header.seq, buffer, (size_t)received, out_ops);
             }
         }
         received = net_recv(&network->transport, &src, buffer, sizeof(buffer));

@@ -5665,6 +5665,497 @@ void test_integration_per_peer_camera_follows_own_player(void)
     loopback_network_free(&loopback);
 }
 
+/* ---- Integration: S8.7c collaborative entity MOVE over the network ----
+ *
+ * Same two-TestGame-over-net_loopback.h shape as the S8.4/S8.6 session
+ * tests above, reusing host_session_gamedata. These exercise the first
+ * end-to-end collaborative edit: a client's editor move becomes a
+ * host-stamped op that converges on every replica. Both peers are put in
+ * editor mode so the host's every-tick DELTA broadcast is suspended (S8.7c
+ * delta gate, frame.c) and the op stream is the sole entity-state channel
+ * during the edit. */
+
+/* (a) A client's editor drag-commit propagates as an op the host applies
+ * authoritatively and echoes back, so the moved entity converges on both
+ * peers. Driven black-box through the real input layer on the client
+ * (grab / hold-right / confirm, mirroring the S5.7 group-move test) -- the
+ * editor-input-driven variant, since the harness already drives editor
+ * drags this way. The entity moved is the authored hero (local:0), whose id
+ * both peers agree on from their own identical load-time parse; its host
+ * copy is driven only by the host's own (idle) input, so the op apply is
+ * the only thing that moves it there. */
+void test_integration_editor_move_op_converges_on_both_peers(void)
+{
+    LoopbackNetwork loopback;
+    loopback_network_init(&loopback, &test_heap_alloc);
+    NetAddr host_addr = net_addr_make(1, 9000);
+    NetAddr client_addr = net_addr_make(2, 9001);
+    NetTransport host_transport;
+    NetTransport client_transport;
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, host_addr, &host_transport));
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, client_addr, &client_transport));
+
+    TestGame host;
+    TEST_ASSERT_TRUE(test_game_setup(&host, host_session_gamedata));
+    host.state.network.mode = NET_HOSTING;
+    host.state.network.transport = host_transport;
+    /* Mirrors network_apply_hosting's hosting-start init -- this fixture
+     * fabricates hosting by direct field sets (never network_start_hosting,
+     * which needs a real UDP socket), so the op counter must be hand-armed
+     * the same way. The CLIENT side needs no hand-set anywhere in this
+     * file: its next_expected_op_seq is seeded from the accept's
+     * op_seq_baseline by the real JOIN handshake below. */
+    host.state.network.next_op_seq = 1;
+
+    TestGame client;
+    TEST_ASSERT_TRUE(test_game_setup(&client, host_session_gamedata));
+    client.state.network.mode = NET_JOINING;
+    client.state.network.transport = client_transport;
+    client.state.network.join_target = host_addr;
+
+    Entity *host_hero = test_find_entity_by_blueprint(&host.state, "hero");
+    TEST_ASSERT_NOT_NULL(host_hero);
+    int host_hero_id = host_hero->id;
+    float hero_start_x = host_hero->position.x;
+
+    InputState no_input = {0};
+    for (int frame = 0; frame < 3; frame++) {
+        test_advance_frame(&client, no_input);
+        test_advance_frame(&host, no_input);
+    }
+    TEST_ASSERT_EQUAL_INT(NET_CLIENT, client.state.network.mode);
+    TEST_ASSERT_EQUAL_INT(1, host.state.network.client_count);
+
+    /* Host editor mode suspends deltas. The join handshake above already
+     * seeded the client's next_expected_op_seq (= 1) from the accept's
+     * op_seq_baseline. */
+    host.state.editor_mode = true;
+    client.state.editor_mode = true;
+
+    /* Seed the client's selection directly (mirrors existing editor tests
+     * that set selected_entity_id straight), then drive the drag through the
+     * real input layer. */
+    client.editor_state.sub_mode = EDITOR_SUB_BROWSE;
+    client.editor_state.selected_entity_id = host_hero_id;
+    client.editor_state.multiselect_ids[0] = host_hero_id;
+    client.editor_state.multiselect_count = 1;
+
+    InputState grab = {0};
+    input_state_press_key(&grab, KEY_G);
+    test_advance_frame(&client, grab);
+    test_advance_frame(&host, no_input);
+    TEST_ASSERT_EQUAL_INT(EDITOR_SUB_DRAG, client.editor_state.sub_mode);
+
+    for (int step = 0; step < 6; step++) {
+        InputState move = {0};
+        input_state_hold_key(&move, KEY_RIGHT);
+        test_advance_frame(&client, move);
+        test_advance_frame(&host, no_input);
+    }
+
+    InputState confirm = {0};
+    input_state_press_key(&confirm, KEY_ENTER);
+    test_advance_frame(&client, confirm); /* commit -> op request to host */
+    test_advance_frame(&host, no_input);  /* host applies + stamps + echoes */
+    TEST_ASSERT_EQUAL_INT(EDITOR_SUB_BROWSE, client.editor_state.sub_mode);
+
+    for (int frame = 0; frame < 3; frame++) {
+        test_advance_frame(&client, no_input); /* client applies the echo */
+        test_advance_frame(&host, no_input);
+    }
+
+    Entity *host_hero_after = test_find_entity_by_id(&host.state, host_hero_id);
+    Entity *client_hero_after = test_find_entity_by_id(&client.state, host_hero_id);
+    TEST_ASSERT_NOT_NULL(host_hero_after);
+    TEST_ASSERT_NOT_NULL(client_hero_after);
+
+    /* The drag moved the hero right; the host applied the op and both peers
+     * agree on the final position (bit-exact -- ATTR-free op carries the
+     * float verbatim). */
+    TEST_ASSERT_TRUE_MESSAGE(host_hero_after->position.x > hero_start_x + 1.0F,
+                             "host should have applied the client's move op");
+    TEST_ASSERT_EQUAL_FLOAT(host_hero_after->position.x, client_hero_after->position.x);
+    TEST_ASSERT_EQUAL_FLOAT(host_hero_after->position.y, client_hero_after->position.y);
+
+    test_game_teardown(&host);
+    test_game_teardown(&client);
+    loopback_network_free(&loopback);
+}
+
+/* (b) Two op echoes delivered to the client out of order (op_seq 2 arriving
+ * before op_seq 1) apply in op_seq order, not arrival order -- so the final
+ * position is op 2's target. The echoes are hand-built with
+ * protocol_encode_op_packet and injected straight onto the client's inbox
+ * (the host is not ticked afterward, so no DELTA can clobber the result). */
+void test_integration_op_echo_applies_in_op_seq_order(void)
+{
+    LoopbackNetwork loopback;
+    loopback_network_init(&loopback, &test_heap_alloc);
+    NetAddr host_addr = net_addr_make(1, 9000);
+    NetAddr client_addr = net_addr_make(2, 9001);
+    NetTransport host_transport;
+    NetTransport client_transport;
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, host_addr, &host_transport));
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, client_addr, &client_transport));
+
+    TestGame host;
+    TEST_ASSERT_TRUE(test_game_setup(&host, host_session_gamedata));
+    host.state.network.mode = NET_HOSTING;
+    host.state.network.transport = host_transport;
+    /* Fabricated-hosting hand-arm, mirroring network_apply_hosting -- see
+     * test_integration_editor_move_op_converges_on_both_peers. The client's
+     * expectation (op_seq 1 first) then arrives via the real accept
+     * baseline, no client-side hand-set. */
+    host.state.network.next_op_seq = 1;
+
+    TestGame client;
+    TEST_ASSERT_TRUE(test_game_setup(&client, host_session_gamedata));
+    client.state.network.mode = NET_JOINING;
+    client.state.network.transport = client_transport;
+    client.state.network.join_target = host_addr;
+
+    Entity *host_hero = test_find_entity_by_blueprint(&host.state, "hero");
+    TEST_ASSERT_NOT_NULL(host_hero);
+    int host_hero_id = host_hero->id;
+
+    InputState no_input = {0};
+    for (int frame = 0; frame < 3; frame++) {
+        test_advance_frame(&client, no_input);
+        test_advance_frame(&host, no_input);
+    }
+    TEST_ASSERT_EQUAL_INT(NET_CLIENT, client.state.network.mode);
+
+    /* Drain any leftover in-flight DELTA so only the injected ops decide
+     * the final position. */
+    test_advance_frame(&client, no_input);
+
+    /* op_seq 2 encoded first (arrives first), op_seq 1 second. Distinct
+     * packet header seqs (1, 2) so both pass the reliable dedup window
+     * (highest received so far is the PLAYER_JOINED event's seq 0). */
+    EditorOp op_seq2 = {.kind = EDITOR_OP_MOVE_ENTITY,
+                        .level_name = strv_from_cstr("test"),
+                        .entity_id = host_hero_id,
+                        .author_player_id = 0,
+                        .op_seq = 2,
+                        .move_x = 260.0F,
+                        .move_y = 180.0F};
+    EditorOp op_seq1 = {.kind = EDITOR_OP_MOVE_ENTITY,
+                        .level_name = strv_from_cstr("test"),
+                        .entity_id = host_hero_id,
+                        .author_player_id = 0,
+                        .op_seq = 1,
+                        .move_x = 300.0F,
+                        .move_y = 220.0F};
+    uint8_t packet2[NET_MAX_PACKET_SIZE];
+    uint8_t packet1[NET_MAX_PACKET_SIZE];
+    size_t len2 = 0;
+    size_t len1 = 0;
+    TEST_ASSERT_TRUE(protocol_encode_op_packet(packet2, sizeof(packet2), 1, &op_seq2, &len2));
+    TEST_ASSERT_TRUE(protocol_encode_op_packet(packet1, sizeof(packet1), 2, &op_seq1, &len1));
+    TEST_ASSERT_TRUE(net_send(&host_transport, client_addr, packet2, len2) > 0);
+    TEST_ASSERT_TRUE(net_send(&host_transport, client_addr, packet1, len1) > 0);
+
+    /* One client tick drains both in one pass and applies them in op_seq
+     * order. */
+    test_advance_frame(&client, no_input);
+
+    Entity *client_hero = test_find_entity_by_id(&client.state, host_hero_id);
+    TEST_ASSERT_NOT_NULL(client_hero);
+    TEST_ASSERT_EQUAL_FLOAT(260.0F, client_hero->position.x);
+    TEST_ASSERT_EQUAL_FLOAT(180.0F, client_hero->position.y);
+
+    test_game_teardown(&host);
+    test_game_teardown(&client);
+    loopback_network_free(&loopback);
+}
+
+/* (c) While the host is in editor mode, a plain sim-style position write on
+ * the host (no op) is NOT broadcast -- the client never sees it. Leaving
+ * editor mode resumes the DELTA stream and the client converges. */
+void test_integration_delta_suspended_during_host_editor_mode(void)
+{
+    LoopbackNetwork loopback;
+    loopback_network_init(&loopback, &test_heap_alloc);
+    NetAddr host_addr = net_addr_make(1, 9000);
+    NetAddr client_addr = net_addr_make(2, 9001);
+    NetTransport host_transport;
+    NetTransport client_transport;
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, host_addr, &host_transport));
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, client_addr, &client_transport));
+
+    TestGame host;
+    TEST_ASSERT_TRUE(test_game_setup(&host, host_session_gamedata));
+    host.state.network.mode = NET_HOSTING;
+    host.state.network.transport = host_transport;
+
+    TestGame client;
+    TEST_ASSERT_TRUE(test_game_setup(&client, host_session_gamedata));
+    client.state.network.mode = NET_JOINING;
+    client.state.network.transport = client_transport;
+    client.state.network.join_target = host_addr;
+
+    Entity *host_hero = test_find_entity_by_blueprint(&host.state, "hero");
+    TEST_ASSERT_NOT_NULL(host_hero);
+    int host_hero_id = host_hero->id;
+
+    InputState no_input = {0};
+    for (int frame = 0; frame < 3; frame++) {
+        test_advance_frame(&client, no_input);
+        test_advance_frame(&host, no_input);
+    }
+    TEST_ASSERT_EQUAL_INT(NET_CLIENT, client.state.network.mode);
+
+    /* Enter editor mode on the host, then move its hero WITHOUT an op (a
+     * direct write standing in for sim movement). game_update still runs but
+     * the DELTA broadcast is suspended (frame.c gate). */
+    host.state.editor_mode = true;
+    Entity *host_hero_editing = test_find_entity_by_id(&host.state, host_hero_id);
+    TEST_ASSERT_NOT_NULL(host_hero_editing);
+    host_hero_editing->position = (Vector2){250.0F, 250.0F};
+
+    for (int frame = 0; frame < 6; frame++) {
+        test_advance_frame(&client, no_input);
+        test_advance_frame(&host, no_input);
+    }
+
+    Entity *client_hero_during = test_find_entity_by_id(&client.state, host_hero_id);
+    TEST_ASSERT_NOT_NULL(client_hero_during);
+    /* Client never learned the new position (still near the pre-edit synced
+     * value ~100, nowhere near 250). */
+    TEST_ASSERT_TRUE_MESSAGE(client_hero_during->position.x < 200.0F,
+                             "client must not receive host edits while deltas are suspended");
+
+    /* Leave editor mode: deltas resume and heal the divergence. */
+    host.state.editor_mode = false;
+    for (int frame = 0; frame < 4; frame++) {
+        test_advance_frame(&host, no_input);
+        test_advance_frame(&client, no_input);
+    }
+
+    Entity *host_hero_final = test_find_entity_by_id(&host.state, host_hero_id);
+    Entity *client_hero_final = test_find_entity_by_id(&client.state, host_hero_id);
+    TEST_ASSERT_NOT_NULL(host_hero_final);
+    TEST_ASSERT_NOT_NULL(client_hero_final);
+    TEST_ASSERT_EQUAL_FLOAT(host_hero_final->position.x, client_hero_final->position.x);
+    TEST_ASSERT_EQUAL_FLOAT(host_hero_final->position.y, client_hero_final->position.y);
+    TEST_ASSERT_FLOAT_WITHIN(1.0F, 250.0F, client_hero_final->position.x);
+
+    test_game_teardown(&host);
+    test_game_teardown(&client);
+    loopback_network_free(&loopback);
+}
+
+/* A duplicate MSG_JOIN_ACCEPT arriving while the client is already
+ * NET_CLIENT (the host re-sends an accept for every re-JOIN; a stale
+ * in-flight copy can land any time) must NOT re-seed next_expected_op_seq
+ * or drop parked echoes -- the baseline applies only on the JOINING->CLIENT
+ * flip edge (net_session.c's client_apply_join_accept). Proven observably:
+ * apply op 1, park op 3, inject a duplicate accept carrying a wild baseline
+ * (99), then deliver op 2 -- the gap fill must still apply op 2 AND drain
+ * the parked op 3, leaving the entity at op 3's target. A wrongly re-seeded
+ * client would drop op 2 as stale (2 < 99) with op 3's slot cleared, and
+ * the entity would be stuck at op 1's target. */
+void test_integration_duplicate_join_accept_preserves_op_ordering_state(void)
+{
+    LoopbackNetwork loopback;
+    loopback_network_init(&loopback, &test_heap_alloc);
+    NetAddr host_addr = net_addr_make(1, 9000);
+    NetAddr client_addr = net_addr_make(2, 9001);
+    NetTransport host_transport;
+    NetTransport client_transport;
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, host_addr, &host_transport));
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, client_addr, &client_transport));
+
+    TestGame host;
+    TEST_ASSERT_TRUE(test_game_setup(&host, host_session_gamedata));
+    host.state.network.mode = NET_HOSTING;
+    host.state.network.transport = host_transport;
+    /* Fabricated-hosting hand-arm, mirroring network_apply_hosting -- see
+     * test_integration_editor_move_op_converges_on_both_peers. */
+    host.state.network.next_op_seq = 1;
+
+    TestGame client;
+    TEST_ASSERT_TRUE(test_game_setup(&client, host_session_gamedata));
+    client.state.network.mode = NET_JOINING;
+    client.state.network.transport = client_transport;
+    client.state.network.join_target = host_addr;
+
+    Entity *host_hero = test_find_entity_by_blueprint(&host.state, "hero");
+    TEST_ASSERT_NOT_NULL(host_hero);
+    int host_hero_id = host_hero->id;
+
+    InputState no_input = {0};
+    for (int frame = 0; frame < 3; frame++) {
+        test_advance_frame(&client, no_input);
+        test_advance_frame(&host, no_input);
+    }
+    TEST_ASSERT_EQUAL_INT(NET_CLIENT, client.state.network.mode);
+
+    /* Drain leftover in-flight DELTAs; the host is never ticked again, so
+     * only the injected packets below touch the client's entities. */
+    test_advance_frame(&client, no_input);
+
+    /* Op 1 applies (baseline from the handshake is 1); op 3 parks. Header
+     * seqs 1..2 are fresh against the dedup window (PLAYER_JOINED took 0). */
+    EditorOp move_op1 = {.kind = EDITOR_OP_MOVE_ENTITY,
+                         .level_name = strv_from_cstr("test"),
+                         .entity_id = host_hero_id,
+                         .op_seq = 1,
+                         .move_x = 210.0F,
+                         .move_y = 110.0F};
+    EditorOp move_op3 = {.kind = EDITOR_OP_MOVE_ENTITY,
+                         .level_name = strv_from_cstr("test"),
+                         .entity_id = host_hero_id,
+                         .op_seq = 3,
+                         .move_x = 230.0F,
+                         .move_y = 130.0F};
+    uint8_t packet_op1[NET_MAX_PACKET_SIZE];
+    uint8_t packet_op3[NET_MAX_PACKET_SIZE];
+    size_t len_op1 = 0;
+    size_t len_op3 = 0;
+    TEST_ASSERT_TRUE(protocol_encode_op_packet(packet_op1, sizeof(packet_op1), 1, &move_op1, &len_op1));
+    TEST_ASSERT_TRUE(protocol_encode_op_packet(packet_op3, sizeof(packet_op3), 2, &move_op3, &len_op3));
+    TEST_ASSERT_TRUE(net_send(&host_transport, client_addr, packet_op1, len_op1) > 0);
+    TEST_ASSERT_TRUE(net_send(&host_transport, client_addr, packet_op3, len_op3) > 0);
+    test_advance_frame(&client, no_input);
+
+    Entity *client_hero = test_find_entity_by_id(&client.state, host_hero_id);
+    TEST_ASSERT_NOT_NULL(client_hero);
+    TEST_ASSERT_EQUAL_FLOAT(210.0F, client_hero->position.x);
+
+    /* Duplicate accept mid-session, wild baseline. Same player_id the real
+     * handshake assigned; only the baseline differs, and it must be
+     * ignored. */
+    JoinAcceptMessage duplicate_accept = {.player_id = 1, .op_seq_baseline = 99};
+    uint8_t packet_accept[NET_MAX_PACKET_SIZE];
+    size_t len_accept = 0;
+    TEST_ASSERT_TRUE(
+        protocol_encode_join_accept_packet(packet_accept, sizeof(packet_accept), 0, duplicate_accept, &len_accept));
+    TEST_ASSERT_TRUE(net_send(&host_transport, client_addr, packet_accept, len_accept) > 0);
+    test_advance_frame(&client, no_input);
+    TEST_ASSERT_EQUAL_INT(NET_CLIENT, client.state.network.mode);
+    TEST_ASSERT_EQUAL_INT(1, client.state.network.local_player_id);
+
+    /* The gap fill: op 2 must still apply, then drain the parked op 3. */
+    EditorOp move_op2 = {.kind = EDITOR_OP_MOVE_ENTITY,
+                         .level_name = strv_from_cstr("test"),
+                         .entity_id = host_hero_id,
+                         .op_seq = 2,
+                         .move_x = 220.0F,
+                         .move_y = 120.0F};
+    uint8_t packet_op2[NET_MAX_PACKET_SIZE];
+    size_t len_op2 = 0;
+    TEST_ASSERT_TRUE(protocol_encode_op_packet(packet_op2, sizeof(packet_op2), 3, &move_op2, &len_op2));
+    TEST_ASSERT_TRUE(net_send(&host_transport, client_addr, packet_op2, len_op2) > 0);
+    test_advance_frame(&client, no_input);
+
+    client_hero = test_find_entity_by_id(&client.state, host_hero_id);
+    TEST_ASSERT_NOT_NULL(client_hero);
+    TEST_ASSERT_EQUAL_FLOAT(230.0F, client_hero->position.x);
+    TEST_ASSERT_EQUAL_FLOAT(130.0F, client_hero->position.y);
+
+    test_game_teardown(&host);
+    test_game_teardown(&client);
+    loopback_network_free(&loopback);
+}
+
+/* A client joining AFTER the session already stamped ops must start at the
+ * host's current counter, not 1 -- that is exactly what the accept's
+ * op_seq_baseline carries. The host's counter sits at 5 pre-join (as if
+ * four ops were stamped before this client arrived); after the join, one
+ * HOST-side editor move commit (grab / drag / confirm through the real
+ * input layer -- also covering the host's own commit site, which stamps
+ * from the same counter) is broadcast as op_seq 5 and must apply cleanly on
+ * the client. Had the baseline not carried, the client would expect op 1
+ * and park the echo in holdback forever -- the convergence assert below
+ * would fail. */
+void test_integration_join_after_ops_stamped_carries_baseline(void)
+{
+    LoopbackNetwork loopback;
+    loopback_network_init(&loopback, &test_heap_alloc);
+    NetAddr host_addr = net_addr_make(1, 9000);
+    NetAddr client_addr = net_addr_make(2, 9001);
+    NetTransport host_transport;
+    NetTransport client_transport;
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, host_addr, &host_transport));
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, client_addr, &client_transport));
+
+    TestGame host;
+    TEST_ASSERT_TRUE(test_game_setup(&host, host_session_gamedata));
+    host.state.network.mode = NET_HOSTING;
+    host.state.network.transport = host_transport;
+    /* Fabricated hosting (see the hand-arm note in
+     * test_integration_editor_move_op_converges_on_both_peers) with four
+     * ops already stamped this session: hosting init set 1, four stamps
+     * advanced it to 5. */
+    host.state.network.next_op_seq = 5;
+
+    TestGame client;
+    TEST_ASSERT_TRUE(test_game_setup(&client, host_session_gamedata));
+    client.state.network.mode = NET_JOINING;
+    client.state.network.transport = client_transport;
+    client.state.network.join_target = host_addr;
+
+    Entity *host_hero = test_find_entity_by_blueprint(&host.state, "hero");
+    TEST_ASSERT_NOT_NULL(host_hero);
+    int host_hero_id = host_hero->id;
+    float hero_start_x = host_hero->position.x;
+
+    InputState no_input = {0};
+    for (int frame = 0; frame < 3; frame++) {
+        test_advance_frame(&client, no_input);
+        test_advance_frame(&host, no_input);
+    }
+    TEST_ASSERT_EQUAL_INT(NET_CLIENT, client.state.network.mode);
+
+    /* Both peers editing: deltas suspended, the op echo is the only channel
+     * that can move the client's hero below. */
+    host.state.editor_mode = true;
+    client.state.editor_mode = true;
+
+    /* Seed the HOST's editor selection and drive its move through the real
+     * input layer, mirroring the client-driven variant in
+     * test_integration_editor_move_op_converges_on_both_peers. */
+    host.editor_state.sub_mode = EDITOR_SUB_BROWSE;
+    host.editor_state.selected_entity_id = host_hero_id;
+    host.editor_state.multiselect_ids[0] = host_hero_id;
+    host.editor_state.multiselect_count = 1;
+
+    InputState grab = {0};
+    input_state_press_key(&grab, KEY_G);
+    test_advance_frame(&host, grab);
+    TEST_ASSERT_EQUAL_INT(EDITOR_SUB_DRAG, host.editor_state.sub_mode);
+
+    for (int step = 0; step < 5; step++) {
+        InputState move = {0};
+        input_state_hold_key(&move, KEY_RIGHT);
+        test_advance_frame(&host, move);
+    }
+
+    InputState confirm = {0};
+    input_state_press_key(&confirm, KEY_ENTER);
+    test_advance_frame(&host, confirm); /* commit: stamps op_seq 5, broadcasts */
+    TEST_ASSERT_EQUAL_INT(EDITOR_SUB_BROWSE, host.editor_state.sub_mode);
+
+    for (int frame = 0; frame < 3; frame++) {
+        test_advance_frame(&client, no_input); /* applies the op_seq-5 echo */
+        test_advance_frame(&host, no_input);
+    }
+
+    Entity *host_hero_after = test_find_entity_by_id(&host.state, host_hero_id);
+    Entity *client_hero_after = test_find_entity_by_id(&client.state, host_hero_id);
+    TEST_ASSERT_NOT_NULL(host_hero_after);
+    TEST_ASSERT_NOT_NULL(client_hero_after);
+    TEST_ASSERT_TRUE_MESSAGE(host_hero_after->position.x > hero_start_x + 1.0F,
+                             "host drag should have moved its hero right");
+    TEST_ASSERT_EQUAL_FLOAT(host_hero_after->position.x, client_hero_after->position.x);
+    TEST_ASSERT_EQUAL_FLOAT(host_hero_after->position.y, client_hero_after->position.y);
+
+    test_game_teardown(&host);
+    test_game_teardown(&client);
+    loopback_network_free(&loopback);
+}
+
 /* Offline single-player is unaffected by S8.6: game_get_local_player
  * resolves to the exact same entity as game_get_player (the sole local:0
  * player, pointer-identical, not just equal by value) since

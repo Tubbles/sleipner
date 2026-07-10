@@ -252,10 +252,21 @@ typedef struct {
  * that resends JOIN while still waiting eventually gets an accept even if
  * the first one was lost. Never sent for a refused (hash-mismatched) JOIN
  * -- a client that never receives one simply never leaves NET_JOINING,
- * same silent-refusal contract protocol_join_verify already documents. ---- */
+ * same silent-refusal contract protocol_join_verify already documents.
+ *
+ * op_seq_baseline (S8.7c) is the next op_seq the accepting host will stamp
+ * -- i.e. the first editor-op echo the joining client should expect. The
+ * client seeds its own next_expected_op_seq from it exactly once, on the
+ * JOINING->CLIENT flip edge (net_session.c's accept branch), so a client
+ * joining a session where ops were already stamped, or rejoining a running
+ * session, starts in sync with the host's counter instead of at a stale or
+ * mismatched value. Re-sent (fresh, current) on every re-JOIN, same as the
+ * accept itself. Appended after player_id on the wire; no PROTOCOL_VERSION
+ * bump, same added-field rationale MSG_OP's own doc comment gives. ---- */
 
 typedef struct {
     int32_t player_id;
+    uint32_t op_seq_baseline;
 } JoinAcceptMessage;
 
 [[nodiscard]] bool protocol_encode_join_accept(PacketWriter *writer, JoinAcceptMessage message);

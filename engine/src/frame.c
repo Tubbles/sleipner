@@ -514,14 +514,24 @@ void run_active_frame(Diag *diag,
      * open, for every mode including NET_CLIENT. Offline (NET_OFFLINE) and
      * hosting (NET_HOSTING) frames are unchanged: game_update runs as
      * before, followed by a DELTA broadcast to every connected client once
-     * this tick's simulation has produced its freshest state. */
+     * this tick's simulation has produced its freshest state -- except
+     * (S8.7c) while the host is in its own editor mode, see the broadcast
+     * gate below. */
     if (state->network.mode == NET_CLIENT) {
         game_update_client_render(state, delta_time);
         return;
     }
     game_update(diag, state, game_input, delta_time);
     apply_effect_queue(diag, state, editor_state);
-    if (state->network.mode == NET_HOSTING) {
+    /* S8.7c: suspend the every-tick full-state DELTA broadcast while the
+     * host is in editor mode. game_update still runs (the shipped "live
+     * editing" semantic), but a full-state broadcast every tick would stomp
+     * clients' in-progress drag previews -- so during a collaborative
+     * editing session the editor-op stream (host-stamped MSG_OP echoes) is
+     * the only entity-state channel. Full-state deltas resume the moment the
+     * host leaves editor mode and instantly heal any preview divergence,
+     * since v1 deltas re-send the whole level's state every tick. */
+    if (state->network.mode == NET_HOSTING && !state->editor_mode) {
         network_host_broadcast_delta(state);
     }
 }

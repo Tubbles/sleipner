@@ -21,7 +21,8 @@
 
 #include <stddef.h>
 #include <stdint.h>
-#include <stdio.h> // snprintf
+#include <stdio.h>  // snprintf
+#include <string.h> // memcpy
 
 /* Defined below, alongside the rest of S8.4b's state-sync machinery --
  * forward-declared here since network_client_tick (right below) is kept
@@ -80,6 +81,48 @@ static void spawn_network_player(Diag *diag, GameState *state, int player_id)
     (void)game_respawn_rebuild_tracking(diag, state);
 }
 
+/* S8.7c: decode, apply, stamp, and echo each op network_host_receive
+ * drained into `ops` this tick. Only an EDITOR_OP_MOVE_ENTITY naming the
+ * current level and a resolvable entity id is applied (entity->position set
+ * directly, mirroring the editor's own drag on the host -- no interp shift,
+ * host entities render authoritatively), then re-broadcast under a fresh
+ * op_seq with the SENDER's player_id stamped as author (never the wire's
+ * author field -- the host knows who sent it). Every other case is a
+ * tolerant silent drop (malformed decode, non-move kind, cross-level op, or
+ * unknown entity id) -- net_session.c logs nowhere, same silent convention
+ * as apply_sync_record/ensure_synced_entity_exists above. A dropped op is
+ * NOT stamped or echoed, so the op_seq stream every client replays stays
+ * contiguous over exactly the ops that were applied. */
+static void host_apply_and_echo_ops(GameState *state, const PendingEditorOps *ops)
+{
+    for (int index = 0; index < ops->count; index++) {
+        DecodedPacket packet;
+        ErrorState decode_err = {0};
+        if (!protocol_decode_packet(ops->packets[index], ops->lengths[index], &packet, &decode_err)) {
+            continue;
+        }
+        EditorOp operation = {0};
+        if (!protocol_decode_op(&packet.reader, &operation)) {
+            continue;
+        }
+        if (operation.kind != EDITOR_OP_MOVE_ENTITY) {
+            continue;
+        }
+        if (!strv_eq(operation.level_name, str_to_strv(state->gamedata.current_level.name))) {
+            continue;
+        }
+        int entity_index = level_find_entity_by_id(&state->gamedata.current_level, operation.entity_id);
+        if (entity_index < 0) {
+            continue;
+        }
+        state->gamedata.current_level.entities.data[entity_index].position =
+            (Vector2){operation.move_x, operation.move_y};
+        operation.author_player_id = ops->sender_player_ids[index];
+        operation.op_seq = state->network.next_op_seq++;
+        network_host_broadcast_reliable_op(&state->network, &operation);
+    }
+}
+
 void network_host_tick(GameState *state, float delta_time)
 {
     if (state->network.mode != NET_HOSTING) {
@@ -87,7 +130,8 @@ void network_host_tick(GameState *state, float delta_time)
     }
     Diag diag = {&state->error, &state->debug};
     int clients_before = state->network.client_count;
-    network_host_receive(&state->network, state->gamedata_hash);
+    PendingEditorOps pending_ops = {0};
+    network_host_receive(&state->network, state->gamedata_hash, &pending_ops);
     /* Every client register_client (network.c) added THIS call -- the
      * newly-joined tail of the clients array -- gets (S8.6) a player entity
      * spawned for it BEFORE a full SNAPSHOT of the current level, so the
@@ -106,6 +150,7 @@ void network_host_tick(GameState *state, float delta_time)
                                                        .entity_id = state->network.clients[index].player_id,
                                                        .argument = (Strv){0}});
     }
+    host_apply_and_echo_ops(state, &pending_ops);
     network_host_tick_reliable_channels(&state->network, delta_time);
     network_host_send_acks(&state->network);
 }
@@ -297,6 +342,19 @@ static void shift_interp_window(Entity *entity)
     entity->interp_elapsed = 0.0F;
 }
 
+/* Write entity->position and shift its render-interp window (S8.5) so a
+ * NET_CLIENT lerps smoothly toward the new position instead of snapping.
+ * The shared "write position, then re-bracket the interp window" step for
+ * both a POS_X/POS_Y sync pair (apply_sync_record below) and a whole
+ * EDITOR_OP_MOVE_ENTITY echo (client_apply_move_op below, S8.7c) --
+ * shift_interp_window reads entity->position for its interp_to end, so the
+ * write must precede it. */
+static void apply_synced_position(Entity *entity, Vector2 position)
+{
+    entity->position = position;
+    shift_interp_window(entity);
+}
+
 /* Apply one decoded record onto entity: NETWORK_ATTR_POS_X/_Y write
  * entity->position (see net_session.h's own "How position rides the
  * AttrRecord stream" note); every other record deep-copies its name (and,
@@ -317,13 +375,12 @@ static void apply_sync_record(Allocator *gamedata_alloc, Entity *entity, const A
         return;
     }
     if (strv_eq_cstr(record->name, NETWORK_ATTR_POS_Y)) {
-        /* entity->position now holds the complete new (x, y) pair --
-         * push_entity_sync_records (above) always pushes POS_X immediately
-         * before POS_Y for the same entity, so POS_Y is where the shift
-         * belongs. See shift_interp_window's own doc comment for the S8.5
-         * window-shift/first-sync logic. */
-        entity->position.y = record->value.f;
-        shift_interp_window(entity);
+        /* POS_X already wrote entity->position.x via the record immediately
+         * before this one (push_entity_sync_records always pushes POS_X then
+         * POS_Y for the same entity), so the complete new (x, y) is known
+         * here -- the interp shift belongs on POS_Y. See apply_synced_position
+         * / shift_interp_window for the S8.5 window-shift/first-sync logic. */
+        apply_synced_position(entity, (Vector2){entity->position.x, record->value.f});
         return;
     }
 
@@ -449,9 +506,158 @@ static void network_client_receive_event(NetworkState *network, uint32_t seq, Pa
     network_client_apply_event(network, event);
 }
 
+/* S8.7c: apply one EDITOR_OP_MOVE_ENTITY echo onto this client's replica.
+ * Tolerant-skip (silent, same convention as apply_sync_record) for a
+ * non-move kind, an op naming a level other than the current one
+ * (cross-level ops are a later slice), or an entity id this client's level
+ * does not have. Reuses apply_synced_position so the moved entity lerps
+ * smoothly toward its new position exactly as a synced POS_X/POS_Y pair
+ * does. */
+static void client_apply_move_op(GameState *state, const EditorOp *operation)
+{
+    if (operation->kind != EDITOR_OP_MOVE_ENTITY) {
+        return;
+    }
+    if (!strv_eq(operation->level_name, str_to_strv(state->gamedata.current_level.name))) {
+        return;
+    }
+    int entity_index = level_find_entity_by_id(&state->gamedata.current_level, operation->entity_id);
+    if (entity_index < 0) {
+        return;
+    }
+    apply_synced_position(&state->gamedata.current_level.entities.data[entity_index],
+                          (Vector2){operation->move_x, operation->move_y});
+}
+
+/* Decode the op parked in `held` and apply it. A slot whose bytes fail to
+ * decode is still consumed by the caller (its op_seq occupied a place in
+ * the total order), just not applied. */
+static void client_apply_held_op(GameState *state, const HeldEditorOp *held)
+{
+    DecodedPacket packet;
+    ErrorState decode_err = {0};
+    if (!protocol_decode_packet(held->packet, held->length, &packet, &decode_err)) {
+        return;
+    }
+    EditorOp operation = {0};
+    if (!protocol_decode_op(&packet.reader, &operation)) {
+        return;
+    }
+    client_apply_move_op(state, &operation);
+}
+
+/* After an in-order op applies and next_expected_op_seq advances, apply any
+ * consecutive op_seqs already parked in held_ops, freeing each slot -- so a
+ * gap that filled out of order converges the moment its missing prefix
+ * arrives. */
+static void client_drain_held_ops(GameState *state)
+{
+    NetworkState *net = &state->network;
+    bool progressed = true;
+    while (progressed) {
+        progressed = false;
+        for (int index = 0; index < NETWORK_OP_HOLDBACK_MAX; index++) {
+            HeldEditorOp *held = &net->held_ops[index];
+            if (!held->occupied || held->op_seq != net->next_expected_op_seq) {
+                continue;
+            }
+            client_apply_held_op(state, held);
+            held->occupied = false;
+            net->next_expected_op_seq++;
+            progressed = true;
+            break;
+        }
+    }
+}
+
+static int client_find_free_held_slot(const NetworkState *net)
+{
+    for (int index = 0; index < NETWORK_OP_HOLDBACK_MAX; index++) {
+        if (!net->held_ops[index].occupied) {
+            return index;
+        }
+    }
+    return -1;
+}
+
+/* S8.7c: dedup + strict-op_seq-order one MSG_OP echo. `packet` is the
+ * already-header-decoded view (for the op_seq peek and header.seq dedup);
+ * `bytes`/`len` are the raw datagram, copied into a held slot when the echo
+ * arrives ahead of its turn. Ordering vs the transport-level reliable
+ * dedup:
+ *  - op_seq == next_expected: apply now, mark received, drain held_ops for
+ *    the consecutive successors.
+ *  - op_seq  > next_expected: park it -- but only if a slot is free; a full
+ *    holdback returns WITHOUT marking received, so the sender's resend
+ *    redelivers it once a slot frees (lossless). Slot availability is
+ *    therefore checked BEFORE reliable_on_receive.
+ *  - op_seq  < next_expected: already applied; mark received and drop. */
+static void network_client_receive_op(GameState *state, const uint8_t *bytes, size_t len, DecodedPacket *packet)
+{
+    EditorOp operation = {0};
+    if (!protocol_decode_op(&packet->reader, &operation)) {
+        return;
+    }
+    NetworkState *net = &state->network;
+    uint32_t channel_seq = packet->header.seq;
+    if (operation.op_seq == net->next_expected_op_seq) {
+        (void)reliable_on_receive(&net->host_event_channel, channel_seq);
+        client_apply_move_op(state, &operation);
+        net->next_expected_op_seq++;
+        client_drain_held_ops(state);
+        return;
+    }
+    if (operation.op_seq > net->next_expected_op_seq) {
+        /* Oversized is malformed (the host never encodes an op past
+         * RELIABLE_SLOT_PACKET_MAX, net_reliable.c) -- drop before the slot
+         * copy so it can never overrun a held slot. */
+        if (len > RELIABLE_SLOT_PACKET_MAX) {
+            return;
+        }
+        int slot = client_find_free_held_slot(net);
+        if (slot < 0) {
+            return;
+        }
+        (void)reliable_on_receive(&net->host_event_channel, channel_seq);
+        memcpy(net->held_ops[slot].packet, bytes, len);
+        net->held_ops[slot].length = len;
+        net->held_ops[slot].op_seq = operation.op_seq;
+        net->held_ops[slot].occupied = true;
+        return;
+    }
+    (void)reliable_on_receive(&net->host_event_channel, channel_seq);
+}
+
+/* S8.7c: apply one decoded MSG_JOIN_ACCEPT. The op-ordering baseline
+ * (next_expected_op_seq seeded from accept.op_seq_baseline, held_ops
+ * cleared) is applied ONLY on the JOINING->CLIENT flip edge -- i.e. when
+ * mode is not yet NET_CLIENT at the moment the accept lands. The host
+ * re-sends an accept for every re-JOIN, and a duplicate arriving
+ * mid-session (original + resent both delivered, or a stale in-flight copy)
+ * MUST NOT re-seed the counter or drop parked echoes: ops may already have
+ * applied and advanced next_expected_op_seq past the baseline, so a reset
+ * would corrupt the ordering state (re-apply already-applied ops or park
+ * the stream forever). local_player_id/mode stay unconditional as before --
+ * a duplicate re-applies the same values, harmless. */
+static void client_apply_join_accept(NetworkState *network, JoinAcceptMessage accept)
+{
+    if (network->mode != NET_CLIENT) {
+        network->next_expected_op_seq = accept.op_seq_baseline;
+        for (int index = 0; index < NETWORK_OP_HOLDBACK_MAX; index++) {
+            network->held_ops[index].occupied = false;
+        }
+    }
+    network->local_player_id = accept.player_id;
+    network->mode = NET_CLIENT;
+}
+
 /* CLIENT side: drain every pending packet on state->network.transport and
- * apply whichever decodes as MSG_SNAPSHOT, MSG_DELTA, MSG_EVENT, MSG_ACK
- * (S8.7a), or (S8.6) MSG_JOIN_ACCEPT. MSG_SNAPSHOT/MSG_DELTA share the
+ * apply whichever decodes as MSG_SNAPSHOT, MSG_DELTA, MSG_EVENT, MSG_OP
+ * (S8.7c), MSG_ACK (S8.7a), or (S8.6) MSG_JOIN_ACCEPT. A MSG_OP echo goes
+ * through network_client_receive_op above -- deduped on the packet header
+ * seq like MSG_EVENT, then applied in strict op_seq order (out-of-order
+ * arrivals parked in held_ops until their turn). MSG_SNAPSHOT/MSG_DELTA
+ * share the
  * exact same attr-list wire shape and this v1 sync sends full state either
  * way (net_session.h's own "SNAPSHOT vs DELTA" note), so there is nothing
  * SNAPSHOT-specific to do here beyond decoding whichever type arrived.
@@ -461,12 +667,16 @@ static void network_client_receive_event(NetworkState *network, uint32_t seq, Pa
  * clearing whichever of this client's own outgoing reliable events (see
  * network_client_send_reliable_event, network.h) the host's ack covers --
  * the mirror of network.c's handle_ack_datagram, one direction reversed.
- * MSG_JOIN_ACCEPT stores its player_id onto state->network.local_player_id
- * and advances state->network.mode to NET_CLIENT -- called unconditionally
+ * MSG_JOIN_ACCEPT goes through client_apply_join_accept above: it stores
+ * its player_id onto state->network.local_player_id, advances
+ * state->network.mode to NET_CLIENT, and (S8.7c, on the JOINING->CLIENT
+ * flip edge only -- see that helper's own doc comment) seeds the op-echo
+ * ordering baseline from accept.op_seq_baseline -- called unconditionally
  * of mode by network_client_tick (above), so this can run, and does run,
  * while still NET_JOINING; a duplicate accept (the host resends on every
- * re-JOIN, network.c's handle_join_datagram) just re-applies the same
- * values, harmless. Anything that fails to decode, or decodes as an
+ * re-JOIN, network.c's handle_join_datagram) re-applies the same
+ * player_id/mode, harmless, and leaves the ordering baseline strictly
+ * alone. Anything that fails to decode, or decodes as an
  * unrelated message type, is silently ignored -- same as
  * network_host_receive's own drain loop (network.c). The decode array cap
  * matches NETWORK_SYNC_RECORDS_PER_PACKET exactly, since that is also the
@@ -489,6 +699,8 @@ static void network_client_receive_state(GameState *state)
                 }
             } else if (packet.header.type == MSG_EVENT) {
                 network_client_receive_event(&state->network, packet.header.seq, &packet.reader);
+            } else if (packet.header.type == MSG_OP) {
+                network_client_receive_op(state, buffer, (size_t)received, &packet);
             } else if (packet.header.type == MSG_ACK) {
                 AckMessage ack = {0};
                 if (protocol_decode_ack(&packet.reader, &ack)) {
@@ -497,11 +709,47 @@ static void network_client_receive_state(GameState *state)
             } else if (packet.header.type == MSG_JOIN_ACCEPT) {
                 JoinAcceptMessage accept = {0};
                 if (protocol_decode_join_accept(&packet.reader, &accept)) {
-                    state->network.local_player_id = accept.player_id;
-                    state->network.mode = NET_CLIENT;
+                    client_apply_join_accept(&state->network, accept);
                 }
             }
         }
         received = net_recv(&state->network.transport, &src, buffer, sizeof(buffer));
+    }
+}
+
+void network_editor_commit_move(GameState *state, int entity_id, Vector2 new_position)
+{
+    if (state->network.mode == NET_CLIENT) {
+        /* Op REQUEST: op_seq 0 (the host stamps the real serialization
+         * number on its echo); the local preview mutation already happened
+         * during the drag, the host's echo is what authoritatively confirms
+         * it on every replica. */
+        EditorOp operation = {
+            .kind = EDITOR_OP_MOVE_ENTITY,
+            .level_name = str_to_strv(state->gamedata.current_level.name),
+            .entity_id = entity_id,
+            .author_player_id = state->network.local_player_id,
+            .op_seq = 0,
+            .move_x = new_position.x,
+            .move_y = new_position.y,
+        };
+        network_client_send_reliable_op(&state->network, &operation);
+        return;
+    }
+    if (state->network.mode == NET_HOSTING) {
+        /* The local drag mutation is already the authoritative apply, so
+         * this only stamps (author 0 = the host's own player id) and
+         * broadcasts the echo -- it does not re-apply the position. */
+        EditorOp operation = {
+            .kind = EDITOR_OP_MOVE_ENTITY,
+            .level_name = str_to_strv(state->gamedata.current_level.name),
+            .entity_id = entity_id,
+            .author_player_id = 0,
+            .op_seq = state->network.next_op_seq++,
+            .move_x = new_position.x,
+            .move_y = new_position.y,
+        };
+        network_host_broadcast_reliable_op(&state->network, &operation);
+        return;
     }
 }

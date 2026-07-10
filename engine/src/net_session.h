@@ -161,8 +161,16 @@
  * (network_host_tick_reliable_channels, network.h) by delta_time. Finally
  * (S8.7a) an ack for whatever each active client has sent so far is sent
  * back to it (network_host_send_acks, network.h) -- a no-op per client
- * before that client's first reliable event ever arrives. No-op under any
- * mode other than NET_HOSTING. */
+ * before that client's first reliable event ever arrives. (S8.7c) Any
+ * MSG_OP network_host_receive drained into its PendingEditorOps this tick
+ * is decoded and, for an EDITOR_OP_MOVE_ENTITY naming the current level and
+ * a known entity id, applied authoritatively (entity->position set), then
+ * stamped op_seq = next_op_seq++ (author overwritten with the sender's
+ * player_id) and echoed to every client via network_host_broadcast_reliable_op
+ * -- the echo is what makes the move authoritative on every replica,
+ * including the originator's. Non-move, cross-level, or unknown-id ops are
+ * silently dropped (tolerant-skip, same convention as the state appliers).
+ * No-op under any mode other than NET_HOSTING. */
 void network_host_tick(GameState *state, float delta_time);
 
 /* JOINING or NET_CLIENT only. NET_JOINING: (re)sends this session's
@@ -187,7 +195,12 @@ void network_host_tick(GameState *state, float delta_time);
  * delta_time (network_client_tick_reliable_channel, network.h). Finally
  * sends the current ack for whatever has been received from the host so
  * far (network_client_send_ack, network.h) -- a no-op before the first
- * reliable event from the host ever arrives. No-op under any other mode. */
+ * reliable event from the host ever arrives. (S8.7c) Every pending MSG_OP
+ * echo drained here is applied in strict op_seq order (network_client_receive_state
+ * below): one whose op_seq equals next_expected_op_seq applies immediately
+ * and then drains any consecutive op_seqs parked in held_ops, one ahead is
+ * held, one behind is a duplicate and dropped. No-op under any other
+ * mode. */
 void network_client_tick(GameState *state, const InputState *local_input, float delta_time);
 
 /* HOST side (S8.4b): encode the current synced state of state's whole
@@ -232,3 +245,21 @@ void network_host_broadcast_delta(GameState *state);
  * entity->position itself is unaffected, it is written on every call same
  * as before S8.5. */
 void network_client_apply_state(GameState *state, const AttrRecord *records, size_t count);
+
+/* S8.7c: called by the editor at a move-commit boundary (drag release,
+ * editor/core.c's handle_drag_input) to propagate an entity move over the
+ * network. The local preview mutation already happened during the gesture
+ * (the shipped drag code moves the entity in place every frame); this only
+ * sends the COMMIT.
+ *
+ * NET_OFFLINE: no-op (single-player).
+ * NET_CLIENT: builds an EDITOR_OP_MOVE_ENTITY op REQUEST (op_seq 0,
+ *   author_player_id = local_player_id, level_name = current level) and
+ *   network_client_send_reliable_op's it to the host; the host's echo is
+ *   what authoritatively confirms the move on every replica.
+ * NET_HOSTING: the local mutation is already the authoritative apply, so
+ *   this stamps op_seq = next_op_seq++ (author_player_id 0, the host's own
+ *   player id) and network_host_broadcast_reliable_op's it to every client.
+ *
+ * new_position is the entity's final committed position (post grid-snap). */
+void network_editor_commit_move(GameState *state, int entity_id, Vector2 new_position);

@@ -60,6 +60,11 @@ FAKE_VOID_FUNC(undo_history_new_entry, UndoHistory *, GamedataState *, Arena *, 
 FAKE_VOID_FUNC(undo_history_step_back, UndoHistory *, GamedataState *, Arena *, ArenaCheckpoint);
 FAKE_VOID_FUNC(undo_history_step_forward, UndoHistory *, GamedataState *, Arena *, ArenaCheckpoint);
 FAKE_VALUE_FUNC(Strv, undo_history_description, const UndoHistory *);
+/* S8.7c: handle_drag_input's CONFIRM branch now calls this net_session.h
+ * seam once per moved entity; faked here so core.c links without the whole
+ * network stack. The end-to-end drag-commit -> op -> converge path is
+ * covered black-box in integration_test.c. */
+FAKE_VOID_FUNC(network_editor_commit_move, GameState *, int, Vector2);
 
 /* TextFormat stub — variadic, cannot use FAKE_VALUE_FUNC */
 const char *TextFormat(const char *text, ...)
