@@ -7117,6 +7117,367 @@ void test_integration_host_grab_grants_and_releases(void)
     loopback_network_free(&loopback);
 }
 
+/* ---- Integration: S8.7f3a networked entity DELETE and PLACE ops ----
+ *
+ * Same two-TestGame-over-net_loopback.h shape as the S8.7c/d sessions,
+ * reusing host_session_gamedata. Deletes are driven black-box through the
+ * real input layer (KEY_DELETE -> ACTION_EDITOR_DELETE -> handle_browse_delete's
+ * entity branch); places through the real PLACE-mode CONFIRM (KEY_ENTER in
+ * EDITOR_SUB_PLACE, frame.c's handle_place_input). Both peers are put in
+ * editor mode so the host's every-tick DELTA broadcast is suspended and the
+ * op echo stream is the sole entity-state channel during the edit. */
+
+/* (a) A client's editor delete propagates as an op the host applies
+ * authoritatively and echoes back: the entity vanishes on BOTH peers, and a
+ * lock previously held on it (by the deleting client itself -- the
+ * unlocked-or-holder rule permits that delete) is gone from both tables
+ * without any LOCK_RELEASE traffic, per the delete-clears-lock rule. */
+void test_integration_editor_delete_op_converges_and_clears_lock(void)
+{
+    LoopbackNetwork loopback;
+    loopback_network_init(&loopback, &test_heap_alloc);
+    NetAddr host_addr = net_addr_make(1, 9000);
+    NetAddr client_addr = net_addr_make(2, 9001);
+    NetTransport host_transport;
+    NetTransport client_transport;
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, host_addr, &host_transport));
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, client_addr, &client_transport));
+
+    TestGame host;
+    TEST_ASSERT_TRUE(test_game_setup(&host, host_session_gamedata));
+    host.state.network.mode = NET_HOSTING;
+    host.state.network.transport = host_transport;
+    host.state.network.next_op_seq = 1;
+
+    TestGame client;
+    TEST_ASSERT_TRUE(test_game_setup(&client, host_session_gamedata));
+    client.state.network.mode = NET_JOINING;
+    client.state.network.transport = client_transport;
+    client.state.network.join_target = host_addr;
+
+    Entity *host_hero = test_find_entity_by_blueprint(&host.state, "hero");
+    TEST_ASSERT_NOT_NULL(host_hero);
+    int host_hero_id = host_hero->id;
+
+    InputState no_input = {0};
+    for (int frame = 0; frame < 3; frame++) {
+        test_advance_frame(&client, no_input);
+        test_advance_frame(&host, no_input);
+    }
+    TEST_ASSERT_EQUAL_INT(NET_CLIENT, client.state.network.mode);
+    int player_id = client.state.network.local_player_id;
+
+    /* Seed a lock held by the DELETING client on both the host authority
+     * table and the client's own replica -- the state a granted grab leaves
+     * behind (hand-set, mirroring the S8.7d1 seeding pattern). */
+    TEST_ASSERT_TRUE(network_lock_acquire(&host.state.network, host_hero_id, player_id));
+    TEST_ASSERT_TRUE(network_lock_acquire(&client.state.network, host_hero_id, player_id));
+
+    host.state.editor_mode = true;
+    client.state.editor_mode = true;
+    client.editor_state.sub_mode = EDITOR_SUB_BROWSE;
+    client.editor_state.selected_entity_id = host_hero_id;
+    client.editor_state.selected_tree_index = -1;
+    client.editor_state.selected_attr_kind = EDITOR_ATTR_SEL_NONE;
+
+    InputState delete_input = {0};
+    input_state_press_key(&delete_input, KEY_DELETE);
+    test_advance_frame(&client, delete_input); /* preview delete + DELETE request */
+    test_advance_frame(&host, no_input);       /* host applies + stamps + echoes */
+    for (int frame = 0; frame < 3; frame++) {
+        test_advance_frame(&client, no_input); /* client applies the echo (tolerant no-op) */
+        test_advance_frame(&host, no_input);
+    }
+
+    TEST_ASSERT_NULL(test_find_entity_by_id(&host.state, host_hero_id));
+    TEST_ASSERT_NULL(test_find_entity_by_id(&client.state, host_hero_id));
+    TEST_ASSERT_NULL(network_lock_find(&host.state.network, host_hero_id));
+    TEST_ASSERT_NULL(network_lock_find(&client.state.network, host_hero_id));
+
+    test_game_teardown(&host);
+    test_game_teardown(&client);
+    loopback_network_free(&loopback);
+}
+
+/* (b) A delete of an entity whose replica lock is held by ANOTHER player is
+ * refused at the editor site: toast, no local delete, no request sent, and
+ * the entity survives on both peers. */
+void test_integration_delete_blocked_by_foreign_lock(void)
+{
+    LoopbackNetwork loopback;
+    loopback_network_init(&loopback, &test_heap_alloc);
+    NetAddr host_addr = net_addr_make(1, 9000);
+    NetAddr client_addr = net_addr_make(2, 9001);
+    NetTransport host_transport;
+    NetTransport client_transport;
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, host_addr, &host_transport));
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, client_addr, &client_transport));
+
+    TestGame host;
+    TEST_ASSERT_TRUE(test_game_setup(&host, host_session_gamedata));
+    host.state.network.mode = NET_HOSTING;
+    host.state.network.transport = host_transport;
+    host.state.network.next_op_seq = 1;
+
+    TestGame client;
+    TEST_ASSERT_TRUE(test_game_setup(&client, host_session_gamedata));
+    client.state.network.mode = NET_JOINING;
+    client.state.network.transport = client_transport;
+    client.state.network.join_target = host_addr;
+
+    Entity *host_hero = test_find_entity_by_blueprint(&host.state, "hero");
+    TEST_ASSERT_NOT_NULL(host_hero);
+    int host_hero_id = host_hero->id;
+
+    InputState no_input = {0};
+    for (int frame = 0; frame < 3; frame++) {
+        test_advance_frame(&client, no_input);
+        test_advance_frame(&host, no_input);
+    }
+    TEST_ASSERT_EQUAL_INT(NET_CLIENT, client.state.network.mode);
+
+    /* A DIFFERENT player holds the entity in this client's replica. */
+    int other_player = client.state.network.local_player_id + 1;
+    TEST_ASSERT_TRUE(network_lock_acquire(&client.state.network, host_hero_id, other_player));
+
+    host.state.editor_mode = true;
+    client.state.editor_mode = true;
+    client.editor_state.sub_mode = EDITOR_SUB_BROWSE;
+    client.editor_state.selected_entity_id = host_hero_id;
+    client.editor_state.selected_tree_index = -1;
+    client.editor_state.selected_attr_kind = EDITOR_ATTR_SEL_NONE;
+
+    InputState delete_input = {0};
+    input_state_press_key(&delete_input, KEY_DELETE);
+    test_advance_frame(&client, delete_input); /* fast local refusal, nothing sent */
+    for (int frame = 0; frame < 3; frame++) {
+        test_advance_frame(&host, no_input);
+        test_advance_frame(&client, no_input);
+    }
+
+    TEST_ASSERT_TRUE(client.editor_state.toast_text.len > 0);
+    TEST_ASSERT_NOT_NULL(test_find_entity_by_id(&client.state, host_hero_id));
+    TEST_ASSERT_NOT_NULL(test_find_entity_by_id(&host.state, host_hero_id));
+
+    test_game_teardown(&host);
+    test_game_teardown(&client);
+    loopback_network_free(&loopback);
+}
+
+/* (c) A client's PLACE commit spawns NOTHING locally -- the host's echo is
+ * what materializes the entity, on BOTH peers, with the SAME (host-assigned)
+ * id at the same position, and the client's next_entity_id is bumped past
+ * the forced id. */
+void test_integration_client_place_materializes_via_echo_with_host_id(void)
+{
+    LoopbackNetwork loopback;
+    loopback_network_init(&loopback, &test_heap_alloc);
+    NetAddr host_addr = net_addr_make(1, 9000);
+    NetAddr client_addr = net_addr_make(2, 9001);
+    NetTransport host_transport;
+    NetTransport client_transport;
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, host_addr, &host_transport));
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, client_addr, &client_transport));
+
+    TestGame host;
+    TEST_ASSERT_TRUE(test_game_setup(&host, host_session_gamedata));
+    host.state.network.mode = NET_HOSTING;
+    host.state.network.transport = host_transport;
+    host.state.network.next_op_seq = 1;
+
+    TestGame client;
+    TEST_ASSERT_TRUE(test_game_setup(&client, host_session_gamedata));
+    client.state.network.mode = NET_JOINING;
+    client.state.network.transport = client_transport;
+    client.state.network.join_target = host_addr;
+
+    InputState no_input = {0};
+    for (int frame = 0; frame < 3; frame++) {
+        test_advance_frame(&client, no_input);
+        test_advance_frame(&host, no_input);
+    }
+    TEST_ASSERT_EQUAL_INT(NET_CLIENT, client.state.network.mode);
+
+    host.state.editor_mode = true;
+    client.state.editor_mode = true;
+    int host_count_before = host.state.gamedata.current_level.entities.count;
+    int client_count_before = client.state.gamedata.current_level.entities.count;
+
+    client.editor_state.sub_mode = EDITOR_SUB_PLACE;
+    client.editor_state.place_blueprint_index = 0; /* the fixture's one blueprint, "hero" */
+    client.editor_camera.target = (Vector2){240.0F, 176.0F};
+
+    InputState confirm = {0};
+    input_state_press_key(&confirm, KEY_ENTER);
+    test_advance_frame(&client, confirm); /* sends the PLACE request only */
+    /* Echo-driven contract: the client spawned nothing at commit time. */
+    TEST_ASSERT_EQUAL_INT(client_count_before, client.state.gamedata.current_level.entities.count);
+
+    test_advance_frame(&host, no_input); /* host spawns + stamps + echoes */
+    for (int frame = 0; frame < 3; frame++) {
+        test_advance_frame(&client, no_input); /* client materializes from the echo */
+        test_advance_frame(&host, no_input);
+    }
+
+    TEST_ASSERT_EQUAL_INT(host_count_before + 1, host.state.gamedata.current_level.entities.count);
+    TEST_ASSERT_EQUAL_INT(client_count_before + 1, client.state.gamedata.current_level.entities.count);
+    /* level_spawn_entity appends the root at the pre-spawn count. */
+    int placed_id = host.state.gamedata.current_level.entities.data[host_count_before].id;
+    Entity *host_placed = test_find_entity_by_id(&host.state, placed_id);
+    Entity *client_placed = test_find_entity_by_id(&client.state, placed_id);
+    TEST_ASSERT_NOT_NULL(host_placed);
+    TEST_ASSERT_NOT_NULL(client_placed);
+    TEST_ASSERT_EQUAL_FLOAT(240.0F, host_placed->position.x);
+    TEST_ASSERT_EQUAL_FLOAT(176.0F, host_placed->position.y);
+    TEST_ASSERT_EQUAL_FLOAT(host_placed->position.x, client_placed->position.x);
+    TEST_ASSERT_EQUAL_FLOAT(host_placed->position.y, client_placed->position.y);
+    TEST_ASSERT_TRUE(client.state.gamedata.current_level.next_entity_id > placed_id);
+
+    test_game_teardown(&host);
+    test_game_teardown(&client);
+    loopback_network_free(&loopback);
+}
+
+/* (d) A HOST place spawns locally (exactly the offline path) and its echo
+ * materializes the entity on the client with the matching id and position. */
+void test_integration_host_place_appears_on_client_with_matching_id(void)
+{
+    LoopbackNetwork loopback;
+    loopback_network_init(&loopback, &test_heap_alloc);
+    NetAddr host_addr = net_addr_make(1, 9000);
+    NetAddr client_addr = net_addr_make(2, 9001);
+    NetTransport host_transport;
+    NetTransport client_transport;
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, host_addr, &host_transport));
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, client_addr, &client_transport));
+
+    TestGame host;
+    TEST_ASSERT_TRUE(test_game_setup(&host, host_session_gamedata));
+    host.state.network.mode = NET_HOSTING;
+    host.state.network.transport = host_transport;
+    host.state.network.next_op_seq = 1;
+
+    TestGame client;
+    TEST_ASSERT_TRUE(test_game_setup(&client, host_session_gamedata));
+    client.state.network.mode = NET_JOINING;
+    client.state.network.transport = client_transport;
+    client.state.network.join_target = host_addr;
+
+    InputState no_input = {0};
+    for (int frame = 0; frame < 3; frame++) {
+        test_advance_frame(&client, no_input);
+        test_advance_frame(&host, no_input);
+    }
+    TEST_ASSERT_EQUAL_INT(NET_CLIENT, client.state.network.mode);
+
+    host.state.editor_mode = true;
+    client.state.editor_mode = true;
+    int host_count_before = host.state.gamedata.current_level.entities.count;
+
+    host.editor_state.sub_mode = EDITOR_SUB_PLACE;
+    host.editor_state.place_blueprint_index = 0;
+    host.editor_camera.target = (Vector2){200.0F, 120.0F};
+
+    InputState confirm = {0};
+    input_state_press_key(&confirm, KEY_ENTER);
+    test_advance_frame(&host, confirm); /* local spawn + echo broadcast */
+    TEST_ASSERT_EQUAL_INT(host_count_before + 1, host.state.gamedata.current_level.entities.count);
+    int placed_id = host.state.gamedata.current_level.entities.data[host_count_before].id;
+
+    for (int frame = 0; frame < 3; frame++) {
+        test_advance_frame(&client, no_input); /* client materializes from the echo */
+        test_advance_frame(&host, no_input);
+    }
+
+    Entity *client_placed = test_find_entity_by_id(&client.state, placed_id);
+    TEST_ASSERT_NOT_NULL(client_placed);
+    TEST_ASSERT_EQUAL_FLOAT(200.0F, client_placed->position.x);
+    TEST_ASSERT_EQUAL_FLOAT(120.0F, client_placed->position.y);
+
+    test_game_teardown(&host);
+    test_game_teardown(&client);
+    loopback_network_free(&loopback);
+}
+
+/* (e) Id handoff end to end: a PLACE echo followed by a MOVE echo naming the
+ * PLACED entity's id (both hand-built and injected in op_seq order) applies
+ * cleanly on the client -- the forced id from the PLACE is immediately
+ * resolvable by the MOVE, so the entity lands at the move's target. */
+void test_integration_place_then_move_echoes_apply_in_order(void)
+{
+    LoopbackNetwork loopback;
+    loopback_network_init(&loopback, &test_heap_alloc);
+    NetAddr host_addr = net_addr_make(1, 9000);
+    NetAddr client_addr = net_addr_make(2, 9001);
+    NetTransport host_transport;
+    NetTransport client_transport;
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, host_addr, &host_transport));
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, client_addr, &client_transport));
+
+    TestGame host;
+    TEST_ASSERT_TRUE(test_game_setup(&host, host_session_gamedata));
+    host.state.network.mode = NET_HOSTING;
+    host.state.network.transport = host_transport;
+    host.state.network.next_op_seq = 1;
+
+    TestGame client;
+    TEST_ASSERT_TRUE(test_game_setup(&client, host_session_gamedata));
+    client.state.network.mode = NET_JOINING;
+    client.state.network.transport = client_transport;
+    client.state.network.join_target = host_addr;
+
+    InputState no_input = {0};
+    for (int frame = 0; frame < 3; frame++) {
+        test_advance_frame(&client, no_input);
+        test_advance_frame(&host, no_input);
+    }
+    TEST_ASSERT_EQUAL_INT(NET_CLIENT, client.state.network.mode);
+
+    /* Drain any leftover in-flight DELTA so only the injected echoes decide
+     * the final state (the host is not ticked after the injection). */
+    test_advance_frame(&client, no_input);
+
+    /* PLACE (op_seq 1, the client's handshake baseline) assigns id 55, then
+     * MOVE (op_seq 2) targets that same id. Distinct packet header seqs
+     * (1, 2) pass the reliable dedup window (PLAYER_JOINED took seq 0). */
+    EditorOp place_echo = {.kind = EDITOR_OP_PLACE_ENTITY,
+                           .level_name = strv_from_cstr("test"),
+                           .entity_id = 55,
+                           .author_player_id = 0,
+                           .op_seq = 1,
+                           .move_x = 240.0F,
+                           .move_y = 170.0F,
+                           .blueprint_name = strv_from_cstr("hero")};
+    EditorOp move_echo = {.kind = EDITOR_OP_MOVE_ENTITY,
+                          .level_name = strv_from_cstr("test"),
+                          .entity_id = 55,
+                          .author_player_id = 0,
+                          .op_seq = 2,
+                          .move_x = 300.0F,
+                          .move_y = 200.0F};
+    uint8_t place_packet[NET_MAX_PACKET_SIZE];
+    uint8_t move_packet[NET_MAX_PACKET_SIZE];
+    size_t place_len = 0;
+    size_t move_len = 0;
+    TEST_ASSERT_TRUE(protocol_encode_op_packet(place_packet, sizeof(place_packet), 1, &place_echo, &place_len));
+    TEST_ASSERT_TRUE(protocol_encode_op_packet(move_packet, sizeof(move_packet), 2, &move_echo, &move_len));
+    TEST_ASSERT_TRUE(net_send(&host_transport, client_addr, place_packet, place_len) > 0);
+    TEST_ASSERT_TRUE(net_send(&host_transport, client_addr, move_packet, move_len) > 0);
+
+    /* One client tick drains both in one pass, in op_seq order. */
+    test_advance_frame(&client, no_input);
+
+    Entity *placed = test_find_entity_by_id(&client.state, 55);
+    TEST_ASSERT_NOT_NULL(placed);
+    TEST_ASSERT_EQUAL_FLOAT(300.0F, placed->position.x);
+    TEST_ASSERT_EQUAL_FLOAT(200.0F, placed->position.y);
+    TEST_ASSERT_TRUE(client.state.gamedata.current_level.next_entity_id > 55);
+
+    test_game_teardown(&host);
+    test_game_teardown(&client);
+    loopback_network_free(&loopback);
+}
+
 /* ---- Integration: S8.7e editor presence (cursor + selection + name) ----
  *
  * Three-TestGame-over-net_loopback.h shape as the S8.7d tests, driven black-box

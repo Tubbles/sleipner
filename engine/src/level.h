@@ -61,6 +61,15 @@ int level_tile_index(int row, int col, int tiles_wide);
  * this is the safe way to re-locate an entity across those events. */
 int level_find_entity_by_id(const Level *level, int entity_id);
 
+/* Propagate deletion marks down the parent_index tree: any entity whose
+ * (transitive) ancestor is already marked in is_deleted[] gets marked too.
+ * is_deleted is caller-owned, one flag per entity, seeded with the roots to
+ * delete; count is the entity count the array covers. Pure walk -- mutates
+ * only is_deleted, never the level. Shared by the editor's cascade deletes
+ * (editor/blueprint.c, editor/child.c) and game_delete_entity_cascade
+ * (game.c). */
+void level_mark_deleted_descendants(const Level *level, bool *is_deleted, int count);
+
 /* Spawn a single child entity from a BlueprintChild definition under the given parent.
  * Instantiates grandchildren recursively; assigns next_entity_id. Returns true on success. */
 [[nodiscard]] bool level_spawn_single_child(Diag *diag,

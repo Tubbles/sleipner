@@ -72,6 +72,15 @@ FAKE_VOID_FUNC(network_editor_commit_move, GameState *, int, Vector2);
  * first. The end-to-end lock UX is covered black-box in integration_test.c. */
 FAKE_VALUE_FUNC(bool, network_editor_try_grab, GameState *, const int *, int);
 FAKE_VOID_FUNC(network_editor_release_locks, GameState *, const int *, int);
+/* S8.7f3a: core.c's delete sites route the level/gamedata mutation through
+ * game.c's extracted cascade and commit the result over the
+ * network_editor_commit_delete seam, gated by a replica lock check
+ * (network_lock_find, network.c); all three are faked here so core.c links
+ * without game.c or the network stack. The end-to-end delete/place
+ * convergence is covered black-box in integration_test.c. */
+FAKE_VOID_FUNC(game_delete_entity_cascade, GameState *, int);
+FAKE_VOID_FUNC(network_editor_commit_delete, GameState *, int);
+FAKE_VALUE_FUNC(EntityLock *, network_lock_find, NetworkState *, int);
 
 /* TextFormat stub — variadic, cannot use FAKE_VALUE_FUNC */
 const char *TextFormat(const char *text, ...)
@@ -484,71 +493,6 @@ void test_editor_attr_at_display_index_out_of_range(void)
     test_attr_set_free_local(&entity.attrs);
 }
 
-/* ---- mark_deleted_descendants ------------------------------------------- */
-
-void test_editor_mark_deleted_root_marks_child(void)
-{
-    Level level = {.entities.alloc = test_heap_alloc};
-    Entity root = {.parent_index = -1};
-    Entity child = {.parent_index = 0};
-    Entity other = {.parent_index = -1};
-    TEST_ASSERT_TRUE(vec_entity_push(&level.entities, root));
-    TEST_ASSERT_TRUE(vec_entity_push(&level.entities, child));
-    TEST_ASSERT_TRUE(vec_entity_push(&level.entities, other));
-
-    bool is_deleted[] = {true, false, false};
-    mark_deleted_descendants(&level, is_deleted, 3);
-
-    TEST_ASSERT_TRUE(is_deleted[0]);
-    TEST_ASSERT_TRUE(is_deleted[1]);
-    TEST_ASSERT_FALSE(is_deleted[2]);
-
-    vec_entity_free(&level.entities);
-}
-
-void test_editor_mark_deleted_chain(void)
-{
-    Level level = {.entities.alloc = test_heap_alloc};
-    Entity grandparent = {.parent_index = -1};
-    Entity parent_entity = {.parent_index = 0};
-    Entity grandchild = {.parent_index = 1};
-    TEST_ASSERT_TRUE(vec_entity_push(&level.entities, grandparent));
-    TEST_ASSERT_TRUE(vec_entity_push(&level.entities, parent_entity));
-    TEST_ASSERT_TRUE(vec_entity_push(&level.entities, grandchild));
-
-    bool is_deleted[] = {true, false, false};
-    mark_deleted_descendants(&level, is_deleted, 3);
-
-    TEST_ASSERT_TRUE(is_deleted[0]);
-    TEST_ASSERT_TRUE(is_deleted[1]);
-    TEST_ASSERT_TRUE(is_deleted[2]);
-
-    vec_entity_free(&level.entities);
-}
-
-void test_editor_mark_deleted_sibling_untouched(void)
-{
-    Level level = {.entities.alloc = test_heap_alloc};
-    Entity root_a = {.parent_index = -1};
-    Entity child_a = {.parent_index = 0};
-    Entity root_b = {.parent_index = -1};
-    Entity child_b = {.parent_index = 2};
-    TEST_ASSERT_TRUE(vec_entity_push(&level.entities, root_a));
-    TEST_ASSERT_TRUE(vec_entity_push(&level.entities, child_a));
-    TEST_ASSERT_TRUE(vec_entity_push(&level.entities, root_b));
-    TEST_ASSERT_TRUE(vec_entity_push(&level.entities, child_b));
-
-    bool is_deleted[] = {true, false, false, false};
-    mark_deleted_descendants(&level, is_deleted, 4);
-
-    TEST_ASSERT_TRUE(is_deleted[0]);
-    TEST_ASSERT_TRUE(is_deleted[1]);
-    TEST_ASSERT_FALSE(is_deleted[2]);
-    TEST_ASSERT_FALSE(is_deleted[3]);
-
-    vec_entity_free(&level.entities);
-}
-
 /* ---- tree_section_total ------------------------------------------------- */
 
 void test_tree_section_total_root_no_children(void)
@@ -612,53 +556,88 @@ void test_tree_is_add_child_sentinel(void)
     TEST_ASSERT_TRUE(tree_is_add_child_row(&entity, &blueprint, 2));
 }
 
-/* ---- delete_selected_entity --------------------------------------------- */
+/* ---- delete_selected_entity / delete_selection_networked ----------------- */
 
-void test_editor_delete_entity_removes_map_entries(void)
+/* S8.7f3a: the level/gamedata mutation core moved to game.c
+ * (game_delete_entity_cascade, faked in this TU -- its cascade/compaction
+ * behavior is covered by the black-box integration tests). What remains
+ * here is delete_selected_entity's editor-specific contract: delegate to
+ * the cascade with the selected id, prune watches whose ids no longer
+ * resolve, and reset the stale tree cursor. */
+void test_editor_delete_selected_delegates_and_prunes_watches(void)
 {
-    ErrorState err = {0};
+    RESET_FAKE(level_find_entity_by_id);
+    RESET_FAKE(game_delete_entity_cascade);
     GameState state = {0};
-    TEST_ASSERT_TRUE(arena_init(&err, &state.scratch_arena));
-    state.gamedata.current_level.entities.alloc = test_heap_alloc;
-    state.gamedata.entity_blueprints = map_int_str_new(test_heap_alloc);
-    state.gamedata.rule_table = map_entity_ruleset_new(test_heap_alloc);
-
-    Entity entity_a = {.id = 10, .parent_index = -1};
-    Entity entity_b = {.id = 20, .parent_index = -1};
-    TEST_ASSERT_TRUE(vec_entity_push(&state.gamedata.current_level.entities, entity_a));
-    TEST_ASSERT_TRUE(vec_entity_push(&state.gamedata.current_level.entities, entity_b));
-
-    Str name_a = str_new(test_heap_alloc);
-    Str name_b = str_new(test_heap_alloc);
-    TEST_ASSERT_TRUE(str_from_cstr(&name_a, "blueprint_a"));
-    TEST_ASSERT_TRUE(str_from_cstr(&name_b, "blueprint_b"));
-    TEST_ASSERT_TRUE(map_int_str_set(&state.gamedata.entity_blueprints, 10, name_a));
-    TEST_ASSERT_TRUE(map_int_str_set(&state.gamedata.entity_blueprints, 20, name_b));
-
-    vec_rule rules_a = {0};
-    vec_rule rules_b = {0};
-    TEST_ASSERT_TRUE(map_entity_ruleset_set(&state.gamedata.rule_table, 10, rules_a));
-    TEST_ASSERT_TRUE(map_entity_ruleset_set(&state.gamedata.rule_table, 20, rules_b));
-
-    EditorState editor_state = {.selected_entity_id = 10};
+    EditorState editor_state = {.selected_entity_id = 10, .selected_tree_index = 3};
     WatchList watches = {0};
-    state.gamedata.player_index = -1;
-    level_find_entity_by_id_fake.return_val = 0;
+    watches.watch_ids[0] = 10;
+    watches.watch_ids[1] = 20;
+    watches.count = 2;
+
+    /* Call 1: the selection resolve (index 0). Calls 2-3: the watch prune --
+     * the deleted id 10 no longer resolves, id 20 still does. */
+    int resolve_sequence[3] = {0, -1, 1};
+    SET_RETURN_SEQ(level_find_entity_by_id, resolve_sequence, 3);
 
     delete_selected_entity(&state, &editor_state, &watches);
 
-    TEST_ASSERT_EQUAL_INT(1, state.gamedata.current_level.entities.count);
-    TEST_ASSERT_NULL(map_int_str_get(&state.gamedata.entity_blueprints, 10));
-    TEST_ASSERT_NOT_NULL(map_int_str_get(&state.gamedata.entity_blueprints, 20));
-    TEST_ASSERT_NULL(map_entity_ruleset_get(&state.gamedata.rule_table, 10));
-    TEST_ASSERT_NOT_NULL(map_entity_ruleset_get(&state.gamedata.rule_table, 20));
+    TEST_ASSERT_EQUAL_INT(1, game_delete_entity_cascade_fake.call_count);
+    TEST_ASSERT_EQUAL_INT(10, game_delete_entity_cascade_fake.arg1_val);
+    TEST_ASSERT_EQUAL_INT(1, watches.count);
+    TEST_ASSERT_EQUAL_INT(20, watches.watch_ids[0]);
+    TEST_ASSERT_EQUAL_INT(-1, editor_state.selected_tree_index);
+}
 
-    str_free(&name_a);
-    str_free(&name_b);
-    vec_entity_free(&state.gamedata.current_level.entities);
-    map_int_str_free(&state.gamedata.entity_blueprints);
-    map_entity_ruleset_free(&state.gamedata.rule_table);
-    arena_reset(&state.scratch_arena);
+/* S8.7f3a: under NET_CLIENT a selection whose replica lock is held by
+ * ANOTHER player is refused up front -- toast, no cascade, no commit,
+ * returns false so the caller skips its undo push. */
+void test_editor_delete_refused_when_locked_by_other(void)
+{
+    RESET_FAKE(level_find_entity_by_id);
+    RESET_FAKE(game_delete_entity_cascade);
+    RESET_FAKE(network_editor_commit_delete);
+    RESET_FAKE(network_lock_find);
+    GameState state = {0};
+    state.network.mode = NET_CLIENT;
+    state.network.local_player_id = 2;
+    EditorState editor_state = {.selected_entity_id = 10};
+    WatchList watches = {0};
+    EntityLock foreign_lock = {.entity_id = 10, .holder_player_id = 5, .active = true};
+    network_lock_find_fake.return_val = &foreign_lock;
+
+    TEST_ASSERT_FALSE(delete_selection_networked(&state, &editor_state, &watches));
+
+    TEST_ASSERT_EQUAL_INT(0, game_delete_entity_cascade_fake.call_count);
+    TEST_ASSERT_EQUAL_INT(0, network_editor_commit_delete_fake.call_count);
+    TEST_ASSERT_TRUE(editor_state.toast_text.len > 0);
+    /* foreign_lock is stack-local: clear the fake so its stored return_val
+     * never outlives this frame. */
+    RESET_FAKE(network_lock_find);
+}
+
+/* S8.7f3a: an unlocked (or self-held) selection deletes locally and commits
+ * the captured id over the network seam exactly once. */
+void test_editor_delete_commits_over_network_seam(void)
+{
+    RESET_FAKE(level_find_entity_by_id);
+    RESET_FAKE(game_delete_entity_cascade);
+    RESET_FAKE(network_editor_commit_delete);
+    RESET_FAKE(network_lock_find);
+    GameState state = {0};
+    state.network.mode = NET_CLIENT;
+    state.network.local_player_id = 2;
+    EditorState editor_state = {.selected_entity_id = 10};
+    WatchList watches = {0};
+    network_lock_find_fake.return_val = nullptr;
+    level_find_entity_by_id_fake.return_val = 0;
+
+    TEST_ASSERT_TRUE(delete_selection_networked(&state, &editor_state, &watches));
+
+    TEST_ASSERT_EQUAL_INT(1, game_delete_entity_cascade_fake.call_count);
+    TEST_ASSERT_EQUAL_INT(10, game_delete_entity_cascade_fake.arg1_val);
+    TEST_ASSERT_EQUAL_INT(1, network_editor_commit_delete_fake.call_count);
+    TEST_ASSERT_EQUAL_INT(10, network_editor_commit_delete_fake.arg1_val);
 }
 
 /* ---- handle_browse_navigate --------------------------------------------- */
@@ -864,9 +843,6 @@ int main(void)
     RUN_TEST(test_editor_attr_at_display_index_out_of_range);
     RUN_TEST(test_editor_attr_row_at_walks_sections);
     RUN_TEST(test_editor_attr_row_at_child_includes_persisted_add);
-    RUN_TEST(test_editor_mark_deleted_root_marks_child);
-    RUN_TEST(test_editor_mark_deleted_chain);
-    RUN_TEST(test_editor_mark_deleted_sibling_untouched);
     RUN_TEST(test_tree_section_total_root_no_children);
     RUN_TEST(test_tree_section_total_root_with_children);
     RUN_TEST(test_tree_section_total_child_entity);
@@ -874,7 +850,9 @@ int main(void)
     RUN_TEST(test_tree_is_parent_row_false);
     RUN_TEST(test_tree_child_index_mapping);
     RUN_TEST(test_tree_is_add_child_sentinel);
-    RUN_TEST(test_editor_delete_entity_removes_map_entries);
+    RUN_TEST(test_editor_delete_selected_delegates_and_prunes_watches);
+    RUN_TEST(test_editor_delete_refused_when_locked_by_other);
+    RUN_TEST(test_editor_delete_commits_over_network_seam);
     RUN_TEST(test_navigate_tree_to_attr_boundary);
     RUN_TEST(test_navigate_attr_to_tree_boundary);
     RUN_TEST(test_find_place_blueprint_index_found);

@@ -235,6 +235,56 @@ static int find_player_entity(const GameState *state)
     return true;
 }
 
+/* Extracted verbatim from editor/core.c's delete_selected_entity (S8.7f3a)
+ * so the network DELETE appliers (net_session.c) share the exact mutation
+ * the editor ships -- see game.h's doc comment for the step list and the
+ * deliberate absence of any tracking rebuild. */
+void game_delete_entity_cascade(GameState *state, int entity_id)
+{
+    Level *level = &state->gamedata.current_level;
+    int deleted_root_index = level_find_entity_by_id(level, entity_id);
+    if (deleted_root_index < 0) {
+        return;
+    }
+    int count = level->entities.count;
+    SCRATCH_SCOPE(&state->scratch_arena);
+    bool *is_deleted = arena_alloc(&state->scratch_arena, (size_t)count * sizeof(bool));
+    memset(is_deleted, 0, (size_t)count * sizeof(bool));
+    is_deleted[deleted_root_index] = true;
+    level_mark_deleted_descendants(level, is_deleted, count);
+
+    for (int index = 0; index < count; index++) {
+        if (is_deleted[index]) {
+            int deleted_entity_id = level->entities.data[index].id;
+            map_int_str_remove(&state->gamedata.entity_blueprints, deleted_entity_id);
+            map_entity_ruleset_remove(&state->gamedata.rule_table, deleted_entity_id);
+        }
+    }
+    int *new_index_map = arena_alloc(&state->scratch_arena, (size_t)count * sizeof(int));
+    int new_count = 0;
+    for (int index = 0; index < count; index++) {
+        new_index_map[index] = is_deleted[index] ? -1 : new_count++;
+    }
+    for (int index = 0; index < count; index++) {
+        if (!is_deleted[index]) {
+            int parent = level->entities.data[index].parent_index;
+            if (parent >= 0) {
+                level->entities.data[index].parent_index = new_index_map[parent];
+            }
+        }
+    }
+    int write = 0;
+    for (int index = 0; index < count; index++) {
+        if (!is_deleted[index]) {
+            level->entities.data[write++] = level->entities.data[index];
+        }
+    }
+    level->entities.count = write;
+    if (state->gamedata.player_index >= 0) {
+        state->gamedata.player_index = new_index_map[state->gamedata.player_index];
+    }
+}
+
 bool game_load_gamedata(Diag *diag, GameState *state, GamedataParams params)
 {
     /* Computed unconditionally, ahead of the parse attempt below: S8.4a's

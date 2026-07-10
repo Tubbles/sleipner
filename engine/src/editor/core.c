@@ -4,9 +4,9 @@
 #include "arena.h"
 #include "debug.h"
 #include "error.h"
-#include "map.h"
+#include "game.h" // game_delete_entity_cascade (S8.7f3a extraction)
 #include "net_session.h"
-#include "rule.h"
+#include "network.h" // network_lock_find (S8.7f3a delete gate)
 #include "strv.h"
 
 #include <math.h>
@@ -240,24 +240,6 @@ int find_place_blueprint_index(const GameState *state, const EditorState *editor
     return 0;
 }
 
-void mark_deleted_descendants(const Level *level, bool *is_deleted, int count)
-{
-    bool changed = true;
-    while (changed) {
-        changed = false;
-        for (int index = 0; index < count; index++) {
-            if (is_deleted[index]) {
-                continue;
-            }
-            int parent = level->entities.data[index].parent_index;
-            if (parent >= 0 && is_deleted[parent]) {
-                is_deleted[index] = true;
-                changed = true;
-            }
-        }
-    }
-}
-
 float editor_snap_to_grid(float value)
 {
     return roundf(value / (float)TILE_SIZE) * (float)TILE_SIZE;
@@ -322,43 +304,10 @@ static void delete_selected_entity(GameState *state, EditorState *editor_state, 
     if (sel < 0) {
         return;
     }
-    int count = level->entities.count;
-    SCRATCH_SCOPE(&state->scratch_arena);
-    bool *is_deleted = arena_alloc(&state->scratch_arena, (size_t)count * sizeof(bool));
-    memset(is_deleted, 0, (size_t)count * sizeof(bool));
-    is_deleted[sel] = true;
-    mark_deleted_descendants(level, is_deleted, count);
-
-    for (int index = 0; index < count; index++) {
-        if (is_deleted[index]) {
-            int entity_id = level->entities.data[index].id;
-            map_int_str_remove(&state->gamedata.entity_blueprints, entity_id);
-            map_entity_ruleset_remove(&state->gamedata.rule_table, entity_id);
-        }
-    }
-    int *new_index_map = arena_alloc(&state->scratch_arena, (size_t)count * sizeof(int));
-    int new_count = 0;
-    for (int index = 0; index < count; index++) {
-        new_index_map[index] = is_deleted[index] ? -1 : new_count++;
-    }
-    for (int index = 0; index < count; index++) {
-        if (!is_deleted[index]) {
-            int parent = level->entities.data[index].parent_index;
-            if (parent >= 0) {
-                level->entities.data[index].parent_index = new_index_map[parent];
-            }
-        }
-    }
-    int write = 0;
-    for (int index = 0; index < count; index++) {
-        if (!is_deleted[index]) {
-            level->entities.data[write++] = level->entities.data[index];
-        }
-    }
-    level->entities.count = write;
-    if (state->gamedata.player_index >= 0) {
-        state->gamedata.player_index = new_index_map[state->gamedata.player_index];
-    }
+    /* The level/gamedata mutation core (descendant cascade, map removal,
+     * parent-index remap, compaction) lives in game.c (S8.7f3a) so the
+     * network DELETE appliers share the exact editor semantics. */
+    game_delete_entity_cascade(state, editor_state->selected_entity_id);
     /* Watches are keyed by stable id, so a deleted entity's watch simply
      * stops resolving — prune it and keep the rest in order. Selection
      * (selected_entity_id / selected_attr_*) is left alone: the entity
@@ -372,6 +321,36 @@ static void delete_selected_entity(GameState *state, EditorState *editor_state, 
     }
     watches->count = watch_write;
     editor_state->selected_tree_index = -1;
+}
+
+/* S8.7f3a: shared Delete entry for both delete-the-selection sites (the
+ * Tools radial's Delete item and handle_browse_delete's entity branch).
+ * Under NET_CLIENT a selection locked by another player (per the local
+ * replica) is refused up front -- toast, nothing deleted, returns false --
+ * the same fast local gate try_enter_drag_mode applies to grabs. Otherwise
+ * the local delete runs exactly as before (a client's copy is its preview;
+ * the host's echo is what makes the delete authoritative on every replica)
+ * and, when the selection actually resolved to an entity, the DELETE is
+ * committed over the network (network_editor_commit_delete -- a no-op
+ * offline). Returns true so each caller pushes its undo entry exactly as it
+ * always has. */
+static bool delete_selection_networked(GameState *state, EditorState *editor_state, WatchList *watches)
+{
+    int selected_entity_id = editor_state->selected_entity_id;
+    if (state->network.mode == NET_CLIENT) {
+        const EntityLock *lock = network_lock_find(&state->network, selected_entity_id);
+        if (lock != nullptr && lock->holder_player_id != state->network.local_player_id) {
+            editor_state->toast_text = strv_from_cstr("Locked by another player");
+            editor_state->toast_timer = TOAST_DURATION;
+            return false;
+        }
+    }
+    bool selection_resolved = level_find_entity_by_id(&state->gamedata.current_level, selected_entity_id) >= 0;
+    delete_selected_entity(state, editor_state, watches);
+    if (selection_resolved) {
+        network_editor_commit_delete(state, selected_entity_id);
+    }
+    return true;
 }
 
 static void select_entity_and_pan(EditorState *editor_state, Camera2D *camera, const Level *level, int entity_index)
@@ -600,9 +579,10 @@ handle_browse_delete(GameState *state, EditorState *editor_state, WatchList *wat
         undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
                                strv_from_cstr("Remove attribute"));
     } else if (del_attr < 0 || (del_row.kind == ATTR_ROW_KIND_ATTR && del_row.section == ATTR_SECTION_BLUEPRINT)) {
-        delete_selected_entity(state, editor_state, watches);
-        undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
-                               strv_from_cstr("Delete entity"));
+        if (delete_selection_networked(state, editor_state, watches)) {
+            undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
+                                   strv_from_cstr("Delete entity"));
+        }
     }
 }
 
@@ -954,9 +934,10 @@ static void dispatch_tools_radial_confirm(
         editor_state->toast_text = strv_from_cstr("Select an entity first");
         editor_state->toast_timer = TOAST_DURATION;
     } else if (confirmed == 3) { /* Delete */
-        delete_selected_entity(state, editor_state, watches);
-        undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
-                               strv_from_cstr("Delete entity"));
+        if (delete_selection_networked(state, editor_state, watches)) {
+            undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
+                                   strv_from_cstr("Delete entity"));
+        }
     } else if (confirmed == 4) { /* Blueprints */
         editor_state->top_mode = EDITOR_TOP_BLUEPRINT;
         editor_state->selected_blueprint_index = -1;

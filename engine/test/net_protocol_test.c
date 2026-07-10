@@ -536,6 +536,90 @@ void test_protocol_op_lock_acquire_packet_round_trip(void)
     TEST_ASSERT_EQUAL_UINT32(operation.op_seq, out.op_seq);
 }
 
+void test_protocol_op_place_packet_round_trip(void)
+{
+    /* S8.7f3a: PLACE carries a length-prefixed blueprint name plus the spawn
+     * position in the move fields; entity_id here plays the echo role (the
+     * host-assigned root id) -- a request would carry -1 through the same
+     * header field. */
+    EditorOp operation = {.kind = EDITOR_OP_PLACE_ENTITY,
+                          .level_name = strv_from_cstr("overworld"),
+                          .entity_id = 41,
+                          .author_player_id = 3,
+                          .op_seq = 12,
+                          .move_x = 96.5F,
+                          .move_y = -20.25F,
+                          .blueprint_name = strv_from_cstr("chest")};
+
+    uint8_t buffer[NET_PROTOCOL_TEST_BUFFER_SIZE];
+    size_t total_len = 0;
+    TEST_ASSERT_TRUE(protocol_encode_op_packet(buffer, sizeof(buffer), 8, &operation, &total_len));
+
+    DecodedPacket decoded;
+    ErrorState err = {0};
+    TEST_ASSERT_TRUE(protocol_decode_packet(buffer, total_len, &decoded, &err));
+    TEST_ASSERT_EQUAL_INT(MSG_OP, decoded.header.type);
+
+    EditorOp out;
+    TEST_ASSERT_TRUE(protocol_decode_op(&decoded.reader, &out));
+    TEST_ASSERT_EQUAL_INT(EDITOR_OP_PLACE_ENTITY, out.kind);
+    TEST_ASSERT_TRUE(strv_eq(operation.level_name, out.level_name));
+    TEST_ASSERT_TRUE(strv_eq(operation.blueprint_name, out.blueprint_name));
+    TEST_ASSERT_EQUAL_INT32(operation.entity_id, out.entity_id);
+    TEST_ASSERT_EQUAL_INT32(operation.author_player_id, out.author_player_id);
+    TEST_ASSERT_EQUAL_UINT32(operation.op_seq, out.op_seq);
+    TEST_ASSERT_EQUAL_FLOAT(operation.move_x, out.move_x);
+    TEST_ASSERT_EQUAL_FLOAT(operation.move_y, out.move_y);
+}
+
+void test_protocol_decode_op_rejects_kind_past_place(void)
+{
+    /* Exactly one past the new validity bound (EDITOR_OP_PLACE_ENTITY) must
+     * still be rejected -- the magic-200 unknown-kind test above can't catch
+     * an off-by-one at the bound itself. */
+    EditorOp operation = {.kind = EDITOR_OP_DELETE_ENTITY,
+                          .level_name = strv_from_cstr("dungeon"),
+                          .entity_id = 5,
+                          .author_player_id = 2,
+                          .op_seq = 9};
+
+    uint8_t buffer[NET_PROTOCOL_TEST_BUFFER_SIZE];
+    size_t total_len = 0;
+    TEST_ASSERT_TRUE(protocol_encode_op_packet(buffer, sizeof(buffer), 1, &operation, &total_len));
+
+    buffer[PACKET_HEADER_SIZE] = (uint8_t)(EDITOR_OP_PLACE_ENTITY + 1);
+
+    DecodedPacket decoded;
+    ErrorState err = {0};
+    TEST_ASSERT_TRUE(protocol_decode_packet(buffer, total_len, &decoded, &err));
+    EditorOp out;
+    TEST_ASSERT_FALSE(protocol_decode_op(&decoded.reader, &out));
+}
+
+void test_protocol_decode_op_place_rejects_truncated_buffer(void)
+{
+    /* Same fail-closed contract as the SET_ATTR truncation test: one byte
+     * short of the encoder's output must fail mid-payload (the last f32
+     * read) without ever reading out of bounds. */
+    EditorOp operation = {.kind = EDITOR_OP_PLACE_ENTITY,
+                          .level_name = strv_from_cstr("overworld"),
+                          .entity_id = -1,
+                          .author_player_id = 2,
+                          .op_seq = 0,
+                          .move_x = 10.0F,
+                          .move_y = 20.0F,
+                          .blueprint_name = strv_from_cstr("chest")};
+
+    uint8_t buffer[NET_PROTOCOL_TEST_BUFFER_SIZE];
+    size_t total_len = 0;
+    TEST_ASSERT_TRUE(protocol_encode_op_packet(buffer, sizeof(buffer), 1, &operation, &total_len));
+
+    size_t payload_len = total_len - PACKET_HEADER_SIZE;
+    PacketReader reader = packet_reader_make(buffer + PACKET_HEADER_SIZE, payload_len - 1);
+    EditorOp out;
+    TEST_ASSERT_FALSE(protocol_decode_op(&reader, &out));
+}
+
 void test_protocol_op_empty_level_name_round_trip(void)
 {
     EditorOp operation = {.kind = EDITOR_OP_DELETE_ENTITY,
@@ -813,6 +897,9 @@ int main(void)
     RUN_TEST(test_protocol_op_set_attr_float_packet_round_trip);
     RUN_TEST(test_protocol_op_delete_packet_round_trip);
     RUN_TEST(test_protocol_op_lock_acquire_packet_round_trip);
+    RUN_TEST(test_protocol_op_place_packet_round_trip);
+    RUN_TEST(test_protocol_decode_op_rejects_kind_past_place);
+    RUN_TEST(test_protocol_decode_op_place_rejects_truncated_buffer);
     RUN_TEST(test_protocol_op_empty_level_name_round_trip);
     RUN_TEST(test_protocol_decode_op_rejects_unknown_kind);
     RUN_TEST(test_protocol_decode_op_rejects_truncated_buffer);

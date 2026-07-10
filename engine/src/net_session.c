@@ -38,6 +38,12 @@ static void network_client_receive_state(GameState *state);
  * though player_id in practice never exceeds NET_MAX_CLIENTS (network.h). */
 #define NETWORK_INPUT_SOURCE_VALUE_MAX 32
 
+/* Bound for stack buffers null-terminating a wire string (attr or blueprint
+ * name) before handing it to a const char * API -- see
+ * NETWORK_SYNC_RECORDS_PER_PACKET's doc comment (further down) for the
+ * per-record wire budget derived from it. */
+#define NETWORK_ATTR_NAME_MAX 48
+
 /* HOST side (S8.6): spawn a player entity for a client that just registered
  * (network_host_tick's own newly-joined loop below), cloning the SAME
  * blueprint this host's own local player uses -- game_get_player always
@@ -81,6 +87,51 @@ static void spawn_network_player(Diag *diag, GameState *state, int player_id)
     (void)attr_set_string(&gamedata_alloc, &spawned->attrs,
                           (AttrStringPair){.name = "input_source", .value = input_source});
     (void)game_respawn_rebuild_tracking(diag, state);
+}
+
+/* Spawn blueprint's root entity (plus its blueprint-defined children) at
+ * `position` into the current level. Returns the ROOT's index into
+ * level->entities -- level_spawn_entity appends the root first, then its
+ * children (level.c) -- or -1 on spawn failure. Tracking is deliberately NOT
+ * rebuilt here: a caller that force-overwrites the root's id
+ * (spawn_entity_with_forced_id below) must do so BEFORE
+ * game_respawn_rebuild_tracking re-derives the id-keyed maps
+ * (entity_blueprints, rule_table). */
+static int spawn_blueprint_root(GameState *state, const Blueprint *blueprint, Vector2 position)
+{
+    Diag diag = {&state->error, &state->debug};
+    Allocator gamedata_alloc = allocator_arena(&state->gamedata_arena);
+    Level *level = &state->gamedata.current_level;
+    int root_index = level->entities.count;
+    if (!level_spawn_entity(&diag, level, blueprint, position, &state->gamedata.blueprints, texture_registry_lookup,
+                            state, &gamedata_alloc)) {
+        return -1;
+    }
+    return root_index;
+}
+
+/* CLIENT side: spawn blueprint at `position` and FORCE the new root entity's
+ * id to forced_entity_id, bumping next_entity_id past it, then rebuild the
+ * count-parallel tracking. The force is necessary, not optional:
+ * level_spawn_entity's own id auto-assignment has no cross-peer
+ * coordination, so only an explicit force keeps a host-assigned id
+ * resolvable by every later op/record naming it. Shared by the S8.6
+ * placeholder materialization (ensure_synced_entity_exists below) and the
+ * S8.7f3a PLACE echo (client_apply_place_echo below). */
+static void
+spawn_entity_with_forced_id(GameState *state, const Blueprint *blueprint, Vector2 position, int forced_entity_id)
+{
+    int root_index = spawn_blueprint_root(state, blueprint, position);
+    if (root_index < 0) {
+        return;
+    }
+    Level *level = &state->gamedata.current_level;
+    level->entities.data[root_index].id = forced_entity_id;
+    if (level->next_entity_id <= forced_entity_id) {
+        level->next_entity_id = forced_entity_id + 1;
+    }
+    Diag diag = {&state->error, &state->debug};
+    (void)game_respawn_rebuild_tracking(&diag, state);
 }
 
 /* S8.7c/S8.7d1: stamp `operation` as `kind` under a fresh op_seq (authored by
@@ -163,10 +214,67 @@ static void host_handle_move(GameState *state, EditorOp *operation, int sender_p
     host_stamp_and_broadcast(state, EDITOR_OP_MOVE_ENTITY, operation, sender_player_id);
 }
 
-/* S8.7c/S8.7d1: decode each op network_host_receive drained into `ops` this
- * tick and dispatch by kind -- move enforcement plus the lock protocol. A
- * malformed decode is skipped; SET_ATTR/DELETE_ENTITY are out of this slice's
- * scope; a client never originates LOCK_DENY -- all silently dropped. */
+/* S8.7f3a: an EDITOR_OP_DELETE_ENTITY from sender S. Level-name and
+ * entity-must-exist preconditions mirror host_handle_move, as does the lock
+ * rule: locked by someone OTHER than S is a silent drop (no apply, no
+ * echo). On apply the whole descendant cascade is deleted
+ * (game_delete_entity_cascade, game.h) and any lock entry on the entity is
+ * cleared WITHOUT a LOCK_RELEASE echo -- the DELETE echo itself is the
+ * authoritative "gone" signal, and EVERY replica (this host table here,
+ * each client replica in client_apply_delete_echo, a hosting originator in
+ * network_editor_commit_delete) drops the lock on apply. One rule
+ * everywhere, no separate release traffic. */
+static void host_handle_delete(GameState *state, EditorOp *operation, int sender_player_id)
+{
+    if (!host_op_targets_current_entity(state, operation)) {
+        return;
+    }
+    EntityLock *lock = network_lock_find(&state->network, operation->entity_id);
+    if (lock != nullptr && lock->holder_player_id != sender_player_id) {
+        return;
+    }
+    game_delete_entity_cascade(state, operation->entity_id);
+    if (lock != nullptr) {
+        lock->active = false;
+    }
+    host_stamp_and_broadcast(state, EDITOR_OP_DELETE_ENTITY, operation, sender_player_id);
+}
+
+/* S8.7f3a: an EDITOR_OP_PLACE_ENTITY from sender S. Preconditions: names the
+ * current level and a blueprint that resolves -- anything else is a silent
+ * drop (tolerant-skip convention). No locks are involved: a brand-new entity
+ * cannot be contended. On apply the blueprint's root is spawned at
+ * (move_x, move_y), tracking is rebuilt (mirroring spawn_network_player's
+ * spawn sequence), and the echo's entity_id is stamped with the id the spawn
+ * assigned to the ROOT entity -- the request carried -1, the host assigns
+ * ids (EditorOp's doc comment, net_protocol.h). The echoed id is what every
+ * client forces onto its own replica spawn (client_apply_place_echo). */
+static void host_handle_place(GameState *state, EditorOp *operation, int sender_player_id)
+{
+    if (!strv_eq(operation->level_name, str_to_strv(state->gamedata.current_level.name))) {
+        return;
+    }
+    char blueprint_name[NETWORK_ATTR_NAME_MAX];
+    strv_copy_to_cstr(operation->blueprint_name, blueprint_name, sizeof(blueprint_name));
+    const Blueprint *blueprint = blueprint_find(&state->gamedata.blueprints, blueprint_name);
+    if (!blueprint) {
+        return;
+    }
+    int root_index = spawn_blueprint_root(state, blueprint, (Vector2){operation->move_x, operation->move_y});
+    if (root_index < 0) {
+        return;
+    }
+    operation->entity_id = state->gamedata.current_level.entities.data[root_index].id;
+    Diag diag = {&state->error, &state->debug};
+    (void)game_respawn_rebuild_tracking(&diag, state);
+    host_stamp_and_broadcast(state, EDITOR_OP_PLACE_ENTITY, operation, sender_player_id);
+}
+
+/* S8.7c/S8.7d1/S8.7f3a: decode each op network_host_receive drained into
+ * `ops` this tick and dispatch by kind -- move/delete enforcement, the place
+ * spawn, plus the lock protocol. A malformed decode is skipped; SET_ATTR is
+ * out of scope (structural edits resync instead, S8.7f1); a client never
+ * originates LOCK_DENY -- both silently dropped. */
 static void host_apply_and_echo_ops(GameState *state, const PendingEditorOps *ops)
 {
     for (int index = 0; index < ops->count; index++) {
@@ -184,6 +292,12 @@ static void host_apply_and_echo_ops(GameState *state, const PendingEditorOps *op
         case EDITOR_OP_MOVE_ENTITY:
             host_handle_move(state, &operation, sender_player_id);
             break;
+        case EDITOR_OP_DELETE_ENTITY:
+            host_handle_delete(state, &operation, sender_player_id);
+            break;
+        case EDITOR_OP_PLACE_ENTITY:
+            host_handle_place(state, &operation, sender_player_id);
+            break;
         case EDITOR_OP_LOCK_ACQUIRE:
             host_handle_lock_acquire(state, &operation, sender_player_id);
             break;
@@ -191,7 +305,6 @@ static void host_apply_and_echo_ops(GameState *state, const PendingEditorOps *op
             host_handle_lock_release(state, &operation, sender_player_id);
             break;
         case EDITOR_OP_SET_ATTR:
-        case EDITOR_OP_DELETE_ENTITY:
         case EDITOR_OP_LOCK_DENY:
             break;
         }
@@ -583,8 +696,9 @@ void network_client_tick(GameState *state, const InputState *local_input, float 
  * synced ATTR_STRING value) is silently dropped by send_sync_records
  * below, per its own doc comment -- never a buffer overflow, since
  * protocol_encode_snapshot_packet/_delta_packet themselves bounds-check
- * and return false rather than write past the buffer (net_protocol.c). */
-#define NETWORK_ATTR_NAME_MAX 48
+ * and return false rather than write past the buffer (net_protocol.c).
+ * NETWORK_ATTR_NAME_MAX itself is defined at the top of this file -- the op
+ * handlers there need it too. */
 #define NETWORK_SYNC_RECORDS_PER_PACKET 20
 
 /* Bound for the stack buffer used to null-terminate a synced ATTR_STRING
@@ -828,19 +942,7 @@ static void ensure_synced_entity_exists(GameState *state, const AttrRecord *reco
     if (!blueprint) {
         return;
     }
-    Diag diag = {&state->error, &state->debug};
-    Allocator gamedata_alloc = allocator_arena(&state->gamedata_arena);
-    if (!level_spawn_entity(&diag, &state->gamedata.current_level, blueprint, (Vector2){0}, &state->gamedata.blueprints,
-                            texture_registry_lookup, state, &gamedata_alloc)) {
-        return;
-    }
-    Level *level = &state->gamedata.current_level;
-    Entity *spawned = &level->entities.data[level->entities.count - 1];
-    spawned->id = record->entity_id;
-    if (level->next_entity_id <= record->entity_id) {
-        level->next_entity_id = record->entity_id + 1;
-    }
-    (void)game_respawn_rebuild_tracking(&diag, state);
+    spawn_entity_with_forced_id(state, blueprint, (Vector2){0}, record->entity_id);
 }
 
 void network_client_apply_state(GameState *state, const AttrRecord *records, size_t count)
@@ -951,13 +1053,61 @@ static void client_apply_lock_deny_echo(NetworkState *network, const EditorOp *o
     network->lock_denied_count++;
 }
 
-/* S8.7c/S8.7d1: apply one host op echo onto this client's replica, dispatched
- * by kind. All kinds share the current-level tolerant skip (silent, same
- * convention as apply_sync_record) -- an echo naming a level other than the
- * current one is ignored (cross-level ops are a later slice). MOVE writes the
- * entity position; the three lock kinds maintain the echo-driven replica lock
- * table (LOCK_ACQUIRE/RELEASE) and the deny list (LOCK_DENY).
- * SET_ATTR/DELETE_ENTITY are not applied in this slice. */
+/* S8.7f3a: apply one DELETE echo. The cascade delete
+ * (game_delete_entity_cascade, game.h) no-ops when the id no longer
+ * resolves -- the expected ORIGINATOR case: the deleting client already
+ * removed its local copy as a preview. Any replica lock entry on the entity
+ * is dropped without a LOCK_RELEASE echo ever arriving -- the DELETE echo IS
+ * the "gone" signal, the same one-rule-everywhere clear the host applies
+ * (host_handle_delete). The local editor needs no plumbing beyond this:
+ * selection and watches resolve by stable id, so a vanished id simply reads
+ * as "nothing selected" on its next lookup (editor/core.c's
+ * delete_selected_entity doc comment) -- unlike a structural resync (S8.7f1),
+ * whose blast radius forces a frame-layer reset, a delete's blast radius is
+ * one id the selection code already tolerates. */
+static void client_apply_delete_echo(GameState *state, const EditorOp *operation)
+{
+    game_delete_entity_cascade(state, operation->entity_id);
+    EntityLock *lock = network_lock_find(&state->network, operation->entity_id);
+    if (lock != nullptr) {
+        lock->active = false;
+    }
+}
+
+/* S8.7f3a: apply one PLACE echo. An entity with the echoed id already
+ * existing is a tolerant dedup no-op (e.g. this peer already materialized it
+ * from a redelivered echo). Otherwise the named blueprint is spawned at the
+ * echoed position with the echoed HOST-ASSIGNED id forced onto the root --
+ * the exact mechanism ensure_synced_entity_exists uses, shared via
+ * spawn_entity_with_forced_id. An unknown blueprint is a silent skip, the
+ * appliers' tolerant convention. The ORIGINATING client also lands here: it
+ * spawned nothing locally at commit time (frame.c's handle_place_input,
+ * NET_CLIENT path), so this echo apply is what materializes its own place --
+ * echo-driven spawn is what makes cross-peer id divergence impossible. */
+static void client_apply_place_echo(GameState *state, const EditorOp *operation)
+{
+    if (level_find_entity_by_id(&state->gamedata.current_level, operation->entity_id) >= 0) {
+        return;
+    }
+    char blueprint_name[NETWORK_ATTR_NAME_MAX];
+    strv_copy_to_cstr(operation->blueprint_name, blueprint_name, sizeof(blueprint_name));
+    const Blueprint *blueprint = blueprint_find(&state->gamedata.blueprints, blueprint_name);
+    if (!blueprint) {
+        return;
+    }
+    spawn_entity_with_forced_id(state, blueprint, (Vector2){operation->move_x, operation->move_y},
+                                operation->entity_id);
+}
+
+/* S8.7c/S8.7d1/S8.7f3a: apply one host op echo onto this client's replica,
+ * dispatched by kind. All kinds share the current-level tolerant skip
+ * (silent, same convention as apply_sync_record) -- an echo naming a level
+ * other than the current one is ignored (cross-level ops are a later slice).
+ * MOVE writes the entity position; DELETE cascade-deletes and drops the
+ * replica lock; PLACE materializes the spawn under the echoed id; the three
+ * lock kinds maintain the echo-driven replica lock table
+ * (LOCK_ACQUIRE/RELEASE) and the deny list (LOCK_DENY). SET_ATTR is not
+ * applied in this slice. */
 static void client_apply_op(GameState *state, const EditorOp *operation)
 {
     if (!strv_eq(operation->level_name, str_to_strv(state->gamedata.current_level.name))) {
@@ -966,6 +1116,12 @@ static void client_apply_op(GameState *state, const EditorOp *operation)
     switch (operation->kind) {
     case EDITOR_OP_MOVE_ENTITY:
         client_apply_move_echo(state, operation);
+        return;
+    case EDITOR_OP_DELETE_ENTITY:
+        client_apply_delete_echo(state, operation);
+        return;
+    case EDITOR_OP_PLACE_ENTITY:
+        client_apply_place_echo(state, operation);
         return;
     case EDITOR_OP_LOCK_ACQUIRE:
         client_apply_lock_acquire_echo(&state->network, operation);
@@ -977,7 +1133,6 @@ static void client_apply_op(GameState *state, const EditorOp *operation)
         client_apply_lock_deny_echo(&state->network, operation);
         return;
     case EDITOR_OP_SET_ATTR:
-    case EDITOR_OP_DELETE_ENTITY:
         return;
     }
 }
@@ -1280,6 +1435,82 @@ void network_editor_commit_move(GameState *state, int entity_id, Vector2 new_pos
             .op_seq = state->network.next_op_seq++,
             .move_x = new_position.x,
             .move_y = new_position.y,
+        };
+        network_host_broadcast_reliable_op(&state->network, &operation);
+        return;
+    }
+}
+
+void network_editor_commit_delete(GameState *state, int entity_id)
+{
+    if (state->network.mode == NET_CLIENT) {
+        /* Op REQUEST (op_seq 0, the host stamps its echo); the local delete
+         * already happened as this peer's preview. */
+        EditorOp operation = {
+            .kind = EDITOR_OP_DELETE_ENTITY,
+            .level_name = str_to_strv(state->gamedata.current_level.name),
+            .entity_id = entity_id,
+            .author_player_id = state->network.local_player_id,
+            .op_seq = 0,
+        };
+        network_client_send_reliable_op(&state->network, &operation);
+        return;
+    }
+    if (state->network.mode == NET_HOSTING) {
+        /* The local delete was already the authoritative apply. Clear any
+         * lock entry on the entity without a release echo -- the DELETE echo
+         * is the "gone" signal every replica clears its lock on, and the
+         * host's own table is a replica of that rule too (one rule
+         * everywhere, see host_handle_delete). */
+        EntityLock *lock = network_lock_find(&state->network, entity_id);
+        if (lock != nullptr) {
+            lock->active = false;
+        }
+        EditorOp operation = {
+            .kind = EDITOR_OP_DELETE_ENTITY,
+            .level_name = str_to_strv(state->gamedata.current_level.name),
+            .entity_id = entity_id,
+            .author_player_id = 0,
+            .op_seq = state->network.next_op_seq++,
+        };
+        network_host_broadcast_reliable_op(&state->network, &operation);
+        return;
+    }
+}
+
+void network_editor_commit_place(GameState *state, int placed_entity_id, Strv blueprint_name, Vector2 position)
+{
+    if (state->network.mode == NET_CLIENT) {
+        /* Op REQUEST: entity_id MUST be -1 -- the host assigns entity ids
+         * (EditorOp's doc comment, net_protocol.h). placed_entity_id is
+         * ignored on this path by contract (net_session.h): no local spawn
+         * happened, so there is no local id to name. */
+        EditorOp operation = {
+            .kind = EDITOR_OP_PLACE_ENTITY,
+            .level_name = str_to_strv(state->gamedata.current_level.name),
+            .entity_id = -1,
+            .author_player_id = state->network.local_player_id,
+            .op_seq = 0,
+            .move_x = position.x,
+            .move_y = position.y,
+            .blueprint_name = blueprint_name,
+        };
+        network_client_send_reliable_op(&state->network, &operation);
+        return;
+    }
+    if (state->network.mode == NET_HOSTING) {
+        /* The local spawn was already the authoritative apply; the echo
+         * carries the ROOT id it assigned (placed_entity_id) so every
+         * replica forces the same id onto its own spawn. */
+        EditorOp operation = {
+            .kind = EDITOR_OP_PLACE_ENTITY,
+            .level_name = str_to_strv(state->gamedata.current_level.name),
+            .entity_id = placed_entity_id,
+            .author_player_id = 0,
+            .op_seq = state->network.next_op_seq++,
+            .move_x = position.x,
+            .move_y = position.y,
+            .blueprint_name = blueprint_name,
         };
         network_host_broadcast_reliable_op(&state->network, &operation);
         return;

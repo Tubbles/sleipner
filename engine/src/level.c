@@ -521,6 +521,24 @@ int level_find_entity_by_id(const Level *level, int entity_id)
     return -1;
 }
 
+void level_mark_deleted_descendants(const Level *level, bool *is_deleted, int count)
+{
+    bool changed = true;
+    while (changed) {
+        changed = false;
+        for (int index = 0; index < count; index++) {
+            if (is_deleted[index]) {
+                continue;
+            }
+            int parent = level->entities.data[index].parent_index;
+            if (parent >= 0 && is_deleted[parent]) {
+                is_deleted[index] = true;
+                changed = true;
+            }
+        }
+    }
+}
+
 static void parse_toml_int_pair(toml_table_t *table, const char *key, int output[static 2])
 {
     toml_array_t *array = toml_array_in(table, key);

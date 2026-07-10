@@ -171,6 +171,60 @@ void dispatch_menu_action(MenuDispatchCtx ctx, MenuAction action)
     }
 }
 
+/* The ACTION_CONFIRM commit of PLACE mode, split out of handle_place_input.
+ * OFFLINE/HOSTING spawn locally exactly as always: the id comes from this
+ * peer's own next_entity_id, entity_blueprints/rule_table are patched per
+ * spawned entity, and one "Place entity" undo entry is pushed; a HOSTING
+ * commit additionally broadcasts the PLACE echo carrying the new ROOT
+ * entity's id (level_spawn_entity appends the root first, so it sits at the
+ * pre-spawn count). A NET_CLIENT commit spawns NOTHING locally: the host
+ * assigns entity ids, so the client only sends the PLACE request
+ * (network_editor_commit_place, entity_id -1) and lets the host's echo
+ * materialize the entity within a few ticks (client_apply_place_echo,
+ * net_session.c) -- the echo-driven spawn is what makes cross-peer id
+ * divergence impossible by construction. Nothing changes locally on that
+ * path, so it pushes no undo entry and patches no maps; PLACE mode itself
+ * stays open for repeat placement on every path, exactly as before. */
+static void place_confirm_spawn(
+    Diag *diag, GameState *state, EditorState *editor_state, UndoHistory *undo_history, Vector2 spawn_position)
+{
+    const Blueprint *blueprint = &state->gamedata.blueprints.entries.data[editor_state->place_blueprint_index];
+    const char *blueprint_name = attr_get_string(&blueprint->attrs, "name");
+    if (state->network.mode == NET_CLIENT) {
+        /* A nameless blueprint cannot be requested over the wire (the host
+         * resolves the spawn by name); blueprint_find can't resolve one
+         * either, so there is nothing meaningful to send. */
+        if (blueprint_name != nullptr) {
+            network_editor_commit_place(state, -1, strv_from_cstr(blueprint_name), spawn_position);
+        }
+        return;
+    }
+    Allocator alloc = allocator_arena(&state->gamedata_arena);
+    int count_before = state->gamedata.current_level.entities.count;
+    if (!level_spawn_entity(diag, &state->gamedata.current_level, blueprint, spawn_position,
+                            &state->gamedata.blueprints, texture_registry_lookup, state, &alloc)) {
+        debug_log(diag->debug, "error: %s", error_get(diag->error));
+        error_clear(diag->error);
+        return;
+    }
+    for (int index = count_before; index < state->gamedata.current_level.entities.count; index++) {
+        Entity *spawned = &state->gamedata.current_level.entities.data[index];
+        Str bp_name = str_new(alloc);
+        (void)str_from_strv(&bp_name, str_to_strv(spawned->blueprint_name));
+        (void)map_int_str_set(&state->gamedata.entity_blueprints, spawned->id, bp_name);
+        const Blueprint *spawned_bp = blueprint_find(&state->gamedata.blueprints, spawned->blueprint_name.ptr);
+        if (spawned_bp && spawned_bp->rules.count > 0) {
+            (void)map_entity_ruleset_set(&state->gamedata.rule_table, spawned->id, spawned_bp->rules);
+        }
+    }
+    undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
+                           strv_from_cstr("Place entity"));
+    if (state->network.mode == NET_HOSTING && blueprint_name != nullptr) {
+        network_editor_commit_place(state, state->gamedata.current_level.entities.data[count_before].id,
+                                    strv_from_cstr(blueprint_name), spawn_position);
+    }
+}
+
 static void handle_place_input(Diag *diag,
                                GameState *state,
                                Camera2D *camera,
@@ -184,30 +238,9 @@ static void handle_place_input(Diag *diag,
         return;
     }
     if (input_pressed(&input, &state->bindings, ACTION_CONFIRM)) {
-        int bp_index = editor_state->place_blueprint_index;
-        const Blueprint *blueprint = &state->gamedata.blueprints.entries.data[bp_index];
-        Allocator alloc = allocator_arena(&state->gamedata_arena);
-        int count_before = state->gamedata.current_level.entities.count;
         Vector2 spawn_position =
             editor_state->grid_snap ? editor_snap_position_to_grid(camera->target) : camera->target;
-        if (!level_spawn_entity(diag, &state->gamedata.current_level, blueprint, spawn_position,
-                                &state->gamedata.blueprints, texture_registry_lookup, state, &alloc)) {
-            debug_log(diag->debug, "error: %s", error_get(diag->error));
-            error_clear(diag->error);
-        } else {
-            for (int index = count_before; index < state->gamedata.current_level.entities.count; index++) {
-                Entity *spawned = &state->gamedata.current_level.entities.data[index];
-                Str bp_name = str_new(alloc);
-                (void)str_from_strv(&bp_name, str_to_strv(spawned->blueprint_name));
-                (void)map_int_str_set(&state->gamedata.entity_blueprints, spawned->id, bp_name);
-                const Blueprint *spawned_bp = blueprint_find(&state->gamedata.blueprints, spawned->blueprint_name.ptr);
-                if (spawned_bp && spawned_bp->rules.count > 0) {
-                    (void)map_entity_ruleset_set(&state->gamedata.rule_table, spawned->id, spawned_bp->rules);
-                }
-            }
-            undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
-                                   strv_from_cstr("Place entity"));
-        }
+        place_confirm_spawn(diag, state, editor_state, undo_history, spawn_position);
     }
     if (input_pressed(&input, &state->bindings, ACTION_CANCEL)) {
         editor_state->sub_mode = EDITOR_SUB_BROWSE;

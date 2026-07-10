@@ -14,9 +14,9 @@ DEFINE_FFF_GLOBALS;
 
 /* Cross-file editor fakes: core.c */
 FAKE_VALUE_FUNC(Blueprint *, find_blueprint_by_name, GameState *, const char *);
-FAKE_VOID_FUNC(mark_deleted_descendants, const Level *, bool *, int);
 
 /* Cross-file editor fakes: level.c */
+FAKE_VOID_FUNC(level_mark_deleted_descendants, const Level *, bool *, int);
 FAKE_VALUE_FUNC(int, level_find_entity_by_id, const Level *, int);
 
 /* External module fakes */
@@ -55,7 +55,7 @@ MAP_IMPL(entity_ruleset, int, vec_rule, map_hash_int, map_eq_int)
 void setUp(void)
 {
     RESET_FAKE(find_blueprint_by_name);
-    RESET_FAKE(mark_deleted_descendants);
+    RESET_FAKE(level_mark_deleted_descendants);
     RESET_FAKE(undo_history_new_entry);
     RESET_FAKE(level_spawn_single_child);
     RESET_FAKE(level_find_entity_by_id);
@@ -87,7 +87,7 @@ static Blueprint make_named_blueprint(const char *name)
     return blueprint;
 }
 
-/* Custom fake for mark_deleted_descendants: cascade delete to children of deleted parents */
+/* Custom fake for level_mark_deleted_descendants: cascade delete to children of deleted parents */
 static void mark_descendants_custom(const Level *level, bool *is_deleted, int count)
 {
     bool changed = true;
@@ -504,7 +504,7 @@ void test_remove_blueprint_child_cascades_descendants(void)
 
     find_blueprint_by_name_fake.return_val = &blueprint;
 
-    mark_deleted_descendants_fake.custom_fake = mark_descendants_custom;
+    level_mark_deleted_descendants_fake.custom_fake = mark_descendants_custom;
     level_find_entity_by_id_fake.return_val = 0;
 
     EditorState editor_state = {.selected_entity_id = 1};

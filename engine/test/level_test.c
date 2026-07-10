@@ -456,3 +456,71 @@ void test_level_tile_index_row_major(void)
     TEST_ASSERT_EQUAL_INT(7, level_tile_index(1, 2, 5));
     TEST_ASSERT_EQUAL_INT(23, level_tile_index(4, 3, 5));
 }
+
+/* ---- level_mark_deleted_descendants --------------------------------------
+ * Moved here from editor_core_test.c when the descendant walk moved from
+ * editor/core.c to the level layer (S8.7f3a) -- the single-TU editor
+ * harness fakes level.c, so the real walk is only linkable here. */
+
+void test_level_mark_deleted_root_marks_child(void)
+{
+    Level level = {.entities.alloc = test_heap_alloc};
+    Entity root = {.parent_index = -1};
+    Entity child = {.parent_index = 0};
+    Entity other = {.parent_index = -1};
+    TEST_ASSERT_TRUE(vec_entity_push(&level.entities, root));
+    TEST_ASSERT_TRUE(vec_entity_push(&level.entities, child));
+    TEST_ASSERT_TRUE(vec_entity_push(&level.entities, other));
+
+    bool is_deleted[] = {true, false, false};
+    level_mark_deleted_descendants(&level, is_deleted, 3);
+
+    TEST_ASSERT_TRUE(is_deleted[0]);
+    TEST_ASSERT_TRUE(is_deleted[1]);
+    TEST_ASSERT_FALSE(is_deleted[2]);
+
+    vec_entity_free(&level.entities);
+}
+
+void test_level_mark_deleted_chain(void)
+{
+    Level level = {.entities.alloc = test_heap_alloc};
+    Entity grandparent = {.parent_index = -1};
+    Entity parent_entity = {.parent_index = 0};
+    Entity grandchild = {.parent_index = 1};
+    TEST_ASSERT_TRUE(vec_entity_push(&level.entities, grandparent));
+    TEST_ASSERT_TRUE(vec_entity_push(&level.entities, parent_entity));
+    TEST_ASSERT_TRUE(vec_entity_push(&level.entities, grandchild));
+
+    bool is_deleted[] = {true, false, false};
+    level_mark_deleted_descendants(&level, is_deleted, 3);
+
+    TEST_ASSERT_TRUE(is_deleted[0]);
+    TEST_ASSERT_TRUE(is_deleted[1]);
+    TEST_ASSERT_TRUE(is_deleted[2]);
+
+    vec_entity_free(&level.entities);
+}
+
+void test_level_mark_deleted_sibling_untouched(void)
+{
+    Level level = {.entities.alloc = test_heap_alloc};
+    Entity root_a = {.parent_index = -1};
+    Entity child_a = {.parent_index = 0};
+    Entity root_b = {.parent_index = -1};
+    Entity child_b = {.parent_index = 2};
+    TEST_ASSERT_TRUE(vec_entity_push(&level.entities, root_a));
+    TEST_ASSERT_TRUE(vec_entity_push(&level.entities, child_a));
+    TEST_ASSERT_TRUE(vec_entity_push(&level.entities, root_b));
+    TEST_ASSERT_TRUE(vec_entity_push(&level.entities, child_b));
+
+    bool is_deleted[] = {true, false, false, false};
+    level_mark_deleted_descendants(&level, is_deleted, 4);
+
+    TEST_ASSERT_TRUE(is_deleted[0]);
+    TEST_ASSERT_TRUE(is_deleted[1]);
+    TEST_ASSERT_FALSE(is_deleted[2]);
+    TEST_ASSERT_FALSE(is_deleted[3]);
+
+    vec_entity_free(&level.entities);
+}

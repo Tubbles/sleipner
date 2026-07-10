@@ -4,6 +4,7 @@
 #include "arena.h"
 #include "input.h"
 #include "input_func.h"
+#include "level.h" // level_mark_deleted_descendants
 #include "map.h"
 #include "str.h"
 #include "strv.h"
@@ -293,7 +294,7 @@ static void remove_entities_by_blueprint(GameState *state, const char *bp_name)
             is_deleted[index] = true;
         }
     }
-    mark_deleted_descendants(level, is_deleted, entity_count);
+    level_mark_deleted_descendants(level, is_deleted, entity_count);
 
     for (int index = 0; index < entity_count; index++) {
         if (is_deleted[index]) {

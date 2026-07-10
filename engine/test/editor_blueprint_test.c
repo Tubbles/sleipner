@@ -28,7 +28,8 @@ FAKE_VOID_FUNC(remove_blueprint_child, GameState *, EditorState *, UndoHistory *
 
 /* Cross-file editor fakes: core.c */
 FAKE_VALUE_FUNC(Blueprint *, find_blueprint_by_name, GameState *, const char *);
-FAKE_VOID_FUNC(mark_deleted_descendants, const Level *, bool *, int);
+/* Cross-file fake: level.c (the descendant walk lives in the level layer) */
+FAKE_VOID_FUNC(level_mark_deleted_descendants, const Level *, bool *, int);
 
 /* Cross-file editor fakes: widgets.c */
 FAKE_VOID_FUNC(fuzzy_finder_build_items, GameState *, EditorState *);
@@ -68,7 +69,7 @@ void setUp(void)
     RESET_FAKE(dispatch_child_props);
     RESET_FAKE(remove_blueprint_child);
     RESET_FAKE(find_blueprint_by_name);
-    RESET_FAKE(mark_deleted_descendants);
+    RESET_FAKE(level_mark_deleted_descendants);
     RESET_FAKE(fuzzy_finder_build_items);
     RESET_FAKE(undo_history_new_entry);
     RESET_FAKE(undo_history_step_back);

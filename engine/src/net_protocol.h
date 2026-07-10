@@ -308,7 +308,16 @@ typedef struct {
  *  - EDITOR_OP_LOCK_DENY -- host->clients echo only (clients never
  *    originate it): author_player_id's acquire on entity_id was refused.
  *    Broadcast like every other echo, so every replica observes it in the
- *    one same total order; only the named requester acts on it. */
+ *    one same total order; only the named requester acts on it.
+ *
+ * S8.7f3a place kind:
+ *  - EDITOR_OP_PLACE_ENTITY -- client->host: request to spawn blueprint_name
+ *    at (move_x, move_y); host->clients echo: the spawn happened. Payload:
+ *    length-prefixed blueprint_name, then move_x/move_y (position reuses the
+ *    move fields). The header's entity_id MUST be -1 in a client REQUEST --
+ *    the HOST assigns entity ids -- and carries the host-assigned ROOT
+ *    entity id in every echo, which each replica forces onto its own spawn
+ *    so the id can never diverge across peers. */
 typedef enum {
     EDITOR_OP_MOVE_ENTITY,
     EDITOR_OP_SET_ATTR,
@@ -316,6 +325,7 @@ typedef enum {
     EDITOR_OP_LOCK_ACQUIRE,
     EDITOR_OP_LOCK_RELEASE,
     EDITOR_OP_LOCK_DENY,
+    EDITOR_OP_PLACE_ENTITY,
 } EditorOpKind;
 
 /* A single editor op. Flat fields (not a union), matching EventRecord's
@@ -329,18 +339,19 @@ typedef enum {
  * REQUEST carries 0; the host stamps the real value on its echo -- later
  * slices implement that. This slice just carries the field.
  *
- * move_x/move_y are meaningful only for EDITOR_OP_MOVE_ENTITY. attr is
- * meaningful only for EDITOR_OP_SET_ATTR, and the embedded record's own
- * entity_id mirrors this header's entity_id: the encoder overwrites it from
- * entity_id before writing (see point 4 / protocol_encode_op_packet), so
- * the two can never disagree on the wire. EDITOR_OP_DELETE_ENTITY and the
- * three S8.7d1 lock kinds (LOCK_ACQUIRE/RELEASE/DENY) have no payload beyond
- * the header.
+ * move_x/move_y are meaningful only for EDITOR_OP_MOVE_ENTITY and (as the
+ * spawn position, S8.7f3a) EDITOR_OP_PLACE_ENTITY. blueprint_name is
+ * meaningful only for EDITOR_OP_PLACE_ENTITY. attr is meaningful only for
+ * EDITOR_OP_SET_ATTR, and the embedded record's own entity_id mirrors this
+ * header's entity_id: the encoder overwrites it from entity_id before
+ * writing (see point 4 / protocol_encode_op_packet), so the two can never
+ * disagree on the wire. EDITOR_OP_DELETE_ENTITY and the three S8.7d1 lock
+ * kinds (LOCK_ACQUIRE/RELEASE/DENY) have no payload beyond the header.
  *
- * Decoded Strv fields (level_name, and any string inside attr) view into
- * the caller's packet buffer, with the same lifetime contract every other
- * decoded string field in this header documents (see the Ownership note at
- * the top of this file). */
+ * Decoded Strv fields (level_name, blueprint_name, and any string inside
+ * attr) view into the caller's packet buffer, with the same lifetime
+ * contract every other decoded string field in this header documents (see
+ * the Ownership note at the top of this file). */
 typedef struct {
     EditorOpKind kind;
     Strv level_name;
@@ -350,11 +361,12 @@ typedef struct {
     float move_x;
     float move_y;
     AttrRecord attr;
+    Strv blueprint_name;
 } EditorOp;
 
 /* Decodes an MSG_OP payload after the caller already decoded the header
  * (same division of labor as protocol_decode_event). Rejects an unknown
- * kind byte (anything > EDITOR_OP_LOCK_DENY) and fails closed on any
+ * kind byte (anything > EDITOR_OP_PLACE_ENTITY) and fails closed on any
  * truncated read. */
 [[nodiscard]] bool protocol_decode_op(PacketReader *reader, EditorOp *out);
 

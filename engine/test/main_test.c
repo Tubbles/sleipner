@@ -74,6 +74,9 @@ void test_level_child_entity_tags(void);
 void test_level_nested_children(void);
 void test_level_tile_dims_ceil_division(void);
 void test_level_tile_index_row_major(void);
+void test_level_mark_deleted_root_marks_child(void);
+void test_level_mark_deleted_chain(void);
+void test_level_mark_deleted_sibling_untouched(void);
 
 /* render_test.c */
 void test_render_split_camera_target_separates_integer_and_fraction(void);
@@ -172,6 +175,11 @@ void test_integration_optimistic_grab_deny_aborts_drag(void);
 void test_integration_lock_released_on_commit(void);
 void test_integration_lock_released_on_cancel(void);
 void test_integration_host_grab_grants_and_releases(void);
+void test_integration_editor_delete_op_converges_and_clears_lock(void);
+void test_integration_delete_blocked_by_foreign_lock(void);
+void test_integration_client_place_materializes_via_echo_with_host_id(void);
+void test_integration_host_place_appears_on_client_with_matching_id(void);
+void test_integration_place_then_move_echoes_apply_in_order(void);
 void test_integration_editor_presence_shares_cursor_and_times_out(void);
 void test_integration_structural_resync_propagates_and_stops(void);
 void test_integration_structural_resync_releases_locks(void);
@@ -461,6 +469,11 @@ int main(void)
     RUN_TEST(test_integration_lock_released_on_commit);
     RUN_TEST(test_integration_lock_released_on_cancel);
     RUN_TEST(test_integration_host_grab_grants_and_releases);
+    RUN_TEST(test_integration_editor_delete_op_converges_and_clears_lock);
+    RUN_TEST(test_integration_delete_blocked_by_foreign_lock);
+    RUN_TEST(test_integration_client_place_materializes_via_echo_with_host_id);
+    RUN_TEST(test_integration_host_place_appears_on_client_with_matching_id);
+    RUN_TEST(test_integration_place_then_move_echoes_apply_in_order);
     RUN_TEST(test_integration_editor_presence_shares_cursor_and_times_out);
     RUN_TEST(test_integration_structural_resync_propagates_and_stops);
     RUN_TEST(test_integration_structural_resync_releases_locks);
@@ -500,6 +513,9 @@ int main(void)
     RUN_TEST(test_level_nested_children);
     RUN_TEST(test_level_tile_dims_ceil_division);
     RUN_TEST(test_level_tile_index_row_major);
+    RUN_TEST(test_level_mark_deleted_root_marks_child);
+    RUN_TEST(test_level_mark_deleted_chain);
+    RUN_TEST(test_level_mark_deleted_sibling_untouched);
 
     RUN_TEST(test_render_split_camera_target_separates_integer_and_fraction);
     RUN_TEST(test_render_split_camera_target_exact_integer_has_zero_fraction);

@@ -362,6 +362,27 @@ float transition_fade_alpha(TransitionFade fade);
  * doc comment for the full reindex rationale. */
 [[nodiscard]] bool game_respawn_rebuild_tracking(Diag *diag, GameState *state);
 
+/* Delete entity_id and its whole descendant cascade from the current level
+ * -- the level/gamedata mutation core extracted from the editor's shipped
+ * delete (S8.7f3a), shared by editor/core.c's delete_selected_entity and
+ * net_session.c's DELETE op appliers. Steps, mirroring the shipped editor
+ * delete exactly: mark the entity plus every descendant
+ * (level_mark_deleted_descendants, level.h), drop each deleted id from
+ * entity_blueprints and rule_table, remap surviving parent_index values and
+ * player_index through the compaction map, then compact the entities vec in
+ * place. No-op when entity_id does not resolve
+ * (level_find_entity_by_id < 0), which doubles as the tolerant skip the
+ * network appliers rely on (a DELETE echo's originator already removed its
+ * local copy as a preview). Infallible -- none of those steps can fail.
+ *
+ * Deliberately does NOT rebuild collision/overlap tracking:
+ * prev_player_overlaps/prev_solid_collisions keep their pre-delete size and
+ * edge state, exactly like the shipped editor delete they were extracted
+ * from. Stale prev-overlap/solid tracking after a live-sim delete is a
+ * pre-existing property of that editor delete path, unchanged here and
+ * tracked separately. */
+void game_delete_entity_cascade(GameState *state, int entity_id);
+
 /* Resolve an entity's blueprint defaults via the entity→blueprint map.
  * Returns nullptr if entity has no blueprint mapping or blueprint not found. */
 const AttrSet *entity_resolve_defaults(const GameState *state, int entity_id);

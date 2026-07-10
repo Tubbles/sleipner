@@ -197,7 +197,6 @@ bool tree_is_add_child_row(const Entity *entity, const Blueprint *blueprint, int
 int tree_child_index(const Entity *entity, int tree_index);
 int place_visible_count(int screen_height);
 int find_place_blueprint_index(const GameState *state, const EditorState *editor_state);
-void mark_deleted_descendants(const Level *level, bool *is_deleted, int count);
 
 /* --- Shared helpers: child.c --- */
 

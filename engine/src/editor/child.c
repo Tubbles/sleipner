@@ -4,6 +4,7 @@
 #include "arena.h"
 #include "debug.h"
 #include "error.h"
+#include "level.h" // level_mark_deleted_descendants
 #include "map.h"
 #include "rule.h"
 #include "str.h"
@@ -91,7 +92,7 @@ static void propagate_child_remove(GameState *state, EditorState *editor_state, 
             is_deleted[child_entity] = true;
         }
     }
-    mark_deleted_descendants(level, is_deleted, count);
+    level_mark_deleted_descendants(level, is_deleted, count);
 
     for (int index = 0; index < count; index++) {
         if (is_deleted[index]) {

@@ -178,9 +178,19 @@
  * known entity in the current level and network_lock_acquire claims it for
  * the sender, or DENIED (echoed as LOCK_DENY) otherwise; an
  * EDITOR_OP_LOCK_RELEASE the sender actually holds is echoed as LOCK_RELEASE.
- * Cross-level, unknown-id, or out-of-scope ops (SET_ATTR/DELETE_ENTITY, and a
- * client-originated LOCK_DENY) are silently dropped (tolerant-skip, same
- * convention as the state appliers). Finally (S8.7d1) the host ages its lock
+ * (S8.7f3a) An EDITOR_OP_DELETE_ENTITY follows the same level/entity/lock
+ * rules as a move (locked by someone other than the sender is silently
+ * dropped); an applied delete cascades through descendants
+ * (game_delete_entity_cascade, game.h), clears any lock entry on the entity
+ * WITHOUT a release echo (the DELETE echo is itself the "gone" signal every
+ * replica clears its lock on), then is stamped + echoed. An
+ * EDITOR_OP_PLACE_ENTITY naming the current level and a resolvable blueprint
+ * spawns it at the op's position, and the echo's entity_id is stamped with
+ * the host-assigned ROOT entity id (the request carried -1) -- no locks
+ * involved, a brand-new entity cannot be contended. Cross-level, unknown-id,
+ * or out-of-scope ops (SET_ATTR, and a client-originated LOCK_DENY) are
+ * silently dropped (tolerant-skip, same convention as the state appliers).
+ * Finally (S8.7d1) the host ages its lock
  * table by delta_time and force-releases any lock whose holder has gone
  * silent past NETWORK_LOCK_TIMEOUT_SECONDS, echoing a LOCK_RELEASE authored by
  * the former holder -- ageing runs AFTER network_host_receive so this tick's
@@ -222,7 +232,13 @@ void network_host_tick(GameState *state, float delta_time);
  * dispatched by kind: MOVE writes the entity position, LOCK_ACQUIRE/RELEASE
  * maintain this client's replica lock table, and a LOCK_DENY addressed to
  * this peer appends its entity id to lock_denied_entity_ids for the editor to
- * drain (S8.7d2). (S8.7e) Any host-relayed MSG_CURSOR drained here upserts
+ * drain (S8.7d2). (S8.7f3a) A DELETE echo cascade-deletes the entity if it
+ * still exists locally (the originator already deleted its own copy as a
+ * preview -- a missing id is the expected no-op) and drops any replica lock
+ * on it; a PLACE echo materializes the named blueprint at the echoed
+ * position with the echoed host-assigned id forced onto the spawned root
+ * (an id that already resolves is a tolerant dedup no-op). (S8.7e) Any
+ * host-relayed MSG_CURSOR drained here upserts
  * every peer's presence into this client's table (skipping its own echoed
  * entry, the local bridge copy is fresher); then this client's own bridged
  * cursor (frame.c) is sent to the host and mirrored locally, and the table is
@@ -326,6 +342,43 @@ void network_editor_commit_move(GameState *state, int entity_id, Vector2 new_pos
  *   release of a lock the sender does not hold, so the deny-abort path can
  *   release the whole multiselect set without tracking which ids were granted. */
 void network_editor_release_locks(GameState *state, const int *entity_ids, int entity_count);
+
+/* S8.7f3a: called by the editor right after the selected entity (and its
+ * descendant cascade) was deleted locally (editor/core.c's
+ * delete_selection_networked). The lock gate (refusing a delete of an entity
+ * another player holds) lives at the editor call site, not here -- this seam
+ * only propagates.
+ *
+ * NET_OFFLINE: no-op (single-player).
+ * NET_CLIENT: sends an EDITOR_OP_DELETE_ENTITY REQUEST (op_seq 0, authored by
+ *   local_player_id, naming the current level). The local delete that already
+ *   happened is this peer's preview; the host's echo is what authoritatively
+ *   confirms it on every replica (a missing entity at echo-apply time is the
+ *   expected originator case).
+ * NET_HOSTING: the local delete was already the authoritative apply, so this
+ *   clears any lock entry on the entity (the one-rule-everywhere DELETE
+ *   lock-clear: the DELETE echo is the "gone" signal, every replica --
+ *   including the host's own table -- drops the lock on apply, no LOCK_RELEASE
+ *   echo is ever sent) and stamps + broadcasts the DELETE echo. */
+void network_editor_commit_delete(GameState *state, int entity_id);
+
+/* S8.7f3a: called by the editor at a PLACE commit (frame.c's
+ * handle_place_input CONFIRM path).
+ *
+ * placed_entity_id is deliberately asymmetric: -1 from a NET_CLIENT caller
+ * (a connected client never spawns locally -- the host assigns entity ids,
+ * so nothing local exists to name), and the freshly spawned ROOT entity's id
+ * from a NET_HOSTING caller (the local spawn already happened and the echo
+ * must carry the id every replica forces onto its own spawn). The seam uses
+ * it only for the HOSTING echo and ignores it for CLIENT requests.
+ *
+ * NET_OFFLINE: no-op (single-player).
+ * NET_CLIENT: sends an EDITOR_OP_PLACE_ENTITY REQUEST (entity_id -1, op_seq
+ *   0, authored by local_player_id) carrying blueprint_name and position;
+ *   the host's echo is what materializes the entity on this peer.
+ * NET_HOSTING: stamps op_seq = next_op_seq++ (author 0) and broadcasts the
+ *   echo with entity_id = placed_entity_id. */
+void network_editor_commit_place(GameState *state, int placed_entity_id, Strv blueprint_name, Vector2 position);
 
 /* ---- S8.7f1: full-gamedata structural resync ----
  *
