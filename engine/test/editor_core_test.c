@@ -95,6 +95,11 @@ FAKE_VOID_FUNC(network_editor_commit_set_attr, GameState *, int, AttrRecord);
 FAKE_VOID_FUNC(network_editor_commit_remove_attr, GameState *, int, Strv);
 FAKE_VOID_FUNC(network_structural_mark_dirty, NetworkState *);
 FAKE_VALUE_FUNC(AttrRecord, network_attr_record_from_attribute, int, const Attribute *);
+/* S8.7h1: the shared session-undo reroute helpers (defined in core.c, real
+ * here) send this reliable event under NET_CLIENT; faked so core.c links
+ * without the network stack. The end-to-end reroute is covered black-box in
+ * integration_test.c. */
+FAKE_VOID_FUNC(network_client_send_reliable_event, NetworkState *, EventRecord);
 
 /* TextFormat stub — variadic, cannot use FAKE_VALUE_FUNC */
 const char *TextFormat(const char *text, ...)
@@ -885,7 +890,7 @@ void test_find_place_blueprint_index_no_selection(void)
     TEST_ASSERT_EQUAL_INT(0, find_place_blueprint_index(&state, &editor_state));
 }
 
-/* ---- clear_stale_tree_cursor -------------------------------------------- */
+/* ---- editor_clear_stale_restore_cursor ---------------------------------- */
 
 /* Undo/redo clears only the index-based tree cursor; the stable-identity
  * entity/attr selection and the watch list survive, since they resolve by
@@ -900,7 +905,7 @@ void test_clear_stale_tree_cursor_preserves_identity_selection(void)
     };
     WatchList watches = {.count = 2, .watch_ids = {10, 20}};
 
-    clear_stale_tree_cursor(&editor_state);
+    editor_clear_stale_restore_cursor(&editor_state);
 
     TEST_ASSERT_EQUAL_INT(-1, editor_state.selected_tree_index);
     /* Identity selection and watches are untouched. */

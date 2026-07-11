@@ -218,6 +218,7 @@ static void host_handle_move(GameState *state, EditorOp *operation, int sender_p
     }
     state->gamedata.current_level.entities.data[entity_index].position =
         (Vector2){operation->move_x, operation->move_y};
+    state->network.ops_applied_this_tick++;
     host_stamp_and_broadcast(state, EDITOR_OP_MOVE_ENTITY, operation, sender_player_id);
 }
 
@@ -244,6 +245,7 @@ static void host_handle_delete(GameState *state, EditorOp *operation, int sender
     if (lock != nullptr) {
         lock->active = false;
     }
+    state->network.ops_applied_this_tick++;
     host_stamp_and_broadcast(state, EDITOR_OP_DELETE_ENTITY, operation, sender_player_id);
 }
 
@@ -282,6 +284,7 @@ static void host_handle_place(GameState *state, EditorOp *operation, int sender_
     }
     Diag diag = {&state->error, &state->debug};
     (void)game_respawn_rebuild_tracking(&diag, state);
+    state->network.ops_applied_this_tick++;
     host_stamp_and_broadcast(state, EDITOR_OP_PLACE_ENTITY, operation, sender_player_id);
 }
 
@@ -305,6 +308,7 @@ static void host_handle_set_attr(GameState *state, EditorOp *operation, int send
     }
     Allocator gamedata_alloc = allocator_arena(&state->gamedata_arena);
     apply_set_attr(&gamedata_alloc, &state->gamedata.current_level.entities.data[entity_index], &operation->attr);
+    state->network.ops_applied_this_tick++;
     host_stamp_and_broadcast(state, EDITOR_OP_SET_ATTR, operation, sender_player_id);
 }
 
@@ -328,6 +332,7 @@ static void host_handle_remove_attr(GameState *state, EditorOp *operation, int s
     Allocator gamedata_alloc = allocator_arena(&state->gamedata_arena);
     apply_remove_attr(&gamedata_alloc, &state->gamedata.current_level.entities.data[entity_index],
                       operation->attr_name);
+    state->network.ops_applied_this_tick++;
     host_stamp_and_broadcast(state, EDITOR_OP_REMOVE_ATTR, operation, sender_player_id);
 }
 
@@ -335,9 +340,13 @@ static void host_handle_remove_attr(GameState *state, EditorOp *operation, int s
  * into `ops` this tick and dispatch by kind -- move/delete enforcement, the
  * place spawn, the scene attr SET/REMOVE appliers, plus the lock protocol. A
  * malformed decode is skipped; a client never originates LOCK_DENY -- silently
- * dropped. */
+ * dropped. S8.7h1: ops_applied_this_tick is zeroed here and incremented by each
+ * gamedata-mutating handler at its apply+echo point, so frame.c can push one
+ * "Network edit" undo entry per tick that actually applied client edits (see
+ * the field's doc, network.h). */
 static void host_apply_and_echo_ops(GameState *state, const PendingEditorOps *ops)
 {
+    state->network.ops_applied_this_tick = 0;
     for (int index = 0; index < ops->count; index++) {
         DecodedPacket packet;
         ErrorState decode_err = {0};

@@ -147,6 +147,12 @@ void network_stop(NetworkState *network)
      * re-flags an ack on the next host save). */
     network->save_request_pending = false;
     network->saved_ack_pending = false;
+    /* S8.7h1: the shared session-undo request queue and the per-tick applied-op
+     * count are session state -- back to the offline zero (the host re-queues on
+     * the next client undo/redo, re-counts on the next applied op batch). */
+    network->undo_requests_pending = 0;
+    network->redo_requests_pending = 0;
+    network->ops_applied_this_tick = 0;
     /* Back to the offline zero (counters live only inside a session --
      * network_apply_hosting re-arms next_op_seq at hosting start, and the
      * JOIN_ACCEPT baseline re-seeds next_expected_op_seq at join time). */
@@ -585,6 +591,17 @@ static void handle_event_datagram(NetworkState *network, NetAddr src, uint32_t s
      * delivered before the drain coalesce into one save. */
     if (event.event_type == NETWORK_EVENT_SAVE_REQUEST) {
         network->save_request_pending = true;
+    }
+    /* S8.7h1: a client asking the host to step the one shared undo/redo history
+     * (D-C phase C1). Counted, not flagged: three rapid presses must step three
+     * times, and the reliable channel has already dedup'd resends here. The frame
+     * layer drains the counter, steps the host's history, and the structural
+     * resync barrier carries the restore to every peer. */
+    if (event.event_type == NETWORK_EVENT_UNDO_REQUEST) {
+        network->undo_requests_pending++;
+    }
+    if (event.event_type == NETWORK_EVENT_REDO_REQUEST) {
+        network->redo_requests_pending++;
     }
 }
 

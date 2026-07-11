@@ -11891,6 +11891,373 @@ void test_integration_host_undo_restore_resyncs_client(void)
     loopback_network_free(&loopback);
 }
 
+/* ---- S8.7h1: shared host-owned session undo (D-C phase C1) ---------------
+ * ANY peer's editor undo/redo steps the HOST's single linear history; the
+ * restore reaches every peer through the existing structural-resync barrier.
+ * A client never touches its own local history (that silently diverges its
+ * replica, the S8.7c quirk this closes). These tests drive real Ctrl+Z / Ctrl+Y
+ * chords through the editor input layer on a CLIENT and assert on observable
+ * entity positions across every peer. */
+
+/* Bind a host<->client loopback pair on `fixture`, set the host HOSTING and the
+ * client JOINING, and pump frames until the client reaches NET_CLIENT. The
+ * caller owns teardown; the loopback and both transports outlive the games. */
+static void sharedundo_connect(LoopbackNetwork *loopback, TestGame *host, TestGame *client, const char *fixture)
+{
+    NetAddr host_addr = net_addr_make(1, 9000);
+    NetAddr client_addr = net_addr_make(2, 9001);
+    NetTransport host_transport;
+    NetTransport client_transport;
+    TEST_ASSERT_TRUE(loopback_transport_create(loopback, host_addr, &host_transport));
+    TEST_ASSERT_TRUE(loopback_transport_create(loopback, client_addr, &client_transport));
+
+    TEST_ASSERT_TRUE(test_game_setup(host, fixture));
+    host->state.network.mode = NET_HOSTING;
+    host->state.network.transport = host_transport;
+    host->state.network.next_op_seq = 1;
+
+    TEST_ASSERT_TRUE(test_game_setup(client, fixture));
+    client->state.network.mode = NET_JOINING;
+    client->state.network.transport = client_transport;
+    client->state.network.join_target = host_addr;
+
+    InputState no_input = {0};
+    for (int frame = 0; frame < 6; frame++) {
+        test_advance_frame(client, no_input);
+        test_advance_frame(host, no_input);
+    }
+    TEST_ASSERT_EQUAL_INT(NET_CLIENT, client->state.network.mode);
+}
+
+/* Drive `mover` (already editor_mode + BROWSE) to select the nearest root to
+ * its (0,0) editor camera, grab it, hold RIGHT for `steps` frames, and confirm
+ * the move -- a real scene edit that pushes one undo entry on a host and sends
+ * one move op on a client. Advances `mover` only; the caller pumps the peers. */
+static void sharedundo_grab_move_right(TestGame *mover, int steps)
+{
+    InputState select = {0};
+    input_state_press_key(&select, KEY_ENTER);
+    test_advance_frame(mover, select);
+    InputState grab = {0};
+    input_state_press_key(&grab, KEY_G);
+    test_advance_frame(mover, grab);
+    for (int step = 0; step < steps; step++) {
+        InputState move = {0};
+        input_state_hold_key(&move, KEY_RIGHT);
+        test_advance_frame(mover, move);
+    }
+    InputState confirm = {0};
+    input_state_press_key(&confirm, KEY_ENTER);
+    test_advance_frame(mover, confirm);
+}
+
+/* Press one editor history chord (KEY_Z = undo, KEY_Y = redo, both with Ctrl) on
+ * `client` for exactly one frame -- a real edge press through the input layer. */
+static void sharedundo_press_chord(TestGame *client, int letter_key)
+{
+    InputState chord = {0};
+    input_state_hold_key(&chord, KEY_LEFT_CONTROL);
+    input_state_press_key(&chord, letter_key);
+    test_advance_frame(client, chord);
+}
+
+/* Pump `host` and `client` together for `frames` idle frames (client first, so a
+ * request sent this frame is on the wire before the host reads). */
+static void sharedundo_pump(TestGame *host, TestGame *client, int frames)
+{
+    InputState no_input = {0};
+    for (int frame = 0; frame < frames; frame++) {
+        test_advance_frame(client, no_input);
+        test_advance_frame(host, no_input);
+    }
+}
+
+/* C1 core: a CLIENT's undo steps the HOST's shared history. The host moves the
+ * rock (a scene op that reaches the client), then the client presses Ctrl+Z: the
+ * client never touches its own history, it asks the host; the host reverts and
+ * resyncs, and the client's own rock lands back at the original position. A
+ * broken reroute would leave resync_generation at 0 and the client's rock at the
+ * moved position, so both assertions pin the routing. */
+void test_integration_client_undo_reverts_host_edit(void)
+{
+    LoopbackNetwork loopback;
+    loopback_network_init(&loopback, &test_heap_alloc);
+    TestGame host;
+    TestGame client;
+    sharedundo_connect(&loopback, &host, &client, resync_scene_gamedata);
+
+    Entity *rock = test_find_entity_by_blueprint(&host.state, "rock");
+    TEST_ASSERT_NOT_NULL(rock);
+    float original_x = rock->position.x;
+
+    host.state.editor_mode = true;
+    client.state.editor_mode = true;
+
+    sharedundo_grab_move_right(&host, 5);
+    sharedundo_pump(&host, &client, 12);
+
+    Entity *client_rock_moved = test_find_entity_by_blueprint(&client.state, "rock");
+    TEST_ASSERT_NOT_NULL(client_rock_moved);
+    TEST_ASSERT_TRUE_MESSAGE(client_rock_moved->position.x > original_x + 5.0F,
+                             "host move op should have reached the client");
+
+    sharedundo_press_chord(&client, KEY_Z);
+    sharedundo_pump(&host, &client, 90);
+
+    TEST_ASSERT_EQUAL_UINT32(1, host.state.network.resync_generation);
+    Entity *host_rock_reverted = test_find_entity_by_blueprint(&host.state, "rock");
+    Entity *client_rock_reverted = test_find_entity_by_blueprint(&client.state, "rock");
+    TEST_ASSERT_NOT_NULL(host_rock_reverted);
+    TEST_ASSERT_NOT_NULL(client_rock_reverted);
+    TEST_ASSERT_FLOAT_WITHIN(0.5F, original_x, host_rock_reverted->position.x);
+    TEST_ASSERT_FLOAT_WITHIN(0.5F, original_x, client_rock_reverted->position.x);
+
+    test_game_teardown(&host);
+    test_game_teardown(&client);
+    loopback_network_free(&loopback);
+}
+
+/* C1 semantic pinned: a client's undo reverts ANOTHER client's edit on every
+ * peer -- the shared history is authorless, which is exactly why per-player
+ * undo is deferred to phase C2 -- but ONLY the last committed batch. A client
+ * edit gets its own "Network edit" snapshot boundary on the host (frame.c's
+ * push after the op apply), so the host moves the rock, client B moves it
+ * further via the op stream, and client A -- who never touched it -- presses
+ * undo: exactly B's edit is reverted on the host, on A, and on B, while the
+ * host's own earlier move SURVIVES (the rock converges on the host-move
+ * position, not the origin). */
+void test_integration_client_undo_reverts_other_client_edit(void)
+{
+    LoopbackNetwork loopback;
+    loopback_network_init(&loopback, &test_heap_alloc);
+    NetAddr host_addr = net_addr_make(1, 9000);
+    NetAddr client_a_addr = net_addr_make(2, 9001);
+    NetAddr client_b_addr = net_addr_make(3, 9002);
+    NetTransport host_transport;
+    NetTransport client_a_transport;
+    NetTransport client_b_transport;
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, host_addr, &host_transport));
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, client_a_addr, &client_a_transport));
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, client_b_addr, &client_b_transport));
+
+    TestGame host;
+    TEST_ASSERT_TRUE(test_game_setup(&host, resync_scene_gamedata));
+    host.state.network.mode = NET_HOSTING;
+    host.state.network.transport = host_transport;
+    host.state.network.next_op_seq = 1;
+
+    TestGame client_a;
+    TEST_ASSERT_TRUE(test_game_setup(&client_a, resync_scene_gamedata));
+    client_a.state.network.mode = NET_JOINING;
+    client_a.state.network.transport = client_a_transport;
+    client_a.state.network.join_target = host_addr;
+
+    TestGame client_b;
+    TEST_ASSERT_TRUE(test_game_setup(&client_b, resync_scene_gamedata));
+    client_b.state.network.mode = NET_JOINING;
+    client_b.state.network.transport = client_b_transport;
+    client_b.state.network.join_target = host_addr;
+
+    InputState no_input = {0};
+    for (int frame = 0; frame < 8; frame++) {
+        test_advance_frame(&client_a, no_input);
+        test_advance_frame(&client_b, no_input);
+        test_advance_frame(&host, no_input);
+    }
+    TEST_ASSERT_EQUAL_INT(NET_CLIENT, client_a.state.network.mode);
+    TEST_ASSERT_EQUAL_INT(NET_CLIENT, client_b.state.network.mode);
+
+    Entity *rock = test_find_entity_by_blueprint(&host.state, "rock");
+    TEST_ASSERT_NOT_NULL(rock);
+    float original_x = rock->position.x;
+
+    host.state.editor_mode = true;
+    client_a.state.editor_mode = true;
+    client_b.state.editor_mode = true;
+
+    /* Host edit: move the rock right (pushes the "Move entity" snapshot A's
+     * undo lands ON) and let the move + lock release reach both clients. */
+    sharedundo_grab_move_right(&host, 5);
+    for (int frame = 0; frame < 15; frame++) {
+        test_advance_frame(&client_a, no_input);
+        test_advance_frame(&client_b, no_input);
+        test_advance_frame(&host, no_input);
+    }
+    Entity *host_rock_boundary = test_find_entity_by_blueprint(&host.state, "rock");
+    TEST_ASSERT_NOT_NULL(host_rock_boundary);
+    float host_moved_x = host_rock_boundary->position.x;
+    TEST_ASSERT_TRUE_MESSAGE(host_moved_x > original_x + 5.0F, "host boundary move should have shifted the rock");
+
+    /* Client B moves the rock further via the op stream. */
+    sharedundo_grab_move_right(&client_b, 6);
+    for (int frame = 0; frame < 20; frame++) {
+        test_advance_frame(&client_a, no_input);
+        test_advance_frame(&client_b, no_input);
+        test_advance_frame(&host, no_input);
+    }
+    Entity *client_a_sees_b_edit = test_find_entity_by_blueprint(&client_a.state, "rock");
+    TEST_ASSERT_NOT_NULL(client_a_sees_b_edit);
+    TEST_ASSERT_TRUE_MESSAGE(client_a_sees_b_edit->position.x > host_moved_x + 3.0F,
+                             "client B's move should have reached client A");
+
+    /* Client A presses undo -- reverting exactly B's edit (the last committed
+     * batch, snapshotted as the host's "Network edit" entry) on everyone. */
+    sharedundo_press_chord(&client_a, KEY_Z);
+    for (int frame = 0; frame < 100; frame++) {
+        test_advance_frame(&client_a, no_input);
+        test_advance_frame(&client_b, no_input);
+        test_advance_frame(&host, no_input);
+    }
+
+    TEST_ASSERT_EQUAL_UINT32(1, host.state.network.resync_generation);
+    Entity *host_rock = test_find_entity_by_blueprint(&host.state, "rock");
+    Entity *a_rock = test_find_entity_by_blueprint(&client_a.state, "rock");
+    Entity *b_rock = test_find_entity_by_blueprint(&client_b.state, "rock");
+    TEST_ASSERT_NOT_NULL(host_rock);
+    TEST_ASSERT_NOT_NULL(a_rock);
+    TEST_ASSERT_NOT_NULL(b_rock);
+    /* Everyone lands on the HOST-move position: B's edit is gone, the host's
+     * own earlier move survived -- one undo steps one batch, not to origin. */
+    TEST_ASSERT_FLOAT_WITHIN(0.5F, host_moved_x, host_rock->position.x);
+    TEST_ASSERT_FLOAT_WITHIN(0.5F, host_moved_x, a_rock->position.x);
+    TEST_ASSERT_FLOAT_WITHIN(0.5F, host_moved_x, b_rock->position.x);
+    TEST_ASSERT_TRUE_MESSAGE(host_rock->position.x > original_x + 5.0F,
+                             "undo must not have discarded the host's own earlier move");
+
+    test_game_teardown(&host);
+    test_game_teardown(&client_a);
+    test_game_teardown(&client_b);
+    loopback_network_free(&loopback);
+}
+
+/* Burst coalescing: two rapid client undo presses step the host history TWICE
+ * (both edits reverted, so the rock lands on the baseline and not the S1
+ * midpoint) yet the debounce collapses them into a SINGLE resync generation. */
+void test_integration_client_undo_burst_coalesces(void)
+{
+    LoopbackNetwork loopback;
+    loopback_network_init(&loopback, &test_heap_alloc);
+    TestGame host;
+    TestGame client;
+    sharedundo_connect(&loopback, &host, &client, resync_scene_gamedata);
+
+    Entity *rock = test_find_entity_by_blueprint(&host.state, "rock");
+    TEST_ASSERT_NOT_NULL(rock);
+    float original_x = rock->position.x;
+
+    host.state.editor_mode = true;
+    client.state.editor_mode = true;
+
+    /* Two host edits -> two undoable entries beyond the baseline. */
+    sharedundo_grab_move_right(&host, 5);
+    sharedundo_pump(&host, &client, 4);
+    sharedundo_grab_move_right(&host, 5);
+    sharedundo_pump(&host, &client, 8);
+
+    /* Two rapid client undo presses on back-to-back frames -> two requests. */
+    sharedundo_press_chord(&client, KEY_Z);
+    sharedundo_press_chord(&client, KEY_Z);
+    sharedundo_pump(&host, &client, 90);
+
+    TEST_ASSERT_EQUAL_UINT32(1, host.state.network.resync_generation);
+    Entity *host_rock = test_find_entity_by_blueprint(&host.state, "rock");
+    Entity *client_rock = test_find_entity_by_blueprint(&client.state, "rock");
+    TEST_ASSERT_NOT_NULL(host_rock);
+    TEST_ASSERT_NOT_NULL(client_rock);
+    TEST_ASSERT_FLOAT_WITHIN(0.5F, original_x, host_rock->position.x);
+    TEST_ASSERT_FLOAT_WITHIN(0.5F, original_x, client_rock->position.x);
+
+    test_game_teardown(&host);
+    test_game_teardown(&client);
+    loopback_network_free(&loopback);
+}
+
+/* Undo against an empty host history (only the "Initial" baseline) is a no-op:
+ * the step restores nothing, so no resync is armed and no peer moves -- and
+ * nothing crashes. */
+void test_integration_client_undo_empty_history_no_op(void)
+{
+    LoopbackNetwork loopback;
+    loopback_network_init(&loopback, &test_heap_alloc);
+    TestGame host;
+    TestGame client;
+    sharedundo_connect(&loopback, &host, &client, resync_scene_gamedata);
+
+    Entity *rock = test_find_entity_by_blueprint(&host.state, "rock");
+    TEST_ASSERT_NOT_NULL(rock);
+    float original_x = rock->position.x;
+
+    host.state.editor_mode = true;
+    client.state.editor_mode = true;
+
+    /* No host edit has happened -> the host sits on its baseline entry. */
+    sharedundo_press_chord(&client, KEY_Z);
+    sharedundo_pump(&host, &client, 60);
+
+    TEST_ASSERT_EQUAL_UINT32(0, host.state.network.resync_generation);
+    TEST_ASSERT_EQUAL_FLOAT(0.0F, host.state.network.structural_resync_debounce_timer);
+    Entity *host_rock = test_find_entity_by_blueprint(&host.state, "rock");
+    TEST_ASSERT_NOT_NULL(host_rock);
+    TEST_ASSERT_FLOAT_WITHIN(0.5F, original_x, host_rock->position.x);
+
+    test_game_teardown(&host);
+    test_game_teardown(&client);
+    loopback_network_free(&loopback);
+}
+
+/* Redo mirrors undo and is likewise host-owned. Within the resync debounce
+ * window -- before the barrier fires and clears history -- a client's undo then
+ * redo step the host back then forward: the host's own rock visibly reverts and
+ * then re-applies, and the coalesced resync converges the client on the
+ * re-applied position. */
+void test_integration_client_redo_reapplies_via_host(void)
+{
+    LoopbackNetwork loopback;
+    loopback_network_init(&loopback, &test_heap_alloc);
+    TestGame host;
+    TestGame client;
+    sharedundo_connect(&loopback, &host, &client, resync_scene_gamedata);
+
+    Entity *rock = test_find_entity_by_blueprint(&host.state, "rock");
+    TEST_ASSERT_NOT_NULL(rock);
+    float original_x = rock->position.x;
+
+    host.state.editor_mode = true;
+    client.state.editor_mode = true;
+
+    sharedundo_grab_move_right(&host, 5);
+    sharedundo_pump(&host, &client, 8);
+    Entity *host_rock_moved = test_find_entity_by_blueprint(&host.state, "rock");
+    TEST_ASSERT_NOT_NULL(host_rock_moved);
+    float moved_x = host_rock_moved->position.x;
+    TEST_ASSERT_TRUE_MESSAGE(moved_x > original_x + 5.0F, "host move should have shifted the rock");
+
+    /* Undo: a few frames -- well inside the 0.5s debounce, so the resync barrier
+     * has not yet cleared the redo entry. The host's rock reverts. */
+    sharedundo_press_chord(&client, KEY_Z);
+    sharedundo_pump(&host, &client, 5);
+    Entity *host_after_undo = test_find_entity_by_blueprint(&host.state, "rock");
+    TEST_ASSERT_NOT_NULL(host_after_undo);
+    TEST_ASSERT_FLOAT_WITHIN(0.5F, original_x, host_after_undo->position.x);
+
+    /* Redo before the barrier fires: the host re-applies the move. */
+    sharedundo_press_chord(&client, KEY_Y);
+    sharedundo_pump(&host, &client, 5);
+    Entity *host_after_redo = test_find_entity_by_blueprint(&host.state, "rock");
+    TEST_ASSERT_NOT_NULL(host_after_redo);
+    TEST_ASSERT_FLOAT_WITHIN(0.5F, moved_x, host_after_redo->position.x);
+
+    /* Flush the coalesced resync; the client lands on the re-applied move. */
+    sharedundo_pump(&host, &client, 90);
+    Entity *client_rock = test_find_entity_by_blueprint(&client.state, "rock");
+    TEST_ASSERT_NOT_NULL(client_rock);
+    TEST_ASSERT_FLOAT_WITHIN(0.5F, moved_x, client_rock->position.x);
+
+    test_game_teardown(&host);
+    test_game_teardown(&client);
+    loopback_network_free(&loopback);
+}
+
 /* Leaving editor mode while the debounce is still armed flushes the resync
  * IMMEDIATELY: leaving editor mode resumes the entity delta stream, which can't
  * carry structural changes, so a pending structural edit must fire before the

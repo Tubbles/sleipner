@@ -161,11 +161,27 @@ typedef enum {
  *  - NETWORK_EVENT_SAVED (S8.7g): host->clients, "the canonical gamedata was
  *    saved". entity_id/argument unused (zero). Each client clears its own dirty
  *    indicator and shows the "Saved" toast on delivery (network_client_apply_event
- *    flags saved_ack_pending for the frame layer). */
+ *    flags saved_ack_pending for the frame layer).
+ *  - NETWORK_EVENT_UNDO_REQUEST / NETWORK_EVENT_REDO_REQUEST (S8.7h1): client->host,
+ *    "step the shared history back / forward one". entity_id/argument unused (zero).
+ *    Design decision D-C phase C1 -- one host-owned linear undo history per session:
+ *    ANY peer's undo/redo steps the HOST's snapshot history, and the restore reaches
+ *    every peer through the existing structural-resync barrier (S8.7f2 resyncs on any
+ *    host-side undo/redo restore). There is deliberately NO explicit ack: that resync
+ *    IS the acknowledgment -- it clears the requesting client's own now-stale local
+ *    history and re-baselines it (f1 behavior). A client never steps its own local
+ *    history, which would silently diverge its replica (the S8.7c quirk this closes).
+ *    handle_event_datagram COUNTS each delivered request (undo_requests_pending /
+ *    redo_requests_pending below) rather than flagging a bool, so three rapid presses
+ *    step three times; the reliable channel already dedups resends. This interim
+ *    coarse history knowingly deviates from DESIGN.md's per-player-undo promise;
+ *    phase C2 (a later slice) restores per-author undo for scene ops. */
 #define NETWORK_EVENT_PLAYER_JOINED 1
 #define NETWORK_EVENT_RESYNC_COMPLETE 2
 #define NETWORK_EVENT_SAVE_REQUEST 3
 #define NETWORK_EVENT_SAVED 4
+#define NETWORK_EVENT_UNDO_REQUEST 5
+#define NETWORK_EVENT_REDO_REQUEST 6
 
 /* S8.7f1: full-gamedata structural resync sizing.
  *  - NETWORK_RESYNC_MAX_BYTES caps the emitted TOML a single resync can carry;
@@ -423,6 +439,28 @@ typedef struct {
      * "Saved". Both reset by network_stop. */
     bool save_request_pending;
     bool saved_ack_pending;
+    /* S8.7h1: HOST side only -- shared session-undo request queue (D-C phase C1;
+     * see the NETWORK_EVENT_UNDO_REQUEST doc above). handle_event_datagram
+     * increments these on each delivered client undo/redo request; the frame
+     * layer (run_active_frame) drains them, steps the host's one linear
+     * UndoHistory, and arms the structural resync so the restore reaches every
+     * peer. COUNTERS, not bools: a burst of N presses must step N times (the
+     * reliable channel already dedups resends, so each increment is a distinct
+     * press). Reset to 0 by network_stop. Meaningless on a CLIENT's own
+     * NetworkState -- a client sends requests, it never queues them. */
+    int undo_requests_pending;
+    int redo_requests_pending;
+    /* S8.7h1: HOST side only -- how many client editor ops this tick's
+     * host_apply_and_echo_ops (net_session.c) actually APPLIED to gamedata
+     * (move/delete/place/attr set/attr remove; a lock-table op mutates no
+     * gamedata and a denied/dropped op mutates nothing, so neither counts).
+     * Zeroed at that function's entry, so it is only meaningful to frame.c's
+     * undo bookkeeping in the SAME tick: run_active_frame pushes one "Network
+     * edit" undo entry per tick whose count is nonzero, giving a client's
+     * committed edit its own snapshot boundary in the shared session history
+     * (D-C phase C1 -- an undo reverts the last committed batch, not every
+     * client edit since the host's last own edit). Reset by network_stop. */
+    int ops_applied_this_tick;
     /* S8.7c: HOST side only -- the global editor-op serialization counter.
      * 0 while offline (zero-init default, and network_stop's reset);
      * network_apply_hosting initializes it to 1 at hosting start, so the

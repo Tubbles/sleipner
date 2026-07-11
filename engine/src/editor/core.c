@@ -964,10 +964,37 @@ static void handle_browse_paste(
  * entity no longer exists simply resolves to -1 on next use, and dead watch
  * ids are skipped at draw time. Only selected_tree_index is genuinely stale:
  * it's a raw cursor into the rule-tree node list, which has no stable id yet,
- * and undo can restore a different node layout underneath it. */
-static void clear_stale_tree_cursor(EditorState *editor_state)
+ * and undo can restore a different node layout underneath it. Public (declared
+ * in editor.h) because frame.c's host drain of a networked peer's undo/redo
+ * request (S8.7h1) must apply the same fixup to the host's own cursor. */
+void editor_clear_stale_restore_cursor(EditorState *editor_state)
 {
     editor_state->selected_tree_index = -1;
+}
+
+/* S8.7h1 shared session-undo reroute -- see internal.h for the full contract.
+ * Under NET_CLIENT the press is sent to the host and reported handled (true);
+ * otherwise the caller runs its own local undo/redo path (false). */
+bool editor_client_reroute_undo(GameState *state, EditorState *editor_state)
+{
+    if (state->network.mode != NET_CLIENT) {
+        return false;
+    }
+    network_client_send_reliable_event(&state->network, (EventRecord){.event_type = NETWORK_EVENT_UNDO_REQUEST});
+    editor_state->toast_text = strv_from_cstr("Undo requested");
+    editor_state->toast_timer = TOAST_DURATION;
+    return true;
+}
+
+bool editor_client_reroute_redo(GameState *state, EditorState *editor_state)
+{
+    if (state->network.mode != NET_CLIENT) {
+        return false;
+    }
+    network_client_send_reliable_event(&state->network, (EventRecord){.event_type = NETWORK_EVENT_REDO_REQUEST});
+    editor_state->toast_text = strv_from_cstr("Redo requested");
+    editor_state->toast_timer = TOAST_DURATION;
+    return true;
 }
 
 static void toggle_watch(EditorState *editor_state, WatchList *watches)
@@ -1166,6 +1193,39 @@ dispatch_radial_confirm(GameState *state, EditorState *editor_state, WatchList *
 
 /* --- Public functions --- */
 
+/* BROWSE-mode undo/redo, split out of handle_browse_input to keep that
+ * function's cognitive complexity under the readability threshold. A connected
+ * client reroutes the step to the host's shared history (S8.7h1); host/offline
+ * run the local step, fix up the stale rule-tree cursor, and toast the restored
+ * entry's description. Returns true if an undo or redo press was consumed, so
+ * the caller early-returns (the chord must be checked before the single-atom
+ * navigate bindings it shares atoms with). */
+static bool handle_browse_history_input(GameState *state,
+                                        EditorState *editor_state,
+                                        UndoHistory *undo_history,
+                                        const InputState *input)
+{
+    if (input_pressed(input, &state->bindings, ACTION_EDITOR_UNDO)) {
+        if (!editor_client_reroute_undo(state, editor_state)) {
+            undo_history_step_back(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base);
+            editor_clear_stale_restore_cursor(editor_state);
+            editor_state->toast_text = undo_history_description(undo_history);
+            editor_state->toast_timer = TOAST_DURATION;
+        }
+        return true;
+    }
+    if (input_pressed(input, &state->bindings, ACTION_EDITOR_REDO)) {
+        if (!editor_client_reroute_redo(state, editor_state)) {
+            undo_history_step_forward(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base);
+            editor_clear_stale_restore_cursor(editor_state);
+            editor_state->toast_text = undo_history_description(undo_history);
+            editor_state->toast_timer = TOAST_DURATION;
+        }
+        return true;
+    }
+    return false;
+}
+
 void handle_browse_input(Diag *diag,
                          GameState *state,
                          Camera2D *camera,
@@ -1185,18 +1245,7 @@ void handle_browse_input(Diag *diag,
      * doesn't also fire plain CONFIRM, and L1+Up (grid-snap toggle) doesn't
      * also fire NAV_UP. This also pushes ACTION_EDITOR_OPEN_TOOLS (bare
      * Y/Tab, shared with the COPY chord's Y atom) below the chord block. */
-    if (input_pressed(&input, &state->bindings, ACTION_EDITOR_UNDO)) {
-        undo_history_step_back(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base);
-        clear_stale_tree_cursor(editor_state);
-        editor_state->toast_text = undo_history_description(undo_history);
-        editor_state->toast_timer = TOAST_DURATION;
-        return;
-    }
-    if (input_pressed(&input, &state->bindings, ACTION_EDITOR_REDO)) {
-        undo_history_step_forward(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base);
-        clear_stale_tree_cursor(editor_state);
-        editor_state->toast_text = undo_history_description(undo_history);
-        editor_state->toast_timer = TOAST_DURATION;
+    if (handle_browse_history_input(state, editor_state, undo_history, &input)) {
         return;
     }
     if (input_pressed(&input, &state->bindings, ACTION_EDITOR_MULTISELECT_ADD)) {

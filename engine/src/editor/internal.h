@@ -220,6 +220,19 @@ void editor_attr_confirm_propagate(GameState *state, EditorState *editor_state);
  * not here. No-op offline (the seam and the dirty helper self-guard on mode). */
 void editor_attr_propagate_set(GameState *state, int entity_id, const Attribute *attr, AttrSection section);
 
+/* S8.7h1: shared host-owned session undo (D-C phase C1). At every editor
+ * undo/redo trigger site, a NET_CLIENT must NOT step its own local history
+ * (that silently diverges its replica). These reroute the press to the host --
+ * send NETWORK_EVENT_UNDO_REQUEST / NETWORK_EVENT_REDO_REQUEST and toast that
+ * the request is in flight -- returning true so the caller early-returns without
+ * touching local history. Under NET_HOSTING and NET_OFFLINE they return false so
+ * the caller runs its unchanged local undo/redo path (the host's own restore
+ * already resyncs every peer, S8.7f2). Defined in core.c, which reaches the net
+ * seams; blueprint.c calls them through this header without an own network
+ * dependency. */
+[[nodiscard]] bool editor_client_reroute_undo(GameState *state, EditorState *editor_state);
+[[nodiscard]] bool editor_client_reroute_redo(GameState *state, EditorState *editor_state);
+
 /* --- Cross-file calls: attr.c (called from core.c) --- */
 
 void dispatch_attr_type_change(GameState *state, EditorState *editor_state, int confirmed, UndoHistory *undo_history);
