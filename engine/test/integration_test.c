@@ -12010,3 +12010,285 @@ void test_integration_offline_structural_edit_no_resync(void)
 
     test_game_teardown(&game);
 }
+
+/* ---- Integration: S8.7g host-only save (client requests, host writes) ----
+ *
+ * Same two/three-TestGame-over-net_loopback.h shape as S8.4's own tests above,
+ * reusing host_session_gamedata. The host is the single writer of the canonical
+ * gamedata (which also keeps the Syncthing copy race-free), so a CLIENT's
+ * pause-menu SAVE never writes its own file -- it sends a reliable
+ * NETWORK_EVENT_SAVE_REQUEST, the host runs its normal save path and broadcasts
+ * NETWORK_EVENT_SAVED, and every peer (host and clients) then clears its own
+ * dirty indicator and shows the "Saved" toast. */
+
+/* Open the pause menu and confirm SAVE through the real input layer
+ * (F3 -> DOWN to MENU_ENTRY_SAVE -> ENTER), the same path the offline save
+ * tests drive. Lets the S8.7g tests trigger a peer's pause-menu SAVE without
+ * duplicating the three-frame open/navigate/confirm dance. */
+static void test_drive_menu_save(TestGame *game)
+{
+    InputState menu_open = {0};
+    input_state_press_key(&menu_open, KEY_F3);
+    test_advance_frame(game, menu_open);
+
+    InputState menu_down = {0};
+    input_state_press_key(&menu_down, KEY_DOWN);
+    test_advance_frame(game, menu_down);
+    TEST_ASSERT_EQUAL_INT(MENU_ENTRY_SAVE, game->menu.selected);
+
+    InputState confirm = {0};
+    input_state_press_key(&confirm, KEY_ENTER);
+    test_advance_frame(game, confirm);
+}
+
+/* A client's pause-menu SAVE routes through the host: the client's own save_fn
+ * fake is never called, the host's runs exactly once, and the client's dirty
+ * flag clears (with a "Saved" toast) only after the host's SAVED ack arrives. */
+void test_integration_client_save_routes_through_host(void)
+{
+    LoopbackNetwork loopback;
+    loopback_network_init(&loopback, &test_heap_alloc);
+    NetAddr host_addr = net_addr_make(1, 9000);
+    NetAddr client_addr = net_addr_make(2, 9001);
+    NetTransport host_transport;
+    NetTransport client_transport;
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, host_addr, &host_transport));
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, client_addr, &client_transport));
+
+    TestGame host;
+    TEST_ASSERT_TRUE(test_game_setup(&host, host_session_gamedata));
+    host.state.network.mode = NET_HOSTING;
+    host.state.network.transport = host_transport;
+    host.frame_ctx.save_fn = test_recording_gamedata_save;
+
+    TestGame client;
+    TEST_ASSERT_TRUE(test_game_setup(&client, host_session_gamedata));
+    client.state.network.mode = NET_JOINING;
+    client.state.network.transport = client_transport;
+    client.state.network.join_target = host_addr;
+    client.frame_ctx.save_fn = test_recording_gamedata_save;
+
+    InputState no_input = {0};
+    for (int frame = 0; frame < 6; frame++) {
+        test_advance_frame(&client, no_input);
+        test_advance_frame(&host, no_input);
+    }
+    TEST_ASSERT_EQUAL_INT(NET_CLIENT, client.state.network.mode);
+    TEST_ASSERT_EQUAL_INT(1, host.state.network.client_count);
+    /* Baseline "Initial" undo entry with no save yet -> the client starts dirty. */
+    TEST_ASSERT_TRUE(undo_history_is_dirty(&client.undo_history));
+
+    test_drive_menu_save(&client);
+
+    for (int frame = 0; frame < 10; frame++) {
+        test_advance_frame(&host, no_input);
+        test_advance_frame(&client, no_input);
+    }
+
+    TEST_ASSERT_EQUAL_INT(0, client.gamedata_save_count);
+    TEST_ASSERT_EQUAL_INT(1, host.gamedata_save_count);
+    TEST_ASSERT_FALSE(undo_history_is_dirty(&client.undo_history));
+    TEST_ASSERT_TRUE(strv_eq_cstr(client.editor_state.toast_text, "Saved"));
+
+    test_game_teardown(&host);
+    test_game_teardown(&client);
+    loopback_network_free(&loopback);
+}
+
+/* The host's own pause-menu SAVE clears every connected client too: the host
+ * saves as always, broadcasts SAVED, and both clients' dirty flags clear via
+ * the ack without either client ever calling its own save_fn. */
+void test_integration_host_save_clears_all_clients(void)
+{
+    LoopbackNetwork loopback;
+    loopback_network_init(&loopback, &test_heap_alloc);
+    NetAddr host_addr = net_addr_make(1, 9000);
+    NetAddr client1_addr = net_addr_make(2, 9001);
+    NetAddr client2_addr = net_addr_make(3, 9002);
+    NetTransport host_transport;
+    NetTransport client1_transport;
+    NetTransport client2_transport;
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, host_addr, &host_transport));
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, client1_addr, &client1_transport));
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, client2_addr, &client2_transport));
+
+    TestGame host;
+    TEST_ASSERT_TRUE(test_game_setup(&host, host_session_gamedata));
+    host.state.network.mode = NET_HOSTING;
+    host.state.network.transport = host_transport;
+    host.frame_ctx.save_fn = test_recording_gamedata_save;
+
+    TestGame client1;
+    TEST_ASSERT_TRUE(test_game_setup(&client1, host_session_gamedata));
+    client1.state.network.mode = NET_JOINING;
+    client1.state.network.transport = client1_transport;
+    client1.state.network.join_target = host_addr;
+    client1.frame_ctx.save_fn = test_recording_gamedata_save;
+
+    TestGame client2;
+    TEST_ASSERT_TRUE(test_game_setup(&client2, host_session_gamedata));
+    client2.state.network.mode = NET_JOINING;
+    client2.state.network.transport = client2_transport;
+    client2.state.network.join_target = host_addr;
+    client2.frame_ctx.save_fn = test_recording_gamedata_save;
+
+    InputState no_input = {0};
+    for (int frame = 0; frame < 8; frame++) {
+        test_advance_frame(&client1, no_input);
+        test_advance_frame(&client2, no_input);
+        test_advance_frame(&host, no_input);
+    }
+    TEST_ASSERT_EQUAL_INT(NET_CLIENT, client1.state.network.mode);
+    TEST_ASSERT_EQUAL_INT(NET_CLIENT, client2.state.network.mode);
+    TEST_ASSERT_EQUAL_INT(2, host.state.network.client_count);
+    TEST_ASSERT_TRUE(undo_history_is_dirty(&client1.undo_history));
+    TEST_ASSERT_TRUE(undo_history_is_dirty(&client2.undo_history));
+
+    test_drive_menu_save(&host);
+    TEST_ASSERT_EQUAL_INT(1, host.gamedata_save_count);
+    TEST_ASSERT_FALSE(undo_history_is_dirty(&host.undo_history));
+
+    for (int frame = 0; frame < 10; frame++) {
+        test_advance_frame(&client1, no_input);
+        test_advance_frame(&client2, no_input);
+        test_advance_frame(&host, no_input);
+    }
+
+    TEST_ASSERT_EQUAL_INT(0, client1.gamedata_save_count);
+    TEST_ASSERT_EQUAL_INT(0, client2.gamedata_save_count);
+    TEST_ASSERT_FALSE(undo_history_is_dirty(&client1.undo_history));
+    TEST_ASSERT_FALSE(undo_history_is_dirty(&client2.undo_history));
+    TEST_ASSERT_TRUE(strv_eq_cstr(client1.editor_state.toast_text, "Saved"));
+    TEST_ASSERT_TRUE(strv_eq_cstr(client2.editor_state.toast_text, "Saved"));
+
+    test_game_teardown(&host);
+    test_game_teardown(&client1);
+    test_game_teardown(&client2);
+    loopback_network_free(&loopback);
+}
+
+/* Two client SAVE requests that reach the host before it drains coalesce into a
+ * single host save: save_request_pending is a bool, not a counter. The client
+ * sends both requests (two menu SAVE cycles) with no host tick in between, then
+ * one host tick drains both -- the host's save_fn runs exactly once. */
+void test_integration_client_save_requests_coalesce(void)
+{
+    LoopbackNetwork loopback;
+    loopback_network_init(&loopback, &test_heap_alloc);
+    NetAddr host_addr = net_addr_make(1, 9000);
+    NetAddr client_addr = net_addr_make(2, 9001);
+    NetTransport host_transport;
+    NetTransport client_transport;
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, host_addr, &host_transport));
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, client_addr, &client_transport));
+
+    TestGame host;
+    TEST_ASSERT_TRUE(test_game_setup(&host, host_session_gamedata));
+    host.state.network.mode = NET_HOSTING;
+    host.state.network.transport = host_transport;
+    host.frame_ctx.save_fn = test_recording_gamedata_save;
+
+    TestGame client;
+    TEST_ASSERT_TRUE(test_game_setup(&client, host_session_gamedata));
+    client.state.network.mode = NET_JOINING;
+    client.state.network.transport = client_transport;
+    client.state.network.join_target = host_addr;
+    client.frame_ctx.save_fn = test_recording_gamedata_save;
+
+    InputState no_input = {0};
+    for (int frame = 0; frame < 6; frame++) {
+        test_advance_frame(&client, no_input);
+        test_advance_frame(&host, no_input);
+    }
+    TEST_ASSERT_EQUAL_INT(NET_CLIENT, client.state.network.mode);
+
+    /* Two SAVE requests sent back to back, no host tick between them, so both
+     * sit in the host inbox until the single host tick below drains both. */
+    test_drive_menu_save(&client);
+    test_drive_menu_save(&client);
+
+    test_advance_frame(&host, no_input);
+    TEST_ASSERT_EQUAL_INT(1, host.gamedata_save_count);
+
+    /* The flag was consumed, not left set: further host ticks do not re-save. */
+    for (int frame = 0; frame < 5; frame++) {
+        test_advance_frame(&host, no_input);
+    }
+    TEST_ASSERT_EQUAL_INT(1, host.gamedata_save_count);
+    TEST_ASSERT_EQUAL_INT(0, client.gamedata_save_count);
+
+    test_game_teardown(&host);
+    test_game_teardown(&client);
+    loopback_network_free(&loopback);
+}
+
+/* A failed host save broadcasts nothing: the host's save_fn ran (and reported
+ * failure), so no SAVED goes out and the requesting client stays dirty -- the
+ * honest failure mode. The client's toast stays at "Save requested", never
+ * reaching "Saved". */
+void test_integration_host_save_failure_leaves_client_dirty(void)
+{
+    LoopbackNetwork loopback;
+    loopback_network_init(&loopback, &test_heap_alloc);
+    NetAddr host_addr = net_addr_make(1, 9000);
+    NetAddr client_addr = net_addr_make(2, 9001);
+    NetTransport host_transport;
+    NetTransport client_transport;
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, host_addr, &host_transport));
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, client_addr, &client_transport));
+
+    TestGame host;
+    TEST_ASSERT_TRUE(test_game_setup(&host, host_session_gamedata));
+    host.state.network.mode = NET_HOSTING;
+    host.state.network.transport = host_transport;
+    host.frame_ctx.save_fn = test_failing_gamedata_save;
+
+    TestGame client;
+    TEST_ASSERT_TRUE(test_game_setup(&client, host_session_gamedata));
+    client.state.network.mode = NET_JOINING;
+    client.state.network.transport = client_transport;
+    client.state.network.join_target = host_addr;
+
+    InputState no_input = {0};
+    for (int frame = 0; frame < 6; frame++) {
+        test_advance_frame(&client, no_input);
+        test_advance_frame(&host, no_input);
+    }
+    TEST_ASSERT_EQUAL_INT(NET_CLIENT, client.state.network.mode);
+    TEST_ASSERT_TRUE(undo_history_is_dirty(&client.undo_history));
+
+    test_drive_menu_save(&client);
+
+    for (int frame = 0; frame < 10; frame++) {
+        test_advance_frame(&host, no_input);
+        test_advance_frame(&client, no_input);
+    }
+
+    TEST_ASSERT_EQUAL_INT(1, host.gamedata_save_count);
+    TEST_ASSERT_TRUE(undo_history_is_dirty(&client.undo_history));
+    TEST_ASSERT_TRUE(strv_eq_cstr(client.editor_state.toast_text, "Save requested"));
+
+    test_game_teardown(&host);
+    test_game_teardown(&client);
+    loopback_network_free(&loopback);
+}
+
+/* Offline SAVE is byte-identical to before this slice: the save_fn runs once,
+ * the dirty flag clears, and nothing networked fires (the peer stays OFFLINE
+ * with no clients, so no broadcast is even possible). */
+void test_integration_offline_save_fires_nothing_networked(void)
+{
+    TestGame game;
+    TEST_ASSERT_TRUE(test_game_setup(&game, host_session_gamedata));
+    game.frame_ctx.save_fn = test_recording_gamedata_save;
+    TEST_ASSERT_TRUE(undo_history_is_dirty(&game.undo_history));
+
+    test_drive_menu_save(&game);
+
+    TEST_ASSERT_EQUAL_INT(1, game.gamedata_save_count);
+    TEST_ASSERT_FALSE(undo_history_is_dirty(&game.undo_history));
+    TEST_ASSERT_EQUAL_INT(NET_OFFLINE, game.state.network.mode);
+    TEST_ASSERT_EQUAL_INT(0, game.state.network.client_count);
+
+    test_game_teardown(&game);
+}

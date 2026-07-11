@@ -1069,18 +1069,22 @@ void network_client_apply_state(GameState *state, const AttrRecord *records, siz
     }
 }
 
-/* "Apply" one newly-delivered reliable event (S8.4c) -- currently
- * session-level bookkeeping rather than a gameplay mutation, since
- * NETWORK_EVENT_PLAYER_JOINED (the one event this slice wires end-to-end,
- * see net_session.h's own doc comment) is a connection notification with
- * no game-state effect of its own yet. A future real gameplay trigger
- * routed over this channel would dispatch on event.event_type here
- * instead of just recording it. */
+/* "Apply" one newly-delivered reliable event. Mostly session-level
+ * bookkeeping: NETWORK_EVENT_PLAYER_JOINED (S8.4c) is a connection
+ * notification with no game-state effect of its own. The exception is
+ * (S8.7g) NETWORK_EVENT_SAVED: the host telling this client the canonical
+ * gamedata was saved. Net code cannot reach UndoHistory or the toast (both
+ * frame-owned), so this only flags saved_ack_pending for the frame layer
+ * (run_active_frame) to drain -- clearing the dirty indicator and toasting
+ * "Saved" there. */
 static void network_client_apply_event(NetworkState *network, EventRecord event)
 {
     network->last_delivered_event_type = event.event_type;
     network->last_delivered_event_entity_id = event.entity_id;
     network->delivered_event_count++;
+    if (event.event_type == NETWORK_EVENT_SAVED) {
+        network->saved_ack_pending = true;
+    }
 }
 
 /* Decode one MSG_EVENT payload and dedup it via the client's own

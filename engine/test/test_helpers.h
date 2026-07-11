@@ -126,8 +126,16 @@ void test_restore_fn(
  * wired into test_game_setup_with_level's default frame_ctx (which
  * keeps save_fn nullptr, matching all other tests) — tests that exercise
  * the menu SAVE path against real gamedata content set
- * game.frame_ctx.save_fn = test_recording_gamedata_save explicitly. */
-void test_recording_gamedata_save(Diag *diag, GameState *state, EditorState *editor_state, UndoHistory *undo_history);
+ * game.frame_ctx.save_fn = test_recording_gamedata_save explicitly.
+ * Returns true on success, false on failure (S8.7g's bool MenuSaveFn). */
+bool test_recording_gamedata_save(Diag *diag, GameState *state, EditorState *editor_state, UndoHistory *undo_history);
+
+/* MenuSaveFn fake that records the attempt (bumps gamedata_save_count) but
+ * always reports failure. For the host-save-failure path (S8.7g): the host
+ * ran its save wrapper and it failed, so it must NOT broadcast
+ * NETWORK_EVENT_SAVED and a requesting client must stay dirty. Does not mark
+ * undo saved or toast "Saved". */
+bool test_failing_gamedata_save(Diag *diag, GameState *state, EditorState *editor_state, UndoHistory *undo_history);
 
 /* Compute the left-stick (x, y) at the midpoint of RADIAL_CTX_TOOLS sector
  * `item_index`, given the CURRENT EDITOR_TOOLS_ITEM_COUNT, build an

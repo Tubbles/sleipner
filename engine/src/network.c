@@ -142,6 +142,11 @@ void network_stop(NetworkState *network)
     network->last_client_event_entity_id = 0;
     network->last_client_event_player_id = 0;
     network->client_event_delivered_count = 0;
+    /* S8.7g: the save handshake pending flags are session state -- back to the
+     * offline zero (host re-flags a request on the next client SAVE, a client
+     * re-flags an ack on the next host save). */
+    network->save_request_pending = false;
+    network->saved_ack_pending = false;
     /* Back to the offline zero (counters live only inside a session --
      * network_apply_hosting re-arms next_op_seq at hosting start, and the
      * JOIN_ACCEPT baseline re-seeds next_expected_op_seq at join time). */
@@ -572,6 +577,14 @@ static void handle_event_datagram(NetworkState *network, NetAddr src, uint32_t s
      * this client. The bookkeeping fields above still update as for any event. */
     if (event.event_type == NETWORK_EVENT_RESYNC_COMPLETE) {
         client->resync_confirmed_generation = (uint32_t)event.entity_id;
+    }
+    /* S8.7g: a client asking the host to save the canonical gamedata. The host
+     * is the single writer (which also keeps the Syncthing copy race-free), so
+     * the frame layer (run_active_frame) drains this flag, runs the save, and
+     * broadcasts NETWORK_EVENT_SAVED. A bool, not a counter: several requests
+     * delivered before the drain coalesce into one save. */
+    if (event.event_type == NETWORK_EVENT_SAVE_REQUEST) {
+        network->save_request_pending = true;
     }
 }
 

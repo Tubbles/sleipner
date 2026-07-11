@@ -143,18 +143,29 @@ typedef enum {
 /* Reliable-event type ids exchanged over the event sub-channel (net_session.h's
  * "reliable event sub-channel" note has the end-to-end wiring). They live here,
  * not net_session.h, for the same cross-layer-sharing reason NETWORK_INPUT_SOURCE_PREFIX
- * does: network.c must react to one of them (NETWORK_EVENT_RESYNC_COMPLETE, in
- * handle_event_datagram) while net_session.c originates the others, and network.h
- * is the header both include.
+ * does: network.c must react to some of them (NETWORK_EVENT_RESYNC_COMPLETE and
+ * NETWORK_EVENT_SAVE_REQUEST, in handle_event_datagram) while net_session.c
+ * originates the others, and network.h is the header both include.
  *  - NETWORK_EVENT_PLAYER_JOINED: HOST->client, a new player connected (S8.4c);
  *    carries the joined player_id as EventRecord.entity_id.
  *  - NETWORK_EVENT_RESYNC_COMPLETE (S8.7f1): client->host, "I finished applying
  *    resync generation N"; the generation rides EventRecord.entity_id (reused as
  *    a plain u32 carrier, not an actual entity id), and handle_event_datagram
  *    records it onto that client's resync_confirmed_generation so the host stops
- *    re-sending that generation's chunks to it. */
+ *    re-sending that generation's chunks to it.
+ *  - NETWORK_EVENT_SAVE_REQUEST (S8.7g): client->host, "please save the canonical
+ *    gamedata". entity_id/argument unused (zero). The host is the single writer of
+ *    gamedata.toml (which also keeps the Syncthing copy race-free), so a client
+ *    never writes its own file -- it asks the host, which runs its normal save
+ *    path. handle_event_datagram flags save_request_pending for the frame layer.
+ *  - NETWORK_EVENT_SAVED (S8.7g): host->clients, "the canonical gamedata was
+ *    saved". entity_id/argument unused (zero). Each client clears its own dirty
+ *    indicator and shows the "Saved" toast on delivery (network_client_apply_event
+ *    flags saved_ack_pending for the frame layer). */
 #define NETWORK_EVENT_PLAYER_JOINED 1
 #define NETWORK_EVENT_RESYNC_COMPLETE 2
+#define NETWORK_EVENT_SAVE_REQUEST 3
+#define NETWORK_EVENT_SAVED 4
 
 /* S8.7f1: full-gamedata structural resync sizing.
  *  - NETWORK_RESYNC_MAX_BYTES caps the emitted TOML a single resync can carry;
@@ -399,6 +410,19 @@ typedef struct {
     int32_t last_client_event_entity_id;
     int last_client_event_player_id;
     int client_event_delivered_count;
+    /* S8.7g: host-only save handshake, drained by the frame layer (frame.c's
+     * run_active_frame) because net code cannot reach the save function or the
+     * UndoHistory -- both frame-owned -- the same net/frame split the resync
+     * apply already uses. save_request_pending is HOST side: handle_event_datagram
+     * sets it when a client's NETWORK_EVENT_SAVE_REQUEST is delivered; the drain
+     * runs the host's save wrapper and broadcasts NETWORK_EVENT_SAVED. It is a
+     * bool, not a counter, so several requests that arrive before one drain
+     * coalesce into a single save. saved_ack_pending is CLIENT side:
+     * network_client_apply_event sets it when the host's NETWORK_EVENT_SAVED is
+     * delivered; the drain clears this client's dirty indicator and toasts
+     * "Saved". Both reset by network_stop. */
+    bool save_request_pending;
+    bool saved_ack_pending;
     /* S8.7c: HOST side only -- the global editor-op serialization counter.
      * 0 while offline (zero-init default, and network_stop's reset);
      * network_apply_hosting initializes it to 1 at hosting start, so the
@@ -544,8 +568,9 @@ network_start_hosting(NetworkState *network, Allocator *alloc, const char *host_
  * value -- mode, join_list, join_target, beacon_timer, host_name,
  * clients/client_count, local_player_id (S8.6), host_event_channel, the
  * delivered-event bookkeeping (S8.4c), the client-event bookkeeping
- * (S8.7a), (S8.7d1) the lock table plus the client deny list/count, and
- * (S8.7e) the presence table plus the outgoing presence bridge fields.
+ * (S8.7a), (S8.7d1) the lock table plus the client deny list/count,
+ * (S8.7e) the presence table plus the outgoing presence bridge fields, and
+ * (S8.7g) the save handshake pending flags.
  * Idempotent: safe to call on an already-OFFLINE NetworkState. */
 void network_stop(NetworkState *network);
 

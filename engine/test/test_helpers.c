@@ -174,14 +174,14 @@ void test_restore_fn(
  * level_names in test_integration_real_gamedata_all_levels_load. */
 #define TEST_MAX_LEVELS 32
 
-void test_recording_gamedata_save(Diag *diag, GameState *state, EditorState *editor_state, UndoHistory *undo_history)
+bool test_recording_gamedata_save(Diag *diag, GameState *state, EditorState *editor_state, UndoHistory *undo_history)
 {
     TestGame *game = (TestGame *)state;
     int total_levels = 1 + state->gamedata.other_levels.count;
     if (total_levels > TEST_MAX_LEVELS) {
         editor_state->toast_text = strv_from_cstr("Save failed");
         editor_state->toast_timer = 2.0F;
-        return;
+        return false;
     }
     Level all_levels[TEST_MAX_LEVELS];
     all_levels[0] = state->gamedata.current_level;
@@ -198,13 +198,24 @@ void test_recording_gamedata_save(Diag *diag, GameState *state, EditorState *edi
         error_clear(&state->error);
         editor_state->toast_text = strv_from_cstr("Save failed");
         editor_state->toast_timer = 2.0F;
-        return;
+        return false;
     }
     game->saved_gamedata_length = written;
     game->gamedata_save_count++;
     undo_history_mark_saved(undo_history);
     editor_state->toast_text = strv_from_cstr("Saved");
     editor_state->toast_timer = 2.0F;
+    return true;
+}
+
+bool test_failing_gamedata_save(Diag *diag, GameState *state, EditorState *editor_state, UndoHistory *undo_history)
+{
+    (void)diag;
+    (void)editor_state;
+    (void)undo_history;
+    TestGame *game = (TestGame *)state;
+    game->gamedata_save_count++;
+    return false;
 }
 
 bool test_game_setup(TestGame *out, const char *toml_string)

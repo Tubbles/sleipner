@@ -21,6 +21,7 @@
 #include "map.h"
 #include "menu.h"
 #include "net_discovery.h"
+#include "net_protocol.h"
 #include "net_session.h"
 #include "network.h"
 #include "platform_paths.h"
@@ -106,6 +107,29 @@ static void open_discovery_screen(MenuDispatchCtx ctx)
     discovery_screen_open(ctx.discovery_screen);
 }
 
+/* S8.7g: the host is the single writer of the canonical gamedata (which also
+ * keeps the Syncthing copy race-free -- one writer, no merge conflicts), so a
+ * save on the host runs its normal save wrapper and then tells every client the
+ * file is saved, letting each client clear its own dirty indicator. save_fn
+ * (main.c's menu_dispatch_save) already marks undo saved and toasts "Saved" on
+ * success; the only extra step here is the broadcast. A null save_fn (headless
+ * tests with no writable path -- the same nullptr-is-OK contract every other
+ * FrameContext callback documents) or a failed write skips the broadcast, so a
+ * requesting client simply stays dirty: the honest failure mode, never a phantom
+ * clear. The broadcast is gated on NET_HOSTING, so an offline save is
+ * byte-identical to before (save_fn runs, nothing networked fires). Shared by
+ * the host's own menu SAVE and its drain of a client's SAVE_REQUEST. */
+static void host_save_and_broadcast(
+    Diag *diag, GameState *state, EditorState *editor_state, UndoHistory *undo_history, MenuSaveFn save_fn)
+{
+    if (!save_fn || !save_fn(diag, state, editor_state, undo_history)) {
+        return;
+    }
+    if (state->network.mode == NET_HOSTING) {
+        network_broadcast_reliable_event(&state->network, (EventRecord){.event_type = NETWORK_EVENT_SAVED});
+    }
+}
+
 void dispatch_menu_action(MenuDispatchCtx ctx, MenuAction action)
 {
     switch (action) {
@@ -113,8 +137,18 @@ void dispatch_menu_action(MenuDispatchCtx ctx, MenuAction action)
         menu_close(ctx.menu);
         break;
     case MENU_ACTION_SAVE:
-        if (ctx.save_fn) {
-            ctx.save_fn(ctx.diag, ctx.state, ctx.editor_state, ctx.undo_history);
+        /* S8.7g: a client never writes gamedata.toml itself -- it asks the
+         * host, which owns the one canonical file. The host (and offline play)
+         * runs the save wrapper directly via host_save_and_broadcast. The
+         * "Saved" toast waits for the host's ack (run_active_frame's client
+         * drain); "Save requested" acknowledges the send in the meantime. */
+        if (ctx.state->network.mode == NET_CLIENT) {
+            network_client_send_reliable_event(&ctx.state->network,
+                                               (EventRecord){.event_type = NETWORK_EVENT_SAVE_REQUEST});
+            ctx.editor_state->toast_text = strv_from_cstr("Save requested");
+            ctx.editor_state->toast_timer = TOAST_DURATION;
+        } else {
+            host_save_and_broadcast(ctx.diag, ctx.state, ctx.editor_state, ctx.undo_history, ctx.save_fn);
         }
         menu_close(ctx.menu);
         break;
@@ -533,6 +567,7 @@ void run_active_frame(Diag *diag,
                       UndoHistory *undo_history,
                       TextureLookupFn resync_texture_lookup,
                       void *resync_texture_user_data,
+                      MenuSaveFn save_fn,
                       InputState input,
                       float delta_time)
 {
@@ -613,6 +648,30 @@ void run_active_frame(Diag *diag,
                                 restore_happened || structural_commit_happened, delta_time);
     network_host_tick(state, delta_time);
     network_client_tick(state, &input, delta_time);
+    /* S8.7g: host-only save. A NET_CLIENT's pause-menu SAVE arrives here as a
+     * reliable NETWORK_EVENT_SAVE_REQUEST that network_host_receive (inside
+     * network_host_tick above) flagged on save_request_pending; the host runs
+     * its own save wrapper and broadcasts NETWORK_EVENT_SAVED so every client
+     * clears too. The flag is a bool, so several requests that arrived before
+     * this drain coalesce into a single save. The drain lives in the frame
+     * layer, not network.c, because the save function and UndoHistory are
+     * frame-owned (network.c has no game.h) -- the same net/frame split the
+     * resync-apply below already uses. */
+    if (state->network.mode == NET_HOSTING && state->network.save_request_pending) {
+        state->network.save_request_pending = false;
+        host_save_and_broadcast(diag, state, editor_state, undo_history, save_fn);
+    }
+    /* S8.7g: a NET_CLIENT clears its own dirty indicator and shows the "Saved"
+     * toast once the host acknowledges the canonical save (NETWORK_EVENT_SAVED,
+     * flagged on saved_ack_pending by network_client_apply_event inside
+     * network_client_tick above). NET_JOINING has no connected host to ack it,
+     * so saved_ack_pending is only ever set on a NET_CLIENT. */
+    if (state->network.mode == NET_CLIENT && state->network.saved_ack_pending) {
+        state->network.saved_ack_pending = false;
+        undo_history_mark_saved(undo_history);
+        editor_state->toast_text = strv_from_cstr("Saved");
+        editor_state->toast_timer = TOAST_DURATION;
+    }
     /* S8.7f1: a NET_CLIENT that just finished reassembling a full structural
      * resync (network_client_tick drained its last chunk above) reloads its
      * whole gamedata from the host's streamed bytes here -- BEFORE the
@@ -1025,6 +1084,6 @@ void frame_update(Diag *diag, GameState *state, FrameContext *ctx, InputState in
         }
     } else {
         run_active_frame(diag, state, ctx->editor_camera, ctx->editor_state, ctx->watches, ctx->undo_history,
-                         ctx->resync_texture_lookup, ctx->resync_texture_user_data, input, delta_time);
+                         ctx->resync_texture_lookup, ctx->resync_texture_user_data, ctx->save_fn, input, delta_time);
     }
 }

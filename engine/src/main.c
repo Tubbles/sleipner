@@ -989,9 +989,10 @@ static void draw_entities_depth_sorted(GameState *state)
  * Their direct keybindings (formerly F9 / F10 + Select) were removed
  * when the menu took ownership; see menu_dispatch_save and
  * menu_dispatch_restore below for the live call sites. */
-static void menu_dispatch_save(Diag *diag, GameState *state, EditorState *editor_state, UndoHistory *undo_history)
+static bool menu_dispatch_save(Diag *diag, GameState *state, EditorState *editor_state, UndoHistory *undo_history)
 {
-    if (!save_gamedata(state)) {
+    bool saved = save_gamedata(state);
+    if (!saved) {
         debug_log(diag->debug, "save error: %s", error_get(diag->error));
         error_clear(diag->error);
         editor_state->toast_text = strv_from_cstr("Save failed");
@@ -1004,6 +1005,9 @@ static void menu_dispatch_save(Diag *diag, GameState *state, EditorState *editor
         editor_state->toast_text = strv_from_cstr("Saved");
     }
     editor_state->toast_timer = 2.0F;
+    /* S8.7g: the bool return lets frame.c decide whether to broadcast
+     * NETWORK_EVENT_SAVED (a successful save clears every client too). */
+    return saved;
 }
 
 static void menu_dispatch_restore(

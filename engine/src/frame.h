@@ -34,8 +34,12 @@ void toggle_menu_open(MenuState *menu);
 /* Optional save / restore handlers passed via MenuDispatchCtx. nullptr
  * is permitted: SAVE / RESTORE menu actions become silent no-ops
  * (the menu still closes), which is the right shape for headless
- * tests that don't have a writable gamedata path. */
-typedef void (*MenuSaveFn)(Diag *diag, GameState *state, EditorState *editor_state, UndoHistory *undo_history);
+ * tests that don't have a writable gamedata path. MenuSaveFn returns
+ * true when the save actually succeeded (production wires a wrapper that
+ * marks undo saved and toasts "Saved" internally, so the caller only reads
+ * the bool to decide whether to also broadcast NETWORK_EVENT_SAVED, S8.7g);
+ * a nullptr save_fn reads as failure. */
+typedef bool (*MenuSaveFn)(Diag *diag, GameState *state, EditorState *editor_state, UndoHistory *undo_history);
 typedef void (*MenuRestoreFn)(
     Diag *diag, GameState *state, EditorState *editor_state, WatchList *watches, UndoHistory *undo_history);
 
@@ -115,6 +119,7 @@ void run_active_frame(Diag *diag,
                       UndoHistory *undo_history,
                       TextureLookupFn resync_texture_lookup,
                       void *resync_texture_user_data,
+                      MenuSaveFn save_fn,
                       InputState input,
                       float delta_time);
 
