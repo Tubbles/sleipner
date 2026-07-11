@@ -116,27 +116,26 @@
  * that fires rarely (see this header's own top doc comment). */
 #define RELIABLE_RESEND_SECONDS 0.1F
 
-/* Bound for one send-window slot's pre-encoded packet bytes. A slot now
- * holds either a MSG_EVENT or a MSG_OP packet (see this header's own
- * "Shared sequence space" note), whichever reliable_send/reliable_send_op
- * queued -- so it is sized for the MSG_OP worst case, which dominates the
- * small MSG_EVENT one. Deliberately NOT net.h's NET_MAX_PACKET_SIZE (1400)
- * -- that is the wire's hard MTU-safe ceiling, but an editor op is a
- * discrete edit, not a level-sized SNAPSHOT/DELTA payload. The MSG_OP worst
- * case is PACKET_HEADER_SIZE (12, net_protocol.h) plus the op kind byte
- * plus a length-prefixed level_name plus the op's three 4-byte header ints
- * (entity_id, author_player_id, op_seq) plus an AttrRecord whose string
- * value is bounded by net_session.c's own NETWORK_ATTR_STRING_VALUE_MAX
- * (128) -- roughly 300 bytes, rounded up with headroom to 512. An op (or
- * event) whose encoded packet would exceed this is silently dropped by
- * reliable_send_op/reliable_send (their underlying protocol_encode_*_packet
- * call fails the same bounds-check every other protocol_encode_*_packet
- * call already fails closed on) -- never a buffer overflow, just a packet
- * that never gets queued. Multiplying this by RELIABLE_WINDOW (64) *
- * (NET_MAX_CLIENTS host-side channels + one client-side channel = 5) keeps
- * a whole GameState's total reliable-channel footprint at 64 * 512 * 5 =
- * 160 KB -- still small. */
-#define RELIABLE_SLOT_PACKET_MAX 512
+/* Bound for one send-window slot's pre-encoded packet bytes. A slot holds
+ * either a MSG_EVENT or a MSG_OP packet (see this header's own "Shared
+ * sequence space" note), whichever reliable_send/reliable_send_op queued.
+ * Set to net.h's NET_MAX_PACKET_SIZE -- the wire's hard MTU-safe ceiling --
+ * because a MSG_OP now carries a real payload: an EDITOR_OP_PLACE_ENTITY
+ * (S8.7f3) rides a pasted entity's full attr list (protocol_encode_attr_list,
+ * up to NETWORK_PLACE_ATTRS_MAX records), which the old 512-byte bound (sized
+ * for a lone SET_ATTR record, when the "tens of KB" footprint rationale still
+ * held) could not carry. Sizing a slot for the full MTU keeps the
+ * encode-into-slot bound and the send-onto-the-wire bound identical, so an op
+ * that fits the wire always fits its slot. Footprint: RELIABLE_WINDOW (64) *
+ * NET_MAX_PACKET_SIZE (1400) * (NET_MAX_CLIENTS host-side channels + one
+ * client-side channel = 5) = ~448 KB per GameState -- negligible beside the
+ * existing 256 KB resync buffer and the arena reservations already on
+ * GameState. An op (or event) whose encoded packet would still exceed this
+ * MTU is silently dropped by reliable_send_op/reliable_send (their underlying
+ * protocol_encode_*_packet call fails the same bounds-check every other
+ * protocol_encode_*_packet call already fails closed on) -- never a buffer
+ * overflow, just a packet that never gets queued. */
+#define RELIABLE_SLOT_PACKET_MAX NET_MAX_PACKET_SIZE
 
 /* One send-window slot: a pre-encoded MSG_EVENT or MSG_OP packet (header +
  * payload, ready to hand straight to net_send) plus resend bookkeeping.

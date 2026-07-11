@@ -538,10 +538,11 @@ void test_protocol_op_lock_acquire_packet_round_trip(void)
 
 void test_protocol_op_place_packet_round_trip(void)
 {
-    /* S8.7f3a: PLACE carries a length-prefixed blueprint name plus the spawn
-     * position in the move fields; entity_id here plays the echo role (the
-     * host-assigned root id) -- a request would carry -1 through the same
-     * header field. */
+    /* S8.7f3a/S8.7f3: PLACE carries a length-prefixed blueprint name, the spawn
+     * position in the move fields, then a trailing attr list; entity_id here
+     * plays the echo role (the host-assigned root id) -- a request would carry
+     * -1 through the same header field. This is the bare-place case: an empty
+     * attr list, so place_attr_count round-trips as 0. */
     EditorOp operation = {.kind = EDITOR_OP_PLACE_ENTITY,
                           .level_name = strv_from_cstr("overworld"),
                           .entity_id = 41,
@@ -570,6 +571,73 @@ void test_protocol_op_place_packet_round_trip(void)
     TEST_ASSERT_EQUAL_UINT32(operation.op_seq, out.op_seq);
     TEST_ASSERT_EQUAL_FLOAT(operation.move_x, out.move_x);
     TEST_ASSERT_EQUAL_FLOAT(operation.move_y, out.move_y);
+    TEST_ASSERT_EQUAL_UINT(0, out.place_attr_count);
+}
+
+void test_protocol_op_place_packet_round_trip_with_attrs(void)
+{
+    /* S8.7f3: a networked paste rides PLACE with the pasted entity's attrs.
+     * Two records (a string and a float) round-trip in place_attrs; the
+     * empty-list case is covered by the bare-place round-trip above. */
+    EditorOp operation = {.kind = EDITOR_OP_PLACE_ENTITY,
+                          .level_name = strv_from_cstr("overworld"),
+                          .entity_id = 41,
+                          .author_player_id = 3,
+                          .op_seq = 12,
+                          .move_x = 96.5F,
+                          .move_y = -20.25F,
+                          .blueprint_name = strv_from_cstr("chest"),
+                          .place_attr_count = 2};
+    operation.place_attrs[0] = (AttrRecord){.entity_id = -1,
+                                            .name = strv_from_cstr("label"),
+                                            .type = ATTR_STRING,
+                                            .value.str = strv_from_cstr("old_chest")};
+    operation.place_attrs[1] =
+        (AttrRecord){.entity_id = -1, .name = strv_from_cstr("hp"), .type = ATTR_FLOAT, .value.f = 12.5F};
+
+    uint8_t buffer[NET_PROTOCOL_TEST_BUFFER_SIZE];
+    size_t total_len = 0;
+    TEST_ASSERT_TRUE(protocol_encode_op_packet(buffer, sizeof(buffer), 8, &operation, &total_len));
+
+    DecodedPacket decoded;
+    ErrorState err = {0};
+    TEST_ASSERT_TRUE(protocol_decode_packet(buffer, total_len, &decoded, &err));
+
+    EditorOp out;
+    TEST_ASSERT_TRUE(protocol_decode_op(&decoded.reader, &out));
+    TEST_ASSERT_EQUAL_INT(EDITOR_OP_PLACE_ENTITY, out.kind);
+    TEST_ASSERT_TRUE(strv_eq(operation.blueprint_name, out.blueprint_name));
+    TEST_ASSERT_EQUAL_UINT(2, out.place_attr_count);
+    TEST_ASSERT_EQUAL_INT(ATTR_STRING, out.place_attrs[0].type);
+    TEST_ASSERT_TRUE(strv_eq_cstr(out.place_attrs[0].name, "label"));
+    TEST_ASSERT_TRUE(strv_eq_cstr(out.place_attrs[0].value.str, "old_chest"));
+    TEST_ASSERT_EQUAL_INT(ATTR_FLOAT, out.place_attrs[1].type);
+    TEST_ASSERT_TRUE(strv_eq_cstr(out.place_attrs[1].name, "hp"));
+    TEST_ASSERT_EQUAL_FLOAT(12.5F, out.place_attrs[1].value.f);
+}
+
+void test_protocol_decode_op_place_rejects_attr_count_over_cap(void)
+{
+    /* Fail-closed: a wire attr count past NETWORK_PLACE_ATTRS_MAX must be
+     * rejected rather than overrun EditorOp's fixed place_attrs array. Hand-built
+     * payload -- a valid PLACE head then a u16 attr count one past the cap;
+     * protocol_decode_attr_list rejects on the count check before reading any
+     * record, so no record bytes need follow. */
+    uint8_t payload[NET_PROTOCOL_TEST_BUFFER_SIZE];
+    PacketWriter writer = packet_writer_make(payload, sizeof(payload));
+    TEST_ASSERT_TRUE(packet_writer_write_u8(&writer, (uint8_t)EDITOR_OP_PLACE_ENTITY));
+    TEST_ASSERT_TRUE(packet_writer_write_string(&writer, strv_from_cstr("overworld")));
+    TEST_ASSERT_TRUE(packet_writer_write_i32(&writer, -1));
+    TEST_ASSERT_TRUE(packet_writer_write_i32(&writer, 2));
+    TEST_ASSERT_TRUE(packet_writer_write_u32(&writer, 0));
+    TEST_ASSERT_TRUE(packet_writer_write_string(&writer, strv_from_cstr("chest")));
+    TEST_ASSERT_TRUE(packet_writer_write_f32(&writer, 10.0F));
+    TEST_ASSERT_TRUE(packet_writer_write_f32(&writer, 20.0F));
+    TEST_ASSERT_TRUE(packet_writer_write_u16(&writer, (uint16_t)(NETWORK_PLACE_ATTRS_MAX + 1)));
+
+    PacketReader reader = packet_reader_make(payload, writer.cursor);
+    EditorOp out;
+    TEST_ASSERT_FALSE(protocol_decode_op(&reader, &out));
 }
 
 void test_protocol_decode_op_rejects_kind_past_remove_attr(void)
@@ -650,8 +718,8 @@ void test_protocol_decode_op_remove_attr_rejects_truncated_buffer(void)
 void test_protocol_decode_op_place_rejects_truncated_buffer(void)
 {
     /* Same fail-closed contract as the SET_ATTR truncation test: one byte
-     * short of the encoder's output must fail mid-payload (the last f32
-     * read) without ever reading out of bounds. */
+     * short of the encoder's output must fail mid-payload (here the trailing
+     * empty attr list's u16 count read) without ever reading out of bounds. */
     EditorOp operation = {.kind = EDITOR_OP_PLACE_ENTITY,
                           .level_name = strv_from_cstr("overworld"),
                           .entity_id = -1,
@@ -949,6 +1017,8 @@ int main(void)
     RUN_TEST(test_protocol_op_delete_packet_round_trip);
     RUN_TEST(test_protocol_op_lock_acquire_packet_round_trip);
     RUN_TEST(test_protocol_op_place_packet_round_trip);
+    RUN_TEST(test_protocol_op_place_packet_round_trip_with_attrs);
+    RUN_TEST(test_protocol_decode_op_place_rejects_attr_count_over_cap);
     RUN_TEST(test_protocol_op_remove_attr_packet_round_trip);
     RUN_TEST(test_protocol_decode_op_rejects_kind_past_remove_attr);
     RUN_TEST(test_protocol_decode_op_place_rejects_truncated_buffer);

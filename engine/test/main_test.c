@@ -187,6 +187,8 @@ void test_integration_client_string_edit_converges_via_word_builder(void);
 void test_integration_client_place_materializes_via_echo_with_host_id(void);
 void test_integration_host_place_appears_on_client_with_matching_id(void);
 void test_integration_place_then_move_echoes_apply_in_order(void);
+void test_integration_client_paste_converges_with_attrs(void);
+void test_integration_host_paste_appears_on_client(void);
 void test_integration_editor_presence_shares_cursor_and_times_out(void);
 void test_integration_structural_resync_propagates_and_stops(void);
 void test_integration_structural_resync_releases_locks(void);
@@ -488,6 +490,8 @@ int main(void)
     RUN_TEST(test_integration_client_place_materializes_via_echo_with_host_id);
     RUN_TEST(test_integration_host_place_appears_on_client_with_matching_id);
     RUN_TEST(test_integration_place_then_move_echoes_apply_in_order);
+    RUN_TEST(test_integration_client_paste_converges_with_attrs);
+    RUN_TEST(test_integration_host_paste_appears_on_client);
     RUN_TEST(test_integration_editor_presence_shares_cursor_and_times_out);
     RUN_TEST(test_integration_structural_resync_propagates_and_stops);
     RUN_TEST(test_integration_structural_resync_releases_locks);

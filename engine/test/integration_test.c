@@ -8044,6 +8044,269 @@ void test_integration_place_then_move_echoes_apply_in_order(void)
     loopback_network_free(&loopback);
 }
 
+/* ---- Integration: S8.7f3 networked editor PASTE (place ops carry attrs) ----
+ *
+ * Same two-TestGame-over-net_loopback.h shape as the S8.7f3a PLACE tests,
+ * driven black-box through the REAL input layer (select/add/copy/paste chords,
+ * exactly like the single-player S5.7 copy/paste test). A paste rides the PLACE
+ * op: each pasted entry becomes an EDITOR_OP_PLACE_ENTITY carrying the copied
+ * entity's attrs, so a client mints no local ids (the id divergence f3a killed
+ * stays killed) and the pasted attrs propagate to every peer. A fixture with two
+ * copyable authored entities (each with a distinguishing persisted attr) lets
+ * the tests assert both the id/position handoff and the attr crossing the wire. */
+static const char *paste_session_gamedata = "[[blueprint]]\n"
+                                            "name = \"hero\"\n"
+                                            "texture = \"t.png\"\n"
+                                            "src = [0, 0, 16, 16]\n"
+                                            "behavior = \"player\"\n"
+                                            "speed = 80\n"
+                                            "\n"
+                                            "[[blueprint]]\n"
+                                            "name = \"rock\"\n"
+                                            "texture = \"r.png\"\n"
+                                            "src = [0, 0, 16, 16]\n"
+                                            "solid = true\n"
+                                            "\n"
+                                            "[[blueprint]]\n"
+                                            "name = \"crate\"\n"
+                                            "texture = \"c.png\"\n"
+                                            "src = [0, 0, 16, 16]\n"
+                                            "solid = true\n"
+                                            "\n"
+                                            "[[level]]\n"
+                                            "name = \"test\"\n"
+                                            "size = [600, 400]\n"
+                                            "\n"
+                                            "[[level.entity]]\n"
+                                            "blueprint = \"hero\"\n"
+                                            "pos = [100, 100]\n"
+                                            "\n"
+                                            "[[level.entity]]\n"
+                                            "blueprint = \"rock\"\n"
+                                            "pos = [150, 250]\n"
+                                            "hp = 5\n"
+                                            "\n"
+                                            "[[level.entity]]\n"
+                                            "blueprint = \"crate\"\n"
+                                            "pos = [300, 250]\n"
+                                            "label = \"wooden\"\n";
+
+/* Drive the select(anchor)+add(second)+copy chord sequence on `game` through
+ * the real input layer, leaving a two-entry copy buffer of select_targets[0]
+ * (anchor) then select_targets[1]. Camera is positioned on each entity so
+ * find_nearest_entity picks it. The two targets ride one array parameter rather
+ * than two adjacent Vector2 params (bugprone-easily-swappable-parameters). */
+static void paste_test_select_and_copy(TestGame *game, const Vector2 select_targets[2])
+{
+    game->editor_camera.target = select_targets[0];
+    InputState select_input = {0};
+    input_state_press_key(&select_input, KEY_ENTER);
+    test_advance_frame(game, select_input);
+
+    game->editor_camera.target = select_targets[1];
+    InputState add_input = {0};
+    input_state_hold_key(&add_input, KEY_LEFT_CONTROL);
+    input_state_press_key(&add_input, KEY_ENTER);
+    test_advance_frame(game, add_input);
+    TEST_ASSERT_EQUAL_INT(2, game->editor_state.multiselect_count);
+
+    InputState copy_input = {0};
+    input_state_hold_key(&copy_input, KEY_LEFT_CONTROL);
+    input_state_press_key(&copy_input, KEY_C);
+    test_advance_frame(game, copy_input);
+    TEST_ASSERT_EQUAL_INT(2, game->editor_state.copy_buffer_count);
+}
+
+/* (a) A CLIENT copies two authored entities (rock carries a non-default "hp"
+ * attr) and pastes through the real Ctrl+V chord. The client spawns NOTHING at
+ * commit time (no local id mint); the host's PLACE echoes materialize both
+ * clones on both peers with identical ids and positions, and rock's copied "hp"
+ * lands in BOTH attr sets on BOTH peers. */
+void test_integration_client_paste_converges_with_attrs(void)
+{
+    LoopbackNetwork loopback;
+    loopback_network_init(&loopback, &test_heap_alloc);
+    NetAddr host_addr = net_addr_make(1, 9000);
+    NetAddr client_addr = net_addr_make(2, 9001);
+    NetTransport host_transport;
+    NetTransport client_transport;
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, host_addr, &host_transport));
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, client_addr, &client_transport));
+
+    TestGame host;
+    TEST_ASSERT_TRUE(test_game_setup(&host, paste_session_gamedata));
+    host.state.network.mode = NET_HOSTING;
+    host.state.network.transport = host_transport;
+    host.state.network.next_op_seq = 1;
+
+    TestGame client;
+    TEST_ASSERT_TRUE(test_game_setup(&client, paste_session_gamedata));
+    client.state.network.mode = NET_JOINING;
+    client.state.network.transport = client_transport;
+    client.state.network.join_target = host_addr;
+
+    InputState no_input = {0};
+    for (int frame = 0; frame < 3; frame++) {
+        test_advance_frame(&client, no_input);
+        test_advance_frame(&host, no_input);
+    }
+    TEST_ASSERT_EQUAL_INT(NET_CLIENT, client.state.network.mode);
+
+    Entity *client_rock = test_find_entity_by_blueprint(&client.state, "rock");
+    Entity *client_crate = test_find_entity_by_blueprint(&client.state, "crate");
+    TEST_ASSERT_NOT_NULL(client_rock);
+    TEST_ASSERT_NOT_NULL(client_crate);
+    int rock_id = client_rock->id;
+    int crate_id = client_crate->id;
+    Vector2 rock_pos = client_rock->position;
+    Vector2 crate_pos = client_crate->position;
+
+    host.state.editor_mode = true;
+    client.state.editor_mode = true;
+    client.editor_state.sub_mode = EDITOR_SUB_BROWSE;
+    client.editor_state.selected_tree_index = -1;
+    client.editor_state.selected_attr_kind = EDITOR_ATTR_SEL_NONE;
+
+    Vector2 client_select_targets[2] = {rock_pos, crate_pos};
+    paste_test_select_and_copy(&client, client_select_targets);
+
+    Vector2 paste_anchor = {400.0F, 120.0F};
+    client.editor_camera.target = paste_anchor;
+    int client_count_before = client.state.gamedata.current_level.entities.count;
+    int client_next_id_before = client.state.gamedata.current_level.next_entity_id;
+
+    InputState paste_input = {0};
+    input_state_hold_key(&paste_input, KEY_LEFT_CONTROL);
+    input_state_press_key(&paste_input, KEY_V);
+    test_advance_frame(&client, paste_input);
+
+    /* Echo-driven: the client minted no local ids at commit time. */
+    TEST_ASSERT_EQUAL_INT(client_count_before, client.state.gamedata.current_level.entities.count);
+    TEST_ASSERT_EQUAL_INT(client_next_id_before, client.state.gamedata.current_level.next_entity_id);
+
+    test_advance_frame(&host, no_input); /* host spawns + applies attrs + echoes */
+    for (int frame = 0; frame < 4; frame++) {
+        test_advance_frame(&client, no_input); /* client materializes from the echoes */
+        test_advance_frame(&host, no_input);
+    }
+
+    Entity *host_rock_clone = test_find_entity_by_blueprint_excluding_id(&host.state, "rock", rock_id);
+    Entity *client_rock_clone = test_find_entity_by_blueprint_excluding_id(&client.state, "rock", rock_id);
+    TEST_ASSERT_NOT_NULL(host_rock_clone);
+    TEST_ASSERT_NOT_NULL(client_rock_clone);
+    TEST_ASSERT_EQUAL_INT(host_rock_clone->id, client_rock_clone->id);
+    TEST_ASSERT_EQUAL_FLOAT(paste_anchor.x, host_rock_clone->position.x);
+    TEST_ASSERT_EQUAL_FLOAT(paste_anchor.y, host_rock_clone->position.y);
+    TEST_ASSERT_EQUAL_FLOAT(host_rock_clone->position.x, client_rock_clone->position.x);
+    TEST_ASSERT_EQUAL_FLOAT(host_rock_clone->position.y, client_rock_clone->position.y);
+    /* The copied "hp" attr rode the PLACE op onto both sets on both peers. */
+    TEST_ASSERT_EQUAL_INT(5, attr_get_int(&host_rock_clone->attrs, "hp", -1));
+    TEST_ASSERT_EQUAL_INT(5, attr_get_int(&host_rock_clone->persisted_attrs, "hp", -1));
+    TEST_ASSERT_EQUAL_INT(5, attr_get_int(&client_rock_clone->attrs, "hp", -1));
+    TEST_ASSERT_EQUAL_INT(5, attr_get_int(&client_rock_clone->persisted_attrs, "hp", -1));
+
+    Entity *host_crate_clone = test_find_entity_by_blueprint_excluding_id(&host.state, "crate", crate_id);
+    Entity *client_crate_clone = test_find_entity_by_blueprint_excluding_id(&client.state, "crate", crate_id);
+    TEST_ASSERT_NOT_NULL(host_crate_clone);
+    TEST_ASSERT_NOT_NULL(client_crate_clone);
+    TEST_ASSERT_EQUAL_INT(host_crate_clone->id, client_crate_clone->id);
+    TEST_ASSERT_EQUAL_STRING("wooden", attr_get_string(&client_crate_clone->attrs, "label"));
+    TEST_ASSERT_EQUAL_STRING("wooden", attr_get_string(&client_crate_clone->persisted_attrs, "label"));
+
+    test_game_teardown(&host);
+    test_game_teardown(&client);
+    loopback_network_free(&loopback);
+}
+
+/* (b) A HOST pastes locally (exactly the offline path, undo intact) and its
+ * PLACE echoes materialize both clones on the client with matching ids,
+ * positions, and the copied "hp" attr in both sets. */
+void test_integration_host_paste_appears_on_client(void)
+{
+    LoopbackNetwork loopback;
+    loopback_network_init(&loopback, &test_heap_alloc);
+    NetAddr host_addr = net_addr_make(1, 9000);
+    NetAddr client_addr = net_addr_make(2, 9001);
+    NetTransport host_transport;
+    NetTransport client_transport;
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, host_addr, &host_transport));
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, client_addr, &client_transport));
+
+    TestGame host;
+    TEST_ASSERT_TRUE(test_game_setup(&host, paste_session_gamedata));
+    host.state.network.mode = NET_HOSTING;
+    host.state.network.transport = host_transport;
+    host.state.network.next_op_seq = 1;
+
+    TestGame client;
+    TEST_ASSERT_TRUE(test_game_setup(&client, paste_session_gamedata));
+    client.state.network.mode = NET_JOINING;
+    client.state.network.transport = client_transport;
+    client.state.network.join_target = host_addr;
+
+    InputState no_input = {0};
+    for (int frame = 0; frame < 3; frame++) {
+        test_advance_frame(&client, no_input);
+        test_advance_frame(&host, no_input);
+    }
+    TEST_ASSERT_EQUAL_INT(NET_CLIENT, client.state.network.mode);
+
+    Entity *host_rock = test_find_entity_by_blueprint(&host.state, "rock");
+    Entity *host_crate = test_find_entity_by_blueprint(&host.state, "crate");
+    TEST_ASSERT_NOT_NULL(host_rock);
+    TEST_ASSERT_NOT_NULL(host_crate);
+    int rock_id = host_rock->id;
+    int crate_id = host_crate->id;
+    Vector2 rock_pos = host_rock->position;
+    Vector2 crate_pos = host_crate->position;
+
+    host.state.editor_mode = true;
+    client.state.editor_mode = true;
+    host.editor_state.sub_mode = EDITOR_SUB_BROWSE;
+    host.editor_state.selected_tree_index = -1;
+    host.editor_state.selected_attr_kind = EDITOR_ATTR_SEL_NONE;
+
+    Vector2 host_select_targets[2] = {rock_pos, crate_pos};
+    paste_test_select_and_copy(&host, host_select_targets);
+
+    Vector2 paste_anchor = {400.0F, 120.0F};
+    host.editor_camera.target = paste_anchor;
+    int host_count_before = host.state.gamedata.current_level.entities.count;
+
+    InputState paste_input = {0};
+    input_state_hold_key(&paste_input, KEY_LEFT_CONTROL);
+    input_state_press_key(&paste_input, KEY_V);
+    test_advance_frame(&host, paste_input);
+
+    /* HOST paste is the local offline path: it spawned both clones locally. */
+    TEST_ASSERT_EQUAL_INT(host_count_before + 2, host.state.gamedata.current_level.entities.count);
+    Entity *host_rock_clone = test_find_entity_by_blueprint_excluding_id(&host.state, "rock", rock_id);
+    Entity *host_crate_clone = test_find_entity_by_blueprint_excluding_id(&host.state, "crate", crate_id);
+    TEST_ASSERT_NOT_NULL(host_rock_clone);
+    TEST_ASSERT_NOT_NULL(host_crate_clone);
+    int placed_rock_id = host_rock_clone->id;
+    int placed_crate_id = host_crate_clone->id;
+
+    for (int frame = 0; frame < 4; frame++) {
+        test_advance_frame(&client, no_input); /* client materializes from the echoes */
+        test_advance_frame(&host, no_input);
+    }
+
+    Entity *client_rock_clone = test_find_entity_by_id(&client.state, placed_rock_id);
+    Entity *client_crate_clone = test_find_entity_by_id(&client.state, placed_crate_id);
+    TEST_ASSERT_NOT_NULL(client_rock_clone);
+    TEST_ASSERT_NOT_NULL(client_crate_clone);
+    TEST_ASSERT_EQUAL_FLOAT(paste_anchor.x, client_rock_clone->position.x);
+    TEST_ASSERT_EQUAL_FLOAT(paste_anchor.y, client_rock_clone->position.y);
+    TEST_ASSERT_EQUAL_INT(5, attr_get_int(&client_rock_clone->attrs, "hp", -1));
+    TEST_ASSERT_EQUAL_INT(5, attr_get_int(&client_rock_clone->persisted_attrs, "hp", -1));
+    TEST_ASSERT_EQUAL_STRING("wooden", attr_get_string(&client_crate_clone->attrs, "label"));
+
+    test_game_teardown(&host);
+    test_game_teardown(&client);
+    loopback_network_free(&loopback);
+}
+
 /* ---- Integration: S8.7e editor presence (cursor + selection + name) ----
  *
  * Three-TestGame-over-net_loopback.h shape as the S8.7d tests, driven black-box

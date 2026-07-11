@@ -247,15 +247,18 @@ static void host_handle_delete(GameState *state, EditorOp *operation, int sender
     host_stamp_and_broadcast(state, EDITOR_OP_DELETE_ENTITY, operation, sender_player_id);
 }
 
-/* S8.7f3a: an EDITOR_OP_PLACE_ENTITY from sender S. Preconditions: names the
- * current level and a blueprint that resolves -- anything else is a silent
- * drop (tolerant-skip convention). No locks are involved: a brand-new entity
- * cannot be contended. On apply the blueprint's root is spawned at
- * (move_x, move_y), tracking is rebuilt (mirroring spawn_network_player's
- * spawn sequence), and the echo's entity_id is stamped with the id the spawn
- * assigned to the ROOT entity -- the request carried -1, the host assigns
- * ids (EditorOp's doc comment, net_protocol.h). The echoed id is what every
- * client forces onto its own replica spawn (client_apply_place_echo). */
+/* S8.7f3a/S8.7f3: an EDITOR_OP_PLACE_ENTITY from sender S. Preconditions:
+ * names the current level and a blueprint that resolves -- anything else is a
+ * silent drop (tolerant-skip convention). No locks are involved: a brand-new
+ * entity cannot be contended. On apply the blueprint's root is spawned at
+ * (move_x, move_y), every place_attrs record (S8.7f3, a networked paste's
+ * attrs; empty for a bare place) is written onto the new root with the
+ * write-both convergence rule, tracking is rebuilt (mirroring
+ * spawn_network_player's spawn sequence), and the echo's entity_id is stamped
+ * with the id the spawn assigned to the ROOT entity -- the request carried -1,
+ * the host assigns ids (EditorOp's doc comment, net_protocol.h). The echoed id
+ * and the same attr list are what every client forces/applies onto its own
+ * replica spawn (client_apply_place_echo). */
 static void host_handle_place(GameState *state, EditorOp *operation, int sender_player_id)
 {
     if (!strv_eq(operation->level_name, str_to_strv(state->gamedata.current_level.name))) {
@@ -272,6 +275,11 @@ static void host_handle_place(GameState *state, EditorOp *operation, int sender_
         return;
     }
     operation->entity_id = state->gamedata.current_level.entities.data[root_index].id;
+    Allocator gamedata_alloc = allocator_arena(&state->gamedata_arena);
+    Entity *root = &state->gamedata.current_level.entities.data[root_index];
+    for (size_t index = 0; index < operation->place_attr_count; index++) {
+        apply_set_attr(&gamedata_alloc, root, &operation->place_attrs[index]);
+    }
     Diag diag = {&state->error, &state->debug};
     (void)game_respawn_rebuild_tracking(&diag, state);
     host_stamp_and_broadcast(state, EDITOR_OP_PLACE_ENTITY, operation, sender_player_id);
@@ -1173,14 +1181,19 @@ static void client_apply_delete_echo(GameState *state, const EditorOp *operation
     }
 }
 
-/* S8.7f3a: apply one PLACE echo. An entity with the echoed id already
+/* S8.7f3a/S8.7f3: apply one PLACE echo. An entity with the echoed id already
  * existing is a tolerant dedup no-op (e.g. this peer already materialized it
- * from a redelivered echo). Otherwise the named blueprint is spawned at the
- * echoed position with the echoed HOST-ASSIGNED id forced onto the root --
- * the exact mechanism ensure_synced_entity_exists uses, shared via
- * spawn_entity_with_forced_id. An unknown blueprint is a silent skip, the
- * appliers' tolerant convention. The ORIGINATING client also lands here: it
- * spawned nothing locally at commit time (frame.c's handle_place_input,
+ * from a redelivered echo) -- its place_attrs were already applied on the
+ * spawn that first materialized it, so they are skipped here too. Otherwise
+ * the named blueprint is spawned at the echoed position with the echoed
+ * HOST-ASSIGNED id forced onto the root -- the exact mechanism
+ * ensure_synced_entity_exists uses, shared via spawn_entity_with_forced_id --
+ * then every place_attrs record (S8.7f3, a networked paste's attrs; empty for
+ * a bare place) is written onto the new root with the write-both convergence
+ * rule, exactly as host_handle_place applied them on the authority. An unknown
+ * blueprint is a silent skip, the appliers' tolerant convention. The
+ * ORIGINATING client also lands here: it spawned nothing locally at commit
+ * time (frame.c's handle_place_input / editor/core.c's handle_browse_paste,
  * NET_CLIENT path), so this echo apply is what materializes its own place --
  * echo-driven spawn is what makes cross-peer id divergence impossible. */
 static void client_apply_place_echo(GameState *state, const EditorOp *operation)
@@ -1196,6 +1209,15 @@ static void client_apply_place_echo(GameState *state, const EditorOp *operation)
     }
     spawn_entity_with_forced_id(state, blueprint, (Vector2){operation->move_x, operation->move_y},
                                 operation->entity_id);
+    int root_index = level_find_entity_by_id(&state->gamedata.current_level, operation->entity_id);
+    if (root_index < 0) {
+        return;
+    }
+    Allocator gamedata_alloc = allocator_arena(&state->gamedata_arena);
+    Entity *root = &state->gamedata.current_level.entities.data[root_index];
+    for (size_t index = 0; index < operation->place_attr_count; index++) {
+        apply_set_attr(&gamedata_alloc, root, &operation->place_attrs[index]);
+    }
 }
 
 /* S8.7f3b: apply one SET_ATTR echo onto this client's replica, writing both
@@ -1610,7 +1632,25 @@ void network_editor_commit_delete(GameState *state, int entity_id)
     }
 }
 
-void network_editor_commit_place(GameState *state, int placed_entity_id, Strv blueprint_name, Vector2 position)
+/* S8.7f3: copy at most NETWORK_PLACE_ATTRS_MAX place attrs from `src` into an
+ * EditorOp's fixed place_attrs array, returning how many were copied. The
+ * clamp is the seam's documented drop of pasted attrs beyond the cap (see
+ * network_editor_commit_place, net_session.h); a bare place passes count 0. */
+static size_t fill_place_attrs(AttrRecord *dest, const AttrRecord *src, size_t count)
+{
+    size_t copied = count < NETWORK_PLACE_ATTRS_MAX ? count : NETWORK_PLACE_ATTRS_MAX;
+    for (size_t index = 0; index < copied; index++) {
+        dest[index] = src[index];
+    }
+    return copied;
+}
+
+void network_editor_commit_place(GameState *state,
+                                 int placed_entity_id,
+                                 Strv blueprint_name,
+                                 Vector2 position,
+                                 const AttrRecord *attrs,
+                                 size_t attr_count)
 {
     if (state->network.mode == NET_CLIENT) {
         /* Op REQUEST: entity_id MUST be -1 -- the host assigns entity ids
@@ -1627,13 +1667,15 @@ void network_editor_commit_place(GameState *state, int placed_entity_id, Strv bl
             .move_y = position.y,
             .blueprint_name = blueprint_name,
         };
+        operation.place_attr_count = fill_place_attrs(operation.place_attrs, attrs, attr_count);
         network_client_send_reliable_op(&state->network, &operation);
         return;
     }
     if (state->network.mode == NET_HOSTING) {
         /* The local spawn was already the authoritative apply; the echo
          * carries the ROOT id it assigned (placed_entity_id) so every
-         * replica forces the same id onto its own spawn. */
+         * replica forces the same id onto its own spawn, plus the same attrs
+         * (copy-buffer-sourced, identical to what a CLIENT request carries). */
         EditorOp operation = {
             .kind = EDITOR_OP_PLACE_ENTITY,
             .level_name = str_to_strv(state->gamedata.current_level.name),
@@ -1644,6 +1686,7 @@ void network_editor_commit_place(GameState *state, int placed_entity_id, Strv bl
             .move_y = position.y,
             .blueprint_name = blueprint_name,
         };
+        operation.place_attr_count = fill_place_attrs(operation.place_attrs, attrs, attr_count);
         network_host_broadcast_reliable_op(&state->network, &operation);
         return;
     }

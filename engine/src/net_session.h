@@ -365,8 +365,9 @@ void network_editor_release_locks(GameState *state, const int *entity_ids, int e
  *   echo is ever sent) and stamps + broadcasts the DELETE echo. */
 void network_editor_commit_delete(GameState *state, int entity_id);
 
-/* S8.7f3a: called by the editor at a PLACE commit (frame.c's
- * handle_place_input CONFIRM path).
+/* S8.7f3a/S8.7f3: called by the editor at a PLACE commit (frame.c's
+ * handle_place_input CONFIRM path, attrs empty) and at a networked PASTE
+ * (editor/core.c's handle_browse_paste, attrs = the copied entity's attrs).
  *
  * placed_entity_id is deliberately asymmetric: -1 from a NET_CLIENT caller
  * (a connected client never spawns locally -- the host assigns entity ids,
@@ -375,13 +376,27 @@ void network_editor_commit_delete(GameState *state, int entity_id);
  * must carry the id every replica forces onto its own spawn). The seam uses
  * it only for the HOSTING echo and ignores it for CLIENT requests.
  *
+ * attrs/attr_count (S8.7f3) are the attrs applied to the freshly spawned root
+ * on every peer (write-both convergence). A bare place passes 0/nullptr; a
+ * paste passes the copy-buffer entry's attrs so both the CLIENT request and
+ * the HOSTING echo carry identical wire content. The seam CLAMPS to
+ * min(attr_count, NETWORK_PLACE_ATTRS_MAX) records: pasted attrs beyond the
+ * cap are dropped from sync, a pre-alpha bound authored entities stay well
+ * under (the deeper 1400-byte encode failure inside reliable_send_op remains
+ * the documented fail-closed drop).
+ *
  * NET_OFFLINE: no-op (single-player).
  * NET_CLIENT: sends an EDITOR_OP_PLACE_ENTITY REQUEST (entity_id -1, op_seq
- *   0, authored by local_player_id) carrying blueprint_name and position;
- *   the host's echo is what materializes the entity on this peer.
+ *   0, authored by local_player_id) carrying blueprint_name, position, and
+ *   attrs; the host's echo is what materializes the entity on this peer.
  * NET_HOSTING: stamps op_seq = next_op_seq++ (author 0) and broadcasts the
- *   echo with entity_id = placed_entity_id. */
-void network_editor_commit_place(GameState *state, int placed_entity_id, Strv blueprint_name, Vector2 position);
+ *   echo with entity_id = placed_entity_id and the same attrs. */
+void network_editor_commit_place(GameState *state,
+                                 int placed_entity_id,
+                                 Strv blueprint_name,
+                                 Vector2 position,
+                                 const AttrRecord *attrs,
+                                 size_t attr_count);
 
 /* S8.7f3b: build an AttrRecord (entity_id + name + typed value) from a live
  * entity Attribute, reusing the same value conversion push_entity_sync_records

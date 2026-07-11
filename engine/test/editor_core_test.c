@@ -80,6 +80,11 @@ FAKE_VOID_FUNC(network_editor_release_locks, GameState *, const int *, int);
  * convergence is covered black-box in integration_test.c. */
 FAKE_VOID_FUNC(game_delete_entity_cascade, GameState *, int);
 FAKE_VOID_FUNC(network_editor_commit_delete, GameState *, int);
+/* S8.7f3: core.c's networked paste sites route each pasted PLACE through this
+ * seam (empty attrs for a bare place, the copy-buffer entry's attrs for a
+ * paste); faked here so core.c links without the network stack. The end-to-end
+ * paste convergence is covered black-box in integration_test.c. */
+FAKE_VOID_FUNC(network_editor_commit_place, GameState *, int, Strv, Vector2, const AttrRecord *, size_t);
 FAKE_VALUE_FUNC(EntityLock *, network_lock_find, NetworkState *, int);
 /* S8.7f3b: core.c's scene ATTR panel edit sites propagate over these three
  * net_session/network seams (SET/REMOVE ops and the host structural-resync

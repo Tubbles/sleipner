@@ -195,7 +195,7 @@ static void place_confirm_spawn(
          * resolves the spawn by name); blueprint_find can't resolve one
          * either, so there is nothing meaningful to send. */
         if (blueprint_name != nullptr) {
-            network_editor_commit_place(state, -1, strv_from_cstr(blueprint_name), spawn_position);
+            network_editor_commit_place(state, -1, strv_from_cstr(blueprint_name), spawn_position, nullptr, 0);
         }
         return;
     }
@@ -221,7 +221,7 @@ static void place_confirm_spawn(
                            strv_from_cstr("Place entity"));
     if (state->network.mode == NET_HOSTING && blueprint_name != nullptr) {
         network_editor_commit_place(state, state->gamedata.current_level.entities.data[count_before].id,
-                                    strv_from_cstr(blueprint_name), spawn_position);
+                                    strv_from_cstr(blueprint_name), spawn_position, nullptr, 0);
     }
 }
 

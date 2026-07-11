@@ -310,14 +310,22 @@ typedef struct {
  *    Broadcast like every other echo, so every replica observes it in the
  *    one same total order; only the named requester acts on it.
  *
- * S8.7f3a place kind:
+ * S8.7f3a/S8.7f3 place kind:
  *  - EDITOR_OP_PLACE_ENTITY -- client->host: request to spawn blueprint_name
  *    at (move_x, move_y); host->clients echo: the spawn happened. Payload:
  *    length-prefixed blueprint_name, then move_x/move_y (position reuses the
- *    move fields). The header's entity_id MUST be -1 in a client REQUEST --
- *    the HOST assigns entity ids -- and carries the host-assigned ROOT
- *    entity id in every echo, which each replica forces onto its own spawn
- *    so the id can never diverge across peers.
+ *    move fields), then a trailing attr-record list (protocol_encode_attr_list,
+ *    which carries its own count). The header's entity_id MUST be -1 in a
+ *    client REQUEST -- the HOST assigns entity ids -- and carries the
+ *    host-assigned ROOT entity id in every echo, which each replica forces
+ *    onto its own spawn so the id can never diverge across peers. The attr
+ *    list (S8.7f3) carries a pasted entity's attrs so a networked PASTE rides
+ *    the same echo-driven spawn path a bare PLACE does: a plain place encodes
+ *    an empty list, a paste encodes the copied entity's attrs. Each record is
+ *    applied to the freshly spawned ROOT with the write-both convergence rule
+ *    (host_handle_place / client_apply_place_echo, net_session.c), so the
+ *    record's own entity_id is irrelevant -- the applier targets the root by
+ *    the host-assigned id, never by the record field.
  *
  * S8.7f3b attr-remove kind:
  *  - EDITOR_OP_REMOVE_ATTR -- client->host: request to remove attr_name from
@@ -349,21 +357,34 @@ typedef enum {
  * slices implement that. This slice just carries the field.
  *
  * move_x/move_y are meaningful only for EDITOR_OP_MOVE_ENTITY and (as the
- * spawn position, S8.7f3a) EDITOR_OP_PLACE_ENTITY. blueprint_name is
- * meaningful only for EDITOR_OP_PLACE_ENTITY. attr is meaningful only for
- * EDITOR_OP_SET_ATTR, and the embedded record's own entity_id mirrors this
- * header's entity_id: the encoder overwrites it from entity_id before
- * writing (see point 4 / protocol_encode_op_packet), so the two can never
- * disagree on the wire. attr_name is meaningful only for EDITOR_OP_REMOVE_ATTR
- * (S8.7f3b) -- the name of the attr to remove, carried as a bare
- * length-prefixed string (no type/value, unlike SET_ATTR's full record).
- * EDITOR_OP_DELETE_ENTITY and the three S8.7d1 lock kinds
- * (LOCK_ACQUIRE/RELEASE/DENY) have no payload beyond the header.
+ * spawn position, S8.7f3a) EDITOR_OP_PLACE_ENTITY. blueprint_name and the
+ * place_attrs/place_attr_count list (S8.7f3) are meaningful only for
+ * EDITOR_OP_PLACE_ENTITY. attr is meaningful only for EDITOR_OP_SET_ATTR, and
+ * the embedded record's own entity_id mirrors this header's entity_id: the
+ * encoder overwrites it from entity_id before writing (see point 4 /
+ * protocol_encode_op_packet), so the two can never disagree on the wire.
+ * attr_name is meaningful only for EDITOR_OP_REMOVE_ATTR (S8.7f3b) -- the name
+ * of the attr to remove, carried as a bare length-prefixed string (no
+ * type/value, unlike SET_ATTR's full record). EDITOR_OP_DELETE_ENTITY and the
+ * three S8.7d1 lock kinds (LOCK_ACQUIRE/RELEASE/DENY) have no payload beyond
+ * the header.
+ *
+ * place_attrs is a FIXED-size embedded array, not a caller-provided view, so
+ * protocol_decode_op keeps its one-out-param signature (the decoder writes the
+ * records straight into the struct). NETWORK_PLACE_ATTRS_MAX is a struct-shape
+ * cap, not the real bound: a 1400-byte MTU packet cannot carry 24 worst-case
+ * (~56-byte) records anyway, so the WIRE is the true limit and the fixed cap
+ * only sizes the struct (sizeof(EditorOp) grows to ~1 KB, which only ever
+ * lives on stacks and inside the raw-byte buffers PendingEditorOps/HeldEditorOp
+ * store -- those hold encoded bytes, not EditorOp structs, so are unaffected).
+ * A wire count exceeding the cap is rejected (fail closed, protocol_decode_op).
  *
  * Decoded Strv fields (level_name, blueprint_name, attr_name, and any string
- * inside attr) view into the caller's packet buffer, with the same lifetime
- * contract every other decoded string field in this header documents (see
- * the Ownership note at the top of this file). */
+ * inside attr or place_attrs) view into the caller's packet buffer, with the
+ * same lifetime contract every other decoded string field in this header
+ * documents (see the Ownership note at the top of this file). */
+#define NETWORK_PLACE_ATTRS_MAX 24
+
 typedef struct {
     EditorOpKind kind;
     Strv level_name;
@@ -375,6 +396,8 @@ typedef struct {
     AttrRecord attr;
     Strv blueprint_name;
     Strv attr_name;
+    AttrRecord place_attrs[NETWORK_PLACE_ATTRS_MAX];
+    size_t place_attr_count;
 } EditorOp;
 
 /* Decodes an MSG_OP payload after the caller already decoded the header

@@ -4,7 +4,8 @@
 #include "arena.h"
 #include "debug.h"
 #include "error.h"
-#include "game.h" // game_delete_entity_cascade (S8.7f3a extraction)
+#include "game.h"         // game_delete_entity_cascade (S8.7f3a extraction)
+#include "net_protocol.h" // AttrRecord (S8.7f3 paste place attrs)
 #include "net_session.h"
 #include "network.h" // network_lock_find (S8.7f3a delete gate)
 #include "strv.h"
@@ -827,7 +828,78 @@ static int spawn_copied_entity(Diag *diag, GameState *state, const EditorCopyEnt
     return spawned->id;
 }
 
-/* ACTION_EDITOR_PASTE (S5.7, D38): clone every copy_buffer entry at
+/* S8.7f3: convert one plain-value copy-buffer attr into a wire AttrRecord for a
+ * networked paste's PLACE op. entity_id is a placeholder (-1): the PLACE
+ * applier targets the freshly spawned root by the host-assigned id, never by
+ * the record's own entity_id (net_protocol.h). The name/value Strv view into
+ * the copy buffer's own char storage, valid for the immediate commit send. */
+static AttrRecord attr_record_from_copy_attr(const EditorCopyAttr *source)
+{
+    AttrRecord record = {.entity_id = -1, .name = strv_from_cstr(source->name), .type = source->type};
+    switch (source->type) {
+    case ATTR_FLOAT:
+        record.value.f = source->value.f;
+        break;
+    case ATTR_INT:
+        record.value.i = source->value.i;
+        break;
+    case ATTR_BOOL:
+        record.value.b = source->value.b;
+        break;
+    case ATTR_STRING:
+        record.value.str = strv_from_cstr(source->value.str);
+        break;
+    }
+    return record;
+}
+
+/* S8.7f3: convert a copy-buffer entry's attrs into wire records for its PLACE
+ * op. out_records must hold at least EDITOR_COPY_ATTR_MAX entries (the copy
+ * buffer's own per-entity attr cap). Returns the count written. */
+static size_t copy_entity_attrs_to_records(const EditorCopyEntity *source, AttrRecord *out_records)
+{
+    size_t count = 0;
+    for (int index = 0; index < source->attr_count; index++) {
+        out_records[count] = attr_record_from_copy_attr(&source->attrs[index]);
+        count++;
+    }
+    return count;
+}
+
+/* S8.7f3: send one PLACE op for a pasted copy-buffer entry, carrying the
+ * entry's converted attrs. placed_entity_id is -1 from a CLIENT (nothing
+ * spawned locally) or the host-assigned root id from a HOST. The seam clamps
+ * the record count to NETWORK_PLACE_ATTRS_MAX and no-ops under NET_OFFLINE
+ * (net_session.c). Both flows source the records from the copy buffer -- NOT
+ * read back off the spawned entity -- so the CLIENT request and the HOSTING
+ * echo carry byte-identical wire content (spawn_copied_entity merges blueprint
+ * defaults the copy buffer never captured, so reading the entity back would
+ * diverge from what a client sends). */
+static void paste_send_place(GameState *state, const EditorCopyEntity *source, Vector2 position, int placed_entity_id)
+{
+    AttrRecord records[EDITOR_COPY_ATTR_MAX];
+    size_t record_count = copy_entity_attrs_to_records(source, records);
+    network_editor_commit_place(state, placed_entity_id, strv_from_cstr(source->blueprint_name), position, records,
+                                record_count);
+}
+
+/* S8.7f3, NET_CLIENT branch of handle_browse_paste: spawn NOTHING locally -- a
+ * client minting local entity ids would re-introduce the id divergence f3a
+ * killed -- push no undo entry, patch no maps, show no toast. Per copy-buffer
+ * entry send a PLACE request carrying the pasted attrs; the host's echoes
+ * materialize the clones on this peer within a few ticks (client_apply_place_echo,
+ * net_session.c). */
+static void handle_browse_paste_client(GameState *state, const Camera2D *camera, const EditorState *editor_state)
+{
+    for (int index = 0; index < editor_state->copy_buffer_count; index++) {
+        const EditorCopyEntity *source = &editor_state->copy_buffer[index];
+        Vector2 spawn_position = {camera->target.x + source->relative_position.x,
+                                  camera->target.y + source->relative_position.y};
+        paste_send_place(state, source, spawn_position, -1);
+    }
+}
+
+/* ACTION_EDITOR_PASTE (S5.7, D38 / S8.7f3): clone every copy_buffer entry at
  * camera->target plus its stored offset from the first entry, preserving
  * the copied group's relative layout. Spawns via level_spawn_entity (the
  * PLACE path) then rebuilds every count-parallel runtime tracking
@@ -837,13 +909,23 @@ static int spawn_copied_entity(Diag *diag, GameState *state, const EditorCopyEnt
  * exactly the case that helper exists for. Selects the pasted clones
  * (multiselect + anchor) so a follow-up group-move/copy acts on them.
  * Does not consume the copy buffer -- the same buffer can be pasted again
- * at a different camera position. */
+ * at a different camera position.
+ *
+ * Networking mirrors handle_place_input's PLACE trichotomy: NET_CLIENT spawns
+ * nothing locally and only sends PLACE requests (handle_browse_paste_client);
+ * NET_HOSTING pastes locally exactly as offline and additionally echoes each
+ * pasted ROOT (paste_send_place with the assigned id); NET_OFFLINE is the
+ * unchanged single-player path (the seam no-ops). */
 static void handle_browse_paste(
     Diag *diag, GameState *state, Camera2D *camera, EditorState *editor_state, UndoHistory *undo_history)
 {
     if (editor_state->copy_buffer_count <= 0) {
         editor_state->toast_text = strv_from_cstr("Nothing to paste");
         editor_state->toast_timer = TOAST_DURATION;
+        return;
+    }
+    if (state->network.mode == NET_CLIENT) {
+        handle_browse_paste_client(state, camera, editor_state);
         return;
     }
     int new_ids[EDITOR_COPY_MAX];
@@ -855,6 +937,9 @@ static void handle_browse_paste(
         int new_id = spawn_copied_entity(diag, state, source, spawn_position);
         if (new_id >= 0 && new_count < EDITOR_COPY_MAX) {
             new_ids[new_count++] = new_id;
+            if (state->network.mode == NET_HOSTING) {
+                paste_send_place(state, source, spawn_position, new_id);
+            }
         }
     }
     if (!setup_current_level_runtime(diag, state)) {

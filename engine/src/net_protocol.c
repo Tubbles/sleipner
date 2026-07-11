@@ -602,7 +602,9 @@ static bool write_op_payload(PacketWriter *writer, const EditorOp *operation)
     }
     case EDITOR_OP_PLACE_ENTITY:
         return packet_writer_write_string(writer, operation->blueprint_name) &&
-               packet_writer_write_f32(writer, operation->move_x) && packet_writer_write_f32(writer, operation->move_y);
+               packet_writer_write_f32(writer, operation->move_x) &&
+               packet_writer_write_f32(writer, operation->move_y) &&
+               protocol_encode_attr_list(writer, operation->place_attrs, operation->place_attr_count);
     case EDITOR_OP_REMOVE_ATTR:
         return packet_writer_write_string(writer, operation->attr_name);
     case EDITOR_OP_DELETE_ENTITY:
@@ -643,7 +645,9 @@ bool protocol_decode_op(PacketReader *reader, EditorOp *out)
         break;
     case EDITOR_OP_PLACE_ENTITY:
         if (!packet_reader_read_string(reader, &operation.blueprint_name) ||
-            !packet_reader_read_f32(reader, &operation.move_x) || !packet_reader_read_f32(reader, &operation.move_y)) {
+            !packet_reader_read_f32(reader, &operation.move_x) || !packet_reader_read_f32(reader, &operation.move_y) ||
+            !protocol_decode_attr_list(reader, operation.place_attrs, NETWORK_PLACE_ATTRS_MAX,
+                                       &operation.place_attr_count)) {
             return false;
         }
         break;
