@@ -57,7 +57,6 @@
 #include "game.h"
 #include "input.h"
 #include "net_protocol.h" // AttrRecord, EventRecord
-#include "net_reliable.h" // ReliableChannel
 #include "undo.h"         // UndoHistory
 
 #include <stddef.h> // size_t
