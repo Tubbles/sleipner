@@ -28,12 +28,13 @@ FAKE_VOID_FUNC(remove_blueprint_child, GameState *, EditorState *, UndoHistory *
 
 /* Cross-file editor fakes: core.c */
 FAKE_VALUE_FUNC(Blueprint *, find_blueprint_by_name, GameState *, const char *);
-/* S8.7h1: blueprint.c's undo/redo trigger sites reroute a connected client's
- * step to the host through these core.c helpers; faked here (default false =
- * host/offline) so the existing local-step tests still fall through to
- * undo_history_step_back. The end-to-end reroute is covered in integration_test.c. */
-FAKE_VALUE_FUNC(bool, editor_client_reroute_undo, GameState *, EditorState *);
-FAKE_VALUE_FUNC(bool, editor_client_reroute_redo, GameState *, EditorState *);
+/* S8.7h2a: blueprint.c's undo/redo trigger sites let the per-author op log handle
+ * a networked session's press through these core.c helpers; faked here (default
+ * false = offline, or a host with an empty op log falling back) so the existing
+ * local-step tests still fall through to undo_history_step_back. The end-to-end
+ * path is covered in integration_test.c. */
+FAKE_VALUE_FUNC(bool, editor_session_undo, GameState *, EditorState *);
+FAKE_VALUE_FUNC(bool, editor_session_redo, GameState *, EditorState *);
 /* Cross-file fake: level.c (the descendant walk lives in the level layer) */
 FAKE_VOID_FUNC(level_mark_deleted_descendants, const Level *, bool *, int);
 
@@ -75,8 +76,8 @@ void setUp(void)
     RESET_FAKE(dispatch_child_props);
     RESET_FAKE(remove_blueprint_child);
     RESET_FAKE(find_blueprint_by_name);
-    RESET_FAKE(editor_client_reroute_undo);
-    RESET_FAKE(editor_client_reroute_redo);
+    RESET_FAKE(editor_session_undo);
+    RESET_FAKE(editor_session_redo);
     RESET_FAKE(level_mark_deleted_descendants);
     RESET_FAKE(fuzzy_finder_build_items);
     RESET_FAKE(undo_history_new_entry);

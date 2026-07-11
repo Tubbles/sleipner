@@ -64,7 +64,7 @@ FAKE_VALUE_FUNC(Strv, undo_history_description, const UndoHistory *);
  * seam once per moved entity; faked here so core.c links without the whole
  * network stack. The end-to-end drag-commit -> op -> converge path is
  * covered black-box in integration_test.c. */
-FAKE_VOID_FUNC(network_editor_commit_move, GameState *, int, Vector2);
+FAKE_VOID_FUNC(network_editor_commit_move, GameState *, int, MoveCommit);
 /* S8.7d2: core.c's grab sites gate on this seam and the drag commit/cancel +
  * deny-drain paths call the release seam; faked here so core.c links without
  * the network stack. try_grab defaults to returning false (fff zero-init), so
@@ -95,11 +95,16 @@ FAKE_VOID_FUNC(network_editor_commit_set_attr, GameState *, int, AttrRecord);
 FAKE_VOID_FUNC(network_editor_commit_remove_attr, GameState *, int, Strv);
 FAKE_VOID_FUNC(network_structural_mark_dirty, NetworkState *);
 FAKE_VALUE_FUNC(AttrRecord, network_attr_record_from_attribute, int, const Attribute *);
-/* S8.7h1: the shared session-undo reroute helpers (defined in core.c, real
- * here) send this reliable event under NET_CLIENT; faked so core.c links
- * without the network stack. The end-to-end reroute is covered black-box in
- * integration_test.c. */
-FAKE_VOID_FUNC(network_client_send_reliable_event, NetworkState *, EventRecord);
+/* S8.7h2a: the per-author op-log undo/redo helpers (editor_session_undo/_redo,
+ * defined in core.c, real here) drive these network/net_session seams. Faked so
+ * core.c links without the network stack; the end-to-end undo/redo is covered
+ * black-box in integration_test.c. */
+FAKE_VALUE_FUNC(bool, network_op_log_pop, NetworkState *, EditorOpLogPair *);
+FAKE_VALUE_FUNC(bool, network_redo_log_pop, NetworkState *, EditorOpLogPair *);
+FAKE_VOID_FUNC(network_redo_log_push, NetworkState *, const EditorOpLogPair *);
+FAKE_VOID_FUNC(network_op_log_repush, NetworkState *, const EditorOpLogPair *);
+FAKE_VOID_FUNC(network_client_send_reliable_op, NetworkState *, const EditorOp *);
+FAKE_VOID_FUNC(host_apply_one_editor_op, GameState *, const EditorOp *, int);
 
 /* TextFormat stub — variadic, cannot use FAKE_VALUE_FUNC */
 const char *TextFormat(const char *text, ...)

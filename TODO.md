@@ -604,3 +604,15 @@ d890de8 through 3641352).
   `path_edit_populate_drives` (POSIX branch in
   `engine/src/settings.c`) so the row also serves as a "jump to
   common Android root" shortcut, gated on `__ANDROID__`.
+- **Host move creates two undo records in a session (S8.7h2a).** A
+  host's own drag move now logs both a snapshot entry ("Move
+  entity", `handle_drag_input`) and a per-author op-log pair
+  (`network_editor_commit_move`). A host undo pops the op log
+  (reverting via the op stream), leaving the snapshot entry
+  unstepped, so the two histories diverge. A second undo then hits
+  the snapshot fallback and reverts to an older state plus a
+  (harmless, non-corrupting) spurious resync. Not fixed here
+  because the clean fix (suppress the drag's snapshot push while in
+  a session) is a behavior decision outside this slice's MOVE
+  scope. Revisit when set-attr/remove-attr/delete/place inverses
+  land, since those seams have the same snapshot/op-log overlap.

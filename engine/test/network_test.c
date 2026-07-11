@@ -117,6 +117,12 @@ void test_stop_resets_every_field_to_offline(void)
     network.clients[0].resync_confirmed_generation = 2;
     network.clients[0].resync_snapshot_owed = true;
     network.client_count = 1;
+    /* S8.7h2a: pre-seed both per-author op logs so their reset is proven the same
+     * way as the fields above. */
+    EditorOp seed_op = {.kind = EDITOR_OP_MOVE_ENTITY, .level_name = strv_from_cstr("dungeon"), .entity_id = 3};
+    network_op_log_push(&network, &seed_op, &seed_op);
+    EditorOpLogPair seed_pair = {.forward = seed_op, .inverse = seed_op};
+    network_redo_log_push(&network, &seed_pair);
 
     network_stop(&network);
 
@@ -155,6 +161,9 @@ void test_stop_resets_every_field_to_offline(void)
     TEST_ASSERT_EQUAL_UINT32(0, network.clients[0].resync_confirmed_generation);
     TEST_ASSERT_FALSE(network.clients[0].resync_snapshot_owed);
     TEST_ASSERT_EQUAL_INT(0, network.client_count);
+    /* S8.7h2a: both op logs emptied. */
+    TEST_ASSERT_EQUAL_INT(0, network.op_log_count);
+    TEST_ASSERT_EQUAL_INT(0, network.redo_log_count);
 }
 
 void test_stop_is_idempotent_on_already_offline_network(void)
@@ -546,6 +555,116 @@ void test_host_receive_full_pending_ops_does_not_mark_op(void)
     TEST_ASSERT_EQUAL_INT32(7, decoded.entity_id);
 
     loopback_network_free(&loopback);
+}
+
+/* ---- S8.7h2a: per-author op-log stacks ----
+ *
+ * Pure stack mutators on NetworkState.op_log / redo_log -- no transport needed,
+ * driven on an all-zero NetworkState directly. */
+
+/* A MOVE op naming `level` at (x, 0), for op-log tests. */
+static EditorOp oplog_move(const char *level, int entity_id, float pos_x)
+{
+    return (EditorOp){
+        .kind = EDITOR_OP_MOVE_ENTITY,
+        .level_name = strv_from_cstr(level),
+        .entity_id = entity_id,
+        .move_x = pos_x,
+    };
+}
+
+void test_op_log_push_pop_round_trips_the_pair(void)
+{
+    NetworkState network = {0};
+    EditorOp forward = oplog_move("dungeon", 7, 100.0F);
+    EditorOp inverse = oplog_move("dungeon", 7, 10.0F);
+    network_op_log_push(&network, &forward, &inverse);
+    TEST_ASSERT_EQUAL_INT(1, network.op_log_count);
+
+    EditorOpLogPair popped = {0};
+    TEST_ASSERT_TRUE(network_op_log_pop(&network, &popped));
+    TEST_ASSERT_EQUAL_INT(0, network.op_log_count);
+    TEST_ASSERT_EQUAL_FLOAT(100.0F, popped.forward.move_x);
+    TEST_ASSERT_EQUAL_FLOAT(10.0F, popped.inverse.move_x);
+    TEST_ASSERT_EQUAL_INT(7, popped.inverse.entity_id);
+    TEST_ASSERT_TRUE(strv_eq_cstr(popped.forward.level_name, "dungeon"));
+}
+
+void test_op_log_pop_empty_returns_false(void)
+{
+    NetworkState network = {0};
+    EditorOpLogPair out = {0};
+    TEST_ASSERT_FALSE(network_op_log_pop(&network, &out));
+    TEST_ASSERT_FALSE(network_redo_log_pop(&network, &out));
+}
+
+/* The popped pair OWNS its level_name bytes: reusing the source slot with a
+ * different level must not corrupt the earlier popped pair's view. */
+void test_op_log_popped_pair_owns_level_name(void)
+{
+    NetworkState network = {0};
+    EditorOp forward = oplog_move("dungeon", 1, 5.0F);
+    EditorOp inverse = oplog_move("dungeon", 1, 0.0F);
+    network_op_log_push(&network, &forward, &inverse);
+
+    EditorOpLogPair first = {0};
+    TEST_ASSERT_TRUE(network_op_log_pop(&network, &first));
+    EditorOp forward2 = oplog_move("overworld", 2, 9.0F);
+    EditorOp inverse2 = oplog_move("overworld", 2, 0.0F);
+    network_op_log_push(&network, &forward2, &inverse2);
+
+    TEST_ASSERT_TRUE(strv_eq_cstr(first.forward.level_name, "dungeon"));
+    TEST_ASSERT_TRUE(strv_eq_cstr(first.inverse.level_name, "dungeon"));
+}
+
+void test_op_log_push_clears_redo_log(void)
+{
+    NetworkState network = {0};
+    EditorOp move_op = oplog_move("dungeon", 1, 1.0F);
+    EditorOpLogPair pair = {.forward = move_op, .inverse = move_op};
+    network_redo_log_push(&network, &pair);
+    TEST_ASSERT_EQUAL_INT(1, network.redo_log_count);
+    network_op_log_push(&network, &move_op, &move_op);
+    TEST_ASSERT_EQUAL_INT(0, network.redo_log_count);
+}
+
+/* Repush is the redo path's op_log push -- it must NOT clear redo_log. */
+void test_op_log_repush_preserves_redo_log(void)
+{
+    NetworkState network = {0};
+    EditorOp move_op = oplog_move("dungeon", 1, 1.0F);
+    EditorOpLogPair pair = {.forward = move_op, .inverse = move_op};
+    network_redo_log_push(&network, &pair);
+    network_op_log_repush(&network, &pair);
+    TEST_ASSERT_EQUAL_INT(1, network.op_log_count);
+    TEST_ASSERT_EQUAL_INT(1, network.redo_log_count);
+}
+
+/* Pushing past the cap shifts out the OLDEST entry, keeping the newest on top. */
+void test_op_log_push_past_cap_drops_oldest(void)
+{
+    NetworkState network = {0};
+    for (int index = 0; index < NETWORK_OP_LOG_MAX + 3; index++) {
+        EditorOp forward = oplog_move("dungeon", index, (float)index);
+        EditorOp inverse = oplog_move("dungeon", index, 0.0F);
+        network_op_log_push(&network, &forward, &inverse);
+    }
+    TEST_ASSERT_EQUAL_INT(NETWORK_OP_LOG_MAX, network.op_log_count);
+    EditorOpLogPair top = {0};
+    TEST_ASSERT_TRUE(network_op_log_pop(&network, &top));
+    TEST_ASSERT_EQUAL_INT(NETWORK_OP_LOG_MAX + 2, top.forward.entity_id);
+}
+
+void test_op_logs_clear_empties_both(void)
+{
+    NetworkState network = {0};
+    EditorOp move_op = oplog_move("dungeon", 1, 1.0F);
+    EditorOpLogPair pair = {.forward = move_op, .inverse = move_op};
+    network_op_log_push(&network, &move_op, &move_op);
+    network_redo_log_push(&network, &pair);
+    network_op_logs_clear(&network);
+    TEST_ASSERT_EQUAL_INT(0, network.op_log_count);
+    TEST_ASSERT_EQUAL_INT(0, network.redo_log_count);
 }
 
 /* ---- S8.7d1: host lock table helpers ----
@@ -993,6 +1112,13 @@ int main(void)
     RUN_TEST(test_client_send_reliable_op_lands_decodable_on_host);
     RUN_TEST(test_host_broadcast_reliable_op_reaches_both_clients);
     RUN_TEST(test_host_receive_full_pending_ops_does_not_mark_op);
+    RUN_TEST(test_op_log_push_pop_round_trips_the_pair);
+    RUN_TEST(test_op_log_pop_empty_returns_false);
+    RUN_TEST(test_op_log_popped_pair_owns_level_name);
+    RUN_TEST(test_op_log_push_clears_redo_log);
+    RUN_TEST(test_op_log_repush_preserves_redo_log);
+    RUN_TEST(test_op_log_push_past_cap_drops_oldest);
+    RUN_TEST(test_op_logs_clear_empties_both);
     RUN_TEST(test_lock_acquire_grants_when_free);
     RUN_TEST(test_lock_acquire_regrants_idempotently_to_same_holder);
     RUN_TEST(test_lock_acquire_refuses_second_holder);

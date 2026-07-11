@@ -559,42 +559,6 @@ static void host_structural_resync_tick(Diag *diag,
     }
 }
 
-/* S8.7h1: shared host-owned session undo (D-C phase C1). ANY connected peer's
- * undo/redo steps the HOST's one linear history; network_host_receive (inside
- * network_host_tick) counted each delivered request onto
- * undo_requests_pending / redo_requests_pending, and run_active_frame drains
- * them here beside the save drain -- the same net/frame split, since network.c
- * can reach neither the UndoHistory nor the editor state. Counters, not bools:
- * a burst of N presses steps N times. Steps with the exact arguments the
- * host's own editor undo path passes. No-op unless NET_HOSTING. */
-static void host_drain_shared_undo_requests(GameState *state, EditorState *editor_state, UndoHistory *undo_history)
-{
-    if (state->network.mode != NET_HOSTING) {
-        return;
-    }
-    uint32_t restore_counter_before_drain = undo_history->restore_counter;
-    while (state->network.undo_requests_pending > 0) {
-        state->network.undo_requests_pending--;
-        undo_history_step_back(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base);
-    }
-    while (state->network.redo_requests_pending > 0) {
-        state->network.redo_requests_pending--;
-        undo_history_step_forward(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base);
-    }
-    /* Only if a step actually restored (an empty history steps zero times and
-     * must trigger nothing). The f2 structural-resync window samples the undo
-     * counters only around handle_editor_input, so a restore driven by THIS
-     * drain -- not by the host's own editor input -- would go unseen; arm the
-     * debounce explicitly here. Re-arming coalesces a burst of steps into one
-     * resync barrier. Also fix up the host's own editor cursor exactly as the
-     * local undo path does, so a remote-triggered restore cannot leave the
-     * host's rule-tree cursor pointing at a stale node. */
-    if (undo_history->restore_counter != restore_counter_before_drain) {
-        editor_clear_stale_restore_cursor(editor_state);
-        network_structural_mark_dirty(&state->network);
-    }
-}
-
 void run_active_frame(Diag *diag,
                       GameState *state,
                       Camera2D *editor_camera,
@@ -714,7 +678,6 @@ void run_active_frame(Diag *diag,
         state->network.save_request_pending = false;
         host_save_and_broadcast(diag, state, editor_state, undo_history, save_fn);
     }
-    host_drain_shared_undo_requests(state, editor_state, undo_history);
     /* S8.7g: a NET_CLIENT clears its own dirty indicator and shows the "Saved"
      * toast once the host acknowledges the canonical save (NETWORK_EVENT_SAVED,
      * flagged on saved_ack_pending by network_client_apply_event inside

@@ -958,42 +958,83 @@ static void handle_browse_paste(
                            strv_from_cstr("Paste entities"));
 }
 
-/* Called on undo/redo. The entity/attr selection (selected_entity_id +
- * selected_attr_* identity) and the watch list all resolve by stable id/name
- * against the restored gamedata, so they survive the step — a selection whose
- * entity no longer exists simply resolves to -1 on next use, and dead watch
- * ids are skipped at draw time. Only selected_tree_index is genuinely stale:
- * it's a raw cursor into the rule-tree node list, which has no stable id yet,
- * and undo can restore a different node layout underneath it. Public (declared
- * in editor.h) because frame.c's host drain of a networked peer's undo/redo
- * request (S8.7h1) must apply the same fixup to the host's own cursor. */
-void editor_clear_stale_restore_cursor(EditorState *editor_state)
+/* Called on a local snapshot undo/redo restore. The entity/attr selection
+ * (selected_entity_id + selected_attr_* identity) and the watch list all resolve
+ * by stable id/name against the restored gamedata, so they survive the step — a
+ * selection whose entity no longer exists simply resolves to -1 on next use, and
+ * dead watch ids are skipped at draw time. Only selected_tree_index is genuinely
+ * stale: it's a raw cursor into the rule-tree node list, which has no stable id
+ * yet, and undo can restore a different node layout underneath it. File-static as
+ * of S8.7h2a: its only cross-file caller (frame.c's phase-C1 host undo drain) is
+ * gone, so the only remaining callers are core.c's own local-step paths -- the
+ * editor.h export was removed. */
+static void editor_clear_stale_restore_cursor(EditorState *editor_state)
 {
     editor_state->selected_tree_index = -1;
 }
 
-/* S8.7h1 shared session-undo reroute -- see internal.h for the full contract.
- * Under NET_CLIENT the press is sent to the host and reported handled (true);
- * otherwise the caller runs its own local undo/redo path (false). */
-bool editor_client_reroute_undo(GameState *state, EditorState *editor_state)
+/* Set editor_state's toast to `message` for the standard duration. */
+static void editor_toast(EditorState *editor_state, const char *message)
 {
-    if (state->network.mode != NET_CLIENT) {
+    editor_state->toast_text = strv_from_cstr(message);
+    editor_state->toast_timer = TOAST_DURATION;
+}
+
+/* S8.7h2a: replay one op-log op through the session's authoritative channel -- a
+ * NET_CLIENT sends it to the host (op REQUEST), a NET_HOSTING peer applies it
+ * directly (author 0 = the host's own player id). Shared by the undo (inverse) and
+ * redo (forward) paths. Never re-logs: the op-log push sites are only the commit
+ * seams, not this apply path (host_apply_one_editor_op / network.h). */
+static void editor_session_replay_op(GameState *state, const EditorOp *operation)
+{
+    if (state->network.mode == NET_CLIENT) {
+        network_client_send_reliable_op(&state->network, operation);
+        return;
+    }
+    host_apply_one_editor_op(state, operation, 0);
+}
+
+/* S8.7h2a per-author undo -- see internal.h for the full contract. */
+bool editor_session_undo(GameState *state, EditorState *editor_state)
+{
+    if (state->network.mode != NET_CLIENT && state->network.mode != NET_HOSTING) {
         return false;
     }
-    network_client_send_reliable_event(&state->network, (EventRecord){.event_type = NETWORK_EVENT_UNDO_REQUEST});
-    editor_state->toast_text = strv_from_cstr("Undo requested");
-    editor_state->toast_timer = TOAST_DURATION;
+    EditorOpLogPair pair = {0};
+    if (!network_op_log_pop(&state->network, &pair)) {
+        /* Empty log: a client stops here (it must not step its own snapshot
+         * history); a host falls back to the local snapshot step (return false). */
+        if (state->network.mode == NET_HOSTING) {
+            return false;
+        }
+        editor_toast(editor_state, "Nothing to undo");
+        return true;
+    }
+    editor_session_replay_op(state, &pair.inverse);
+    network_redo_log_push(&state->network, &pair);
+    editor_toast(editor_state, "Undo");
     return true;
 }
 
-bool editor_client_reroute_redo(GameState *state, EditorState *editor_state)
+/* S8.7h2a per-author redo -- the mirror of editor_session_undo. */
+bool editor_session_redo(GameState *state, EditorState *editor_state)
 {
-    if (state->network.mode != NET_CLIENT) {
+    if (state->network.mode != NET_CLIENT && state->network.mode != NET_HOSTING) {
         return false;
     }
-    network_client_send_reliable_event(&state->network, (EventRecord){.event_type = NETWORK_EVENT_REDO_REQUEST});
-    editor_state->toast_text = strv_from_cstr("Redo requested");
-    editor_state->toast_timer = TOAST_DURATION;
+    EditorOpLogPair pair = {0};
+    if (!network_redo_log_pop(&state->network, &pair)) {
+        if (state->network.mode == NET_HOSTING) {
+            return false;
+        }
+        editor_toast(editor_state, "Nothing to redo");
+        return true;
+    }
+    editor_session_replay_op(state, &pair.forward);
+    /* Re-home on op_log WITHOUT clearing redo_log -- the rest of the redo stack
+     * stays redoable. */
+    network_op_log_repush(&state->network, &pair);
+    editor_toast(editor_state, "Redo");
     return true;
 }
 
@@ -1194,19 +1235,20 @@ dispatch_radial_confirm(GameState *state, EditorState *editor_state, WatchList *
 /* --- Public functions --- */
 
 /* BROWSE-mode undo/redo, split out of handle_browse_input to keep that
- * function's cognitive complexity under the readability threshold. A connected
- * client reroutes the step to the host's shared history (S8.7h1); host/offline
- * run the local step, fix up the stale rule-tree cursor, and toast the restored
- * entry's description. Returns true if an undo or redo press was consumed, so
- * the caller early-returns (the chord must be checked before the single-atom
- * navigate bindings it shares atoms with). */
+ * function's cognitive complexity under the readability threshold. In a networked
+ * session the per-author op log handles the press (S8.7h2a, editor_session_undo/
+ * _redo); when it does not (offline, or a host with an empty op log falling back)
+ * the local snapshot step runs, fixing up the stale rule-tree cursor and toasting
+ * the restored entry's description. Returns true if an undo or redo press was
+ * consumed, so the caller early-returns (the chord must be checked before the
+ * single-atom navigate bindings it shares atoms with). */
 static bool handle_browse_history_input(GameState *state,
                                         EditorState *editor_state,
                                         UndoHistory *undo_history,
                                         const InputState *input)
 {
     if (input_pressed(input, &state->bindings, ACTION_EDITOR_UNDO)) {
-        if (!editor_client_reroute_undo(state, editor_state)) {
+        if (!editor_session_undo(state, editor_state)) {
             undo_history_step_back(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base);
             editor_clear_stale_restore_cursor(editor_state);
             editor_state->toast_text = undo_history_description(undo_history);
@@ -1215,7 +1257,7 @@ static bool handle_browse_history_input(GameState *state,
         return true;
     }
     if (input_pressed(input, &state->bindings, ACTION_EDITOR_REDO)) {
-        if (!editor_client_reroute_redo(state, editor_state)) {
+        if (!editor_session_redo(state, editor_state)) {
             undo_history_step_forward(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base);
             editor_clear_stale_restore_cursor(editor_state);
             editor_state->toast_text = undo_history_description(undo_history);
@@ -1410,15 +1452,21 @@ void handle_drag_input(
          * multiselect_reset_to), so one call per moved entity here covers
          * both. Each entity's final (post grid-snap) position is re-derived
          * by stable id. network_editor_commit_move is a no-op under
-         * NET_OFFLINE, so single-player editing is untouched. */
+         * NET_OFFLINE, so single-player editing is untouched. S8.7h2a: the
+         * pre-drag position for the undo inverse is saved_group_positions[index]
+         * -- index-aligned with multiselect_ids (save_group_positions_for_drag)
+         * and NOT touched by the grid snap above, which only moves the live
+         * positions -- so it is the exact value an undo should restore to. */
         for (int index = 0; index < editor_state->multiselect_count; index++) {
             int moved_index =
                 level_find_entity_by_id(&state->gamedata.current_level, editor_state->multiselect_ids[index]);
             if (moved_index < 0) {
                 continue;
             }
-            network_editor_commit_move(state, editor_state->multiselect_ids[index],
-                                       state->gamedata.current_level.entities.data[moved_index].position);
+            network_editor_commit_move(
+                state, editor_state->multiselect_ids[index],
+                (MoveCommit){.previous_position = editor_state->saved_group_positions[index],
+                             .new_position = state->gamedata.current_level.entities.data[moved_index].position});
         }
         /* S8.7d2: release the locks the grab took (no-op offline). */
         network_editor_release_locks(state, editor_state->multiselect_ids, editor_state->multiselect_count);

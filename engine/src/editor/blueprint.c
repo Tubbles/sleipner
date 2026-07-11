@@ -429,18 +429,22 @@ static void handle_blueprint_detail_input(GameState *state,
     }
 
     /* Undo/redo runs before other actions so chord (L1+Left/Right, Ctrl+Z/Y) is not
-     * masked by the plain Left/Right navigate bindings. S8.7h1: a connected client
-     * reroutes the step to the host's shared history (editor_client_reroute_*,
-     * core.c) instead of touching its own; host/offline run the local step. */
+     * masked by the plain Left/Right navigate bindings. S8.7h2a: the per-author op
+     * log handles the press in a networked session (editor_session_*, core.c); when
+     * it does not (offline, or a host with an empty op log) the local snapshot step
+     * runs. Blueprint mode is structural, so a NET_CLIENT never reaches here (client
+     * structural modes are blocked) and a NET_HOSTING peer's blueprint edit is not
+     * op-logged -- the empty-log host fallback runs the local step and the f2
+     * trigger resyncs. */
     if (input_pressed(input, &state->bindings, ACTION_EDITOR_UNDO)) {
-        if (editor_client_reroute_undo(state, editor_state)) {
+        if (editor_session_undo(state, editor_state)) {
             return;
         }
         undo_history_step_back(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base);
         return;
     }
     if (input_pressed(input, &state->bindings, ACTION_EDITOR_REDO)) {
-        if (editor_client_reroute_redo(state, editor_state)) {
+        if (editor_session_redo(state, editor_state)) {
             return;
         }
         undo_history_step_forward(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base);

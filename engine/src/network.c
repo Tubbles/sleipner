@@ -147,11 +147,10 @@ void network_stop(NetworkState *network)
      * re-flags an ack on the next host save). */
     network->save_request_pending = false;
     network->saved_ack_pending = false;
-    /* S8.7h1: the shared session-undo request queue and the per-tick applied-op
-     * count are session state -- back to the offline zero (the host re-queues on
-     * the next client undo/redo, re-counts on the next applied op batch). */
-    network->undo_requests_pending = 0;
-    network->redo_requests_pending = 0;
+    /* S8.7h2a: both per-author op logs are session state -- cleared here so a
+     * fresh session starts with an empty undo/redo history. S8.7h1: the per-tick
+     * applied-op count is likewise back to the offline zero. */
+    network_op_logs_clear(network);
     network->ops_applied_this_tick = 0;
     /* Back to the offline zero (counters live only inside a session --
      * network_apply_hosting re-arms next_op_seq at hosting start, and the
@@ -197,6 +196,86 @@ void network_stop(NetworkState *network)
     memset(network->resync_chunk_bitmap, 0, sizeof(network->resync_chunk_bitmap));
     memset(network->resync_incoming_level_name, 0, sizeof(network->resync_incoming_level_name));
     network->resync_ready = false;
+}
+
+/* ---- S8.7h2a: per-author op-log stacks (D-C phase C2) ---- */
+
+/* Repoint a pair's forward/inverse level_name Strvs at the pair's OWN
+ * level_name_bytes. Called after any struct copy (store, shift, pop) so a pair
+ * never keeps a Strv aliasing a different slot's buffer. */
+static void op_log_pair_repoint(EditorOpLogPair *pair)
+{
+    Strv owned = strv_from_cstr(pair->level_name_bytes);
+    pair->forward.level_name = owned;
+    pair->inverse.level_name = owned;
+}
+
+/* Push `pair` (whose level_name_bytes already holds the correct name) onto a
+ * fixed-cap stack, shifting out the oldest entry at capacity. The stored copy's
+ * Strvs are repointed at its own buffer; the shifted survivors are repointed too,
+ * since each shift is a struct copy that would otherwise alias the source slot. */
+static void op_log_stack_push(EditorOpLogPair *stack, int *count, const EditorOpLogPair *pair)
+{
+    if (*count >= NETWORK_OP_LOG_MAX) {
+        for (int index = 1; index < NETWORK_OP_LOG_MAX; index++) {
+            stack[index - 1] = stack[index];
+            op_log_pair_repoint(&stack[index - 1]);
+        }
+        *count = NETWORK_OP_LOG_MAX - 1;
+    }
+    stack[*count] = *pair;
+    op_log_pair_repoint(&stack[*count]);
+    (*count)++;
+}
+
+/* Pop the top of a fixed-cap stack into `out`, making `out` self-owning. */
+static bool op_log_stack_pop(EditorOpLogPair *stack, int *count, EditorOpLogPair *out)
+{
+    if (*count == 0) {
+        return false;
+    }
+    *out = stack[--(*count)];
+    op_log_pair_repoint(out);
+    return true;
+}
+
+void network_op_log_push(NetworkState *network, const EditorOp *forward, const EditorOp *inverse)
+{
+    EditorOpLogPair pair = {.forward = *forward, .inverse = *inverse};
+    strv_copy_to_cstr(forward->level_name, pair.level_name_bytes, sizeof(pair.level_name_bytes));
+    op_log_stack_push(network->op_log, &network->op_log_count, &pair);
+    network->redo_log_count = 0;
+}
+
+bool network_op_log_pop(NetworkState *network, EditorOpLogPair *out)
+{
+    return op_log_stack_pop(network->op_log, &network->op_log_count, out);
+}
+
+bool network_redo_log_pop(NetworkState *network, EditorOpLogPair *out)
+{
+    return op_log_stack_pop(network->redo_log, &network->redo_log_count, out);
+}
+
+void network_redo_log_push(NetworkState *network, const EditorOpLogPair *pair)
+{
+    op_log_stack_push(network->redo_log, &network->redo_log_count, pair);
+}
+
+void network_op_log_repush(NetworkState *network, const EditorOpLogPair *pair)
+{
+    op_log_stack_push(network->op_log, &network->op_log_count, pair);
+}
+
+void network_redo_log_clear(NetworkState *network)
+{
+    network->redo_log_count = 0;
+}
+
+void network_op_logs_clear(NetworkState *network)
+{
+    network->op_log_count = 0;
+    network->redo_log_count = 0;
 }
 
 /* ---- S8.4a: session JOIN + INPUT flow ---- */
@@ -592,17 +671,9 @@ static void handle_event_datagram(NetworkState *network, NetAddr src, uint32_t s
     if (event.event_type == NETWORK_EVENT_SAVE_REQUEST) {
         network->save_request_pending = true;
     }
-    /* S8.7h1: a client asking the host to step the one shared undo/redo history
-     * (D-C phase C1). Counted, not flagged: three rapid presses must step three
-     * times, and the reliable channel has already dedup'd resends here. The frame
-     * layer drains the counter, steps the host's history, and the structural
-     * resync barrier carries the restore to every peer. */
-    if (event.event_type == NETWORK_EVENT_UNDO_REQUEST) {
-        network->undo_requests_pending++;
-    }
-    if (event.event_type == NETWORK_EVENT_REDO_REQUEST) {
-        network->redo_requests_pending++;
-    }
+    /* S8.7h2a (D-C phase C2) removed the phase-C1 undo/redo request events: undo is
+     * now a peer-local op-log replay that rides the ordinary forward-op channel, so
+     * the host no longer queues undo/redo requests here. */
 }
 
 /* S8.7c: an MSG_OP from a registered client is not applied here (network.c

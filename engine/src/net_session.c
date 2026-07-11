@@ -344,6 +344,39 @@ static void host_handle_remove_attr(GameState *state, EditorOp *operation, int s
  * gamedata-mutating handler at its apply+echo point, so frame.c can push one
  * "Network edit" undo entry per tick that actually applied client edits (see
  * the field's doc, network.h). */
+void host_apply_one_editor_op(GameState *state, const EditorOp *operation, int sender_player_id)
+{
+    /* The kind handlers stamp `operation` in place (host_stamp_and_broadcast), so
+     * work on a mutable copy -- the caller's op (a decoded packet op, or an op-log
+     * inverse/forward) must not be mutated. */
+    EditorOp mutable_op = *operation;
+    switch (mutable_op.kind) {
+    case EDITOR_OP_MOVE_ENTITY:
+        host_handle_move(state, &mutable_op, sender_player_id);
+        break;
+    case EDITOR_OP_DELETE_ENTITY:
+        host_handle_delete(state, &mutable_op, sender_player_id);
+        break;
+    case EDITOR_OP_PLACE_ENTITY:
+        host_handle_place(state, &mutable_op, sender_player_id);
+        break;
+    case EDITOR_OP_LOCK_ACQUIRE:
+        host_handle_lock_acquire(state, &mutable_op, sender_player_id);
+        break;
+    case EDITOR_OP_LOCK_RELEASE:
+        host_handle_lock_release(state, &mutable_op, sender_player_id);
+        break;
+    case EDITOR_OP_SET_ATTR:
+        host_handle_set_attr(state, &mutable_op, sender_player_id);
+        break;
+    case EDITOR_OP_REMOVE_ATTR:
+        host_handle_remove_attr(state, &mutable_op, sender_player_id);
+        break;
+    case EDITOR_OP_LOCK_DENY:
+        break;
+    }
+}
+
 static void host_apply_and_echo_ops(GameState *state, const PendingEditorOps *ops)
 {
     state->network.ops_applied_this_tick = 0;
@@ -357,32 +390,7 @@ static void host_apply_and_echo_ops(GameState *state, const PendingEditorOps *op
         if (!protocol_decode_op(&packet.reader, &operation)) {
             continue;
         }
-        int sender_player_id = ops->sender_player_ids[index];
-        switch (operation.kind) {
-        case EDITOR_OP_MOVE_ENTITY:
-            host_handle_move(state, &operation, sender_player_id);
-            break;
-        case EDITOR_OP_DELETE_ENTITY:
-            host_handle_delete(state, &operation, sender_player_id);
-            break;
-        case EDITOR_OP_PLACE_ENTITY:
-            host_handle_place(state, &operation, sender_player_id);
-            break;
-        case EDITOR_OP_LOCK_ACQUIRE:
-            host_handle_lock_acquire(state, &operation, sender_player_id);
-            break;
-        case EDITOR_OP_LOCK_RELEASE:
-            host_handle_lock_release(state, &operation, sender_player_id);
-            break;
-        case EDITOR_OP_SET_ATTR:
-            host_handle_set_attr(state, &operation, sender_player_id);
-            break;
-        case EDITOR_OP_REMOVE_ATTR:
-            host_handle_remove_attr(state, &operation, sender_player_id);
-            break;
-        case EDITOR_OP_LOCK_DENY:
-            break;
-        }
+        host_apply_one_editor_op(state, &operation, ops->sender_player_ids[index]);
     }
 }
 
@@ -659,10 +667,13 @@ bool network_host_begin_structural_resync(
     }
 
     /* (4) The structural edit is a session-wide barrier: clear undo and push a
-     * fresh baseline, mirroring the hot-reload / transition reload paths. */
+     * fresh baseline, mirroring the hot-reload / transition reload paths. S8.7h2a:
+     * also clear both per-author op logs -- entity ids are reassigned by the
+     * re-parse below, so every logged op (and its inverse) is stale. */
     undo_history_clear(undo_history);
     undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
                            strv_from_cstr("Structural resync"));
+    network_op_logs_clear(network);
 
     /* (5) Arm the next generation for streaming (first edit makes it 1);
      * resync_send_timer 0 sends on the next host tick's sweep. */
@@ -1120,7 +1131,15 @@ static void network_client_receive_event(NetworkState *network, uint32_t seq, Pa
 /* S8.7c: apply one MOVE echo onto this client's replica -- reuses
  * apply_synced_position so the moved entity lerps smoothly toward its new
  * position exactly as a synced POS_X/POS_Y pair does. No-op for an entity id
- * this client's level does not have. */
+ * this client's level does not have.
+ *
+ * S8.7h2a author==me seam: an echo whose author_player_id == local_player_id is
+ * this client's own committed (or undone/redone) move coming back. It needs NO
+ * extra op-log bookkeeping here -- the {forward, inverse} pair was already logged
+ * at commit time (network_editor_commit_move) and an undo/redo re-sends through
+ * that same seam, so the echo just applies the position like any other. The next
+ * slice's PLACE logging (which must learn the host-assigned id off its own echo)
+ * is what hooks the author==me branch; MOVE does not need it. */
 static void client_apply_move_echo(GameState *state, const EditorOp *operation)
 {
     int entity_index = level_find_entity_by_id(&state->gamedata.current_level, operation->entity_id);
@@ -1557,11 +1576,13 @@ bool network_client_apply_resync(
         return false;
     }
     /* Session-wide barrier, mirroring the host: clear undo, push a fresh
-     * baseline. Both sides re-parsed the same bytes, so entity ids and
-     * gamedata_hash re-converge here. */
+     * baseline, and (S8.7h2a) clear both per-author op logs -- the re-parse
+     * reassigned entity ids, so every logged op is stale. Both sides re-parsed
+     * the same bytes, so entity ids and gamedata_hash re-converge here. */
     undo_history_clear(undo_history);
     undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
                            strv_from_cstr("Structural resync"));
+    network_op_logs_clear(network);
     /* Confirm to the host over the reliable client->host channel so it stops
      * re-streaming this generation. The generation rides EventRecord.entity_id
      * (handle_event_datagram, network.c reads it back). */
@@ -1571,7 +1592,19 @@ bool network_client_apply_resync(
     return true;
 }
 
-void network_editor_commit_move(GameState *state, int entity_id, Vector2 new_position)
+/* S8.7h2a: build the inverse of a committed MOVE -- the same op moved back to
+ * previous_position, op_seq reset to 0 (undo re-sends it as a fresh forward op,
+ * which the host re-stamps on its echo). entity_id/level_name/author are shared. */
+static EditorOp move_inverse_op(const EditorOp *forward, Vector2 previous_position)
+{
+    EditorOp inverse = *forward;
+    inverse.op_seq = 0;
+    inverse.move_x = previous_position.x;
+    inverse.move_y = previous_position.y;
+    return inverse;
+}
+
+void network_editor_commit_move(GameState *state, int entity_id, MoveCommit move)
 {
     if (state->network.mode == NET_CLIENT) {
         /* Op REQUEST: op_seq 0 (the host stamps the real serialization
@@ -1584,9 +1617,14 @@ void network_editor_commit_move(GameState *state, int entity_id, Vector2 new_pos
             .entity_id = entity_id,
             .author_player_id = state->network.local_player_id,
             .op_seq = 0,
-            .move_x = new_position.x,
-            .move_y = new_position.y,
+            .move_x = move.new_position.x,
+            .move_y = move.new_position.y,
         };
+        /* S8.7h2a: log {forward, inverse} for this peer's own undo BEFORE sending.
+         * Optimistic: if the host drops this forward (lock/cross-level), the logged
+         * inverse only re-asserts the value the session already has -- a no-op. */
+        EditorOp inverse = move_inverse_op(&operation, move.previous_position);
+        network_op_log_push(&state->network, &operation, &inverse);
         network_client_send_reliable_op(&state->network, &operation);
         return;
     }
@@ -1600,9 +1638,12 @@ void network_editor_commit_move(GameState *state, int entity_id, Vector2 new_pos
             .entity_id = entity_id,
             .author_player_id = 0,
             .op_seq = state->network.next_op_seq++,
-            .move_x = new_position.x,
-            .move_y = new_position.y,
+            .move_x = move.new_position.x,
+            .move_y = move.new_position.y,
         };
+        /* S8.7h2a: log this peer's own undo pair before broadcasting the echo. */
+        EditorOp inverse = move_inverse_op(&operation, move.previous_position);
+        network_op_log_push(&state->network, &operation, &inverse);
         network_host_broadcast_reliable_op(&state->network, &operation);
         return;
     }
@@ -1610,6 +1651,10 @@ void network_editor_commit_move(GameState *state, int entity_id, Vector2 new_pos
 
 void network_editor_commit_delete(GameState *state, int entity_id)
 {
+    /* S8.7h2a: delete inverses are not logged yet (next slice), but a new commit
+     * must still invalidate any pending redo so a stale redo cannot resurrect over
+     * a newer edit. Harmless offline (the redo log is empty there). */
+    network_redo_log_clear(&state->network);
     if (state->network.mode == NET_CLIENT) {
         /* Op REQUEST (op_seq 0, the host stamps its echo); the local delete
          * already happened as this peer's preview. */
@@ -1665,6 +1710,9 @@ void network_editor_commit_place(GameState *state,
                                  const AttrRecord *attrs,
                                  size_t attr_count)
 {
+    /* S8.7h2a: place inverses are not logged yet (next slice); still clear redo so
+     * a new commit invalidates any pending redo. */
+    network_redo_log_clear(&state->network);
     if (state->network.mode == NET_CLIENT) {
         /* Op REQUEST: entity_id MUST be -1 -- the host assigns entity ids
          * (EditorOp's doc comment, net_protocol.h). placed_entity_id is
@@ -1707,6 +1755,9 @@ void network_editor_commit_place(GameState *state,
 
 void network_editor_commit_set_attr(GameState *state, int entity_id, AttrRecord record)
 {
+    /* S8.7h2a: set-attr inverses are not logged yet (next slice); still clear redo
+     * so a new commit invalidates any pending redo. */
+    network_redo_log_clear(&state->network);
     if (state->network.mode == NET_CLIENT) {
         /* Op REQUEST (op_seq 0, the host stamps its echo); the local mutation
          * already happened as this peer's preview. The record's own entity_id
@@ -1741,6 +1792,9 @@ void network_editor_commit_set_attr(GameState *state, int entity_id, AttrRecord 
 
 void network_editor_commit_remove_attr(GameState *state, int entity_id, Strv attr_name)
 {
+    /* S8.7h2a: remove-attr inverses are not logged yet (next slice); still clear
+     * redo so a new commit invalidates any pending redo. */
+    network_redo_log_clear(&state->network);
     if (state->network.mode == NET_CLIENT) {
         EditorOp operation = {
             .kind = EDITOR_OP_REMOVE_ATTR,

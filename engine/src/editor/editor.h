@@ -469,14 +469,6 @@ void handle_browse_input(Diag *diag,
                          UndoHistory *undo_history,
                          InputState input,
                          float delta_time);
-/* Reset the editor cursor state that a gamedata restore (undo/redo) can leave
- * stale. The only genuinely stale cursor is selected_tree_index -- a raw index
- * into the rule-tree node list, which a restore can restructure underneath;
- * every id/name-keyed selection re-resolves lazily. Called by the local editor
- * undo/redo path AND by frame.c's drain of a networked peer's undo/redo request
- * (S8.7h1), so the host's own editor cursor stays consistent after a
- * remote-triggered restore. */
-void editor_clear_stale_restore_cursor(EditorState *editor_state);
 /* Round `value` to the nearest multiple of TILE_SIZE. Pure math, no side
  * effects (S5.7, D38) -- used for grid-snap on PLACE's spawn position and
  * DRAG/group-move's commit position when EditorState.grid_snap is set. */

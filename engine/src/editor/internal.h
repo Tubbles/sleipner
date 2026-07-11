@@ -220,18 +220,25 @@ void editor_attr_confirm_propagate(GameState *state, EditorState *editor_state);
  * not here. No-op offline (the seam and the dirty helper self-guard on mode). */
 void editor_attr_propagate_set(GameState *state, int entity_id, const Attribute *attr, AttrSection section);
 
-/* S8.7h1: shared host-owned session undo (D-C phase C1). At every editor
- * undo/redo trigger site, a NET_CLIENT must NOT step its own local history
- * (that silently diverges its replica). These reroute the press to the host --
- * send NETWORK_EVENT_UNDO_REQUEST / NETWORK_EVENT_REDO_REQUEST and toast that
- * the request is in flight -- returning true so the caller early-returns without
- * touching local history. Under NET_HOSTING and NET_OFFLINE they return false so
- * the caller runs its unchanged local undo/redo path (the host's own restore
- * already resyncs every peer, S8.7f2). Defined in core.c, which reaches the net
- * seams; blueprint.c calls them through this header without an own network
- * dependency. */
-[[nodiscard]] bool editor_client_reroute_undo(GameState *state, EditorState *editor_state);
-[[nodiscard]] bool editor_client_reroute_redo(GameState *state, EditorState *editor_state);
+/* S8.7h2a: per-author op-log undo/redo (D-C phase C2). At every editor undo/redo
+ * trigger site these handle the press for a networked session (NET_HOSTING or
+ * NET_CLIENT) and return TRUE so the caller early-returns without touching its
+ * local snapshot history:
+ *  - op_log/redo_log non-empty: pop the pair and re-send its INVERSE (undo) or
+ *    FORWARD (redo) as a fresh forward op through the normal sync/lock path -- a
+ *    NET_CLIENT via network_client_send_reliable_op, a NET_HOSTING peer directly
+ *    via host_apply_one_editor_op (author 0). Undo re-homes the pair on redo_log,
+ *    redo re-homes it on op_log; a toast ("Undo"/"Redo") gives feedback.
+ *  - op_log/redo_log EMPTY: a NET_CLIENT toasts "Nothing to undo"/"Nothing to
+ *    redo" and does nothing else (a client must never step its own snapshot
+ *    history -- that diverges its replica). A NET_HOSTING peer returns FALSE so
+ *    the caller runs its LOCAL snapshot step, the structural fallback that still
+ *    covers in-session structural edits (the f2 restore trigger then resyncs).
+ * Under NET_OFFLINE both return FALSE so single-player editing runs its unchanged
+ * local undo/redo path. Defined in core.c, which reaches the net seams;
+ * blueprint.c calls them through this header without an own network dependency. */
+[[nodiscard]] bool editor_session_undo(GameState *state, EditorState *editor_state);
+[[nodiscard]] bool editor_session_redo(GameState *state, EditorState *editor_state);
 
 /* --- Cross-file calls: attr.c (called from core.c) --- */
 

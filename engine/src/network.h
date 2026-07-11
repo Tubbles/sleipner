@@ -162,26 +162,19 @@ typedef enum {
  *    saved". entity_id/argument unused (zero). Each client clears its own dirty
  *    indicator and shows the "Saved" toast on delivery (network_client_apply_event
  *    flags saved_ack_pending for the frame layer).
- *  - NETWORK_EVENT_UNDO_REQUEST / NETWORK_EVENT_REDO_REQUEST (S8.7h1): client->host,
- *    "step the shared history back / forward one". entity_id/argument unused (zero).
- *    Design decision D-C phase C1 -- one host-owned linear undo history per session:
- *    ANY peer's undo/redo steps the HOST's snapshot history, and the restore reaches
- *    every peer through the existing structural-resync barrier (S8.7f2 resyncs on any
- *    host-side undo/redo restore). There is deliberately NO explicit ack: that resync
- *    IS the acknowledgment -- it clears the requesting client's own now-stale local
- *    history and re-baselines it (f1 behavior). A client never steps its own local
- *    history, which would silently diverge its replica (the S8.7c quirk this closes).
- *    handle_event_datagram COUNTS each delivered request (undo_requests_pending /
- *    redo_requests_pending below) rather than flagging a bool, so three rapid presses
- *    step three times; the reliable channel already dedups resends. This interim
- *    coarse history knowingly deviates from DESIGN.md's per-player-undo promise;
- *    phase C2 (a later slice) restores per-author undo for scene ops. */
+ *
+ * S8.7h2a (D-C phase C2) RETIRED the phase-C1 shared-undo events
+ * NETWORK_EVENT_UNDO_REQUEST / NETWORK_EVENT_REDO_REQUEST: undo/redo is no longer a
+ * "step the host's one shared history" request. Each peer now keeps its OWN op log
+ * (op_log/redo_log below) of the scene ops it authored with locally-computed
+ * inverses, and an undo re-sends the inverse as an ordinary forward op through the
+ * normal sync/lock path -- so no dedicated event type, and no host-side request
+ * counter, is needed. The per-batch "Network edit" host snapshot still anchors the
+ * host's structural fallback (a host undo with an empty op log). */
 #define NETWORK_EVENT_PLAYER_JOINED 1
 #define NETWORK_EVENT_RESYNC_COMPLETE 2
 #define NETWORK_EVENT_SAVE_REQUEST 3
 #define NETWORK_EVENT_SAVED 4
-#define NETWORK_EVENT_UNDO_REQUEST 5
-#define NETWORK_EVENT_REDO_REQUEST 6
 
 /* S8.7f1: full-gamedata structural resync sizing.
  *  - NETWORK_RESYNC_MAX_BYTES caps the emitted TOML a single resync can carry;
@@ -349,6 +342,34 @@ typedef struct {
     bool active;
 } PresenceEntry;
 
+/* S8.7h2a (D-C phase C2): capped depth of this peer's own committed-scene-op
+ * undo log. A user-action bound (one entry per committed edit), not a
+ * frame-count-proportional one -- the same justified fixed-cap exception
+ * BindingStore/JoinList/NetClient already rely on. Pushing past the cap shifts
+ * out the OLDEST entry (see network_op_log_push). 32 pairs of EditorOp is a few
+ * hundred KB per GameState, negligible beside the 256 KiB resync_buffer. */
+#define NETWORK_OP_LOG_MAX 32
+
+/* S8.7h2a: one undo-log entry -- a committed scene op and its locally-computed
+ * inverse. Undo re-sends `inverse` as a fresh forward op through the normal
+ * sync/lock path; redo re-sends `forward`. Per-author by construction: each peer
+ * logs only the ops it authored, so an undo only ever reverts this peer's own
+ * edits (the DESIGN.md promise phase C1 could not keep).
+ *
+ * OWNERSHIP: an EditorOp's Strv fields (level_name, and in later slices
+ * blueprint_name / attr_name / the attr record strings) would dangle if they kept
+ * pointing at packet buffers or editor temporaries once the source op is gone. The
+ * pair therefore OWNS a fixed copy of the strings it needs and repoints the stored
+ * ops' Strvs at its own buffer (network_op_log_push / the pop/repush repoint step).
+ * MOVE -- the only kind logged this slice -- carries only level_name, so one buffer
+ * suffices; the next slice (set-attr/remove-attr/place inverses) extends this with
+ * additional owned string storage for those kinds. */
+typedef struct {
+    EditorOp forward;
+    EditorOp inverse;
+    char level_name_bytes[NETWORK_RESYNC_LEVEL_NAME_MAX];
+} EditorOpLogPair;
+
 typedef struct {
     NetMode mode;
     NetTransport transport;
@@ -439,27 +460,18 @@ typedef struct {
      * "Saved". Both reset by network_stop. */
     bool save_request_pending;
     bool saved_ack_pending;
-    /* S8.7h1: HOST side only -- shared session-undo request queue (D-C phase C1;
-     * see the NETWORK_EVENT_UNDO_REQUEST doc above). handle_event_datagram
-     * increments these on each delivered client undo/redo request; the frame
-     * layer (run_active_frame) drains them, steps the host's one linear
-     * UndoHistory, and arms the structural resync so the restore reaches every
-     * peer. COUNTERS, not bools: a burst of N presses must step N times (the
-     * reliable channel already dedups resends, so each increment is a distinct
-     * press). Reset to 0 by network_stop. Meaningless on a CLIENT's own
-     * NetworkState -- a client sends requests, it never queues them. */
-    int undo_requests_pending;
-    int redo_requests_pending;
     /* S8.7h1: HOST side only -- how many client editor ops this tick's
      * host_apply_and_echo_ops (net_session.c) actually APPLIED to gamedata
      * (move/delete/place/attr set/attr remove; a lock-table op mutates no
      * gamedata and a denied/dropped op mutates nothing, so neither counts).
      * Zeroed at that function's entry, so it is only meaningful to frame.c's
      * undo bookkeeping in the SAME tick: run_active_frame pushes one "Network
-     * edit" undo entry per tick whose count is nonzero, giving a client's
-     * committed edit its own snapshot boundary in the shared session history
-     * (D-C phase C1 -- an undo reverts the last committed batch, not every
-     * client edit since the host's last own edit). Reset by network_stop. */
+     * edit" undo entry per tick whose count is nonzero. S8.7h2a (D-C phase C2)
+     * retired the shared-history undo, but this per-batch snapshot STAYS -- it now
+     * anchors the HOST's structural fallback: a host undo with an empty op_log
+     * steps this snapshot history (undo_history_step_back) and the f2 restore
+     * trigger resyncs, which is how in-session structural edits (tile paint,
+     * blueprints) are still covered. Reset by network_stop. */
     int ops_applied_this_tick;
     /* S8.7c: HOST side only -- the global editor-op serialization counter.
      * 0 while offline (zero-init default, and network_stop's reset);
@@ -484,6 +496,24 @@ typedef struct {
      * parked in held_ops, one behind is a duplicate and dropped.
      * Meaningless on the HOST's own NetworkState. */
     HeldEditorOp held_ops[NETWORK_OP_HOLDBACK_MAX];
+    /* S8.7h2a (D-C phase C2): this peer's OWN committed-scene-op undo/redo stacks
+     * with locally-computed inverses (see EditorOpLogPair above). op_log_count /
+     * redo_log_count are the stack tops (0 = empty). Per-author by construction:
+     * each peer logs only what it authored, so undoing here reverts only this
+     * peer's edits -- the DESIGN.md promise phase C1's shared history could not
+     * keep. A press pops op_log and re-sends the entry's INVERSE as a fresh
+     * forward op through the normal sync/lock path (network_editor_commit_move's
+     * seam logs the pair at commit); redo pops redo_log and re-sends the FORWARD.
+     * Both roles use them: a NET_CLIENT sends the op to the host, a NET_HOSTING
+     * peer applies it directly through the same authoritative apply path. Session
+     * state, never undo-snapshotted -- both cleared by network_stop and by the
+     * structural-resync barrier (entity ids are reassigned, so every logged op is
+     * stale). Placed adjacent to held_ops (both 8-aligned) so the counts pack
+     * against next_expected_op_seq without introducing struct padding. */
+    EditorOpLogPair op_log[NETWORK_OP_LOG_MAX];
+    EditorOpLogPair redo_log[NETWORK_OP_LOG_MAX];
+    int op_log_count;
+    int redo_log_count;
     uint32_t next_expected_op_seq;
     /* S8.7d1: the entity lock table. On the HOST it is the authority
      * (network_lock_acquire/_release/_refresh_holder mutate it, the timeout
@@ -607,10 +637,51 @@ network_start_hosting(NetworkState *network, Allocator *alloc, const char *host_
  * clients/client_count, local_player_id (S8.6), host_event_channel, the
  * delivered-event bookkeeping (S8.4c), the client-event bookkeeping
  * (S8.7a), (S8.7d1) the lock table plus the client deny list/count,
- * (S8.7e) the presence table plus the outgoing presence bridge fields, and
- * (S8.7g) the save handshake pending flags.
+ * (S8.7e) the presence table plus the outgoing presence bridge fields,
+ * (S8.7g) the save handshake pending flags, and (S8.7h2a) both op logs.
  * Idempotent: safe to call on an already-OFFLINE NetworkState. */
 void network_stop(NetworkState *network);
+
+/* ---- S8.7h2a: per-author op-log helpers (D-C phase C2). Pure stack mutators on
+ * network->op_log / network->redo_log, unit-tested directly in network_test.c.
+ * Every stored pair OWNS its level_name bytes (EditorOpLogPair above): each helper
+ * copies/repoints so a popped or re-pushed pair never aliases a source slot's
+ * buffer, keeping the ops usable after the slot is later reused. ---- */
+
+/* Push a committed op and its inverse onto op_log (copying level_name into the
+ * pair's own buffer and repointing both ops' Strvs at it), and CLEAR redo_log --
+ * a fresh commit invalidates any pending redo. At capacity the OLDEST entry is
+ * shifted out. `forward` and `inverse` name the same level (a MOVE inverse differs
+ * only in position + op_seq), so one owned buffer covers both. */
+void network_op_log_push(NetworkState *network, const EditorOp *forward, const EditorOp *inverse);
+
+/* Pop the top of op_log into `out` (self-owning: `out`'s Strvs point at `out`'s
+ * own level_name bytes, so it stays valid after the slot is reused). Returns false
+ * and leaves `out` untouched when the log is empty. */
+[[nodiscard]] bool network_op_log_pop(NetworkState *network, EditorOpLogPair *out);
+
+/* Pop the top of redo_log into `out`, same self-owning contract as
+ * network_op_log_pop. Returns false when redo_log is empty. */
+[[nodiscard]] bool network_redo_log_pop(NetworkState *network, EditorOpLogPair *out);
+
+/* Push `pair` onto redo_log (undo re-homes the popped pair here). Does NOT touch
+ * op_log. At capacity the oldest entry is shifted out. */
+void network_redo_log_push(NetworkState *network, const EditorOpLogPair *pair);
+
+/* Re-push `pair` onto op_log WITHOUT clearing redo_log -- the redo path's variant
+ * of network_op_log_push (redo re-homes the popped forward pair on op_log while
+ * the rest of the redo stack must stay redoable). At capacity the oldest entry is
+ * shifted out. */
+void network_op_log_repush(NetworkState *network, const EditorOpLogPair *pair);
+
+/* Clear redo_log only. Called from the commit seams of op kinds that do not yet
+ * log an inverse (set-attr/remove-attr/delete/place, whose logging arrives in the
+ * next slice) so a stale redo can never resurrect over a newer edit. */
+void network_redo_log_clear(NetworkState *network);
+
+/* Clear BOTH op logs -- the structural-resync barrier calls this because entity
+ * ids are reassigned, so every logged op is stale. */
+void network_op_logs_clear(NetworkState *network);
 
 /* ---- S8.7d1: entity lock table helpers (host authority + client replica).
  * Pure state mutators on network->locks, unit-tested directly in

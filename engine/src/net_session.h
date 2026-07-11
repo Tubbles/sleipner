@@ -306,8 +306,38 @@ void network_client_apply_state(GameState *state, const AttrRecord *records, siz
  *   this stamps op_seq = next_op_seq++ (author_player_id 0, the host's own
  *   player id) and network_host_broadcast_reliable_op's it to every client.
  *
- * new_position is the entity's final committed position (post grid-snap). */
-void network_editor_commit_move(GameState *state, int entity_id, Vector2 new_position);
+ * S8.7h2a (D-C phase C2): in BOTH session modes this also builds the INVERSE op
+ * (the same move back to move.previous_position, op_seq 0) and network_op_log_push's
+ * the {forward, inverse} pair BEFORE sending, so a later undo can re-send the
+ * inverse through this same channel. Logging optimistically at commit is safe
+ * even for a client whose forward op the host silently drops (lock enforcement,
+ * cross-level): the logged inverse then merely re-asserts the value the session
+ * already holds -- a benign no-op -- so a dropped forward never leaves a
+ * corrupting entry in the log.
+ *
+ * move.previous_position is the entity's position BEFORE the drag (the drag's
+ * saved pre-grab value); move.new_position is its final committed position (post
+ * grid-snap). The two are grouped into MoveCommit rather than passed as two
+ * adjacent Vector2 parameters: they are used separately (new_position builds the
+ * forward op, previous_position the inverse), the swap-prone shape
+ * bugprone-easily-swappable-parameters flags. */
+typedef struct {
+    Vector2 previous_position;
+    Vector2 new_position;
+} MoveCommit;
+
+void network_editor_commit_move(GameState *state, int entity_id, MoveCommit move);
+
+/* S8.7c/S8.7h2a: apply ONE editor op through the host's authoritative dispatch --
+ * the single-op core of host_apply_and_echo_ops, factored out so the host's own
+ * op-log undo/redo (editor/core.c's editor_session_undo/_redo) can replay an
+ * inverse/forward op through the exact same path a client op takes: kind dispatch,
+ * lock enforcement, apply, ops_applied_this_tick bump, op_seq stamp, and echo to
+ * every client. sender_player_id is 0 for the host's own replayed ops. Note the
+ * op-log push sites are ONLY the commit seams (network_editor_commit_move), never
+ * this apply path, so replaying an inverse here can never re-log it -- the
+ * re-entry guard falls out of the architecture rather than needing a flag. */
+void host_apply_one_editor_op(GameState *state, const EditorOp *operation, int sender_player_id);
 
 /* S8.7d2: called by the editor at grab time (both grab entry points,
  * editor/core.c) with the full multiselect id set, BEFORE entering
