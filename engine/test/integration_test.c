@@ -7264,6 +7264,572 @@ void test_integration_delete_blocked_by_foreign_lock(void)
     loopback_network_free(&loopback);
 }
 
+/* ---- Integration: S8.7f3b collaborative entity ATTR SET/REMOVE ----
+ *
+ * Same two-TestGame-over-net_loopback.h shape as the S8.7c move tests,
+ * reusing host_session_gamedata. Both peers are editor-mode so the host's
+ * every-tick DELTA broadcast is suspended and the op stream is the sole
+ * entity-state channel. The commit is seam-driven directly
+ * (network_editor_commit_set_attr / _remove_attr): the scene ATTR panel's
+ * real-input value-commit navigation is exercised by the editor unit tests;
+ * here the focus is the wire + the write-both applier converging BOTH
+ * entity->attrs and entity->persisted_attrs on BOTH peers. The entity edited
+ * is the authored hero (local:0), whose id both peers agree on. */
+void test_integration_set_attr_op_converges_both_sets(void)
+{
+    LoopbackNetwork loopback;
+    loopback_network_init(&loopback, &test_heap_alloc);
+    NetAddr host_addr = net_addr_make(1, 9000);
+    NetAddr client_addr = net_addr_make(2, 9001);
+    NetTransport host_transport;
+    NetTransport client_transport;
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, host_addr, &host_transport));
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, client_addr, &client_transport));
+
+    TestGame host;
+    TEST_ASSERT_TRUE(test_game_setup(&host, host_session_gamedata));
+    host.state.network.mode = NET_HOSTING;
+    host.state.network.transport = host_transport;
+    host.state.network.next_op_seq = 1;
+
+    TestGame client;
+    TEST_ASSERT_TRUE(test_game_setup(&client, host_session_gamedata));
+    client.state.network.mode = NET_JOINING;
+    client.state.network.transport = client_transport;
+    client.state.network.join_target = host_addr;
+
+    Entity *host_hero = test_find_entity_by_blueprint(&host.state, "hero");
+    TEST_ASSERT_NOT_NULL(host_hero);
+    int host_hero_id = host_hero->id;
+
+    InputState no_input = {0};
+    for (int frame = 0; frame < 3; frame++) {
+        test_advance_frame(&client, no_input);
+        test_advance_frame(&host, no_input);
+    }
+    TEST_ASSERT_EQUAL_INT(NET_CLIENT, client.state.network.mode);
+
+    host.state.editor_mode = true;
+    client.state.editor_mode = true;
+
+    AttrRecord record = {
+        .entity_id = host_hero_id, .name = strv_from_cstr("charge"), .type = ATTR_FLOAT, .value = {.f = 7.5F}};
+    network_editor_commit_set_attr(&client.state, host_hero_id, record);
+
+    for (int frame = 0; frame < 5; frame++) {
+        test_advance_frame(&client, no_input);
+        test_advance_frame(&host, no_input);
+    }
+
+    Entity *host_hero_after = test_find_entity_by_id(&host.state, host_hero_id);
+    Entity *client_hero_after = test_find_entity_by_id(&client.state, host_hero_id);
+    TEST_ASSERT_NOT_NULL(host_hero_after);
+    TEST_ASSERT_NOT_NULL(client_hero_after);
+    /* Both peers, both attr sets. */
+    TEST_ASSERT_EQUAL_FLOAT(7.5F, attr_get_float(&host_hero_after->attrs, "charge", 0.0F));
+    TEST_ASSERT_EQUAL_FLOAT(7.5F, attr_get_float(&host_hero_after->persisted_attrs, "charge", 0.0F));
+    TEST_ASSERT_EQUAL_FLOAT(7.5F, attr_get_float(&client_hero_after->attrs, "charge", 0.0F));
+    TEST_ASSERT_EQUAL_FLOAT(7.5F, attr_get_float(&client_hero_after->persisted_attrs, "charge", 0.0F));
+
+    test_game_teardown(&host);
+    test_game_teardown(&client);
+    loopback_network_free(&loopback);
+}
+
+/* A string attr SET converges, and the client's stored string is a deep copy
+ * into its own gamedata arena, NOT a view into the (long-since recycled)
+ * receive buffer: the value still reads back correctly after many further
+ * ticks have reused the loopback inbox slots. */
+void test_integration_set_attr_string_converges_deep_copy(void)
+{
+    LoopbackNetwork loopback;
+    loopback_network_init(&loopback, &test_heap_alloc);
+    NetAddr host_addr = net_addr_make(1, 9000);
+    NetAddr client_addr = net_addr_make(2, 9001);
+    NetTransport host_transport;
+    NetTransport client_transport;
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, host_addr, &host_transport));
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, client_addr, &client_transport));
+
+    TestGame host;
+    TEST_ASSERT_TRUE(test_game_setup(&host, host_session_gamedata));
+    host.state.network.mode = NET_HOSTING;
+    host.state.network.transport = host_transport;
+    host.state.network.next_op_seq = 1;
+
+    TestGame client;
+    TEST_ASSERT_TRUE(test_game_setup(&client, host_session_gamedata));
+    client.state.network.mode = NET_JOINING;
+    client.state.network.transport = client_transport;
+    client.state.network.join_target = host_addr;
+
+    Entity *host_hero = test_find_entity_by_blueprint(&host.state, "hero");
+    TEST_ASSERT_NOT_NULL(host_hero);
+    int host_hero_id = host_hero->id;
+
+    InputState no_input = {0};
+    for (int frame = 0; frame < 3; frame++) {
+        test_advance_frame(&client, no_input);
+        test_advance_frame(&host, no_input);
+    }
+    TEST_ASSERT_EQUAL_INT(NET_CLIENT, client.state.network.mode);
+
+    host.state.editor_mode = true;
+    client.state.editor_mode = true;
+
+    AttrRecord record = {.entity_id = host_hero_id,
+                         .name = strv_from_cstr("display_name"),
+                         .type = ATTR_STRING,
+                         .value = {.str = strv_from_cstr("Golden Chest")}};
+    network_editor_commit_set_attr(&client.state, host_hero_id, record);
+
+    /* Extra ticks well past the round-trip recycle the loopback inbox, so a
+     * shallow copy (a Strv still pointing into a stale receive buffer) would
+     * read back garbage here. */
+    for (int frame = 0; frame < 20; frame++) {
+        test_advance_frame(&client, no_input);
+        test_advance_frame(&host, no_input);
+    }
+
+    Entity *host_hero_after = test_find_entity_by_id(&host.state, host_hero_id);
+    Entity *client_hero_after = test_find_entity_by_id(&client.state, host_hero_id);
+    TEST_ASSERT_NOT_NULL(host_hero_after);
+    TEST_ASSERT_NOT_NULL(client_hero_after);
+    TEST_ASSERT_EQUAL_STRING("Golden Chest", attr_get_string(&host_hero_after->attrs, "display_name"));
+    TEST_ASSERT_EQUAL_STRING("Golden Chest", attr_get_string(&host_hero_after->persisted_attrs, "display_name"));
+    TEST_ASSERT_EQUAL_STRING("Golden Chest", attr_get_string(&client_hero_after->attrs, "display_name"));
+    TEST_ASSERT_EQUAL_STRING("Golden Chest", attr_get_string(&client_hero_after->persisted_attrs, "display_name"));
+
+    test_game_teardown(&host);
+    test_game_teardown(&client);
+    loopback_network_free(&loopback);
+}
+
+/* A REMOVE_ATTR converges: after a SET establishes an attr on both peers in
+ * both sets, a client REMOVE takes it out of both sets on both peers. */
+void test_integration_remove_attr_op_converges(void)
+{
+    LoopbackNetwork loopback;
+    loopback_network_init(&loopback, &test_heap_alloc);
+    NetAddr host_addr = net_addr_make(1, 9000);
+    NetAddr client_addr = net_addr_make(2, 9001);
+    NetTransport host_transport;
+    NetTransport client_transport;
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, host_addr, &host_transport));
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, client_addr, &client_transport));
+
+    TestGame host;
+    TEST_ASSERT_TRUE(test_game_setup(&host, host_session_gamedata));
+    host.state.network.mode = NET_HOSTING;
+    host.state.network.transport = host_transport;
+    host.state.network.next_op_seq = 1;
+
+    TestGame client;
+    TEST_ASSERT_TRUE(test_game_setup(&client, host_session_gamedata));
+    client.state.network.mode = NET_JOINING;
+    client.state.network.transport = client_transport;
+    client.state.network.join_target = host_addr;
+
+    Entity *host_hero = test_find_entity_by_blueprint(&host.state, "hero");
+    TEST_ASSERT_NOT_NULL(host_hero);
+    int host_hero_id = host_hero->id;
+
+    InputState no_input = {0};
+    for (int frame = 0; frame < 3; frame++) {
+        test_advance_frame(&client, no_input);
+        test_advance_frame(&host, no_input);
+    }
+    TEST_ASSERT_EQUAL_INT(NET_CLIENT, client.state.network.mode);
+
+    host.state.editor_mode = true;
+    client.state.editor_mode = true;
+
+    AttrRecord record = {
+        .entity_id = host_hero_id, .name = strv_from_cstr("temp"), .type = ATTR_INT, .value = {.i = 3}};
+    network_editor_commit_set_attr(&client.state, host_hero_id, record);
+    for (int frame = 0; frame < 5; frame++) {
+        test_advance_frame(&client, no_input);
+        test_advance_frame(&host, no_input);
+    }
+    /* Present on both peers, both sets, before the removal. */
+    TEST_ASSERT_NOT_NULL(attr_get(&test_find_entity_by_id(&host.state, host_hero_id)->attrs, "temp"));
+    TEST_ASSERT_NOT_NULL(attr_get(&test_find_entity_by_id(&client.state, host_hero_id)->persisted_attrs, "temp"));
+
+    network_editor_commit_remove_attr(&client.state, host_hero_id, strv_from_cstr("temp"));
+    for (int frame = 0; frame < 5; frame++) {
+        test_advance_frame(&client, no_input);
+        test_advance_frame(&host, no_input);
+    }
+
+    Entity *host_hero_after = test_find_entity_by_id(&host.state, host_hero_id);
+    Entity *client_hero_after = test_find_entity_by_id(&client.state, host_hero_id);
+    TEST_ASSERT_NULL(attr_get(&host_hero_after->attrs, "temp"));
+    TEST_ASSERT_NULL(attr_get(&host_hero_after->persisted_attrs, "temp"));
+    TEST_ASSERT_NULL(attr_get(&client_hero_after->attrs, "temp"));
+    TEST_ASSERT_NULL(attr_get(&client_hero_after->persisted_attrs, "temp"));
+
+    test_game_teardown(&host);
+    test_game_teardown(&client);
+    loopback_network_free(&loopback);
+}
+
+/* Fixture whose hero blueprint carries a bool default (`flag`), so the scene
+ * ATTR panel resolves a BLUEPRINT-section row the tests can toggle. */
+static const char *blueprint_edit_gamedata = "[[blueprint]]\n"
+                                             "name = \"hero\"\n"
+                                             "texture = \"t.png\"\n"
+                                             "src = [0, 0, 16, 16]\n"
+                                             "behavior = \"player\"\n"
+                                             "speed = 80\n"
+                                             "flag = true\n"
+                                             "\n"
+                                             "[[level]]\n"
+                                             "name = \"test\"\n"
+                                             "size = [400, 300]\n"
+                                             "\n"
+                                             "[[level.entity]]\n"
+                                             "blueprint = \"hero\"\n"
+                                             "pos = [100, 100]\n";
+
+/* Seed the scene ATTR panel's stable selection identity straight onto the
+ * hero blueprint's `flag` row (the same fields editor_set_selected_attr would
+ * write), then a real-input CONFIRM toggles it -- the black-box drive for the
+ * blueprint-section-in-Scene-mode path. */
+static void test_seed_blueprint_flag_selection(TestGame *game, int hero_id)
+{
+    game->editor_state.top_mode = EDITOR_TOP_SCENE;
+    game->editor_state.sub_mode = EDITOR_SUB_BROWSE;
+    game->editor_state.selected_entity_id = hero_id;
+    game->editor_state.selected_tree_index = -1;
+    game->editor_state.selected_attr_kind = EDITOR_ATTR_SEL_NAMED;
+    game->editor_state.selected_attr_section = ATTR_SECTION_BLUEPRINT;
+    memcpy(game->editor_state.selected_attr_name, "flag", sizeof("flag"));
+}
+
+/* On the HOST, toggling a scene ATTR panel BLUEPRINT-section row (blueprint
+ * defaults are structural) arms the structural-resync debounce -- closing the
+ * S8.7f2 gap where a Scene-mode blueprint edit bypassed frame.c's top-mode
+ * trigger. Proven observably: the debounce timer is 0 before and armed (> 0)
+ * after the toggle. */
+void test_integration_host_blueprint_scene_edit_arms_resync(void)
+{
+    LoopbackNetwork loopback;
+    loopback_network_init(&loopback, &test_heap_alloc);
+    NetAddr host_addr = net_addr_make(1, 9000);
+    NetAddr client_addr = net_addr_make(2, 9001);
+    NetTransport host_transport;
+    NetTransport client_transport;
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, host_addr, &host_transport));
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, client_addr, &client_transport));
+
+    TestGame host;
+    TEST_ASSERT_TRUE(test_game_setup(&host, blueprint_edit_gamedata));
+    host.state.network.mode = NET_HOSTING;
+    host.state.network.transport = host_transport;
+    host.state.network.next_op_seq = 1;
+
+    TestGame client;
+    TEST_ASSERT_TRUE(test_game_setup(&client, blueprint_edit_gamedata));
+    client.state.network.mode = NET_JOINING;
+    client.state.network.transport = client_transport;
+    client.state.network.join_target = host_addr;
+
+    Entity *host_hero = test_find_entity_by_blueprint(&host.state, "hero");
+    TEST_ASSERT_NOT_NULL(host_hero);
+    int hero_id = host_hero->id;
+
+    InputState no_input = {0};
+    for (int frame = 0; frame < 3; frame++) {
+        test_advance_frame(&client, no_input);
+        test_advance_frame(&host, no_input);
+    }
+    TEST_ASSERT_EQUAL_INT(NET_CLIENT, client.state.network.mode);
+
+    host.state.editor_mode = true;
+    test_seed_blueprint_flag_selection(&host, hero_id);
+
+    TEST_ASSERT_EQUAL_FLOAT(0.0F, host.state.network.structural_resync_debounce_timer);
+
+    InputState confirm = {0};
+    input_state_press_key(&confirm, KEY_ENTER);
+    test_advance_frame(&host, confirm);
+
+    /* The blueprint default toggled true->false, and the resync is armed
+     * (still counting down since the host is mid-edit). */
+    TEST_ASSERT_FALSE(attr_get_bool(&host.state.gamedata.blueprints.entries.data[0].attrs, "flag", true));
+    TEST_ASSERT_TRUE(host.state.network.structural_resync_debounce_timer > 0.0F);
+
+    test_game_teardown(&host);
+    test_game_teardown(&client);
+    loopback_network_free(&loopback);
+}
+
+/* On a CLIENT, a scene ATTR panel BLUEPRINT-section edit is refused: a toast
+ * fires, the blueprint default is NOT mutated locally, and nothing is sent
+ * (the host's copy stays untouched). */
+void test_integration_client_blueprint_scene_edit_blocked(void)
+{
+    LoopbackNetwork loopback;
+    loopback_network_init(&loopback, &test_heap_alloc);
+    NetAddr host_addr = net_addr_make(1, 9000);
+    NetAddr client_addr = net_addr_make(2, 9001);
+    NetTransport host_transport;
+    NetTransport client_transport;
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, host_addr, &host_transport));
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, client_addr, &client_transport));
+
+    TestGame host;
+    TEST_ASSERT_TRUE(test_game_setup(&host, blueprint_edit_gamedata));
+    host.state.network.mode = NET_HOSTING;
+    host.state.network.transport = host_transport;
+    host.state.network.next_op_seq = 1;
+
+    TestGame client;
+    TEST_ASSERT_TRUE(test_game_setup(&client, blueprint_edit_gamedata));
+    client.state.network.mode = NET_JOINING;
+    client.state.network.transport = client_transport;
+    client.state.network.join_target = host_addr;
+
+    Entity *client_hero = test_find_entity_by_blueprint(&client.state, "hero");
+    TEST_ASSERT_NOT_NULL(client_hero);
+    int hero_id = client_hero->id;
+
+    InputState no_input = {0};
+    for (int frame = 0; frame < 3; frame++) {
+        test_advance_frame(&client, no_input);
+        test_advance_frame(&host, no_input);
+    }
+    TEST_ASSERT_EQUAL_INT(NET_CLIENT, client.state.network.mode);
+
+    client.state.editor_mode = true;
+    test_seed_blueprint_flag_selection(&client, hero_id);
+
+    InputState confirm = {0};
+    input_state_press_key(&confirm, KEY_ENTER);
+    test_advance_frame(&client, confirm);
+    for (int frame = 0; frame < 4; frame++) {
+        test_advance_frame(&host, no_input);
+        test_advance_frame(&client, no_input);
+    }
+
+    /* Blocked: toast fired, the client's blueprint default is unchanged, and
+     * the host never received anything (its default is unchanged too). */
+    TEST_ASSERT_TRUE(client.editor_state.toast_text.len > 0);
+    TEST_ASSERT_TRUE(attr_get_bool(&client.state.gamedata.blueprints.entries.data[0].attrs, "flag", false));
+    TEST_ASSERT_TRUE(attr_get_bool(&host.state.gamedata.blueprints.entries.data[0].attrs, "flag", false));
+
+    test_game_teardown(&host);
+    test_game_teardown(&client);
+    loopback_network_free(&loopback);
+}
+
+/* A client attr ADD converges on both peers in both attr sets, driven
+ * black-box through the real widgets.c add flow: CONFIRM on the runtime ADD
+ * row opens the fuzzy finder, CONFIRM on "[ NEW... ]" opens the word builder,
+ * one NAV_DOWN + CONFIRM appends the first builtin word ("chest",
+ * word_builder_builtin[0] -- deterministic), NAV_UP + CONFIRM commits via
+ * add_attr_by_name. An ADD is a SET on the wire: the write-both applier
+ * creates the attr (int 0) on every replica. */
+void test_integration_client_attr_add_converges_via_word_builder(void)
+{
+    LoopbackNetwork loopback;
+    loopback_network_init(&loopback, &test_heap_alloc);
+    NetAddr host_addr = net_addr_make(1, 9000);
+    NetAddr client_addr = net_addr_make(2, 9001);
+    NetTransport host_transport;
+    NetTransport client_transport;
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, host_addr, &host_transport));
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, client_addr, &client_transport));
+
+    TestGame host;
+    TEST_ASSERT_TRUE(test_game_setup(&host, host_session_gamedata));
+    host.state.network.mode = NET_HOSTING;
+    host.state.network.transport = host_transport;
+    host.state.network.next_op_seq = 1;
+
+    TestGame client;
+    TEST_ASSERT_TRUE(test_game_setup(&client, host_session_gamedata));
+    client.state.network.mode = NET_JOINING;
+    client.state.network.transport = client_transport;
+    client.state.network.join_target = host_addr;
+
+    Entity *host_hero = test_find_entity_by_blueprint(&host.state, "hero");
+    TEST_ASSERT_NOT_NULL(host_hero);
+    int hero_id = host_hero->id;
+
+    InputState no_input = {0};
+    for (int frame = 0; frame < 3; frame++) {
+        test_advance_frame(&client, no_input);
+        test_advance_frame(&host, no_input);
+    }
+    TEST_ASSERT_EQUAL_INT(NET_CLIENT, client.state.network.mode);
+
+    host.state.editor_mode = true;
+    client.state.editor_mode = true;
+
+    /* Seed the selection on the RUNTIME section's ADD row (the stable identity
+     * editor_set_selected_attr would write). */
+    client.editor_state.sub_mode = EDITOR_SUB_BROWSE;
+    client.editor_state.selected_entity_id = hero_id;
+    client.editor_state.selected_tree_index = -1;
+    client.editor_state.selected_attr_kind = EDITOR_ATTR_SEL_ADD;
+    client.editor_state.selected_attr_section = ATTR_SECTION_RUNTIME;
+
+    InputState confirm = {0};
+    input_state_press_key(&confirm, KEY_ENTER);
+    InputState nav_down = {0};
+    input_state_press_key(&nav_down, KEY_DOWN);
+    InputState nav_up = {0};
+    input_state_press_key(&nav_up, KEY_UP);
+
+    test_advance_frame(&client, confirm); /* ADD row -> fuzzy finder */
+    test_advance_frame(&host, no_input);
+    TEST_ASSERT_EQUAL_INT(EDITOR_SUB_FUZZY_FINDER, client.editor_state.sub_mode);
+    test_advance_frame(&client, confirm); /* "[ NEW... ]" -> word builder */
+    test_advance_frame(&host, no_input);
+    TEST_ASSERT_EQUAL_INT(EDITOR_SUB_WORD_BUILDER, client.editor_state.sub_mode);
+    test_advance_frame(&client, nav_down); /* -> "chest" (first builtin) */
+    test_advance_frame(&host, no_input);
+    test_advance_frame(&client, confirm); /* append "chest" */
+    test_advance_frame(&host, no_input);
+    test_advance_frame(&client, nav_up); /* -> "[ DONE ]" */
+    test_advance_frame(&host, no_input);
+    test_advance_frame(&client, confirm); /* add + seam request */
+    test_advance_frame(&host, no_input);
+    TEST_ASSERT_EQUAL_INT(EDITOR_SUB_BROWSE, client.editor_state.sub_mode);
+
+    for (int frame = 0; frame < 5; frame++) {
+        test_advance_frame(&client, no_input);
+        test_advance_frame(&host, no_input);
+    }
+
+    Entity *host_hero_after = test_find_entity_by_id(&host.state, hero_id);
+    Entity *client_hero_after = test_find_entity_by_id(&client.state, hero_id);
+    TEST_ASSERT_NOT_NULL(host_hero_after);
+    TEST_ASSERT_NOT_NULL(client_hero_after);
+    TEST_ASSERT_EQUAL_INT(0, attr_get_int(&host_hero_after->attrs, "chest", -1));
+    TEST_ASSERT_EQUAL_INT(0, attr_get_int(&host_hero_after->persisted_attrs, "chest", -1));
+    TEST_ASSERT_EQUAL_INT(0, attr_get_int(&client_hero_after->attrs, "chest", -1));
+    TEST_ASSERT_EQUAL_INT(0, attr_get_int(&client_hero_after->persisted_attrs, "chest", -1));
+
+    test_game_teardown(&host);
+    test_game_teardown(&client);
+    loopback_network_free(&loopback);
+}
+
+/* Fixture whose hero ENTITY carries an authored string attr (`label`), so the
+ * scene ATTR panel resolves a persisted string row the word-builder edit flow
+ * below can drive. Parse seeds entity->attrs as a copy of persisted_attrs, so
+ * both sets start at "old" on both peers. */
+static const char *string_attr_gamedata = "[[blueprint]]\n"
+                                          "name = \"hero\"\n"
+                                          "texture = \"t.png\"\n"
+                                          "src = [0, 0, 16, 16]\n"
+                                          "behavior = \"player\"\n"
+                                          "speed = 80\n"
+                                          "\n"
+                                          "[[level]]\n"
+                                          "name = \"test\"\n"
+                                          "size = [400, 300]\n"
+                                          "\n"
+                                          "[[level.entity]]\n"
+                                          "blueprint = \"hero\"\n"
+                                          "pos = [100, 100]\n"
+                                          "label = \"old\"\n";
+
+/* A client string value commit converges on both peers in both attr sets,
+ * driven black-box through the real word-builder edit flow: CONFIRM on the
+ * persisted string row opens the fuzzy finder, CONFIRM on "[ NEW... ]" opens
+ * the word builder PREFILLED with the current value ("old"), NAV_DOWN +
+ * CONFIRM appends "_chest", NAV_UP + CONFIRM commits "old_chest" via
+ * word_builder_confirm. */
+void test_integration_client_string_edit_converges_via_word_builder(void)
+{
+    LoopbackNetwork loopback;
+    loopback_network_init(&loopback, &test_heap_alloc);
+    NetAddr host_addr = net_addr_make(1, 9000);
+    NetAddr client_addr = net_addr_make(2, 9001);
+    NetTransport host_transport;
+    NetTransport client_transport;
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, host_addr, &host_transport));
+    TEST_ASSERT_TRUE(loopback_transport_create(&loopback, client_addr, &client_transport));
+
+    TestGame host;
+    TEST_ASSERT_TRUE(test_game_setup(&host, string_attr_gamedata));
+    host.state.network.mode = NET_HOSTING;
+    host.state.network.transport = host_transport;
+    host.state.network.next_op_seq = 1;
+
+    TestGame client;
+    TEST_ASSERT_TRUE(test_game_setup(&client, string_attr_gamedata));
+    client.state.network.mode = NET_JOINING;
+    client.state.network.transport = client_transport;
+    client.state.network.join_target = host_addr;
+
+    Entity *host_hero = test_find_entity_by_blueprint(&host.state, "hero");
+    TEST_ASSERT_NOT_NULL(host_hero);
+    int hero_id = host_hero->id;
+
+    InputState no_input = {0};
+    for (int frame = 0; frame < 3; frame++) {
+        test_advance_frame(&client, no_input);
+        test_advance_frame(&host, no_input);
+    }
+    TEST_ASSERT_EQUAL_INT(NET_CLIENT, client.state.network.mode);
+
+    host.state.editor_mode = true;
+    client.state.editor_mode = true;
+
+    /* Seed the selection on the persisted "label" row. */
+    client.editor_state.sub_mode = EDITOR_SUB_BROWSE;
+    client.editor_state.selected_entity_id = hero_id;
+    client.editor_state.selected_tree_index = -1;
+    client.editor_state.selected_attr_kind = EDITOR_ATTR_SEL_NAMED;
+    client.editor_state.selected_attr_section = ATTR_SECTION_PERSISTED;
+    memcpy(client.editor_state.selected_attr_name, "label", sizeof("label"));
+
+    InputState confirm = {0};
+    input_state_press_key(&confirm, KEY_ENTER);
+    InputState nav_down = {0};
+    input_state_press_key(&nav_down, KEY_DOWN);
+    InputState nav_up = {0};
+    input_state_press_key(&nav_up, KEY_UP);
+
+    test_advance_frame(&client, confirm); /* string row -> fuzzy finder */
+    test_advance_frame(&host, no_input);
+    TEST_ASSERT_EQUAL_INT(EDITOR_SUB_FUZZY_FINDER, client.editor_state.sub_mode);
+    test_advance_frame(&client, confirm); /* "[ NEW... ]" -> word builder ("old") */
+    test_advance_frame(&host, no_input);
+    TEST_ASSERT_EQUAL_INT(EDITOR_SUB_WORD_BUILDER, client.editor_state.sub_mode);
+    test_advance_frame(&client, nav_down); /* -> "chest" */
+    test_advance_frame(&host, no_input);
+    test_advance_frame(&client, confirm); /* append -> "old_chest" */
+    test_advance_frame(&host, no_input);
+    test_advance_frame(&client, nav_up); /* -> "[ DONE ]" */
+    test_advance_frame(&host, no_input);
+    test_advance_frame(&client, confirm); /* commit + seam request */
+    test_advance_frame(&host, no_input);
+    TEST_ASSERT_EQUAL_INT(EDITOR_SUB_BROWSE, client.editor_state.sub_mode);
+
+    for (int frame = 0; frame < 5; frame++) {
+        test_advance_frame(&client, no_input);
+        test_advance_frame(&host, no_input);
+    }
+
+    Entity *host_hero_after = test_find_entity_by_id(&host.state, hero_id);
+    Entity *client_hero_after = test_find_entity_by_id(&client.state, hero_id);
+    TEST_ASSERT_NOT_NULL(host_hero_after);
+    TEST_ASSERT_NOT_NULL(client_hero_after);
+    TEST_ASSERT_EQUAL_STRING("old_chest", attr_get_string(&host_hero_after->attrs, "label"));
+    TEST_ASSERT_EQUAL_STRING("old_chest", attr_get_string(&host_hero_after->persisted_attrs, "label"));
+    TEST_ASSERT_EQUAL_STRING("old_chest", attr_get_string(&client_hero_after->attrs, "label"));
+    TEST_ASSERT_EQUAL_STRING("old_chest", attr_get_string(&client_hero_after->persisted_attrs, "label"));
+
+    test_game_teardown(&host);
+    test_game_teardown(&client);
+    loopback_network_free(&loopback);
+}
+
 /* (c) A client's PLACE commit spawns NOTHING locally -- the host's echo is
  * what materializes the entity, on BOTH peers, with the SAME (host-assigned)
  * id at the same position, and the client's next_entity_id is bumped past

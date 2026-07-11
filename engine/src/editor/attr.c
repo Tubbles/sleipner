@@ -339,6 +339,9 @@ static void attr_edit_confirm(GameState *state, EditorState *editor_state, UndoH
                            strv_from_cstr("Edit attribute"));
     reset_attr_hold(editor_state);
     editor_state->sub_mode = EDITOR_SUB_BROWSE;
+    /* S8.7f3b: propagate the committed scene int/float value over the network
+     * (the client-block gate ran at edit entry, handle_browse_confirm). */
+    editor_attr_confirm_propagate(state, editor_state);
 }
 
 void handle_attr_edit_input(

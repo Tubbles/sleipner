@@ -52,6 +52,11 @@ FAKE_VALUE_FUNC(AttrRow, attr_row_at, const GameState *, const Entity *, int);
 FAKE_VALUE_FUNC(AttrSet *, attr_section_set, GameState *, Entity *, AttrSection);
 FAKE_VALUE_FUNC(int, place_visible_count, int);
 FAKE_VALUE_FUNC(int, editor_resolve_selected_attr_index, const GameState *, const Entity *, const EditorState *);
+/* S8.7f3b: widgets.c's attr-add and string-commit sites route their network
+ * propagation through this core.c helper; faked here so widgets.c links
+ * without core.c or the network stack. The end-to-end convergence is covered
+ * black-box in integration_test.c. */
+FAKE_VOID_FUNC(editor_attr_propagate_set, GameState *, int, const Attribute *, AttrSection);
 
 /* Cross-file editor fakes: level.c */
 FAKE_VALUE_FUNC(int, level_find_entity_by_id, const Level *, int);

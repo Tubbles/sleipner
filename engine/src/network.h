@@ -621,6 +621,15 @@ PresenceEntry *network_presence_find(NetworkState *network, int player_id);
  * and its bitmap bit set; resync_ready flips true once every bit is present. */
 void network_resync_accept_chunk(NetworkState *network, const ResyncChunk *chunk);
 
+/* S8.7f2/f3b: arm the host's structural-resync debounce (set
+ * structural_resync_debounce_timer to NETWORK_STRUCTURAL_RESYNC_DEBOUNCE_SECONDS).
+ * No-op unless NET_HOSTING. frame.c's per-frame structural trigger arms via
+ * this, and the scene ATTR panel's blueprint-section edit sites (editor/core.c)
+ * call it directly: those run in EDITOR_TOP_SCENE and so bypass frame.c's
+ * top-mode-gated arm, which would otherwise leave a scene-panel blueprint
+ * default edit un-resynced (the S8.7f2 gap this closes). */
+void network_structural_mark_dirty(NetworkState *network);
+
 /* ---- S8.4a: session JOIN + INPUT flow, over an already-established
  * `network->transport`/`network->join_target` (net.h/net_loopback.h/
  * net_udp.h; net_protocol.h encodes/decodes the wire bytes). Driven every

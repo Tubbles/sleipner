@@ -187,9 +187,12 @@
  * EDITOR_OP_PLACE_ENTITY naming the current level and a resolvable blueprint
  * spawns it at the op's position, and the echo's entity_id is stamped with
  * the host-assigned ROOT entity id (the request carried -1) -- no locks
- * involved, a brand-new entity cannot be contended. Cross-level, unknown-id,
- * or out-of-scope ops (SET_ATTR, and a client-originated LOCK_DENY) are
- * silently dropped (tolerant-skip, same convention as the state appliers).
+ * involved, a brand-new entity cannot be contended. (S8.7f3b) An
+ * EDITOR_OP_SET_ATTR / EDITOR_OP_REMOVE_ATTR follows the same level/entity/lock
+ * rules as a move; on apply the value is written to (or removed from) BOTH
+ * entity->attrs and entity->persisted_attrs (write-both convergence), then
+ * stamped + echoed. Cross-level, unknown-id, or a client-originated LOCK_DENY
+ * are silently dropped (tolerant-skip, same convention as the state appliers).
  * Finally (S8.7d1) the host ages its lock
  * table by delta_time and force-releases any lock whose holder has gone
  * silent past NETWORK_LOCK_TIMEOUT_SECONDS, echoing a LOCK_RELEASE authored by
@@ -379,6 +382,38 @@ void network_editor_commit_delete(GameState *state, int entity_id);
  * NET_HOSTING: stamps op_seq = next_op_seq++ (author 0) and broadcasts the
  *   echo with entity_id = placed_entity_id. */
 void network_editor_commit_place(GameState *state, int placed_entity_id, Strv blueprint_name, Vector2 position);
+
+/* S8.7f3b: build an AttrRecord (entity_id + name + typed value) from a live
+ * entity Attribute, reusing the same value conversion push_entity_sync_records
+ * uses. The name/value Strv view into the attr's own gamedata-arena Str data,
+ * valid for the lifetime of the immediate commit send. Exposed so the scene
+ * editor's attr-commit hooks can read the fresh value back off the entity and
+ * hand it to network_editor_commit_set_attr below. */
+[[nodiscard]] AttrRecord network_attr_record_from_attribute(int entity_id, const Attribute *attr);
+
+/* S8.7f3b: called by the scene ATTR panel right after it commits an
+ * ENTITY-scoped attr edit locally (value commit, bool toggle, add) and pushes
+ * its undo entry. `record` is the fresh value the site just wrote, read back
+ * off the entity (network_attr_record_from_attribute).
+ *
+ * NET_OFFLINE: no-op (single-player).
+ * NET_CLIENT: sends an EDITOR_OP_SET_ATTR REQUEST (op_seq 0, authored by
+ *   local_player_id); the host's echo authoritatively converges every replica.
+ * NET_HOSTING: the local mutation was already authoritative, so this stamps
+ *   op_seq = next_op_seq++ (author 0) and broadcasts the echo.
+ *
+ * Every peer applying the echo writes BOTH entity->attrs and
+ * entity->persisted_attrs (the write-both convergence rule, apply_set_attr),
+ * so replicas end up byte-identical in both sets regardless of which set the
+ * originating editor site mutated locally. */
+void network_editor_commit_set_attr(GameState *state, int entity_id, AttrRecord record);
+
+/* S8.7f3b: the mirror of network_editor_commit_set_attr for an ENTITY-scoped
+ * attr REMOVE (scene ATTR panel X on a persisted/runtime row, or the Handles
+ * gesture clearing its entity collision preview). Sends/echoes an
+ * EDITOR_OP_REMOVE_ATTR carrying attr_name; every peer removes it from BOTH
+ * attr sets (apply_remove_attr). */
+void network_editor_commit_remove_attr(GameState *state, int entity_id, Strv attr_name);
 
 /* ---- S8.7f1: full-gamedata structural resync ----
  *

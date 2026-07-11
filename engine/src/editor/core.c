@@ -353,6 +353,78 @@ static bool delete_selection_networked(GameState *state, EditorState *editor_sta
     return true;
 }
 
+/* S8.7f3b: gate one scene ATTR panel edit before it mutates. Under NET_CLIENT
+ * a BLUEPRINT-section row is refused (blueprint defaults are structural, and a
+ * client structural edit needs the client->host upload that does not exist
+ * yet) and an entity-section row whose entity another player holds is refused
+ * (the same fast local lock gate moves/deletes use). Offline and host always
+ * proceed. Returns true if the edit may proceed. */
+static bool editor_attr_edit_permitted(GameState *state, int entity_id, EditorState *editor_state, AttrSection section)
+{
+    if (state->network.mode != NET_CLIENT) {
+        return true;
+    }
+    if (section == ATTR_SECTION_BLUEPRINT) {
+        editor_state->toast_text = strv_from_cstr("Host only while connected");
+        editor_state->toast_timer = TOAST_DURATION;
+        return false;
+    }
+    const EntityLock *lock = network_lock_find(&state->network, entity_id);
+    if (lock != nullptr && lock->holder_player_id != state->network.local_player_id) {
+        editor_state->toast_text = strv_from_cstr("Locked by another player");
+        editor_state->toast_timer = TOAST_DURATION;
+        return false;
+    }
+    return true;
+}
+
+/* S8.7f3b: see internal.h for the full contract -- exported (not static) since
+ * widgets.c's attr-add and string-commit sites route through it too. */
+void editor_attr_propagate_set(GameState *state, int entity_id, const Attribute *attr, AttrSection section)
+{
+    if (section == ATTR_SECTION_BLUEPRINT) {
+        network_structural_mark_dirty(&state->network);
+        return;
+    }
+    network_editor_commit_set_attr(state, entity_id, network_attr_record_from_attribute(entity_id, attr));
+}
+
+/* S8.7f3b: propagate a committed scene ATTR panel attr REMOVE, the mirror of
+ * editor_attr_propagate_set. */
+static void editor_attr_propagate_remove(GameState *state, int entity_id, const char *attr_name, AttrSection section)
+{
+    if (section == ATTR_SECTION_BLUEPRINT) {
+        network_structural_mark_dirty(&state->network);
+        return;
+    }
+    network_editor_commit_remove_attr(state, entity_id, strv_from_cstr(attr_name));
+}
+
+void editor_attr_confirm_propagate(GameState *state, EditorState *editor_state)
+{
+    if (editor_state->top_mode != EDITOR_TOP_SCENE) {
+        return;
+    }
+    int sel = level_find_entity_by_id(&state->gamedata.current_level, editor_state->selected_entity_id);
+    if (sel < 0) {
+        return;
+    }
+    Entity *entity = &state->gamedata.current_level.entities.data[sel];
+    int attr_idx = editor_resolve_selected_attr_index(state, entity, editor_state);
+    if (attr_idx < 0) {
+        return;
+    }
+    AttrRow row = attr_row_at(state, entity, attr_idx);
+    if (row.kind != ATTR_ROW_KIND_ATTR) {
+        return;
+    }
+    const Attribute *attr = attr_at_display_index(state, entity, attr_idx);
+    if (!attr) {
+        return;
+    }
+    editor_attr_propagate_set(state, entity->id, attr, row.section);
+}
+
 static void select_entity_and_pan(EditorState *editor_state, Camera2D *camera, const Level *level, int entity_index)
 {
     editor_state->selected_entity_id = level->entities.data[entity_index].id;
@@ -421,6 +493,12 @@ handle_browse_select(GameState *state, Camera2D *camera, EditorState *editor_sta
     }
     AttrRow row = attr_row_at(state, entity, attr_idx);
     if (row.kind == ATTR_ROW_KIND_ADD) {
+        /* S8.7f3b: gate the ADD flow at ENTRY like the value edits below -- it
+         * commits far downstream (widgets.c's add_attr_by_name) with no gate of
+         * its own, and this branch returns before the shared gate further down. */
+        if (!editor_attr_edit_permitted(state, entity->id, editor_state, row.section)) {
+            return;
+        }
         fuzzy_finder_build_items(state, editor_state);
         editor_state->fuzzy_finder_scroll = 0;
         if (row.section == ATTR_SECTION_PERSISTED) {
@@ -437,10 +515,18 @@ handle_browse_select(GameState *state, Camera2D *camera, EditorState *editor_sta
     if (!attr) {
         return;
     }
+    /* S8.7f3b: gate the whole edit at ENTRY -- a refused client never enters
+     * the edit sub-mode, so "skip the local mutation" holds for the deferred
+     * int/float/string commits too (they mutate inside the sub-mode). The bool
+     * toggle commits inline here, so it also propagates here. */
+    if (!editor_attr_edit_permitted(state, entity->id, editor_state, row.section)) {
+        return;
+    }
     if (attr->type == ATTR_BOOL) {
         attr->value.b = !attr->value.b;
         undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
                                strv_from_cstr("Toggle attribute"));
+        editor_attr_propagate_set(state, entity->id, attr, row.section);
     } else if (attr->type == ATTR_INT) {
         editor_state->saved_attr_int = attr->value.i;
         editor_state->sub_mode = EDITOR_SUB_ATTR_EDIT;
@@ -573,11 +659,24 @@ handle_browse_delete(GameState *state, EditorState *editor_state, WatchList *wat
         (del_row.section == ATTR_SECTION_PERSISTED || del_row.section == ATTR_SECTION_RUNTIME)) {
         AttrSet *target = attr_section_set(state, del_entity, del_row.section);
         Attribute *del_target = &target->entries.data[del_row.index_in_section];
+        if (!editor_attr_edit_permitted(state, del_entity->id, editor_state, del_row.section)) {
+            return;
+        }
+        /* Capture the name before attr_remove: its swap-and-decrement moves the
+         * last entry into this slot, so del_target->name would point at a
+         * DIFFERENT attr afterward -- and the network REMOVE must carry the name
+         * that was actually removed. */
+        char removed_name[EDITOR_ATTR_NAME_MAX];
+        size_t name_len =
+            del_target->name.len < EDITOR_ATTR_NAME_MAX - 1 ? del_target->name.len : EDITOR_ATTR_NAME_MAX - 1;
+        memcpy(removed_name, del_target->name.ptr, name_len);
+        removed_name[name_len] = '\0';
         Allocator alloc = allocator_arena(&state->gamedata_arena);
         attr_remove(&alloc, target, del_target->name.ptr);
         editor_state->selected_attr_kind = EDITOR_ATTR_SEL_NONE;
         undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
                                strv_from_cstr("Remove attribute"));
+        editor_attr_propagate_remove(state, del_entity->id, removed_name, del_row.section);
     } else if (del_attr < 0 || (del_row.kind == ATTR_ROW_KIND_ATTR && del_row.section == ATTR_SECTION_BLUEPRINT)) {
         if (delete_selection_networked(state, editor_state, watches)) {
             undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
@@ -1268,6 +1367,14 @@ void handle_handle_input(
     Entity *entity = &state->gamedata.current_level.entities.data[sel];
     Allocator alloc = allocator_arena(&state->gamedata_arena);
     if (input_pressed(&input, &state->bindings, ACTION_CONFIRM)) {
+        /* S8.7f3b: the Handles commit BAKES the collision into the blueprint
+         * defaults (structural) and clears the entity preview overrides, so it
+         * is a blueprint-section edit -- a client is blocked here, and still
+         * leaves Handles so it is not stuck. */
+        if (!editor_attr_edit_permitted(state, entity->id, editor_state, ATTR_SECTION_BLUEPRINT)) {
+            editor_state->sub_mode = EDITOR_SUB_BROWSE;
+            return;
+        }
         Blueprint *blueprint = find_blueprint_by_name(state, entity->blueprint_name.ptr);
         if (blueprint != nullptr) {
             (void)attr_set_float(&alloc, &blueprint->attrs, "collision_offset_x", editor_state->saved_col_offset.x);
@@ -1282,6 +1389,16 @@ void handle_handle_input(
         undo_history_new_entry(undo_history, &state->gamedata, &state->gamedata_arena, state->gamedata_base,
                                strv_from_cstr("Resize collision"));
         editor_state->sub_mode = EDITOR_SUB_BROWSE;
+        /* Blueprint collision defaults changed -> full structural resync carries
+         * them to clients (Scene mode bypasses frame.c's top-mode arm). The
+         * entity-side clear rides the op stream too, per the per-site contract;
+         * the resync (a full-gamedata re-emit) also captures it, so on the host
+         * the removes are idempotent with what the resync would reload. */
+        network_structural_mark_dirty(&state->network);
+        editor_attr_propagate_remove(state, entity->id, "collision_offset_x", ATTR_SECTION_RUNTIME);
+        editor_attr_propagate_remove(state, entity->id, "collision_offset_y", ATTR_SECTION_RUNTIME);
+        editor_attr_propagate_remove(state, entity->id, "collision_w", ATTR_SECTION_RUNTIME);
+        editor_attr_propagate_remove(state, entity->id, "collision_h", ATTR_SECTION_RUNTIME);
         return;
     }
     if (input_pressed(&input, &state->bindings, ACTION_CANCEL)) {

@@ -3,6 +3,7 @@
 #include "alloc.h"
 #include "arena.h"
 #include "debug.h"
+#include "editor/editor.h" // AttrSection (S8.7f3b attr-commit routing)
 #include "error.h"
 #include "input.h"
 #include "input_func.h"
@@ -307,32 +308,38 @@ void draw_word_builder_panel(ScreenSize screen, const GameState *state, const Ed
     }
 }
 
+/* Resolve the blueprint AttrSet a blueprint-scoped attr add targets, or
+ * nullptr when nothing resolves. In scene mode selected_blueprint_index isn't
+ * set, so the blueprint is resolved from the selected entity instead. Split
+ * out of add_attr_by_name to keep it under the cognitive-complexity ceiling. */
+static AttrSet *add_attr_blueprint_target(GameState *state, const EditorState *editor_state)
+{
+    if (editor_state->top_mode == EDITOR_TOP_SCENE) {
+        int sel = level_find_entity_by_id(&state->gamedata.current_level, editor_state->selected_entity_id);
+        if (sel < 0) {
+            return nullptr;
+        }
+        Blueprint *blueprint =
+            find_blueprint_by_name(state, state->gamedata.current_level.entities.data[sel].blueprint_name.ptr);
+        return blueprint ? &blueprint->attrs : nullptr;
+    }
+    int bp_idx = editor_state->selected_blueprint_index;
+    if (bp_idx < 0 || bp_idx >= state->gamedata.blueprints.entries.count) {
+        return nullptr;
+    }
+    return &state->gamedata.blueprints.entries.data[bp_idx].attrs;
+}
+
 static bool add_attr_by_name(Diag *diag, GameState *state, EditorState *editor_state, const char *name)
 {
     if (!name || name[0] == '\0') {
         return false;
     }
     AttrSet *target = nullptr;
+    AttrSection section = ATTR_SECTION_BLUEPRINT;
+    int entity_id = -1;
     if (editor_state->top_mode == EDITOR_TOP_BLUEPRINT || editor_state->adding_blueprint_attr) {
-        int bp_idx = editor_state->selected_blueprint_index;
-        /* In scene mode, selected_blueprint_index isn't set; resolve from the selected entity. */
-        if (editor_state->top_mode == EDITOR_TOP_SCENE) {
-            int sel = level_find_entity_by_id(&state->gamedata.current_level, editor_state->selected_entity_id);
-            if (sel < 0) {
-                return false;
-            }
-            Blueprint *blueprint =
-                find_blueprint_by_name(state, state->gamedata.current_level.entities.data[sel].blueprint_name.ptr);
-            if (!blueprint) {
-                return false;
-            }
-            target = &blueprint->attrs;
-        } else {
-            if (bp_idx < 0 || bp_idx >= state->gamedata.blueprints.entries.count) {
-                return false;
-            }
-            target = &state->gamedata.blueprints.entries.data[bp_idx].attrs;
-        }
+        target = add_attr_blueprint_target(state, editor_state);
     } else {
         int sel = level_find_entity_by_id(&state->gamedata.current_level, editor_state->selected_entity_id);
         if (sel < 0) {
@@ -340,8 +347,10 @@ static bool add_attr_by_name(Diag *diag, GameState *state, EditorState *editor_s
         }
         Entity *entity = &state->gamedata.current_level.entities.data[sel];
         target = editor_state->adding_persisted_attr ? &entity->persisted_attrs : &entity->attrs;
+        section = editor_state->adding_persisted_attr ? ATTR_SECTION_PERSISTED : ATTR_SECTION_RUNTIME;
+        entity_id = entity->id;
     }
-    if (attr_get(target, name)) {
+    if (!target || attr_get(target, name)) {
         return false;
     }
     Allocator alloc = allocator_arena(&state->gamedata_arena);
@@ -350,6 +359,14 @@ static bool add_attr_by_name(Diag *diag, GameState *state, EditorState *editor_s
         error_clear(diag->error);
         return false;
     }
+    /* S8.7f3b: an ADD is a SET on the wire -- the write-both applier creates
+     * the attr on every peer that doesn't have it yet, so no dedicated ADD op
+     * kind is needed. Scene-mode only: an EDITOR_TOP_BLUEPRINT add is armed by
+     * frame.c's top-mode resync trigger instead. The client gate ran at the
+     * flow's entry (handle_browse_select's ADD branch, core.c). */
+    if (editor_state->top_mode == EDITOR_TOP_SCENE) {
+        editor_attr_propagate_set(state, entity_id, attr_get(target, name), section);
+    }
     return true;
 }
 
@@ -357,6 +374,8 @@ static void word_builder_confirm(Diag *diag, GameState *state, EditorState *edit
 {
     Attribute *attr = nullptr;
     AttrSet *target = nullptr;
+    AttrSection section = ATTR_SECTION_BLUEPRINT;
+    int entity_id = -1;
     if (editor_state->top_mode == EDITOR_TOP_BLUEPRINT) {
         int bp_idx = editor_state->selected_blueprint_index;
         int attr_idx = editor_state->blueprint_attr_index;
@@ -388,12 +407,23 @@ static void word_builder_confirm(Diag *diag, GameState *state, EditorState *edit
         if (!target) {
             return;
         }
+        section = row.section;
+        entity_id = entity->id;
     }
     Allocator alloc = allocator_arena(&state->gamedata_arena);
     AttrStringPair pair = {attr->name.ptr, editor_state->word_builder_buf};
     if (!attr_set_string(&alloc, target, pair)) {
         debug_log(diag->debug, "word builder: attr_set_string failed: %s", error_get(diag->error));
         error_clear(diag->error);
+        return;
+    }
+    /* S8.7f3b: propagate the committed scene string value. attr still points at
+     * the same entry (its name already existed, so attr_set_string overwrote in
+     * place) and now holds the fresh value. Scene-mode only: EDITOR_TOP_BLUEPRINT
+     * commits are armed by frame.c's top-mode resync trigger. The client gate ran
+     * at the flow's entry (handle_browse_select's ATTR_STRING branch, core.c). */
+    if (editor_state->top_mode == EDITOR_TOP_SCENE) {
+        editor_attr_propagate_set(state, entity_id, attr, section);
     }
 }
 
@@ -799,6 +829,8 @@ static void fuzzy_finder_confirm(Diag *diag, GameState *state, EditorState *edit
 {
     Attribute *attr = nullptr;
     AttrSet *target = nullptr;
+    AttrSection section = ATTR_SECTION_BLUEPRINT;
+    int entity_id = -1;
     if (editor_state->top_mode == EDITOR_TOP_BLUEPRINT) {
         int bp_idx = editor_state->selected_blueprint_index;
         int attr_idx = editor_state->blueprint_attr_index;
@@ -830,6 +862,8 @@ static void fuzzy_finder_confirm(Diag *diag, GameState *state, EditorState *edit
         if (!target) {
             return;
         }
+        section = row.section;
+        entity_id = entity->id;
     }
     const char *chosen = fuzzy_finder_item(editor_state, editor_state->fuzzy_finder_scroll);
     Allocator alloc = allocator_arena(&state->gamedata_arena);
@@ -837,6 +871,12 @@ static void fuzzy_finder_confirm(Diag *diag, GameState *state, EditorState *edit
     if (!attr_set_string(&alloc, target, pair)) {
         debug_log(diag->debug, "fuzzy finder: attr_set_string failed: %s", error_get(diag->error));
         error_clear(diag->error);
+        return;
+    }
+    /* S8.7f3b: same propagation contract as word_builder_confirm above --
+     * scene-mode only, live in-place attr, entry-gated in core.c. */
+    if (editor_state->top_mode == EDITOR_TOP_SCENE) {
+        editor_attr_propagate_set(state, entity_id, attr, section);
     }
 }
 

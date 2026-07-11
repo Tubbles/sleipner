@@ -32,6 +32,13 @@
  * original layout. */
 static void network_client_receive_state(GameState *state);
 
+/* S8.7f3b: the write-both attr appliers live with the rest of the S8.4b
+ * state-sync machinery further down (they reuse apply_attr_record_to_set),
+ * but the op handlers up here call them -- forward-declared to keep both in
+ * their natural sections. */
+static void apply_set_attr(Allocator *gamedata_alloc, Entity *entity, const AttrRecord *record);
+static void apply_remove_attr(Allocator *gamedata_alloc, Entity *entity, Strv attr_name);
+
 /* Bound for the stack buffer spawn_network_player formats
  * "network:<player_id>" into: NETWORK_INPUT_SOURCE_PREFIX (8 bytes) + up to
  * an int32's worth of digits + sign + nul -- comfortably under 32 even
@@ -270,11 +277,57 @@ static void host_handle_place(GameState *state, EditorOp *operation, int sender_
     host_stamp_and_broadcast(state, EDITOR_OP_PLACE_ENTITY, operation, sender_player_id);
 }
 
-/* S8.7c/S8.7d1/S8.7f3a: decode each op network_host_receive drained into
- * `ops` this tick and dispatch by kind -- move/delete enforcement, the place
- * spawn, plus the lock protocol. A malformed decode is skipped; SET_ATTR is
- * out of scope (structural edits resync instead, S8.7f1); a client never
- * originates LOCK_DENY -- both silently dropped. */
+/* S8.7f3b: an EDITOR_OP_SET_ATTR from sender S. Same level/entity/lock rules
+ * as a move (locked by someone OTHER than S is silently dropped -- no apply,
+ * no echo). On apply the record is written into BOTH attr sets (write-both
+ * convergence, apply_set_attr), then stamped + echoed so every replica
+ * converges in the one total order. */
+static void host_handle_set_attr(GameState *state, EditorOp *operation, int sender_player_id)
+{
+    if (!strv_eq(operation->level_name, str_to_strv(state->gamedata.current_level.name))) {
+        return;
+    }
+    int entity_index = level_find_entity_by_id(&state->gamedata.current_level, operation->entity_id);
+    if (entity_index < 0) {
+        return;
+    }
+    const EntityLock *lock = network_lock_find(&state->network, operation->entity_id);
+    if (lock != nullptr && lock->holder_player_id != sender_player_id) {
+        return;
+    }
+    Allocator gamedata_alloc = allocator_arena(&state->gamedata_arena);
+    apply_set_attr(&gamedata_alloc, &state->gamedata.current_level.entities.data[entity_index], &operation->attr);
+    host_stamp_and_broadcast(state, EDITOR_OP_SET_ATTR, operation, sender_player_id);
+}
+
+/* S8.7f3b: an EDITOR_OP_REMOVE_ATTR from sender S. Mirror of host_handle_set_attr.
+ * attr_remove is a safe no-op on a name not present, so a removal is applied
+ * and echoed unconditionally (given the level/entity/lock preconditions),
+ * keeping every replica uniform even for a name only some peers still hold. */
+static void host_handle_remove_attr(GameState *state, EditorOp *operation, int sender_player_id)
+{
+    if (!strv_eq(operation->level_name, str_to_strv(state->gamedata.current_level.name))) {
+        return;
+    }
+    int entity_index = level_find_entity_by_id(&state->gamedata.current_level, operation->entity_id);
+    if (entity_index < 0) {
+        return;
+    }
+    const EntityLock *lock = network_lock_find(&state->network, operation->entity_id);
+    if (lock != nullptr && lock->holder_player_id != sender_player_id) {
+        return;
+    }
+    Allocator gamedata_alloc = allocator_arena(&state->gamedata_arena);
+    apply_remove_attr(&gamedata_alloc, &state->gamedata.current_level.entities.data[entity_index],
+                      operation->attr_name);
+    host_stamp_and_broadcast(state, EDITOR_OP_REMOVE_ATTR, operation, sender_player_id);
+}
+
+/* S8.7c/S8.7d1/S8.7f3a/S8.7f3b: decode each op network_host_receive drained
+ * into `ops` this tick and dispatch by kind -- move/delete enforcement, the
+ * place spawn, the scene attr SET/REMOVE appliers, plus the lock protocol. A
+ * malformed decode is skipped; a client never originates LOCK_DENY -- silently
+ * dropped. */
 static void host_apply_and_echo_ops(GameState *state, const PendingEditorOps *ops)
 {
     for (int index = 0; index < ops->count; index++) {
@@ -305,6 +358,11 @@ static void host_apply_and_echo_ops(GameState *state, const PendingEditorOps *op
             host_handle_lock_release(state, &operation, sender_player_id);
             break;
         case EDITOR_OP_SET_ATTR:
+            host_handle_set_attr(state, &operation, sender_player_id);
+            break;
+        case EDITOR_OP_REMOVE_ATTR:
+            host_handle_remove_attr(state, &operation, sender_player_id);
+            break;
         case EDITOR_OP_LOCK_DENY:
             break;
         }
@@ -724,6 +782,16 @@ static AttrRecordValue attr_value_to_record_value(AttrType type, AttrValue value
     return (AttrRecordValue){0};
 }
 
+AttrRecord network_attr_record_from_attribute(int entity_id, const Attribute *attr)
+{
+    return (AttrRecord){
+        .entity_id = entity_id,
+        .name = str_to_strv(attr->name),
+        .type = attr->type,
+        .value = attr_value_to_record_value(attr->type, attr->value),
+    };
+}
+
 /* Push one entity's synced state (blueprint_name, S8.6, first -- see that
  * reserved name's own doc comment, net_session.h -- then position as the
  * two reserved records, then every entry in entity->attrs) onto *out.
@@ -746,14 +814,8 @@ static void push_entity_sync_records(vec_attr_record *out, const Entity *entity)
                                                  .type = ATTR_FLOAT,
                                                  .value = {.f = entity->position.y}});
     for (int index = 0; index < entity->attrs.entries.count; index++) {
-        const Attribute *attr = &entity->attrs.entries.data[index];
-        AttrRecord record = {
-            .entity_id = entity->id,
-            .name = str_to_strv(attr->name),
-            .type = attr->type,
-            .value = attr_value_to_record_value(attr->type, attr->value),
-        };
-        (void)vec_attr_record_push(out, record);
+        (void)vec_attr_record_push(out,
+                                   network_attr_record_from_attribute(entity->id, &entity->attrs.entries.data[index]));
     }
 }
 
@@ -871,6 +933,38 @@ static void apply_synced_position(Entity *entity, Vector2 position)
  * essentially unreachable against an arena allocator, silently skipped
  * rather than propagated -- there is no error channel back to the host for
  * a single dropped attribute anyway. */
+/* Write one decoded AttrRecord's typed value into `set`, deep-copying the
+ * name (and, for ATTR_STRING, the value) out of the packet buffer into
+ * gamedata_alloc first -- record's Strv views are not null-terminated and
+ * point into a shared receive buffer, but attr_set_*'s API wants a
+ * null-terminated const char *, and attr_set_* itself copies both into the
+ * arena, so nothing borrowed from the packet survives. attr_set_* failure is
+ * silently skipped (essentially unreachable against an arena allocator, same
+ * as capture_entity_delta's attr_set_copy handling). Shared by the position-
+ * free path of apply_sync_record and the SET_ATTR op appliers below. */
+static void apply_attr_record_to_set(Allocator *gamedata_alloc, AttrSet *set, const AttrRecord *record)
+{
+    char attr_name[NETWORK_ATTR_NAME_MAX];
+    strv_copy_to_cstr(record->name, attr_name, sizeof(attr_name));
+    switch (record->type) {
+    case ATTR_FLOAT:
+        (void)attr_set_float(gamedata_alloc, set, attr_name, record->value.f);
+        return;
+    case ATTR_INT:
+        (void)attr_set_int(gamedata_alloc, set, attr_name, record->value.i);
+        return;
+    case ATTR_BOOL:
+        (void)attr_set_bool(gamedata_alloc, set, attr_name, record->value.b);
+        return;
+    case ATTR_STRING: {
+        char attr_value[NETWORK_ATTR_STRING_VALUE_MAX];
+        strv_copy_to_cstr(record->value.str, attr_value, sizeof(attr_value));
+        (void)attr_set_string(gamedata_alloc, set, (AttrStringPair){.name = attr_name, .value = attr_value});
+        return;
+    }
+    }
+}
+
 static void apply_sync_record(Allocator *gamedata_alloc, Entity *entity, const AttrRecord *record)
 {
     if (strv_eq_cstr(record->name, NETWORK_ATTR_POS_X)) {
@@ -886,26 +980,31 @@ static void apply_sync_record(Allocator *gamedata_alloc, Entity *entity, const A
         apply_synced_position(entity, (Vector2){entity->position.x, record->value.f});
         return;
     }
+    apply_attr_record_to_set(gamedata_alloc, &entity->attrs, record);
+}
 
-    char attr_name[NETWORK_ATTR_NAME_MAX];
-    strv_copy_to_cstr(record->name, attr_name, sizeof(attr_name));
-    switch (record->type) {
-    case ATTR_FLOAT:
-        (void)attr_set_float(gamedata_alloc, &entity->attrs, attr_name, record->value.f);
-        return;
-    case ATTR_INT:
-        (void)attr_set_int(gamedata_alloc, &entity->attrs, attr_name, record->value.i);
-        return;
-    case ATTR_BOOL:
-        (void)attr_set_bool(gamedata_alloc, &entity->attrs, attr_name, record->value.b);
-        return;
-    case ATTR_STRING: {
-        char attr_value[NETWORK_ATTR_STRING_VALUE_MAX];
-        strv_copy_to_cstr(record->value.str, attr_value, sizeof(attr_value));
-        (void)attr_set_string(gamedata_alloc, &entity->attrs, (AttrStringPair){.name = attr_name, .value = attr_value});
-        return;
-    }
-    }
+/* S8.7f3b: apply one EDITOR_OP_SET_ATTR record onto entity, writing the value
+ * into BOTH entity->attrs AND entity->persisted_attrs (the write-both
+ * convergence rule). The scene editor sites differ in which set they mutate
+ * locally, but every scene attr edit is an authored, persistence-intended
+ * edit; converging both sets on every peer -- including the originator, via
+ * its own echo re-apply, which is idempotent -- makes all replicas
+ * byte-identical in both sets, which the emit/resync path then preserves. */
+static void apply_set_attr(Allocator *gamedata_alloc, Entity *entity, const AttrRecord *record)
+{
+    apply_attr_record_to_set(gamedata_alloc, &entity->attrs, record);
+    apply_attr_record_to_set(gamedata_alloc, &entity->persisted_attrs, record);
+}
+
+/* S8.7f3b: remove attr_name from BOTH sets, the mirror of apply_set_attr.
+ * attr_remove is a safe no-op on a name a given set does not hold, so a
+ * removal present in only one set (or neither) converges uniformly. */
+static void apply_remove_attr(Allocator *gamedata_alloc, Entity *entity, Strv attr_name)
+{
+    char name[NETWORK_ATTR_NAME_MAX];
+    strv_copy_to_cstr(attr_name, name, sizeof(name));
+    attr_remove(gamedata_alloc, &entity->attrs, name);
+    attr_remove(gamedata_alloc, &entity->persisted_attrs, name);
 }
 
 /* CLIENT side (S8.6): materialize a placeholder entity for record's
@@ -1099,6 +1198,35 @@ static void client_apply_place_echo(GameState *state, const EditorOp *operation)
                                 operation->entity_id);
 }
 
+/* S8.7f3b: apply one SET_ATTR echo onto this client's replica, writing both
+ * attr sets (apply_set_attr, the write-both convergence rule). Tolerant skip
+ * for an entity id this client's level does not have. The client re-derives
+ * collision shapes fresh from attrs every frame (S4.1), so a collision-attr
+ * change needs no shape rebuild here -- the next render/collision pass reads
+ * the updated attrs directly. */
+static void client_apply_set_attr_echo(GameState *state, const EditorOp *operation)
+{
+    int entity_index = level_find_entity_by_id(&state->gamedata.current_level, operation->entity_id);
+    if (entity_index < 0) {
+        return;
+    }
+    Allocator gamedata_alloc = allocator_arena(&state->gamedata_arena);
+    apply_set_attr(&gamedata_alloc, &state->gamedata.current_level.entities.data[entity_index], &operation->attr);
+}
+
+/* S8.7f3b: apply one REMOVE_ATTR echo -- mirror of client_apply_set_attr_echo,
+ * removing from both sets. Same fresh-from-attrs collision-shape rationale. */
+static void client_apply_remove_attr_echo(GameState *state, const EditorOp *operation)
+{
+    int entity_index = level_find_entity_by_id(&state->gamedata.current_level, operation->entity_id);
+    if (entity_index < 0) {
+        return;
+    }
+    Allocator gamedata_alloc = allocator_arena(&state->gamedata_arena);
+    apply_remove_attr(&gamedata_alloc, &state->gamedata.current_level.entities.data[entity_index],
+                      operation->attr_name);
+}
+
 /* S8.7c/S8.7d1/S8.7f3a: apply one host op echo onto this client's replica,
  * dispatched by kind. All kinds share the current-level tolerant skip
  * (silent, same convention as apply_sync_record) -- an echo naming a level
@@ -1106,8 +1234,8 @@ static void client_apply_place_echo(GameState *state, const EditorOp *operation)
  * MOVE writes the entity position; DELETE cascade-deletes and drops the
  * replica lock; PLACE materializes the spawn under the echoed id; the three
  * lock kinds maintain the echo-driven replica lock table
- * (LOCK_ACQUIRE/RELEASE) and the deny list (LOCK_DENY). SET_ATTR is not
- * applied in this slice. */
+ * (LOCK_ACQUIRE/RELEASE) and the deny list (LOCK_DENY). SET_ATTR/REMOVE_ATTR
+ * (S8.7f3b) write/remove the attr on both attr sets (write-both convergence). */
 static void client_apply_op(GameState *state, const EditorOp *operation)
 {
     if (!strv_eq(operation->level_name, str_to_strv(state->gamedata.current_level.name))) {
@@ -1133,6 +1261,10 @@ static void client_apply_op(GameState *state, const EditorOp *operation)
         client_apply_lock_deny_echo(&state->network, operation);
         return;
     case EDITOR_OP_SET_ATTR:
+        client_apply_set_attr_echo(state, operation);
+        return;
+    case EDITOR_OP_REMOVE_ATTR:
+        client_apply_remove_attr_echo(state, operation);
         return;
     }
 }
@@ -1511,6 +1643,68 @@ void network_editor_commit_place(GameState *state, int placed_entity_id, Strv bl
             .move_x = position.x,
             .move_y = position.y,
             .blueprint_name = blueprint_name,
+        };
+        network_host_broadcast_reliable_op(&state->network, &operation);
+        return;
+    }
+}
+
+void network_editor_commit_set_attr(GameState *state, int entity_id, AttrRecord record)
+{
+    if (state->network.mode == NET_CLIENT) {
+        /* Op REQUEST (op_seq 0, the host stamps its echo); the local mutation
+         * already happened as this peer's preview. The record's own entity_id
+         * is overwritten from the header by the encoder (the mirror invariant,
+         * net_protocol.h), so it need not match here. */
+        EditorOp operation = {
+            .kind = EDITOR_OP_SET_ATTR,
+            .level_name = str_to_strv(state->gamedata.current_level.name),
+            .entity_id = entity_id,
+            .author_player_id = state->network.local_player_id,
+            .op_seq = 0,
+            .attr = record,
+        };
+        network_client_send_reliable_op(&state->network, &operation);
+        return;
+    }
+    if (state->network.mode == NET_HOSTING) {
+        /* The local mutation was already the authoritative apply; this stamps
+         * (author 0 = the host's own player id) and broadcasts the echo. */
+        EditorOp operation = {
+            .kind = EDITOR_OP_SET_ATTR,
+            .level_name = str_to_strv(state->gamedata.current_level.name),
+            .entity_id = entity_id,
+            .author_player_id = 0,
+            .op_seq = state->network.next_op_seq++,
+            .attr = record,
+        };
+        network_host_broadcast_reliable_op(&state->network, &operation);
+        return;
+    }
+}
+
+void network_editor_commit_remove_attr(GameState *state, int entity_id, Strv attr_name)
+{
+    if (state->network.mode == NET_CLIENT) {
+        EditorOp operation = {
+            .kind = EDITOR_OP_REMOVE_ATTR,
+            .level_name = str_to_strv(state->gamedata.current_level.name),
+            .entity_id = entity_id,
+            .author_player_id = state->network.local_player_id,
+            .op_seq = 0,
+            .attr_name = attr_name,
+        };
+        network_client_send_reliable_op(&state->network, &operation);
+        return;
+    }
+    if (state->network.mode == NET_HOSTING) {
+        EditorOp operation = {
+            .kind = EDITOR_OP_REMOVE_ATTR,
+            .level_name = str_to_strv(state->gamedata.current_level.name),
+            .entity_id = entity_id,
+            .author_player_id = 0,
+            .op_seq = state->network.next_op_seq++,
+            .attr_name = attr_name,
         };
         network_host_broadcast_reliable_op(&state->network, &operation);
         return;

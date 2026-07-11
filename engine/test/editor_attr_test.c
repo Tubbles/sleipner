@@ -53,6 +53,12 @@ FAKE_VOID_FUNC(propagate_child_offset, GameState *, const Blueprint *, int);
 /* Cross-file editor fakes: rule.c (S5.6b leaf editing) */
 FAKE_VOID_FUNC(handle_rule_numeric_edit_input, GameState *, EditorState *, UndoHistory *, const InputState *, float);
 
+/* Cross-file editor fakes: core.c (S8.7f3b) -- attr_edit_confirm now forwards a
+ * committed scene value to this core.c propagator; faked here so attr.c links
+ * without the network stack. The convergence path is covered in
+ * integration_test.c. */
+FAKE_VOID_FUNC(editor_attr_confirm_propagate, GameState *, EditorState *);
+
 /* External module fakes */
 FAKE_VOID_FUNC(undo_history_new_entry, UndoHistory *, GamedataState *, Arena *, ArenaCheckpoint, Strv);
 

@@ -507,7 +507,7 @@ static void host_structural_resync_tick(Diag *diag,
         return;
     }
     if (arm) {
-        state->network.structural_resync_debounce_timer = NETWORK_STRUCTURAL_RESYNC_DEBOUNCE_SECONDS;
+        network_structural_mark_dirty(&state->network);
     }
     if (state->network.structural_resync_debounce_timer <= 0.0F) {
         return;

@@ -317,7 +317,15 @@ typedef struct {
  *    move fields). The header's entity_id MUST be -1 in a client REQUEST --
  *    the HOST assigns entity ids -- and carries the host-assigned ROOT
  *    entity id in every echo, which each replica forces onto its own spawn
- *    so the id can never diverge across peers. */
+ *    so the id can never diverge across peers.
+ *
+ * S8.7f3b attr-remove kind:
+ *  - EDITOR_OP_REMOVE_ATTR -- client->host: request to remove attr_name from
+ *    entity_id; host->clients echo: the removal happened. Payload: one
+ *    length-prefixed attr_name string. The applier removes the named attr from
+ *    BOTH entity->attrs and entity->persisted_attrs (the write-both
+ *    convergence rule EDITOR_OP_SET_ATTR documents), so every replica ends up
+ *    byte-identical in both sets. The mirror of EDITOR_OP_SET_ATTR. */
 typedef enum {
     EDITOR_OP_MOVE_ENTITY,
     EDITOR_OP_SET_ATTR,
@@ -326,6 +334,7 @@ typedef enum {
     EDITOR_OP_LOCK_RELEASE,
     EDITOR_OP_LOCK_DENY,
     EDITOR_OP_PLACE_ENTITY,
+    EDITOR_OP_REMOVE_ATTR,
 } EditorOpKind;
 
 /* A single editor op. Flat fields (not a union), matching EventRecord's
@@ -345,11 +354,14 @@ typedef enum {
  * EDITOR_OP_SET_ATTR, and the embedded record's own entity_id mirrors this
  * header's entity_id: the encoder overwrites it from entity_id before
  * writing (see point 4 / protocol_encode_op_packet), so the two can never
- * disagree on the wire. EDITOR_OP_DELETE_ENTITY and the three S8.7d1 lock
- * kinds (LOCK_ACQUIRE/RELEASE/DENY) have no payload beyond the header.
+ * disagree on the wire. attr_name is meaningful only for EDITOR_OP_REMOVE_ATTR
+ * (S8.7f3b) -- the name of the attr to remove, carried as a bare
+ * length-prefixed string (no type/value, unlike SET_ATTR's full record).
+ * EDITOR_OP_DELETE_ENTITY and the three S8.7d1 lock kinds
+ * (LOCK_ACQUIRE/RELEASE/DENY) have no payload beyond the header.
  *
- * Decoded Strv fields (level_name, blueprint_name, and any string inside
- * attr) view into the caller's packet buffer, with the same lifetime
+ * Decoded Strv fields (level_name, blueprint_name, attr_name, and any string
+ * inside attr) view into the caller's packet buffer, with the same lifetime
  * contract every other decoded string field in this header documents (see
  * the Ownership note at the top of this file). */
 typedef struct {
@@ -362,11 +374,12 @@ typedef struct {
     float move_y;
     AttrRecord attr;
     Strv blueprint_name;
+    Strv attr_name;
 } EditorOp;
 
 /* Decodes an MSG_OP payload after the caller already decoded the header
  * (same division of labor as protocol_decode_event). Rejects an unknown
- * kind byte (anything > EDITOR_OP_PLACE_ENTITY) and fails closed on any
+ * kind byte (anything > EDITOR_OP_REMOVE_ATTR) and fails closed on any
  * truncated read. */
 [[nodiscard]] bool protocol_decode_op(PacketReader *reader, EditorOp *out);
 

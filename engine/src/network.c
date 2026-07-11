@@ -411,6 +411,14 @@ void network_resync_accept_chunk(NetworkState *network, const ResyncChunk *chunk
     resync_store_chunk(network, chunk);
 }
 
+void network_structural_mark_dirty(NetworkState *network)
+{
+    if (network->mode != NET_HOSTING) {
+        return;
+    }
+    network->structural_resync_debounce_timer = NETWORK_STRUCTURAL_RESYNC_DEBOUNCE_SECONDS;
+}
+
 /* Register a newly-JOINed client at addr with the next player_id (1..N in
  * join order). A no-op (not an error) if addr is already registered --
  * re-JOIN refreshes rather than duplicating, and S8.4a has nothing else on

@@ -202,6 +202,24 @@ int find_place_blueprint_index(const GameState *state, const EditorState *editor
 
 int find_child_entity(const Level *level, int parent_index, const char *blueprint_name, const char *tag);
 
+/* S8.7f3b: propagate a scene ATTR panel int/float value commit over the
+ * network. attr.c's attr_edit_confirm calls this after its undo push; the
+ * body (in core.c, where the AttrRow/section resolution helpers and the
+ * net_session seams live) resolves the currently selected scene attr and
+ * forwards it to the SET_ATTR seam, or arms the host structural resync for a
+ * blueprint-section row. No-op in EDITOR_TOP_BLUEPRINT (frame.c already
+ * resyncs blueprint-mode edits) or when nothing resolves. */
+void editor_attr_confirm_propagate(GameState *state, EditorState *editor_state);
+
+/* S8.7f3b: route one committed scene attr SET to the network by section:
+ * BLUEPRINT arms the host structural resync (the f2 gap closer -- Scene mode
+ * dodges frame.c's top-mode arm; `attr` is unused), entity sections send the
+ * LIVE freshly mutated `attr` over the SET_ATTR seam. Exported for widgets.c's
+ * attr-add and string-commit sites (which resolve their own target set); the
+ * client gate (core.c's editor_attr_edit_permitted) runs at each flow's ENTRY,
+ * not here. No-op offline (the seam and the dirty helper self-guard on mode). */
+void editor_attr_propagate_set(GameState *state, int entity_id, const Attribute *attr, AttrSection section);
+
 /* --- Cross-file calls: attr.c (called from core.c) --- */
 
 void dispatch_attr_type_change(GameState *state, EditorState *editor_state, int confirmed, UndoHistory *undo_history);

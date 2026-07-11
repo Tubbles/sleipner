@@ -603,6 +603,8 @@ static bool write_op_payload(PacketWriter *writer, const EditorOp *operation)
     case EDITOR_OP_PLACE_ENTITY:
         return packet_writer_write_string(writer, operation->blueprint_name) &&
                packet_writer_write_f32(writer, operation->move_x) && packet_writer_write_f32(writer, operation->move_y);
+    case EDITOR_OP_REMOVE_ATTR:
+        return packet_writer_write_string(writer, operation->attr_name);
     case EDITOR_OP_DELETE_ENTITY:
     case EDITOR_OP_LOCK_ACQUIRE:
     case EDITOR_OP_LOCK_RELEASE:
@@ -618,7 +620,7 @@ bool protocol_decode_op(PacketReader *reader, EditorOp *out)
     if (!packet_reader_read_u8(reader, &kind_byte)) {
         return false;
     }
-    if (kind_byte > EDITOR_OP_PLACE_ENTITY) {
+    if (kind_byte > EDITOR_OP_REMOVE_ATTR) {
         return false;
     }
     EditorOp operation = {.kind = (EditorOpKind)kind_byte};
@@ -642,6 +644,11 @@ bool protocol_decode_op(PacketReader *reader, EditorOp *out)
     case EDITOR_OP_PLACE_ENTITY:
         if (!packet_reader_read_string(reader, &operation.blueprint_name) ||
             !packet_reader_read_f32(reader, &operation.move_x) || !packet_reader_read_f32(reader, &operation.move_y)) {
+            return false;
+        }
+        break;
+    case EDITOR_OP_REMOVE_ATTR:
+        if (!packet_reader_read_string(reader, &operation.attr_name)) {
             return false;
         }
         break;

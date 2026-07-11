@@ -81,6 +81,15 @@ FAKE_VOID_FUNC(network_editor_release_locks, GameState *, const int *, int);
 FAKE_VOID_FUNC(game_delete_entity_cascade, GameState *, int);
 FAKE_VOID_FUNC(network_editor_commit_delete, GameState *, int);
 FAKE_VALUE_FUNC(EntityLock *, network_lock_find, NetworkState *, int);
+/* S8.7f3b: core.c's scene ATTR panel edit sites propagate over these three
+ * net_session/network seams (SET/REMOVE ops and the host structural-resync
+ * arm), building each SET record from the fresh entity attr; all faked here so
+ * core.c links without the network stack. The end-to-end convergence is
+ * covered black-box in integration_test.c. */
+FAKE_VOID_FUNC(network_editor_commit_set_attr, GameState *, int, AttrRecord);
+FAKE_VOID_FUNC(network_editor_commit_remove_attr, GameState *, int, Strv);
+FAKE_VOID_FUNC(network_structural_mark_dirty, NetworkState *);
+FAKE_VALUE_FUNC(AttrRecord, network_attr_record_from_attribute, int, const Attribute *);
 
 /* TextFormat stub — variadic, cannot use FAKE_VALUE_FUNC */
 const char *TextFormat(const char *text, ...)
@@ -640,6 +649,110 @@ void test_editor_delete_commits_over_network_seam(void)
     TEST_ASSERT_EQUAL_INT(10, network_editor_commit_delete_fake.arg1_val);
 }
 
+/* ---- S8.7f3b: scene ATTR panel network propagation ---------------------- */
+
+/* A connected client is refused a BLUEPRINT-section edit up front (blueprint
+ * defaults are structural, host-only) -- toast, and the lock table is never
+ * even consulted (the blueprint block short-circuits before it). */
+void test_editor_attr_edit_permitted_blocks_blueprint_on_client(void)
+{
+    RESET_FAKE(network_lock_find);
+    GameState state = {0};
+    state.network.mode = NET_CLIENT;
+    EditorState editor_state = {0};
+
+    TEST_ASSERT_FALSE(editor_attr_edit_permitted(&state, 7, &editor_state, ATTR_SECTION_BLUEPRINT));
+
+    TEST_ASSERT_TRUE(editor_state.toast_text.len > 0);
+    TEST_ASSERT_EQUAL_INT(0, network_lock_find_fake.call_count);
+}
+
+/* A connected client is refused an entity-section edit whose entity another
+ * player holds -- the same fast local lock gate moves/deletes use. */
+void test_editor_attr_edit_permitted_blocks_locked_entity_on_client(void)
+{
+    RESET_FAKE(network_lock_find);
+    GameState state = {0};
+    state.network.mode = NET_CLIENT;
+    state.network.local_player_id = 2;
+    EditorState editor_state = {0};
+    EntityLock foreign_lock = {.entity_id = 7, .holder_player_id = 5, .active = true};
+    network_lock_find_fake.return_val = &foreign_lock;
+
+    TEST_ASSERT_FALSE(editor_attr_edit_permitted(&state, 7, &editor_state, ATTR_SECTION_RUNTIME));
+
+    TEST_ASSERT_TRUE(editor_state.toast_text.len > 0);
+    /* foreign_lock is stack-local: clear the fake so its return_val never
+     * outlives this frame. */
+    RESET_FAKE(network_lock_find);
+}
+
+/* The host (and offline) always proceed -- no gate on either section. */
+void test_editor_attr_edit_permitted_allows_on_host(void)
+{
+    GameState state = {0};
+    state.network.mode = NET_HOSTING;
+    EditorState editor_state = {0};
+
+    TEST_ASSERT_TRUE(editor_attr_edit_permitted(&state, 7, &editor_state, ATTR_SECTION_BLUEPRINT));
+    TEST_ASSERT_TRUE(editor_attr_edit_permitted(&state, 7, &editor_state, ATTR_SECTION_RUNTIME));
+}
+
+/* A blueprint-section SET propagates by arming the host structural resync (the
+ * f2 gap closer), NOT the per-attr op stream. */
+void test_editor_attr_propagate_set_blueprint_marks_dirty(void)
+{
+    RESET_FAKE(network_structural_mark_dirty);
+    RESET_FAKE(network_editor_commit_set_attr);
+    GameState state = {0};
+    state.network.mode = NET_HOSTING;
+
+    /* attr is unused on the blueprint path (it only arms the resync). */
+    editor_attr_propagate_set(&state, 7, nullptr, ATTR_SECTION_BLUEPRINT);
+
+    TEST_ASSERT_EQUAL_INT(1, network_structural_mark_dirty_fake.call_count);
+    TEST_ASSERT_EQUAL_INT(0, network_editor_commit_set_attr_fake.call_count);
+}
+
+/* An entity-section SET reads the fresh attr back off the entity and forwards
+ * it over the SET_ATTR seam, carrying the entity id. */
+void test_editor_attr_propagate_set_entity_calls_seam(void)
+{
+    RESET_FAKE(network_editor_commit_set_attr);
+    RESET_FAKE(network_attr_record_from_attribute);
+    RESET_FAKE(network_structural_mark_dirty);
+    GameState state = {0};
+    state.network.mode = NET_HOSTING;
+
+    AttrSet attrs = {0};
+    TEST_ASSERT_TRUE(attr_set_float(&test_heap_alloc, &attrs, "speed", 2.5F));
+
+    editor_attr_propagate_set(&state, 7, &attrs.entries.data[0], ATTR_SECTION_RUNTIME);
+
+    TEST_ASSERT_EQUAL_INT(1, network_editor_commit_set_attr_fake.call_count);
+    TEST_ASSERT_EQUAL_INT(7, network_editor_commit_set_attr_fake.arg1_val);
+    TEST_ASSERT_EQUAL_INT(1, network_attr_record_from_attribute_fake.call_count);
+    TEST_ASSERT_EQUAL_INT(0, network_structural_mark_dirty_fake.call_count);
+
+    test_attr_set_free_local(&attrs);
+}
+
+/* An entity-section REMOVE forwards over the REMOVE_ATTR seam, carrying the
+ * entity id, and never arms the resync. */
+void test_editor_attr_propagate_remove_entity_calls_seam(void)
+{
+    RESET_FAKE(network_editor_commit_remove_attr);
+    RESET_FAKE(network_structural_mark_dirty);
+    GameState state = {0};
+    state.network.mode = NET_HOSTING;
+
+    editor_attr_propagate_remove(&state, 7, "collision_w", ATTR_SECTION_RUNTIME);
+
+    TEST_ASSERT_EQUAL_INT(1, network_editor_commit_remove_attr_fake.call_count);
+    TEST_ASSERT_EQUAL_INT(7, network_editor_commit_remove_attr_fake.arg1_val);
+    TEST_ASSERT_EQUAL_INT(0, network_structural_mark_dirty_fake.call_count);
+}
+
 /* ---- handle_browse_navigate --------------------------------------------- */
 
 void test_navigate_tree_to_attr_boundary(void)
@@ -853,6 +966,12 @@ int main(void)
     RUN_TEST(test_editor_delete_selected_delegates_and_prunes_watches);
     RUN_TEST(test_editor_delete_refused_when_locked_by_other);
     RUN_TEST(test_editor_delete_commits_over_network_seam);
+    RUN_TEST(test_editor_attr_edit_permitted_blocks_blueprint_on_client);
+    RUN_TEST(test_editor_attr_edit_permitted_blocks_locked_entity_on_client);
+    RUN_TEST(test_editor_attr_edit_permitted_allows_on_host);
+    RUN_TEST(test_editor_attr_propagate_set_blueprint_marks_dirty);
+    RUN_TEST(test_editor_attr_propagate_set_entity_calls_seam);
+    RUN_TEST(test_editor_attr_propagate_remove_entity_calls_seam);
     RUN_TEST(test_navigate_tree_to_attr_boundary);
     RUN_TEST(test_navigate_attr_to_tree_boundary);
     RUN_TEST(test_find_place_blueprint_index_found);
